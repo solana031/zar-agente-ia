@@ -1,0 +1,158 @@
+name: ZAR - Actualizar desde ZIP
+
+on:
+  push:
+    paths:
+      - "*.zip"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    name: Extraer ZIP y actualizar repositorio
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' || !contains(github.event.head_commit.message, '[zar-auto-update]') }}
+
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Comprobar ZIP
+        shell: bash
+        run: |
+          set -e
+
+          ZIP_FILE="$(find . -maxdepth 1 -type f -name '*.zip' -printf '%T@ %p\n' | sort -nr | head -n 1 | cut -d' ' -f2-)"
+
+          if [ -z "$ZIP_FILE" ]; then
+            echo "ERROR: No se encontró ningún ZIP en la raíz del repositorio."
+            exit 1
+          fi
+
+          echo "ZIP detectado: $ZIP_FILE"
+          echo "ZIP_FILE=$ZIP_FILE" >> "$GITHUB_ENV"
+
+      - name: Guardar el workflow permanente
+        shell: bash
+        run: |
+          set -e
+
+          WORKFLOW=".github/workflows/zar-auto-update.yml"
+
+          if [ ! -f "$WORKFLOW" ]; then
+            echo "ERROR: Falta el workflow permanente: $WORKFLOW"
+            echo "Créalo primero en GitHub y vuelve a subir el ZIP."
+            exit 1
+          fi
+
+          mkdir -p /tmp/zar-protect
+          cp "$WORKFLOW" /tmp/zar-protect/zar-auto-update.yml
+
+      - name: Extraer ZIP
+        shell: bash
+        run: |
+          set -e
+
+          rm -rf /tmp/zar-extracted
+          mkdir -p /tmp/zar-extracted
+
+          unzip -q "$ZIP_FILE" -d /tmp/zar-extracted
+
+          echo "ZIP extraído correctamente."
+
+      - name: Detectar carpeta raíz del ZIP
+        shell: bash
+        run: |
+          set -e
+
+          ROOT="/tmp/zar-extracted"
+
+          # Si el ZIP contiene una única carpeta y nada más,
+          # utilizamos esa carpeta como raíz del proyecto.
+          DIRECTORIES=("$ROOT"/*/)
+          FILES=("$ROOT"/*)
+
+          if [ ${#DIRECTORIES[@]} -eq 1 ] && [ ${#FILES[@]} -eq 1 ]; then
+            SOURCE_DIR="${DIRECTORIES[0]%/}"
+          else
+            SOURCE_DIR="$ROOT"
+          fi
+
+          echo "SOURCE_DIR=$SOURCE_DIR" >> "$GITHUB_ENV"
+          echo "Contenido usado como raíz de ZAR: $SOURCE_DIR"
+
+      - name: Reemplazar el contenido del repositorio
+        shell: bash
+        run: |
+          set -e
+
+          # Elimina el contenido actual, pero conserva .git.
+          find . -mindepth 1 -maxdepth 1 ! -name '.git' -exec rm -rf {} +
+
+          # Copia el contenido completo del ZIP.
+          cp -a "$SOURCE_DIR"/. .
+
+          # Nunca permitimos que un ZIP de versión quede almacenado
+          # dentro del repositorio final.
+          find . -type f -name '*.zip' -delete
+
+          # El workflow permanente siempre se conserva en esta ruta.
+          rm -rf .github
+          mkdir -p .github/workflows
+          cp /tmp/zar-protect/zar-auto-update.yml .github/workflows/zar-auto-update.yml
+
+          # Limpieza de archivos temporales habituales.
+          find . -type d -name '__pycache__' -prune -exec rm -rf {} +
+          find . -type f \( -name '*.pyc' -o -name '*.pyo' \) -delete
+          find . -type f -name '.DS_Store' -delete
+
+      - name: Verificar resultado
+        shell: bash
+        run: |
+          set -e
+
+          echo ""
+          echo "=========================================="
+          echo "REPOSITORIO ACTUALIZADO"
+          echo "=========================================="
+
+          if [ ! -f "requirements.txt" ]; then
+            echo "WARNING: No existe requirements.txt"
+          fi
+
+          if [ ! -d "app" ]; then
+            echo "WARNING: No existe la carpeta app/"
+          fi
+
+          if [ ! -f ".github/workflows/zar-auto-update.yml" ]; then
+            echo "ERROR: Se perdió el workflow permanente."
+            exit 1
+          fi
+
+          echo "Archivos principales:"
+          find . -maxdepth 2 -type f | sort | sed -n '1,120p'
+
+          echo ""
+          echo "Comprobación final completada."
+
+      - name: Commit y actualizar main
+        shell: bash
+        run: |
+          set -e
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add -A
+
+          if git diff --cached --quiet; then
+            echo "No hay cambios que guardar."
+            exit 0
+          fi
+
+          git commit -m "[zar-auto-update] Actualizar ZAR desde ZIP"
+          git push
