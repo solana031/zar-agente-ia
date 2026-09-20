@@ -1,0 +1,108 @@
+name: ZAR - Importar ZIP automáticamente
+
+on:
+  push:
+    paths:
+      - "**/*.zip"
+
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: zar-auto-update
+  cancel-in-progress: true
+
+jobs:
+  import-zip:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Buscar ZIP nuevo
+        id: zip
+        shell: bash
+        run: |
+          set -e
+
+          ZIP_FILE="$(find . -type f -name '*.zip' -not -path './.git/*' -printf '%T@|%p\n' | sort -nr | head -n 1 | cut -d'|' -f2-)"
+
+          if [ -z "$ZIP_FILE" ]; then
+            echo "ERROR: No se ha encontrado ningún ZIP."
+            exit 1
+          fi
+
+          echo "ZIP encontrado: $ZIP_FILE"
+          echo "zip_file=$ZIP_FILE" >> "$GITHUB_OUTPUT"
+
+      - name: Extraer y reemplazar el repositorio
+        shell: bash
+        env:
+          ZIP_FILE: ${{ steps.zip.outputs.zip_file }}
+        run: |
+          set -e
+
+          TEMP_DIR="$(mktemp -d)"
+          WORKFLOW_FILE=".github/workflows/zar-auto-update.yml"
+          SAVED_WORKFLOW="$TEMP_DIR/zar-auto-update.yml"
+
+          # Guardar el workflow permanente antes de reemplazar el contenido.
+          if [ ! -f "$WORKFLOW_FILE" ]; then
+            echo "ERROR: Falta $WORKFLOW_FILE en el repositorio."
+            exit 1
+          fi
+          cp "$WORKFLOW_FILE" "$SAVED_WORKFLOW"
+
+          echo "Extrayendo: $ZIP_FILE"
+          unzip -q -o "$ZIP_FILE" -d "$TEMP_DIR/source"
+
+          SOURCE_DIR="$TEMP_DIR/source"
+
+          # Si el ZIP contiene una única carpeta raíz, usar su contenido como raíz.
+          ROOT_DIRS=("$SOURCE_DIR"/*)
+          if [ "${#ROOT_DIRS[@]}" -eq 1 ] && [ -d "${ROOT_DIRS[0]}" ]; then
+            SOURCE_DIR="${ROOT_DIRS[0]}"
+          fi
+
+          # El ZIP es la fuente de verdad: se elimina el contenido actual
+          # salvo .git, y después se copia la nueva versión.
+          find . -mindepth 1 -maxdepth 1 ! -name '.git' -exec rm -rf {} +
+
+          rsync -a "$SOURCE_DIR/" ./
+
+          # Mantener un único workflow permanente.
+          rm -rf .github
+          mkdir -p .github/workflows
+          cp "$SAVED_WORKFLOW" "$WORKFLOW_FILE"
+
+          # Nunca acumular ZIPs ni cachés en el repositorio.
+          find . -type f -name '*.zip' -not -path './.git/*' -delete
+          find . -type d -name '__pycache__' -prune -exec rm -rf {} +
+          find . -type f \( -name '*.pyc' -o -name '*.pyo' \) -delete
+
+          rm -rf "$TEMP_DIR"
+
+          echo "Importación completada correctamente."
+
+      - name: Guardar cambios en GitHub
+        shell: bash
+        run: |
+          set -e
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add -A
+
+          if git diff --cached --quiet; then
+            echo "No hay cambios que guardar."
+            exit 0
+          fi
+
+          git commit -m "chore: importar nueva versión de ZAR desde ZIP [skip ci]"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
