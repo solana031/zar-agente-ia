@@ -1,0 +1,7 @@
+credentials.json
+google_token.json
+youtube_token.json
+config.json
+__pycache__/
+*.pyc
+/data/
