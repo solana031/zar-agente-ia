@@ -50,3 +50,8 @@ Entre las variables usadas por ZAR pueden encontrarse las de Gemini/IA, Google O
 ## Importante
 
 No subas credenciales, tokens ni secretos al repositorio. Para actualizar ZAR, parte siempre de la última versión consolidada y sustituye los archivos de la aplicación; el workflow no cambia con cada número de versión.
+
+
+## Persistencia de datos
+
+ZAR mantiene conversaciones, memoria, archivos, copias de Google y proyectos en `ZAR_DATA_DIR` (por defecto `/data`). En Railway ese directorio debe estar montado en el volumen persistente del servicio. Los ZIP de nuevas versiones solo reemplazan el código del repositorio; no deben contener ni sobrescribir `/data`. Por ello, actualizar ZAR mediante el workflow de ZIP no borra la información del usuario mientras el servicio conserve el mismo volumen persistente.
