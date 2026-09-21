@@ -339,6 +339,13 @@ def advance_learning(job_id):
         started = float(job.get("started_at") or time.time())
         estimate = int(job.get("estimated_seconds") or max(90, len(qs) * 18 + 45))
 
+        # Calculate live timing before the first persisted status update.
+        # v30.10.4 referenced these values before assigning them, which made
+        # every resume fail immediately with UnboundLocalError.
+        elapsed_now = round(max(0, time.time() - started), 1)
+        avg_per_query = elapsed_now / max(1, idx) if idx else 0
+        dynamic_estimate = int(max(90, estimate if idx == 0 else
+                                   elapsed_now + max(0, len(qs) - idx) * max(12, avg_per_query)))
         _set_job(job_id,
                  status="researching", phase="Investigando fuentes",
                  message=f"Investigando consulta {min(idx+1, len(qs))}/{len(qs)}…",
@@ -443,7 +450,19 @@ def advance_learning(job_id):
         return get_job(job_id)
     except Exception as exc:
         if not _cancel_requested(job_id):
-            _set_job(job_id,status="error",progress=100,phase="Error",message=str(exc)[:1200],elapsed_seconds=round(time.time()-float((_load().get("jobs",{}).get(job_id) or {}).get("started_at") or time.time()),1))
+            current = (_load().get("jobs", {}).get(job_id) or {})
+            started0 = float(current.get("started_at") or time.time())
+            # Never report 100% for a failed learning session. Keep the real
+            # persisted progress so the user can retry from the last checkpoint.
+            idx0 = int(current.get("query_index") or 0)
+            total0 = max(1, int(current.get("queries_total") or len(current.get("queries") or []) or 1))
+            progress0 = int(current.get("progress") or (8 + int(idx0 / total0 * 60)))
+            progress0 = max(5, min(99, progress0))
+            _set_job(job_id, status="error", progress=progress0, phase="Error",
+                     message=str(exc)[:1200], query_index=idx0,
+                     queries_done=idx0, queries_total=total0,
+                     heartbeat_at=time.time(),
+                     elapsed_seconds=round(max(0, time.time()-started0),1))
         return get_job(job_id)
     finally:
         _release_lease(job_id)
@@ -501,7 +520,17 @@ def resume_learning(job_id):
     if job.get("status")=="completed": return job
     topic=str(job.get("topic") or "").strip()
     if not topic: raise ValueError("El aprendizaje no tiene tema recuperable.")
-    _set_job(job_id,status="queued",phase="Reanudando",message="Aprendizaje reanudado. Continuaré desde la última consulta guardada.",heartbeat_at=time.time(),cancel_requested=False)
+    qs = list(job.get("queries") or _query_plan(topic, str(job.get("goal") or "").strip(), list(job.get("references") or [])))
+    idx = int(job.get("query_index") or 0)
+    idx = max(0, min(idx, len(qs)))
+    if idx >= len(qs):
+        resume_progress = 70
+    else:
+        resume_progress = max(5, 8 + int(idx / max(1, len(qs)) * 60))
+    _set_job(job_id, status="queued", progress=resume_progress, phase="Reanudando",
+             message="Aprendizaje reanudado. Continuaré desde la última consulta guardada.",
+             heartbeat_at=time.time(), cancel_requested=False, queries=qs,
+             queries_total=len(qs), query_index=idx, queries_done=idx)
     return advance_learning(job_id)
 
 def learn_from_file(file_id):
