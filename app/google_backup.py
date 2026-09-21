@@ -30,7 +30,7 @@ def _backup_root(user_id=None):
     d.mkdir(parents=True, exist_ok=True)
     return d
 _LOCK = threading.Lock()
-_LAST = {"status": "never", "started_at": None, "finished_at": None, "path": None, "error": None}
+_LAST = {"status": "never", "started_at": None, "finished_at": None, "path": None, "error": None, "progress": 0, "current_service": None, "completed_services": 0, "total_services": 5, "message": "Sin copia en curso.", "service_states": {}}
 
 
 def _json(path, data):
@@ -376,7 +376,7 @@ def _run_backup(reason="google_connected", user_id=None):
     user_id = user_id or get_current_user()
     set_current_user(user_id)
     with _LOCK:
-        _LAST = {"status": "running", "started_at": datetime.now(timezone.utc).isoformat(), "finished_at": None, "path": None, "error": None}
+        _LAST = {"status": "running", "started_at": datetime.now(timezone.utc).isoformat(), "finished_at": None, "path": None, "error": None, "progress": 0, "current_service": "Preparando", "completed_services": 0, "total_services": 5, "message": "Preparando la copia de seguridad…", "service_states": {}}
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     out = _backup_root(user_id) / stamp
     out.mkdir(parents=True, exist_ok=True)
@@ -392,18 +392,29 @@ def _run_backup(reason="google_connected", user_id=None):
         # error in Gmail must not abort Contacts, Calendar, Tasks or Drive.
         # This is especially important because Gmail's messages.list can hit
         # the per-user quota while the other APIs remain perfectly usable.
-        for key, fn, empty_files in [
-            ("gmail", lambda: _backup_gmail(svcs["gmail"], out), []),
-            ("contacts", lambda: _backup_contacts(svcs["people"], out), []),
-            ("calendar", lambda: _backup_calendar(svcs["calendar"], out), []),
-            ("tasks", lambda: _backup_tasks(svcs["tasks"], out), []),
-            ("drive", lambda: _backup_drive(svcs["drive"], out), []),
-        ]:
+        service_plan = [
+            ("gmail", "Gmail", lambda: _backup_gmail(svcs["gmail"], out)),
+            ("contacts", "Contactos", lambda: _backup_contacts(svcs["people"], out)),
+            ("calendar", "Calendar", lambda: _backup_calendar(svcs["calendar"], out)),
+            ("tasks", "Tareas", lambda: _backup_tasks(svcs["tasks"], out)),
+            ("drive", "Drive", lambda: _backup_drive(svcs["drive"], out)),
+        ]
+        total_services = len(service_plan)
+        for idx, (key, label, fn) in enumerate(service_plan, 1):
+            with _LOCK:
+                _LAST["current_service"] = label
+                _LAST["message"] = f"Copiando {label}…"
+                _LAST["progress"] = round(((idx - 1) / total_services) * 80)
+                _LAST["completed_services"] = idx - 1
             try:
                 stats.update(fn())
+                with _LOCK:
+                    _LAST["service_states"][key] = "done"
             except Exception as exc:
                 service_errors[key] = str(exc)
                 stats[f"{key}_error"] = str(exc)
+                with _LOCK:
+                    _LAST["service_states"][key] = "warning"
                 # Leave an explicit empty snapshot for services that could not
                 # be copied, while preserving all other successful services.
                 if key == "gmail":
@@ -418,18 +429,29 @@ def _run_backup(reason="google_connected", user_id=None):
                     _json(out / "tasks.json", [])
                 elif key == "drive":
                     _json(out / "drive_files.json", [])
+            with _LOCK:
+                _LAST["completed_services"] = idx
+                _LAST["progress"] = round((idx / total_services) * 80)
 
         stats["service_errors"] = service_errors
+        with _LOCK:
+            _LAST["current_service"] = "Indexando datos"
+            _LAST["message"] = "Indexando la copia para poder consultarla sin conexión…"
+            _LAST["progress"] = 85
         stats.update(_index_backup(out, stats))
+        with _LOCK:
+            _LAST["progress"] = 95
+            _LAST["current_service"] = "Finalizando"
+            _LAST["message"] = "Guardando manifiesto y preparando la copia local…"
         stats["finished_at"] = datetime.now(timezone.utc).isoformat()
         _json(out / "manifest.json", stats)
         _json(_backup_root(user_id) / "latest.json", {"path": str(out), "manifest": stats})
         final_status = "done_with_warnings" if service_errors else "done"
         with _LOCK:
-            _LAST = {"status": final_status, "started_at": stats["started_at"], "finished_at": stats["finished_at"], "path": str(out), "error": None, "stats": stats}
+            _LAST = {"status": final_status, "started_at": stats["started_at"], "finished_at": stats["finished_at"], "path": str(out), "error": None, "stats": stats, "progress": 100, "current_service": "Completada", "completed_services": total_services, "total_services": total_services, "message": "Copia de seguridad completada." if not service_errors else "Copia completada con incidencias; revisa los servicios marcados.", "service_states": dict(_LAST.get("service_states") or {})}
     except Exception as exc:
         with _LOCK:
-            _LAST = {"status": "error", "started_at": _LAST.get("started_at"), "finished_at": datetime.now(timezone.utc).isoformat(), "path": str(out), "error": str(exc)}
+            _LAST = {"status": "error", "started_at": _LAST.get("started_at"), "finished_at": datetime.now(timezone.utc).isoformat(), "path": str(out), "error": str(exc), "progress": int(_LAST.get("progress") or 0), "current_service": _LAST.get("current_service"), "completed_services": int(_LAST.get("completed_services") or 0), "total_services": int(_LAST.get("total_services") or 5), "message": "La copia se ha detenido por un error.", "service_states": dict(_LAST.get("service_states") or {})}
 
 
 def start_google_backup(reason="google_connected", user_id=None):

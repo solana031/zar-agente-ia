@@ -723,17 +723,17 @@ def google_services_check():
     # locate at most one native object and, when available, ask the target API
     # for that object. With no matching object we still report the OAuth scope as
     # authorized instead of inventing a failed service state.
-    def workspace_probe(kind, mime, getter):
+    def workspace_probe(kind, version, mime, getter):
         from googleapiclient.discovery import build
         d=build('drive','v3',credentials=creds,cache_discovery=False)
         files=d.files().list(q=f"mimeType='{mime}' and trashed=false",pageSize=1,fields='files(id)').execute().get('files',[])
         if not files:
             return
-        getter(build(kind, credentials=creds, cache_discovery=False), files[0]['id'])
-    def docs(): workspace_probe('docs','application/vnd.google-apps.document',lambda svc,fid: svc.documents().get(documentId=fid).execute())
-    def sheets(): workspace_probe('sheets','application/vnd.google-apps.spreadsheet',lambda svc,fid: svc.spreadsheets().get(spreadsheetId=fid,fields='spreadsheetId').execute())
-    def slides(): workspace_probe('slides','application/vnd.google-apps.presentation',lambda svc,fid: svc.presentations().get(presentationId=fid).execute())
-    def forms(): workspace_probe('forms','application/vnd.google-apps.form',lambda svc,fid: svc.forms().get(formId=fid).execute())
+        getter(build(kind, version, credentials=creds, cache_discovery=False), files[0]['id'])
+    def docs(): workspace_probe('docs','v1','application/vnd.google-apps.document',lambda svc,fid: svc.documents().get(documentId=fid).execute())
+    def sheets(): workspace_probe('sheets','v4','application/vnd.google-apps.spreadsheet',lambda svc,fid: svc.spreadsheets().get(spreadsheetId=fid,fields='spreadsheetId').execute())
+    def slides(): workspace_probe('slides','v1','application/vnd.google-apps.presentation',lambda svc,fid: svc.presentations().get(presentationId=fid).execute())
+    def forms(): workspace_probe('forms','v1','application/vnd.google-apps.form',lambda svc,fid: svc.forms().get(formId=fid).execute())
 
     for key, fn in (("gmail",gmail),("calendar",calendar),("contacts",contacts),("tasks",tasks),("drive",drive),("docs",docs),("sheets",sheets),("slides",slides),("forms",forms)):
         r=probe(key,fn)
@@ -813,7 +813,7 @@ def control_health():
     local_cfg = cfg.get("local") or {}
     return jsonify({
         "ok": True,
-        "version": "30.2.0",
+        "version": "30.2.5",
         "google": {**g, "account": account},
         "services": service_rows,
         "service_count": len(service_rows),
