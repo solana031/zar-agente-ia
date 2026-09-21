@@ -1453,12 +1453,116 @@ function removePendingFile(index){
   const st=document.getElementById('uploadStatus');
   if(st)st.textContent=zarPendingFiles.length?zarPendingFiles.length+' archivo(s) preparado(s).':'Archivo retirado.';
 }
+/* ZAR v30.2.8 · Gmail visual cards + clean rich text */
+function zarSafeHref(url){
+  const u=String(url||'').trim();
+  return /^(https?:|mailto:)/i.test(u)?u:'#';
+}
+function zarInlineRich(text){
+  let x=escHtml(String(text??''));
+  x=x.replace(/`([^`]+)`/g,'<code>$1</code>');
+  x=x.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g,(m,label,url)=>'<a href="'+zarSafeHref(url)+'" target="_blank" rel="noopener">'+label+'</a>');
+  x=x.replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>');
+  x=x.replace(/__([^_]+)__/g,'<strong>$1</strong>');
+  x=x.replace(/(^|[\s(])\*([^*\n]+)\*(?=[$\s).,!?:;]|$)/g,'$1<em>$2</em>');
+  x=x.replace(/(^|[\s(])_([^_\n]+)_(?=[$\s).,!?:;]|$)/g,'$1<em>$2</em>');
+  x=x.replace(/(^|\s)(https?:\/\/[^\s<]+)/g,(m,pre,url)=>pre+'<a href="'+zarSafeHref(url)+'" target="_blank" rel="noopener">'+url+'</a>');
+  /* Nunca dejamos marcadores Markdown sueltos en la interfaz final. */
+  x=x.replace(/[*_]{1,}/g,'');
+  return x;
+}
+function zarRenderRichText(text,compact=false){
+  const raw=String(text??'').replace(/\r\n?/g,'\n').trim();
+  if(!raw)return '';
+  const lines=raw.split('\n');
+  let html='', listMode='';
+  const closeList=()=>{if(listMode){html+='</div>';listMode='';}};
+  lines.forEach(line=>{
+    const t=line.trim();
+    if(!t){closeList();return;}
+    if(/^---+$/.test(t)||/^___+$/.test(t)){closeList();html+='<hr>';return;}
+    const hm=t.match(/^#{1,6}\s+(.+)$/);
+    if(hm){closeList();const level=Math.min(4,hm[0].match(/^#+/)[0].length);html+='<h'+level+'>'+zarInlineRich(hm[1])+'</h'+level+'>';return;}
+    const bm=t.match(/^[-*•]\s+(.+)$/);
+    if(bm){if(listMode!=='ul'){closeList();html+='<div class="zarRichList zarRichListUl">';listMode='ul';}html+='<div class="zarRichListItem"><span>•</span><span>'+zarInlineRich(bm[1])+'</span></div>';return;}
+    const nm=t.match(/^\d+[.)]\s+(.+)$/);
+    if(nm){if(listMode!=='ol'){closeList();html+='<div class="zarRichList zarRichListOl">';listMode='ol';}html+='<div class="zarRichListItem"><span class="zarRichNumber">'+t.match(/^\d+/)[0]+'</span><span>'+zarInlineRich(nm[1])+'</span></div>';return;}
+    closeList();
+    html+='<p>'+zarInlineRich(t)+'</p>';
+  });
+  closeList();
+  return html;
+}
+function zarEmailInitials(value){
+  const clean=String(value||'').replace(/<[^>]+>/g,'').replace(/\([^)]*\)/g,'').trim();
+  const words=clean.split(/\s+/).filter(Boolean);
+  return ((words[0]?.[0]||'Z')+(words[1]?.[0]||'')).toUpperCase().slice(0,2);
+}
+function zarEmailAddress(value){
+  const s=String(value||'').trim();
+  const m=s.match(/^(.*?)\s*<([^>]+)>$/);
+  if(m)return '<b>'+zarInlineRich(m[1].trim())+'</b><small>'+zarInlineRich(m[2])+'</small>';
+  return '<b>'+zarInlineRich(s||'Sin datos')+'</b>';
+}
+function zarRenderEmailBody(text){return '<div class="zarEmailBody">'+zarRenderRichText(text,true)+'</div>';}
+function zarEmailHeader(kind,p){
+  const label=kind==='draft'?'BORRADOR · NO ENVIADO':kind==='summary'?'ANÁLISIS DE CORREO':'CORREO DE GMAIL';
+  const sub=kind==='draft'?'Respuesta preparada por Zar · requiere confirmación para enviar':kind==='summary'?'Resumen estructurado del contenido del correo':'Correo leído desde tu cuenta de Gmail';
+  return '<div class="zarEmailCardHead"><div class="zarEmailAvatar">'+(kind==='draft'?'✎':'✉')+'</div><div class="zarEmailHeadText"><span class="zarEmailEyebrow">'+label+'</span><strong>'+zarInlineRich(p.subject||'(sin asunto)')+'</strong><small>'+sub+'</small></div><span class="zarEmailStatus">'+(kind==='draft'?'PENDIENTE':'GMAIL')+'</span></div>';
+}
+function zarRenderEmailMeta(p){
+  return '<div class="zarEmailMetaGrid">'+
+    '<div><span>De</span>'+zarEmailAddress(p.from||'')+'</div>'+
+    (p.to?'<div><span>Para</span>'+zarEmailAddress(p.to)+'</div>':'')+
+    (p.date?'<div><span>Fecha</span><b>'+zarInlineRich(p.date)+'</b></div>':'')+
+    '</div>';
+}
+function zarRenderEmailDraft(d){
+  const warning=d.noreply?'<div class="zarEmailWarning">⚠️ El destinatario parece una dirección automática (noreply). Puede no aceptar respuestas.</div>':'';
+  const actions=d.question?'<div class="zarEmailActions"><button type="button" class="zarEmailPrimary" onclick="usePrompt(\'sí\')">Enviar</button><button type="button" class="zarEmailSecondary" onclick="usePrompt(\'cancelar\')">Cancelar</button></div>':'';
+  return '<section class="zarEmailCard zarEmailDraftCard">'+zarEmailHeader('draft',d)+
+    '<div class="zarEmailField"><span>PARA</span><b>'+zarInlineRich(d.to||'')+'</b></div>'+warning+
+    '<div class="zarEmailField"><span>ASUNTO</span><b>'+zarInlineRich(d.subject||'(sin asunto)')+'</b></div>'+
+    zarRenderEmailBody(d.body||'')+actions+
+    '<div class="zarEmailFoot">El correo no se envía automáticamente. Zar espera tu confirmación.</div></section>';
+}
+function zarRenderEmailCard(payload){
+  const p=payload||{};
+  if(p.kind==='draft')return zarRenderEmailDraft(p);
+  if(p.kind==='summary')return '<section class="zarEmailCard">'+zarEmailHeader('summary',p)+zarRenderEmailMeta(p)+'<div class="zarEmailSectionLabel">RESUMEN</div>'+zarRenderEmailBody(p.summary||'')+'</section>';
+  if(p.kind==='compound'){
+    return '<section class="zarEmailCard zarEmailCompound">'+zarEmailHeader('message',p)+zarRenderEmailMeta(p)+
+      '<div class="zarEmailSectionLabel">CONTENIDO DEL CORREO</div>'+zarRenderEmailBody(p.body||'')+
+      (p.summary?'<div class="zarEmailDivider"></div><div class="zarEmailSectionLabel">QUÉ QUIERE / QUÉ DICE</div>'+zarRenderEmailBody(p.summary):'')+
+      (p.draft?'<div class="zarEmailDivider"></div>'+zarRenderEmailDraft(p.draft):'')+'</section>';
+  }
+  return '<section class="zarEmailCard">'+zarEmailHeader('message',p)+zarRenderEmailMeta(p)+'<div class="zarEmailSectionLabel">MENSAJE</div>'+zarRenderEmailBody(p.body||'')+'<div class="zarEmailFoot">Puedes decir «resúmelo», «respóndele…» o pedir una acción sobre este correo.</div></section>';
+}
+function zarRenderAssistantContent(value){
+  const text=String(value??'').trim();
+  if(text.startsWith('ZAR_EMAIL_CARD::')){
+    try{return zarRenderEmailCard(JSON.parse(text.slice('ZAR_EMAIL_CARD::'.length)));}catch(e){}
+  }
+  return '<div class="zarRichResponse">'+zarRenderRichText(text)+'</div>';
+}
+function zarSpeakableText(value){
+  const text=String(value??'').trim();
+  if(text.startsWith('ZAR_EMAIL_CARD::')){
+    try{
+      const p=JSON.parse(text.slice('ZAR_EMAIL_CARD::'.length));
+      if(p.kind==='draft')return 'He preparado un borrador para '+(p.to||'')+'. Asunto: '+(p.subject||'')+'. No lo he enviado. ¿Quieres que lo envíe?';
+      return (p.subject?'Correo: '+p.subject+'. ':'')+(p.summary||p.body||'');
+    }catch(e){}
+  }
+  return text.replace(/[*_`#]/g,'');
+}
+
 function addChatMessage(role,text){
   const value=String(text||'').trim();
   if(!value)return;
   const div=document.createElement('div');
   div.className='msg '+(role==='user'?'user':'assistant');
-  if(role==='assistant'&&typeof linkify==='function')div.innerHTML=linkify(value);
+  if(role==='assistant')div.innerHTML=zarRenderAssistantContent(value);
   else div.textContent=value;
   chat.appendChild(div);
   document.getElementById('welcome').style.display='none';
@@ -1521,7 +1625,7 @@ async function send(){
         pending?.remove();
         addChatMessage('assistant',st.reply||'Listo.');
         if(st.action?.url){setTimeout(()=>{try{window.open(st.action.url,'_blank','noopener')}catch(e){}},80)}
-        speak(st.reply||'Listo.');
+        speak(zarSpeakableText(st.reply||'Listo.'));
         return;
       }
       if(st.status==='error')throw new Error(st.error||'Zar no pudo completar la petición.');
@@ -2012,6 +2116,17 @@ input,textarea,select,.field input,.field select,.vcSelect,.filesToolbar input,.
 
 /* v30.2.6 · Backup selector */
 .backupPicker{position:fixed;inset:0;z-index:10050;background:rgba(0,0,0,.76);backdrop-filter:blur(8px);display:grid;place-items:center;padding:18px}.backupPicker[hidden]{display:none}.backupPickerCard{width:min(760px,96vw);max-height:min(86vh,760px);overflow:auto;border:1px solid #684b2c;border-radius:20px;background:linear-gradient(180deg,#1b140f,#0e0a08);box-shadow:0 24px 70px rgba(0,0,0,.55);padding:20px}.backupPickerHead{display:flex;justify-content:space-between;gap:16px;align-items:flex-start}.backupPickerHead h2{margin:0;color:#ead0a6;font:700 22px Georgia,serif}.backupPickerHead p{margin:6px 0 0;color:#9a8c7e;font-size:10px;line-height:1.5}.backupPickerClose{width:34px;height:34px;border-radius:10px;border:1px solid #59412b;background:#120d09;color:#dfc49d;cursor:pointer}.backupPickerNotice{margin:14px 0;padding:10px 12px;border:1px solid #493522;border-radius:12px;background:rgba(216,173,112,.06);color:#c9b69d;font-size:10px;line-height:1.5}.backupPickerToolbar{display:flex;justify-content:space-between;align-items:center;gap:10px;margin:12px 0}.backupPickerToolbar label{display:flex;align-items:center;gap:8px;color:#eadfd2;font-size:11px;font-weight:700}.backupPickerToolbar button{border:1px solid #5c432a;background:#17100c;color:#d9bd91;border-radius:9px;padding:6px 9px;font-size:9px;cursor:pointer}.backupPickerGrid{display:grid;grid-template-columns:1fr 1fr;gap:9px}.backupPickGroup{border:1px solid #3f2f22;border-radius:14px;padding:11px;background:rgba(15,10,8,.62)}.backupPickGroup>label{display:flex;align-items:center;gap:9px;color:#ead8c0;font-size:11px;font-weight:800}.backupPickGroup small{display:block;color:#84776d;font-size:8px;margin:4px 0 7px 25px}.backupPickSub{margin-left:25px;display:grid;gap:5px}.backupPickSub label{display:flex;align-items:center;gap:7px;color:#bdb0a2;font-size:9px}.backupPickSub input,.backupPickGroup input,.backupPickerToolbar input{accent-color:#d8ad70}.backupPickerFoot{display:flex;justify-content:flex-end;gap:8px;margin-top:15px;padding-top:13px;border-top:1px solid #34271e}.backupPickerFoot button{padding:9px 13px;border-radius:10px;border:1px solid #5a422b;background:#17100c;color:#ddc39e;font-weight:700;font-size:10px;cursor:pointer}.backupPickerFoot .primary{background:linear-gradient(180deg,#e1b971,#b78343);color:#17100b;border-color:#d4a866}.backupRunningNote{margin-top:10px;color:#dcbf92;font-size:9px;display:none}.backupPicker.isRunning .backupRunningNote{display:block}.backupPicker.isRunning .primary{opacity:.55;pointer-events:none}@media(max-width:620px){.backupPickerGrid{grid-template-columns:1fr}.backupPickerCard{padding:15px}}
+
+/* ZAR v30.2.8 · Gmail premium reading / drafting surface */
+.zarEmailCard{margin:2px 0 8px;border:1px solid rgba(184,139,85,.52);border-radius:18px;overflow:hidden;background:linear-gradient(155deg,rgba(30,21,15,.98),rgba(10,8,7,.99));box-shadow:0 18px 46px rgba(0,0,0,.30)}
+.zarEmailCardHead{display:flex;align-items:center;gap:12px;padding:15px 17px;border-bottom:1px solid rgba(101,70,42,.48);background:radial-gradient(circle at 0 0,rgba(216,173,112,.11),transparent 40%),rgba(216,173,112,.025)}
+.zarEmailAvatar{width:38px;height:38px;flex:0 0 38px;display:grid;place-items:center;border-radius:12px;border:1px solid rgba(216,173,112,.35);background:rgba(216,173,112,.08);color:#e8c58f;font-size:18px}
+.zarEmailHeadText{min-width:0;display:grid;gap:2px;flex:1}.zarEmailHeadText strong{font:700 17px/1.25 Georgia,serif;color:#f0ddc0;overflow-wrap:anywhere}.zarEmailHeadText small{font-size:9px;color:#85776c;line-height:1.35}.zarEmailEyebrow{font-size:8px;letter-spacing:.14em;font-weight:900;color:#c49b63}.zarEmailStatus{font-size:7px;letter-spacing:.12em;font-weight:900;color:#d9bc91;border:1px solid rgba(216,173,112,.27);border-radius:999px;padding:5px 7px;white-space:nowrap}
+.zarEmailMetaGrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;padding:12px 16px;border-bottom:1px solid rgba(101,70,42,.28)}.zarEmailMetaGrid>div{min-width:0;padding:9px 10px;border:1px solid rgba(101,70,42,.34);border-radius:10px;background:rgba(7,6,5,.34)}.zarEmailMetaGrid span,.zarEmailField span{display:block;font-size:7px;letter-spacing:.12em;font-weight:900;color:#796e64;margin-bottom:4px}.zarEmailMetaGrid b{display:block;color:#e4d7c8;font-size:10px;line-height:1.35;overflow-wrap:anywhere}.zarEmailMetaGrid small{display:block;color:#8e8177;font-size:8px;margin-top:2px;overflow-wrap:anywhere}
+.zarEmailSectionLabel{padding:14px 17px 0;font-size:8px;letter-spacing:.16em;font-weight:900;color:#9f825e}.zarEmailBody{padding:13px 17px 17px;color:#d8cabe;font-size:12px;line-height:1.72;overflow-wrap:anywhere}.zarEmailBody p{margin:0 0 10px}.zarEmailBody p:last-child{margin-bottom:0}.zarEmailBody h1,.zarEmailBody h2,.zarEmailBody h3,.zarEmailBody h4{font-family:Georgia,serif;color:#edd4ae;line-height:1.25;margin:17px 0 8px}.zarEmailBody h1{font-size:20px}.zarEmailBody h2{font-size:17px}.zarEmailBody h3{font-size:14px}.zarEmailBody h4{font-size:12px}.zarEmailBody strong{color:#f2dfc4;font-weight:800}.zarEmailBody em{color:#cbb79e}.zarEmailBody code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;color:#e3bd80;background:#080706;border:1px solid rgba(101,70,42,.42);border-radius:5px;padding:1px 4px}.zarEmailBody a,.zarRichResponse a{color:#e4b86f;text-decoration:none;border-bottom:1px solid rgba(228,184,111,.25)}.zarEmailBody a:hover,.zarRichResponse a:hover{border-color:#e4b86f}.zarEmailBody hr{border:0;border-top:1px solid rgba(101,70,42,.42);margin:15px 0}.zarRichList{display:grid;gap:6px;margin:7px 0 13px}.zarRichListItem{display:grid;grid-template-columns:20px minmax(0,1fr);gap:7px;align-items:start}.zarRichListItem>span:first-child{color:#d8ad70;font-weight:900}.zarRichNumber{font-size:9px;text-align:center;padding-top:2px;color:#a98a61!important}
+.zarEmailField{padding:11px 17px;border-bottom:1px solid rgba(101,70,42,.26)}.zarEmailField b{display:block;color:#e8dac8;font-size:11px;line-height:1.4;overflow-wrap:anywhere}.zarEmailWarning{margin:12px 17px 0;padding:9px 11px;border:1px solid rgba(213,153,87,.36);border-radius:10px;background:rgba(213,153,87,.06);color:#d8b98d;font-size:9px;line-height:1.45}.zarEmailDraftCard .zarEmailBody{padding-top:15px}.zarEmailActions{display:flex;gap:8px;padding:0 17px 13px}.zarEmailActions button{height:35px;padding:0 15px;border-radius:9px;font-weight:850;cursor:pointer}.zarEmailPrimary{border:1px solid #eac68d;background:linear-gradient(145deg,#e1b974,#a96e35);color:#211307}.zarEmailSecondary{border:1px solid rgba(184,139,85,.48);background:rgba(20,14,10,.8);color:#d9c4a6}.zarEmailFoot{padding:10px 17px;border-top:1px solid rgba(101,70,42,.28);color:#766b61;font-size:8px;line-height:1.45}.zarEmailDivider{height:1px;background:rgba(101,70,42,.42);margin:3px 17px}.zarEmailCompound>.zarEmailDraftCard{margin:0 12px 12px;border-color:rgba(216,173,112,.38);box-shadow:none}.zarEmailCompound>.zarEmailDraftCard .zarEmailCardHead{background:rgba(216,173,112,.035)}
+.zarRichResponse{color:#d8cabe;font-size:12px;line-height:1.7}.zarRichResponse p{margin:0 0 10px}.zarRichResponse p:last-child{margin-bottom:0}.zarRichResponse h1,.zarRichResponse h2,.zarRichResponse h3,.zarRichResponse h4{font-family:Georgia,serif;color:#ecd3ad;line-height:1.25;margin:16px 0 7px}.zarRichResponse h1{font-size:20px}.zarRichResponse h2{font-size:17px}.zarRichResponse h3{font-size:14px}.zarRichResponse h4{font-size:12px}.zarRichResponse strong{color:#f1ddc0}.zarRichResponse code{background:#080706;border:1px solid rgba(101,70,42,.42);border-radius:5px;padding:1px 4px;color:#e1bb7d}
+@media(max-width:720px){.zarEmailMetaGrid{grid-template-columns:1fr}.zarEmailCardHead{align-items:flex-start}.zarEmailStatus{margin-left:auto}.zarEmailHeadText strong{font-size:15px}.zarEmailBody{font-size:11px;padding:12px 14px 15px}.zarEmailField{padding-left:14px;padding-right:14px}.zarEmailActions{padding-left:14px;padding-right:14px}.zarEmailFoot{padding-left:14px;padding-right:14px}}
 </style>
 <script id="zar-v2934-button-reliability-js">
 (function(){

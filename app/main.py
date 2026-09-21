@@ -292,19 +292,56 @@ def _is_noreply(address):
 
 
 def _email_card(draft, question=True):
+    """Devuelve una tarjeta de correo estructurada para que la UI la renderice sin Markdown crudo."""
     blocked = _is_noreply(draft.get("to", ""))
-    warning = "⚠️ Atención: el destinatario parece una dirección automática (noreply). Es posible que no acepte respuestas. Zar no lo enviará con un simple «sí»; usa «enviar de todos modos» solo si estás seguro." if blocked else ""
-    tail = (
-        "\n\n" + warning if warning else ""
-    )
-    if question:
-        tail += "\n\n¿Quieres que la envíe?\n\nResponde «sí» para enviarla o «cancelar» para descartarla."
-    return (
-        f"✉️ He preparado esta respuesta, pero NO la he enviado.\n\n"
-        f"Para: {draft['to']}\n"
-        f"Asunto: {draft['subject']}\n\n"
-        f"{draft['body']}" + tail
-    )
+    payload = {
+        "kind": "draft",
+        "to": draft.get("to", ""),
+        "subject": draft.get("subject", ""),
+        "body": draft.get("body", ""),
+        "question": bool(question),
+        "noreply": bool(blocked),
+        "reply_to_message_id": draft.get("reply_to_message_id", ""),
+        "thread_id": draft.get("thread_id", ""),
+    }
+    return "ZAR_EMAIL_CARD::" + json.dumps(payload, ensure_ascii=False)
+
+
+def _email_message_card(email, summary=None, draft=None, title="Correo de Gmail"):
+    """Construye un payload visual para correo leído, resumen y/o borrador."""
+    payload = {
+        "kind": "message",
+        "title": title,
+        "from": email.get("from", ""),
+        "to": email.get("to", ""),
+        "subject": email.get("subject", "") or "(sin asunto)",
+        "date": email.get("date", ""),
+        "body": email.get("text", ""),
+    }
+    if summary is not None:
+        payload["summary"] = summary
+    if draft is not None:
+        payload["draft"] = {
+            "to": draft.get("to", ""),
+            "subject": draft.get("subject", ""),
+            "body": draft.get("body", ""),
+            "question": True,
+            "noreply": bool(_is_noreply(draft.get("to", ""))),
+        }
+        payload["kind"] = "compound"
+    return "ZAR_EMAIL_CARD::" + json.dumps(payload, ensure_ascii=False)
+
+
+def _email_summary_card(email, summary):
+    payload = {
+        "kind": "summary",
+        "from": email.get("from", ""),
+        "to": email.get("to", ""),
+        "subject": email.get("subject", "") or "(sin asunto)",
+        "date": email.get("date", ""),
+        "summary": summary or "",
+    }
+    return "ZAR_EMAIL_CARD::" + json.dumps(payload, ensure_ascii=False)
 
 
 def _pending_email_from(draft):
@@ -481,7 +518,7 @@ def oauth2callback():
                 set_current_user(new_uid)
         except Exception:
             pass
-        # v30.2.7: una conexión/reautorización de Google NO inicia una copia automáticamente.
+        # v30.2.8: una conexión/reautorización de Google NO inicia una copia automáticamente.
         # La copia debe ser siempre explícita para que el usuario pueda seleccionar qué guardar.
         _clear_oauth_pending('google', state)
         session.pop("oauth_provider", None)
@@ -504,7 +541,7 @@ def _google_login_page(status=None):
 @app.get("/")
 def home():
     status = auth_status()
-    # v30.2.7: abrir Zar o tener Google conectado NO inicia copias automáticamente.
+    # v30.2.8: abrir Zar o tener Google conectado NO inicia copias automáticamente.
     # El usuario debe pulsar "Configurar y crear copia" y elegir el contenido.
     if not status.get("connected"):
         return _google_login_page(status)
@@ -1416,11 +1453,7 @@ def _process_chat_message(msg):
                 draft = draft_reply_email(msg_data, intent.get("instruction", ""))
                 _set_pending(_pending_email_from(draft))
                 set_focus("email_draft", draft.get("subject") or "borrador actual")
-                reply = (
-                    "📧 He mirado tu último correo.\n\n"
-                    "📝 Qué quiere / qué dice:\n" + summary.strip() + "\n\n"
-                    + _email_card(draft, question=True)
-                )
+                reply = _email_message_card(msg_data, summary=summary.strip(), draft=draft, title="Correo de Gmail · análisis y respuesta")
         except Exception as exc:
             reply = f"No he podido completar la petición sobre el correo: {exc}"
 
@@ -1446,21 +1479,14 @@ def _process_chat_message(msg):
                 reply = "No he encontrado ningún correo en la bandeja de entrada."
             else:
                 _set_email(msg_data)
-                reply = (
-                    f"📧 He abierto tu último correo.\n\n"
-                    f"De: {msg_data.get('from','')}\n"
-                    f"Asunto: {msg_data.get('subject') or '(sin asunto)'}\n"
-                    f"Fecha: {msg_data.get('date','')}\n\n"
-                    f"{msg_data.get('text','')[:14000]}\n\n"
-                    "Puedes decirme «resúmelo» para que te haga un resumen."
-                )
+                reply = _email_message_card(msg_data, title="Correo de Gmail · lectura")
         except Exception as exc:
             reply = f"No he podido abrir el último correo: {exc}"
 
     elif isinstance(reply,str) and reply.startswith("DIRECT_GMAIL_SUMMARIZE::"):
         if LAST_EMAIL:
             try:
-                reply = "📝 Resumen del correo:\n\n" + summarize_email(LAST_EMAIL)
+                reply = _email_summary_card(LAST_EMAIL, summarize_email(LAST_EMAIL))
             except Exception as exc:
                 reply = f"No he podido resumir el correo: {exc}"
         else:
