@@ -1,4 +1,4 @@
-# ZAR v30.10.3 — aprendizaje con búsqueda en cascada
+# ZAR v30.10.4 — aprendizaje con búsqueda en cascada
 
 Esta versión mantiene la arquitectura de aprendizaje persistente de v30.10.2 y corrige el caso en que una consulta de investigación devuelve cero fuentes o un proveedor deja de responder.
 
