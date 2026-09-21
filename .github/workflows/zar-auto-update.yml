@@ -4,7 +4,14 @@ on:
   push:
     paths:
       - "*.zip"
+
   workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Solo comprobar persistencia y protección, sin modificar el repositorio"
+        required: false
+        default: true
+        type: boolean
 
 permissions:
   contents: write
@@ -13,6 +20,7 @@ jobs:
   update:
     name: Extraer ZIP y actualizar repositorio
     runs-on: ubuntu-latest
+
     if: ${{ github.event_name == 'workflow_dispatch' || !contains(github.event.head_commit.message, '[zar-auto-update]') }}
 
     steps:
@@ -21,7 +29,84 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Determinar modo de ejecución
+        shell: bash
+        run: |
+          set -e
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "DRY_RUN=${{ inputs.dry_run }}" >> "$GITHUB_ENV"
+          else
+            echo "DRY_RUN=false" >> "$GITHUB_ENV"
+          fi
+
+          echo "Modo DRY_RUN configurado."
+
+      - name: Comprobar protección del repositorio
+        shell: bash
+        run: |
+          set -e
+
+          echo "=== COMPROBACIÓN DE PERSISTENCIA ==="
+
+          if [ ! -f ".github/workflows/zar-auto-update.yml" ]; then
+            echo "ERROR: falta el workflow permanente."
+            exit 1
+          fi
+
+          if [ ! -f ".gitignore" ]; then
+            echo "ERROR: falta .gitignore."
+            exit 1
+          fi
+
+          if [ ! -f "app/__init__.py" ]; then
+            echo "ERROR: falta app/__init__.py."
+            exit 1
+          fi
+
+          echo ""
+          echo "=== COMPROBANDO .gitignore ==="
+
+          for pattern in \
+            "users/" \
+            "backups/" \
+            "jobs/" \
+            "audio_studio/" \
+            "video_creator/" \
+            "*.sqlite3" \
+            "*.sqlite" \
+            "*.db"; do
+
+            if grep -Fqx "$pattern" .gitignore; then
+              echo "OK: $pattern"
+            else
+              echo "ERROR: falta protección para $pattern"
+              exit 1
+            fi
+          done
+
+          echo ""
+          echo "=== COMPROBANDO app/__init__.py ==="
+
+          if grep -q "RAILWAY_VOLUME_MOUNT_PATH" app/__init__.py; then
+            echo "OK: app utiliza RAILWAY_VOLUME_MOUNT_PATH"
+          else
+            echo "ERROR: app/__init__.py no contiene RAILWAY_VOLUME_MOUNT_PATH"
+            exit 1
+          fi
+
+          if grep -q "DATA_DIR" app/__init__.py; then
+            echo "OK: DATA_DIR configurado"
+          else
+            echo "ERROR: DATA_DIR no está configurado"
+            exit 1
+          fi
+
+          echo ""
+          echo "PERSISTENCIA DEL REPOSITORIO: OK"
+
       - name: Comprobar ZIP
+        if: ${{ env.DRY_RUN != 'true' }}
         shell: bash
         run: |
           set -e
@@ -36,22 +121,8 @@ jobs:
           echo "ZIP detectado: $ZIP_FILE"
           echo "ZIP_FILE=$ZIP_FILE" >> "$GITHUB_ENV"
 
-      - name: Guardar el workflow permanente
-        shell: bash
-        run: |
-          set -e
-
-          WORKFLOW=".github/workflows/zar-auto-update.yml"
-
-          if [ ! -f "$WORKFLOW" ]; then
-            echo "ERROR: Falta el workflow permanente: $WORKFLOW"
-            exit 1
-          fi
-
-          mkdir -p /tmp/zar-protect
-          cp "$WORKFLOW" /tmp/zar-protect/zar-auto-update.yml
-
-      - name: Extraer ZIP
+      - name: Preparar extracción
+        if: ${{ env.DRY_RUN != 'true' }}
         shell: bash
         run: |
           set -e
@@ -64,31 +135,99 @@ jobs:
           echo "ZIP extraído correctamente."
 
       - name: Detectar carpeta raíz del ZIP
+        if: ${{ env.DRY_RUN != 'true' }}
         shell: bash
         run: |
           set -e
 
           ROOT="/tmp/zar-extracted"
 
-          DIRECTORIES=("$ROOT"/*/)
-          FILES=("$ROOT"/*)
+          DIRECTORY_COUNT="$(find "$ROOT" -mindepth 1 -maxdepth 1 -type d | wc -l)"
+          FILE_COUNT="$(find "$ROOT" -mindepth 1 -maxdepth 1 -type f | wc -l)"
 
-          if [ ${#DIRECTORIES[@]} -eq 1 ] && [ ${#FILES[@]} -eq 1 ]; then
-            SOURCE_DIR="${DIRECTORIES[0]%/}"
+          if [ "$DIRECTORY_COUNT" = "1" ] && [ "$FILE_COUNT" = "0" ]; then
+            SOURCE_DIR="$(find "$ROOT" -mindepth 1 -maxdepth 1 -type d | head -n 1)"
           else
             SOURCE_DIR="$ROOT"
           fi
 
           echo "SOURCE_DIR=$SOURCE_DIR" >> "$GITHUB_ENV"
-          echo "Contenido usado como raíz de ZAR: $SOURCE_DIR"
 
-      - name: Proteger datos persistentes de ZAR
+          echo "Raíz detectada: $SOURCE_DIR"
+
+      - name: Auditar estado runtime del ZIP
+        if: ${{ env.DRY_RUN != 'true' }}
         shell: bash
         run: |
           set -e
 
-          # El estado de ZAR vive en el Volume de Railway (/data).
-          # Nunca debe formar parte de una release de código.
+          echo "=== AUDITORÍA DEL ZIP ==="
+
+          PROTECTED_DIRS=(
+            "data"
+            "users"
+            "backups"
+            "jobs"
+            "audio_studio"
+            "video_creator"
+          )
+
+          for item in "${PROTECTED_DIRS[@]}"; do
+            if [ -e "$SOURCE_DIR/$item" ]; then
+              echo "ADVERTENCIA: el ZIP contiene estado runtime: $item"
+            else
+              echo "OK: $item no está dentro del ZIP"
+            fi
+          done
+
+          echo ""
+          echo "=== ARCHIVOS SENSIBLES ==="
+
+          find "$SOURCE_DIR" -type f \( \
+            -name '*.sqlite3' -o \
+            -name '*.sqlite' -o \
+            -name '*.db' -o \
+            -name 'google_token.json' -o \
+            -name 'youtube_token.json' -o \
+            -name 'oauth_pending.json' \
+          \) -print
+
+          echo ""
+          echo "Auditoría completada."
+
+      - name: Modo seguro - finalizar sin modificar repositorio
+        if: ${{ env.DRY_RUN == 'true' }}
+        shell: bash
+        run: |
+          set -e
+
+          echo ""
+          echo "=============================================="
+          echo " ZAR DRY-RUN COMPLETADO"
+          echo "=============================================="
+          echo ""
+          echo "No se ha modificado el repositorio."
+          echo "No se ha eliminado ningún archivo."
+          echo "No se ha realizado ningún git push."
+          echo ""
+          echo "La protección de persistencia está activa."
+          echo ""
+
+      - name: Guardar workflow permanente
+        if: ${{ env.DRY_RUN != 'true' }}
+        shell: bash
+        run: |
+          set -e
+
+          mkdir -p /tmp/zar-protect
+          cp ".github/workflows/zar-auto-update.yml" \
+             "/tmp/zar-protect/zar-auto-update.yml"
+
+      - name: Proteger datos persistentes
+        if: ${{ env.DRY_RUN != 'true' }}
+        shell: bash
+        run: |
+          set -e
 
           PROTECTED_DIRS=(
             "data"
@@ -106,7 +245,6 @@ jobs:
             fi
           done
 
-          # Bases de datos, tokens y estado runtime nunca entran en una release.
           find "$SOURCE_DIR" -type f \( \
             -name '*.sqlite3' -o \
             -name '*.sqlite' -o \
@@ -116,9 +254,8 @@ jobs:
             -name 'oauth_pending.json' \
           \) -print -delete
 
-          echo "Protección de datos persistentes completada."
-
-      - name: Reemplazar el contenido del repositorio
+      - name: Reemplazar contenido del repositorio
+        if: ${{ env.DRY_RUN != 'true' }}
         shell: bash
         run: |
           set -e
@@ -129,49 +266,44 @@ jobs:
 
           find . -type f -name '*.zip' -delete
 
-          # El workflow permanente siempre se conserva.
           rm -rf .github
           mkdir -p .github/workflows
-          cp /tmp/zar-protect/zar-auto-update.yml .github/workflows/zar-auto-update.yml
+
+          cp "/tmp/zar-protect/zar-auto-update.yml" \
+             ".github/workflows/zar-auto-update.yml"
 
           find . -type d -name '__pycache__' -prune -exec rm -rf {} +
           find . -type f \( -name '*.pyc' -o -name '*.pyo' \) -delete
           find . -type f -name '.DS_Store' -delete
 
       - name: Verificar resultado
+        if: ${{ env.DRY_RUN != 'true' }}
         shell: bash
         run: |
           set -e
 
-          if [ ! -f "requirements.txt" ]; then
-            echo "WARNING: No existe requirements.txt"
-          fi
-
-          if [ ! -d "app" ]; then
-            echo "WARNING: No existe la carpeta app/"
-          fi
-
           if [ ! -f ".github/workflows/zar-auto-update.yml" ]; then
-            echo "ERROR: Se perdió el workflow permanente."
+            echo "ERROR: se perdió el workflow permanente."
             exit 1
           fi
 
           for item in data users backups jobs audio_studio video_creator; do
             if [ -e "$item" ]; then
-              echo "ERROR: El estado runtime quedó dentro del repositorio: $item"
+              echo "ERROR: estado runtime dentro del repositorio: $item"
               exit 1
             fi
           done
 
-          echo "OK: el almacenamiento runtime permanece fuera del repositorio."
+          echo "OK: código separado del estado persistente."
 
       - name: Commit y actualizar main
+        if: ${{ env.DRY_RUN != 'true' }}
         shell: bash
         run: |
           set -e
 
           git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git.config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
           git add -A
 
