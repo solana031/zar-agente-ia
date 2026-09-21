@@ -43,7 +43,7 @@
     list.innerHTML=skills.map(s=>`<article class="zarSkillCard">
       <div class="zarSkillIcon">🧩</div><div><div class="zarSkillTitle">${esc(s.name)}</div><div class="zarSkillDesc">${esc(s.description||'Sin descripción')}</div><div class="zarSkillMeta"><span>${(s.steps||[]).length} pasos</span><span>${Number(s.use_count||0)} usos</span><span class="${s.enabled?'ok':'off'}">${s.enabled?'ACTIVA':'PAUSADA'}</span></div></div>
       <div class="zarSkillActions"><button data-act="run" data-id="${esc(s.id)}">▶ Ejecutar</button><button data-act="edit" data-id="${esc(s.id)}">Editar</button><button data-act="toggle" data-id="${esc(s.id)}">${s.enabled?'Pausar':'Activar'}</button><button data-act="del" data-id="${esc(s.id)}">Eliminar</button></div>
-      <div class="zarSkillRunBox" id="run-${esc(s.id)}"><textarea placeholder="Indica el trabajo concreto que quieres hacer con esta habilidad…"></textarea><div class="zarSkillRunActions"><button data-act="cancelrun" data-id="${esc(s.id)}">Cancelar</button><button class="zarSkillPrimary" data-act="confirmrun" data-id="${esc(s.id)}">Ejecutar ahora</button></div><div class="zarSkillResult" hidden></div></div>
+      <div class="zarSkillRunBox" id="run-${esc(s.id)}"><label class="zarSkillRunLabel">Trabajo concreto <span>· qué quieres que haga ZAR con esta habilidad</span></label><textarea aria-label="Trabajo concreto para la habilidad" placeholder="Ej.: prepara un informe breve sobre cómo está funcionando ZAR…"></textarea><div class="zarSkillRunActions"><span class="zarSkillRunStatus">La habilidad se ejecutará con los pasos y herramientas guardados.</span><button data-act="cancelrun" data-id="${esc(s.id)}">Cancelar</button><button class="zarSkillPrimary" data-act="confirmrun" data-id="${esc(s.id)}">▶ Ejecutar ahora</button></div><div class="zarSkillResult" hidden></div></div>
     </article>`).join('');
     list.querySelectorAll('button[data-act]').forEach(b=>b.onclick=()=>skillAction(b.dataset.act,b.dataset.id));
   }
@@ -76,10 +76,20 @@
     if(act==='run'){card?.classList.add('open');card?.querySelector('textarea')?.focus();return}
     if(act==='cancelrun'){card?.classList.remove('open');return}
     if(act==='confirmrun'){
-      const input=card?.querySelector('textarea')?.value.trim()||''; if(!input){alert('Indica qué quieres hacer con esta habilidad.');return}
-      const resultBox=card.querySelector('.zarSkillResult'); resultBox.hidden=false; resultBox.textContent='Ejecutando habilidad…';
-      try{const data=await api('/api/skills/'+encodeURIComponent(id)+'/execute',{method:'POST',body:JSON.stringify({message:input})});resultBox.textContent=data.result||data.message||'Habilidad ejecutada correctamente.';await loadSkills();}
-      catch(e){resultBox.textContent='⚠️ '+e.message}
+      const input=card?.querySelector('textarea')?.value.trim()||'';
+      const resultBox=card?.querySelector('.zarSkillResult');
+      if(!input){
+        resultBox.hidden=false; resultBox.className='zarSkillResult error'; resultBox.textContent='Escribe primero qué quieres que haga ZAR con esta habilidad.'; return;
+      }
+      card.classList.add('busy');
+      resultBox.hidden=false; resultBox.className='zarSkillResult'; resultBox.textContent='⏳ Ejecutando habilidad…';
+      try{
+        const data=await api('/api/skills/'+encodeURIComponent(id)+'/execute',{method:'POST',body:JSON.stringify({message:input})});
+        resultBox.className='zarSkillResult success'; resultBox.textContent=data.result||data.message||'Habilidad ejecutada correctamente.';
+        await loadSkills();
+      }catch(e){
+        resultBox.className='zarSkillResult error'; resultBox.textContent='⚠️ '+e.message;
+      }finally{card.classList.remove('busy');}
     }
   }
 
