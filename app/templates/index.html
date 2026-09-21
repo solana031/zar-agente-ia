@@ -123,7 +123,7 @@ body{background:radial-gradient(circle at 50% -10%,rgba(177,124,62,.18),transpar
 @media(max-width:900px){.homeActions{grid-template-columns:repeat(3,1fr)}.welcome{padding:8px 6px}.welcome h2{font-size:25px}}
 @media(max-width:720px){.content{padding-top:5px}.welcome{border-radius:20px;padding:7px 5px 9px}.zarHeroLogo{width:78px;height:78px}.zarHeroLogo img{padding:9px}.zarWordmark{font-size:20px;letter-spacing:.38em;padding-left:.38em}.zarTagline{font-size:6px}.welcome h2{font-size:23px;margin-top:7px}.welcome p{font-size:9px;line-height:1.35;max-width:330px}.homeActions{grid-template-columns:repeat(3,1fr);gap:6px;margin-top:8px}.homeActions button{min-height:59px;padding:7px 6px;border-radius:12px;grid-template-columns:21px 1fr;column-gap:5px}.homeActions span{font-size:16px}.homeActions b{font-size:8px}.homeActions small{font-size:6.5px}.chat{padding-top:3px}.top{box-shadow:0 4px 20px rgba(0,0,0,.20)}}
 
-/* ZAR 29.3.6 — enhanced productivity panels */
+/* ZAR 29.3.7 — enhanced productivity panels */
 .panel.zarEnhancedPanel{right:clamp(18px,18vw,306px);top:82px;width:min(760px,calc(100vw - 36px));max-height:calc(100vh - 150px);overflow:auto;padding:18px;border-radius:20px;background:linear-gradient(145deg,#15110d,#0d0b09 72%);box-shadow:0 24px 70px rgba(0,0,0,.62),inset 0 1px 0 rgba(255,255,255,.025)}
 .zarPanelHero{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:14px}.zarPanelHero h3{margin:0;color:#f0d5aa;font-size:17px}.zarPanelHero p{margin:4px 0 0;color:#8e8278;font-size:10px}.zarPanelClose{width:34px;height:34px;border-radius:10px;border:1px solid #3b2d22;background:#15100c;color:#d9c19f;cursor:pointer}
 .zarCalendarEnhanced{display:grid;grid-template-columns:minmax(0,1fr) 250px;gap:14px}.zarCalendarCard,.zarCalendarSide{border:1px solid #30251d;background:rgba(13,10,8,.8);border-radius:15px;padding:12px}.zarCalendarHeadEnhanced{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}.zarCalendarNav{display:flex;gap:5px}.zarCalendarNav button{min-width:34px}.zarDay{min-height:82px}.zarDay.selected{border-color:#c39152;box-shadow:inset 0 0 0 1px rgba(216,173,112,.12)}.zarCalendarForm{display:grid;gap:8px}.zarCalendarForm input,.zarCalendarForm textarea,.zarCalendarForm select{width:100%;box-sizing:border-box}.zarCalendarForm textarea{min-height:60px;resize:vertical}.zarCalendarForm .row{display:grid;grid-template-columns:1fr 1fr;gap:7px}.zarCalendarForm label{font-size:9px;color:#9b8e81}.zarCalendarEvents{max-height:390px;overflow:auto}.zarEventRowEnhanced{padding:9px 0;border-bottom:1px solid #251d17}.zarEventRowEnhanced strong{font-size:10px;color:#f0dfc8}.zarEventRowEnhanced small{display:block;color:#8e8278;margin-top:3px;font-size:8px}
@@ -135,7 +135,7 @@ body{background:radial-gradient(circle at 50% -10%,rgba(177,124,62,.18),transpar
 @media(max-width:560px){.panel.zarEnhancedPanel{right:6px;left:6px;padding:12px}.zarCalendarForm .row{grid-template-columns:1fr}.zarFileSidebar{grid-template-columns:repeat(2,1fr)}.zarWeatherGrid{grid-template-columns:1fr 1fr}.zarMemoryMiniGrid{grid-template-columns:1fr 1fr}}
 
 
-/* ZAR 29.3.6 — enhanced productivity panels */
+/* ZAR 29.3.7 — enhanced productivity panels */
 .panel.zarEnhancedPanel{right:clamp(18px,18vw,306px);top:82px;width:min(760px,calc(100vw - 36px));max-height:calc(100vh - 150px);overflow:auto;padding:18px;border-radius:20px;background:linear-gradient(145deg,#15110d,#0d0b09 72%);box-shadow:0 24px 70px rgba(0,0,0,.62),inset 0 1px 0 rgba(255,255,255,.025)}
 .zarPanelHero{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:14px}.zarPanelHero h3{margin:0;color:#f0d5aa;font-size:17px}.zarPanelHero p{margin:4px 0 0;color:#8e8278;font-size:10px}.zarPanelClose{width:34px;height:34px;border-radius:10px;border:1px solid #3b2d22;background:#15100c;color:#d9c19f;cursor:pointer}
 .zarCalendarEnhanced{display:grid;grid-template-columns:minmax(0,1fr) 250px;gap:14px}.zarCalendarCard,.zarCalendarSide{border:1px solid #30251d;background:rgba(13,10,8,.8);border-radius:15px;padding:12px}.zarCalendarHeadEnhanced{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}.zarCalendarNav{display:flex;gap:5px}.zarCalendarNav button{min-width:34px}.zarDay{min-height:82px}.zarDay.selected{border-color:#c39152;box-shadow:inset 0 0 0 1px rgba(216,173,112,.12)}.zarCalendarForm{display:grid;gap:8px}.zarCalendarForm input,.zarCalendarForm textarea,.zarCalendarForm select{width:100%;box-sizing:border-box}.zarCalendarForm textarea{min-height:60px;resize:vertical}.zarCalendarForm .row{display:grid;grid-template-columns:1fr 1fr;gap:7px}.zarCalendarForm label{font-size:9px;color:#9b8e81}.zarCalendarEvents{max-height:390px;overflow:auto}.zarEventRowEnhanced{padding:9px 0;border-bottom:1px solid #251d17}.zarEventRowEnhanced strong{font-size:10px;color:#f0dfc8}.zarEventRowEnhanced small{display:block;color:#8e8278;margin-top:3px;font-size:8px}
@@ -246,6 +246,165 @@ html,body,#commandPalette{overflow-x:hidden!important}
 .zarCalendar{padding:2px}.zarCalendarHead{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}.zarCalendarHead h3{margin:0;color:#ead0a6;font-size:14px}.zarCalendarNav{display:flex;gap:5px}.zarCalendarNav button{width:34px;height:30px}.zarCalendarWeek{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:4px}.zarCalendarWeek b{text-align:center;color:#8e8277;font-size:8px;padding:4px}.zarCalendarGrid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px}.zarDay{min-height:72px;border:1px solid #2d241d;border-radius:8px;background:#0d0b09;padding:5px;cursor:pointer;overflow:hidden}.zarDay.other{opacity:.38}.zarDay.today{border-color:#b88749;box-shadow:inset 0 0 0 1px rgba(216,173,112,.12)}.zarDayNum{font-size:9px;color:#b8aa9d;font-weight:800}.zarEvent{display:block;margin-top:3px;padding:3px 4px;border-radius:5px;background:#21170f;border-left:2px solid #c39152;color:#ead7bf;font-size:8px;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.zarCalendarList{margin-top:9px;border-top:1px solid #2d241d;padding-top:8px}.zarEventRow{padding:7px 0;border-bottom:1px solid #241d18;font-size:9px}.zarEventRow strong{color:#eee}.zarClock{display:grid;grid-template-columns:150px 1fr;gap:14px;align-items:center}.zarClockMobile{grid-template-columns:150px minmax(0,1fr)}.zarClockFace{width:150px;height:150px;border-radius:50%;border:2px solid #6f5132;background:radial-gradient(circle,#1b130d 0 62%,#0b0907 63%);position:relative;box-shadow:0 12px 35px rgba(0,0,0,.45),inset 0 0 0 8px #0d0a08}.zarClockFace:before{content:'';position:absolute;inset:11px;border:1px solid #4d3927;border-radius:50%}.zarHand{position:absolute;left:50%;bottom:50%;width:2px;height:36%;transform-origin:50% 100%;background:#e7d0ad;border-radius:2px;transform:translateX(-50%) rotate(0deg)}.zarHand.hour{width:4px;height:25%}.zarHand.second{width:1px;height:41%;background:#b88749}.zarClockCenter{position:absolute;width:8px;height:8px;border-radius:50%;background:#d8ad70;left:50%;top:50%;transform:translate(-50%,-50%)}.zarClockDigital{font-size:34px;font-family:Georgia,serif;color:#ead0a6;letter-spacing:.04em}.zarClockDate{margin-top:5px;color:#9e9287;font-size:10px}.zarFileExplorer{display:grid;gap:9px}.zarFileTop{display:flex;gap:6px;align-items:center}.zarFileTop input{flex:1}.zarFileStats{display:flex;gap:6px;flex-wrap:wrap}.zarFolderBar{display:flex;gap:5px;flex-wrap:wrap}.zarFolder{border:1px solid #3b2c20;background:#120e0b;color:#cfc1b3;border-radius:999px;padding:5px 8px;font-size:8px;cursor:pointer}.zarFolder.active{border-color:#b88749;color:#ead0a6;background:#21170f}.zarFileItem{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:8px;align-items:center;padding:9px;border:1px solid #30251d;border-radius:10px;background:#0f0c0a}.zarFileIcon{font-size:20px}.zarFileName{font-size:10px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.zarFileMeta,.zarFilePath{font-size:8px;color:#8e8278;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.zarFileActions{display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end}.zarPendingFiles{display:none;gap:5px;flex-wrap:wrap;margin:0 4px 2px}.zarPendingFiles.open{display:flex}.zarPendingChip{display:flex;align-items:center;gap:6px;max-width:100%;border:1px solid #57412b;background:#17110d;border-radius:9px;padding:5px 7px;font-size:9px}.zarPendingChip span{max-width:210px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.zarPendingChip button{width:20px;height:20px;border-radius:6px;border:1px solid #68422d;background:#20130e;color:#e9c9ad;padding:0}.zarUploadPanel{border:1px solid #4b3928;background:rgba(18,14,11,.92);border-radius:10px;padding:7px;margin:0 4px 3px;font-size:9px;color:#a99b8e;display:none}.zarUploadPanel.open{display:block}.zarUploadRow{display:flex;align-items:center;gap:7px;padding:4px 0}.zarUploadDot{width:7px;height:7px;border-radius:50%;background:#b88749;box-shadow:0 0 0 3px rgba(184,135,73,.12)}.zarSavedPath{color:#8d7e71;word-break:break-all}.zarSavedPath b{color:#d9c19f}.zarExplorerEmpty{padding:18px;text-align:center;color:#776e66;font-size:10px}.zarFileDetail{padding:10px;border:1px solid #30251d;border-radius:10px;background:#0d0b09;font-size:9px;line-height:1.5;color:#9d9288}.zarFileDetail b{color:#ead0a6}
 @media(max-width:720px){.zarClock{grid-template-columns:1fr;text-align:center}.zarClockFace{margin:0 auto}.zarClockDigital{font-size:29px}.zarDay{min-height:58px;padding:4px}.zarEvent{font-size:7px}.zarCalendarGrid{gap:3px}.zarCalendarWeek{gap:3px}.zarFileActions .btnSmall{padding:6px 7px}.zarPendingChip span{max-width:145px}}
 </style>
+
+<style id="zar-v29-3-7-visual">
+/* ZAR v29.3.7 — unified dark/gold visual system */
+:root{
+  --zar-bg-0:#070605;
+  --zar-bg-1:#0b0908;
+  --zar-bg-2:#100c09;
+  --zar-surface:#15100d;
+  --zar-surface-2:#1b1410;
+  --zar-line:#3f2e20;
+  --zar-line-strong:#65462a;
+  --zar-gold:#d8ad70;
+  --zar-gold-soft:#b88b55;
+  --zar-text:#f3eadf;
+  --zar-muted:#968a7e;
+  --zar-danger:#d87868;
+  color-scheme:dark;
+}
+body{
+  background:radial-gradient(circle at 50% 12%,rgba(95,63,30,.08),transparent 34%),var(--zar-bg-0)!important;
+  color:var(--zar-text);
+}
+input,textarea,select,button{
+  font-family:inherit;
+}
+input,textarea,select{
+  color:var(--zar-text)!important;
+  background:linear-gradient(180deg,rgba(30,22,17,.96),rgba(18,13,10,.96))!important;
+  border:1px solid var(--zar-line)!important;
+  border-radius:10px!important;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.025)!important;
+}
+input::placeholder,textarea::placeholder{color:#776b60!important;opacity:1}
+input:focus,textarea:focus,select:focus{
+  outline:none!important;
+  border-color:var(--zar-gold-soft)!important;
+  box-shadow:0 0 0 2px rgba(216,173,112,.12),inset 0 1px 0 rgba(255,255,255,.03)!important;
+}
+select option{background:#15100d;color:var(--zar-text)}
+input[type="date"],input[type="time"],input[type="datetime-local"]{color-scheme:dark}
+input[type="date"]::-webkit-calendar-picker-indicator,
+input[type="time"]::-webkit-calendar-picker-indicator,
+input[type="datetime-local"]::-webkit-calendar-picker-indicator{filter:sepia(.6) saturate(.7) brightness(1.25)}
+button{
+  transition:background .16s ease,border-color .16s ease,box-shadow .16s ease,transform .16s ease,color .16s ease;
+}
+button:hover{border-color:var(--zar-gold-soft)!important}
+button:focus-visible{outline:2px solid rgba(216,173,112,.45);outline-offset:2px}
+.panel{
+  background:linear-gradient(145deg,rgba(18,13,10,.985),rgba(10,8,7,.985))!important;
+  border:1px solid var(--zar-line-strong)!important;
+  box-shadow:0 24px 70px rgba(0,0,0,.58),0 0 0 1px rgba(216,173,112,.035)!important;
+  color:var(--zar-text);
+}
+.panel h1,.panel h2,.panel h3,.panel h4{color:var(--zar-text)}
+.panel p,.panel small,.panel .vcHint2{color:var(--zar-muted)}
+.card,.zarFileExplorer,.zarTasks,.zarMemory,.zarCalendar,.zarControl,
+.zarResearch,.researchCard,.filesToolbar,.zarCalendarHead,.zarMemorySearch,
+.zarTaskGroup,.zarControlCard{
+  background:linear-gradient(145deg,rgba(27,20,16,.94),rgba(15,11,9,.94))!important;
+  border-color:var(--zar-line)!important;
+  color:var(--zar-text);
+}
+.btn,.btnSmall,.filesToolbar button,.panel button{
+  border-color:var(--zar-line)!important;
+}
+.btn:hover,.btnSmall:hover{background:rgba(216,173,112,.10)!important}
+.zarCalendarHead{border-color:var(--zar-line)!important}
+.zarCalendarHead h3,.zarFileExplorer h3,.zarTasks h3{color:var(--zar-text)}
+/* Calendar */
+.zarCalendar .day,.zarCalendarDay,.calendarDay{
+  background:rgba(17,12,9,.9)!important;
+  border-color:var(--zar-line)!important;
+}
+.zarCalendar .day:hover,.zarCalendarDay:hover,.calendarDay:hover{
+  background:rgba(216,173,112,.07)!important;
+  border-color:var(--zar-gold-soft)!important;
+}
+.zarCalendar .today,.zarCalendarDay.today,.calendarDay.today{
+  border-color:var(--zar-gold)!important;
+  box-shadow:inset 0 0 0 1px rgba(216,173,112,.14)!important;
+}
+.zarCalendar .event,.calendarEvent,.eventChip{
+  background:rgba(216,173,112,.11)!important;
+  border-color:rgba(216,173,112,.32)!important;
+  color:#ead0a8!important;
+}
+/* Files / memory / tasks */
+.zarFileItem,.fileItem,.memoryItem,.taskItem,.zarTaskRow{
+  background:rgba(20,15,12,.82)!important;
+  border-color:var(--zar-line)!important;
+}
+.zarFileItem:hover,.fileItem:hover,.memoryItem:hover,.taskItem:hover,.zarTaskRow:hover{
+  background:rgba(216,173,112,.055)!important;
+  border-color:var(--zar-line-strong)!important;
+}
+.zarEmpty,.emptyState,.empty-state{
+  background:rgba(14,10,8,.7)!important;
+  border:1px dashed var(--zar-line)!important;
+  color:var(--zar-muted)!important;
+  border-radius:12px!important;
+}
+.progress,.progressBar{
+  background:#241b15!important;
+}
+.progress > *, .progressBar > *{
+  background:linear-gradient(90deg,#9d7040,#d8ad70)!important;
+}
+/* Control center */
+.zarTasks .zarCalendarHead,
+.zarControl .zarCalendarHead{background:transparent!important}
+.zarControlCard,.zarTasks .card{
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.02)!important;
+}
+/* Research / search */
+.researchCard,.searchResult,.resultCard{
+  background:linear-gradient(145deg,rgba(25,18,14,.96),rgba(13,10,8,.96))!important;
+  border:1px solid var(--zar-line)!important;
+  border-radius:12px!important;
+}
+.researchCard:hover,.searchResult:hover,.resultCard:hover{
+  border-color:var(--zar-line-strong)!important;
+}
+.researchCard a,.searchResult a,.resultCard a{color:#e2bb7e!important}
+/* Studio / media */
+video,audio,.mediaPreview,.studioPreview{
+  background:#050505!important;
+  border:1px solid var(--zar-line)!important;
+  border-radius:12px!important;
+}
+/* Global scrollbar */
+*{scrollbar-width:thin;scrollbar-color:#4a3524 transparent}
+*::-webkit-scrollbar{width:8px;height:8px}
+*::-webkit-scrollbar-track{background:transparent}
+*::-webkit-scrollbar-thumb{background:#4a3524;border-radius:20px;border:2px solid transparent;background-clip:padding-box}
+*::-webkit-scrollbar-thumb:hover{background:#765334;background-clip:padding-box}
+/* Avoid bright native autofill */
+input:-webkit-autofill,textarea:-webkit-autofill,select:-webkit-autofill{
+  -webkit-text-fill-color:var(--zar-text)!important;
+  -webkit-box-shadow:0 0 0 1000px #15100d inset!important;
+  transition:background-color 9999s ease-out 0s;
+}
+/* Responsive modal sizing */
+@media (max-width:900px){
+  .panel{
+    max-width:calc(100vw - 24px)!important;
+    width:calc(100vw - 24px)!important;
+  }
+}
+@media (max-width:600px){
+  .panel{
+    max-width:calc(100vw - 12px)!important;
+    width:calc(100vw - 12px)!important;
+    max-height:calc(100vh - 90px)!important;
+  }
+  input,textarea,select{font-size:16px!important}
+}
+</style>
+
 </head>
 <body>
 <div class="app">
@@ -822,7 +981,7 @@ async function showStudioWeather(){const p=document.getElementById('studioContex
 
 async function showControlCenter(){
   if(window.zarClockTimer){clearInterval(window.zarClockTimer);window.zarClockTimer=null}
-  body.innerHTML='<div class="zarTasks"><div class="zarCalendarHead"><div><h3>⚙️ Control de Zar</h3><div class="vcHint2">Estado de IA, modelos y servicios conectados.</div></div><button class="btnSmall" onclick="closePanel()">×</button></div><div id="zarControlStatus" class="vcHint2">Comprobando estado…</div><div id="zarControlBody"></div></div>';
+  body.innerHTML='<div class="zarTasks"><div class="zarCalendarHead"><div><h3>⚙️ Control de Zar</h3><div class="vcHint2">Estado de IA, modelos y servicios conectados.</div></div></div><div id="zarControlStatus" class="vcHint2">Comprobando estado…</div><div id="zarControlBody"></div></div>';
   openPanel();
   const status=document.getElementById('zarControlStatus'), box=document.getElementById('zarControlBody');
   try{
@@ -1308,7 +1467,7 @@ async function checkYouTubeStatus(){try{const j=await fetch('/api/youtube/status
   document.addEventListener('keydown',e=>{const tag=(e.target?.tagName||'').toLowerCase();if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'&&!e.shiftKey&&!e.altKey){if(tag==='input'||tag==='textarea'||tag==='select')return;e.preventDefault();openCommandPalette()}if((e.ctrlKey||e.metaKey)&&e.shiftKey&&e.key.toLowerCase()==='f'){if(tag==='input'||tag==='textarea'||tag==='select')return;e.preventDefault();toggleFocusMode()}if(e.key==='Escape'){const p=document.getElementById('commandPalette');if(p&&!p.hidden)closeCommandPalette()}});
 })();
 </script>
-<!-- ZAR v29.3.6 · BUTTON RELIABILITY + HOVER BOUNDARY FIX -->
+<!-- ZAR v29.3.7 · BUTTON RELIABILITY + HOVER BOUNDARY FIX -->
 <style id="zar-v2934-button-reliability">
   /* Bottom quick/home actions stay inside their own visual area. */
   .quick,
@@ -1361,7 +1520,7 @@ async function checkYouTubeStatus(){try{const j=await fetch('/api/youtube/status
   }
 </style>
 <style id="zar-v2936-visual-system">
-/* ZAR 29.3.6 · Visual system. Keeps the existing DOM, handlers and API contracts intact. */
+/* ZAR 29.3.7 · Visual system. Keeps the existing DOM, handlers and API contracts intact. */
 :root{
   --zar-bg-0:#070605;--zar-bg-1:#0b0908;--zar-bg-2:#100c09;--zar-surface:#15100d;--zar-surface-2:#1b1410;
   --zar-line:#3f2e20;--zar-line-strong:#65462a;--zar-gold:#d8ad70;--zar-gold-soft:#b88b55;
@@ -1442,7 +1601,7 @@ input,textarea,select,.field input,.field select,.vcSelect,.filesToolbar input,.
   window.addEventListener('resize', syncComposerBoundary, {passive:true});
 })();
 
-/* ZAR 29.3.6 enhanced panels */
+/* ZAR 29.3.7 enhanced panels */
 function zarPanelEnhanced(){panel.classList.add('zarEnhancedPanel')}
 function zarPanelNormal(){panel.classList.remove('zarEnhancedPanel')}
 function zarCloseEnhanced(){closePanel()}
