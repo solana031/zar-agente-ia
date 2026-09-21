@@ -138,69 +138,149 @@ def _queries(topic, goal, refs):
     return base[:7]
 
 
-def _search_one(q):
-    """Perform one bounded live search.
-
-    The learning engine must never depend on a long-lived daemon thread.  A
-    single query is executed during a normal HTTP request and the result is
-    persisted before the next query starts.  The preferred Google-grounded
-    search gets a hard wall-clock budget; a public-search fallback gets its own
-    budget.  If both time out, the query is recorded as failed and the engine
-    moves on instead of freezing the whole learning job.
-    """
-    from .web_search import google_web_search, _fallback_web_search
-
+def _search_with_timeout(fn, *args, timeout=10, **kwargs):
+    """Run one network search with a hard wall-clock budget."""
     result = {"value": None}
-    finished = threading.Event()
+    done = threading.Event()
 
     def worker():
         try:
-            result["value"] = google_web_search(
-                q,
-                instructions=(
-                    "Recopila fuentes útiles para estudiar el tema; prioriza "
-                    "documentación oficial, recursos educativos y referencias profesionales."
-                ),
-            )
+            result["value"] = fn(*args, **kwargs)
         except Exception as exc:
             result["value"] = {"ok": False, "error": str(exc)}
         finally:
-            finished.set()
+            done.set()
 
-    t = threading.Thread(target=worker, daemon=True, name="zar-learning-search")
-    t.start()
-    # Google grounding has its own network timeout, but a learning job must not
-    # inherit that potentially long timeout.  We cap the wait at 12 seconds.
-    if finished.wait(12):
-        res = result.get("value") or {"ok": False, "error": "Sin resultado de búsqueda."}
-    else:
-        # Give the independent public fallback a separate short budget.  It is
-        # also isolated so a network stall cannot block the learning request.
-        fallback_result = {"value": None}
-        fallback_done = threading.Event()
-        def fallback_worker():
-            try:
-                fallback_result["value"] = _fallback_web_search(
-                    q,
-                    "Recopila resultados públicos útiles para estudiar el tema; prioriza fuentes fiables y educativas.",
-                )
-            except Exception as exc:
-                fallback_result["value"] = {"ok": False, "error": str(exc)}
-            finally:
-                fallback_done.set()
-        threading.Thread(target=fallback_worker, daemon=True, name="zar-learning-fallback").start()
-        if fallback_done.wait(12):
-            res = fallback_result.get("value") or {"ok": False, "error": "Sin resultado de búsqueda."}
-        else:
-            res = {"ok": False, "error": "La consulta superó el tiempo máximo y se omitió para mantener el aprendizaje activo."}
+    threading.Thread(target=worker, daemon=True, name="zar-learning-search").start()
+    if done.wait(timeout):
+        return result.get("value") or {"ok": False, "error": "Sin resultado de búsqueda."}
+    return {"ok": False, "error": f"La búsqueda superó {timeout}s y se omite esta vía."}
 
+
+def _learning_query_variants(q):
+    """Generate legal/robust alternatives when the first web query is weak."""
+    q = re.sub(r"\s+", " ", str(q or "").strip())
+    if not q:
+        return []
+    return [
+        q,
+        f"{q} guía manual tutorial profesional",
+        f"{q} filetype:pdf manual guía curso",
+        f"{q} documentación oficial recursos educativos",
+        f"{q} ebook acceso abierto técnicas avanzadas",
+    ]
+
+
+def _usable_result(res):
+    if not isinstance(res, dict) or not res.get("ok"):
+        return False
+    rows = res.get("sources") or res.get("results") or []
+    text = str(res.get("text") or "").strip()
+    # A search is useful if it produced either actual source URLs or substantive
+    # text. Prefer sources because they make the learned knowledge auditable.
+    return bool(rows) or len(text) >= 180
+
+
+def _merge_search_results(results):
+    sources = []
+    seen = set()
+    texts = []
+    providers = []
+    for res in results:
+        if not isinstance(res, dict):
+            continue
+        if res.get("provider"):
+            providers.append(str(res.get("provider")))
+        for s in (res.get("sources") or res.get("results") or []):
+            if not isinstance(s, dict):
+                continue
+            u = str(s.get("url") or "").strip()
+            if u and u not in seen:
+                seen.add(u)
+                sources.append({
+                    "title": s.get("title") or u,
+                    "url": u,
+                    **({"snippet": s.get("snippet")} if s.get("snippet") else {}),
+                })
+        if res.get("text"):
+            texts.append(str(res["text"])[:5000])
     return {
-        "query": q,
-        "ok": bool(res.get("ok")),
-        "text": (res.get("text") or "")[:9000],
-        "sources": res.get("sources") or [],
-        "provider": res.get("provider") or "",
-        "error": res.get("error") or "",
+        "sources": sources[:20],
+        "text": "\n\n".join(texts)[:12000],
+        "provider": " + ".join(dict.fromkeys(providers)),
+    }
+
+
+def _search_one(q):
+    """Search one learning query with a cascading fallback strategy.
+
+    A failed/empty query is never treated as the end of the learning session.
+    ZAR tries the original query, practical/manual variants, legitimate PDF/
+    course/documentation variants, and finally the keyless public fallback.
+    The engine records which route worked and moves to the next learning query
+    even when every route for this one fails.
+    """
+    from .web_search import google_web_search, _fallback_web_search
+
+    attempts = []
+    variants = _learning_query_variants(q)
+
+    for variant in variants[:3]:
+        res = _search_with_timeout(
+            google_web_search,
+            variant,
+            "Busca fuentes públicas y legales útiles para aprender el tema. "
+            "Prioriza documentación oficial, manuales, cursos, universidades, "
+            "editoriales, organizaciones profesionales y recursos educativos. "
+            "Si existe material PDF accesible legalmente, inclúyelo. No uses "
+            "copias pirateadas ni fuentes de descarga ilícita.",
+            timeout=9,
+        )
+        attempts.append(res)
+        if _usable_result(res):
+            merged = _merge_search_results(attempts)
+            return {
+                "query": q, "ok": True,
+                "text": merged["text"],
+                "sources": merged["sources"],
+                "provider": merged["provider"] or "Google Search grounding",
+                "attempts": len(attempts),
+                "fallback_used": len(attempts) > 1,
+                "error": "",
+            }
+
+    # Keyless public search is the last independent route. Its implementation
+    # may itself take longer than desired, so it is also bounded here.
+    for variant in variants[3:]:
+        res = _search_with_timeout(
+            _fallback_web_search,
+            variant,
+            "Busca resultados públicos legales, manuales, cursos y PDFs de acceso legítimo.",
+            timeout=9,
+        )
+        attempts.append(res)
+        if _usable_result(res):
+            merged = _merge_search_results(attempts)
+            return {
+                "query": q, "ok": True,
+                "text": merged["text"],
+                "sources": merged["sources"],
+                "provider": merged["provider"] or "Búsqueda pública alternativa",
+                "attempts": len(attempts),
+                "fallback_used": True,
+                "error": "",
+            }
+
+    errors = [str(x.get("error") or "") for x in attempts if isinstance(x, dict) and x.get("error")]
+    return {
+        "query": q, "ok": False,
+        "text": "",
+        "sources": [],
+        "provider": "",
+        "attempts": len(attempts),
+        "fallback_used": True,
+        "error": ("Todas las vías de búsqueda fallaron; continuaré con la siguiente consulta. "
+                  + (" | ".join(errors[:3]) if errors else "Sin resultado utilizable.")),
     }
 
 
@@ -264,7 +344,7 @@ def advance_learning(job_id):
                  message=f"Investigando consulta {min(idx+1, len(qs))}/{len(qs)}…",
                  started_at=started, queries=qs, queries_total=len(qs),
                  query_index=idx, heartbeat_at=time.time(),
-                 elapsed_seconds=round(time.time()-started, 1), estimated_seconds=estimate)
+                 elapsed_seconds=elapsed_now, estimated_seconds=dynamic_estimate)
 
         if _cancel_requested(job_id):
             return get_job(job_id)
@@ -287,8 +367,15 @@ def advance_learning(job_id):
             msg = f"Consulta {idx}/{len(qs)} completada"
             if item.get("ok"):
                 msg += f" · {len(item.get('sources') or [])} fuentes encontradas"
+                if item.get("fallback_used"):
+                    msg += f" · {int(item.get('attempts') or 1)} vías probadas"
             else:
                 msg += " · sin resultado utilizable; continúo con la siguiente"
+            elapsed_now = round(time.time() - started, 1)
+            # Re-estimate from the real elapsed time instead of keeping a stale
+            # fixed value when a provider/fallback is slower than expected.
+            avg_per_query = elapsed_now / max(1, idx)
+            dynamic_estimate = int(max(90, elapsed_now + max(0, len(qs) - idx) * max(12, avg_per_query)))
             _set_job(job_id,
                      status="researching" if idx < len(qs) else "synthesizing",
                      progress=progress if idx < len(qs) else 70,
@@ -297,7 +384,7 @@ def advance_learning(job_id):
                      query_index=idx, queries_done=idx, queries_total=len(qs),
                      research=research, sources=clean_sources,
                      source_count=len(clean_sources), heartbeat_at=time.time(),
-                     elapsed_seconds=round(time.time()-started, 1), estimated_seconds=estimate)
+                     elapsed_seconds=elapsed_now, estimated_seconds=dynamic_estimate)
             if idx < len(qs):
                 return get_job(job_id)
             job = _load().get("jobs", {}).get(job_id) or job
