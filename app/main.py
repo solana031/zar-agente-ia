@@ -30,6 +30,7 @@ from .knowledge import context_for as memory_context_for, search as search_memor
 from .memory3 import stats as memory3_stats, recent as memory3_recent, search as memory3_search, reindex_existing as memory3_reindex
 from .web_search import search_inspiration_images, analyze_inspiration_image
 from .deep_research import start_research, wait_for_research, save_report, list_reports, get_report, get_research, extract_report
+from .skills import list_skills, get_skill, create_skill, update_skill, delete_skill, execute_skill, match_skill
 from .video_creator import create_project, list_projects, get_project, project_path, add_media as video_add_media, generate_music, render_project, media_path, set_project, update_media, delete_media, move_media, transition_catalog, apply_edit_command, viral_optimize, add_text_overlay, update_text_overlay, delete_text_overlay
 from .audio_studio import create_project as audio_create_project, list_projects as audio_list_projects, save_settings as audio_save_settings, render_base as audio_render_base, apply_voice_effect as audio_apply_voice_effect, audio_command as interpret_audio_command
 from .studio_agent import interpret as interpret_studio_command
@@ -1238,6 +1239,53 @@ def _process_chat_message(msg):
             _remember_turn("user",msg); _remember_turn("assistant",reply)
             return reply
 
+    # ZAR Skills: una invocación explícita de una habilidad guardada tiene
+    # prioridad sobre el enrutador general. La habilidad se ejecuta con el
+    # mismo motor y herramientas que una petición normal, pero sus pasos quedan
+    # fijados por el usuario y almacenados en el volumen persistente.
+    skill = match_skill(msg)
+    if skill:
+        try:
+            from .agent import api_agent, local_agent
+            cfg = load()
+            provider = cfg.get("provider")
+            if provider == "api":
+                runner = lambda prompt: api_agent(prompt, cfg)
+            elif provider == "openrouter":
+                runner = lambda prompt: api_agent(prompt, {**cfg, "provider": "openrouter"})
+            elif provider == "local":
+                runner = lambda prompt: local_agent(prompt, cfg)
+            else:
+                raise RuntimeError("Motor de IA no válido.")
+            skill_result, used_skill = execute_skill(skill.get("id"), msg, runner)
+            reply = skill_result
+            if isinstance(reply, str) and reply.startswith("HE_EMAIL::"):
+                data = json.loads(reply.split("::", 1)[1])
+                _set_pending(_pending_email_from(data))
+                set_focus("email_draft", data.get("subject") or "borrador actual")
+                reply = _email_card(data, question=True)
+            elif isinstance(reply, str) and reply.startswith("WORKSPACE_ACTION::"):
+                data = json.loads(reply.split("::", 1)[1])
+                pending = {"service": data.get("service", "Google Workspace"), "action": data.get("action", "realizar una acción"), "args": data.get("args") or {}}
+                set_pending_workspace(pending)
+                set_task_state("google workspace", (pending.get("service") or "workspace").lower(), "", pending.get("action", ""), "high", "awaiting_confirmation", f"Preparado para {pending.get('action','acción')} en {pending.get('service','Google Workspace')}")
+                reply = f"⚠️ La habilidad «{used_skill.get('name')}» ha preparado la acción: {pending.get('action','acción')} en {pending.get('service','Google Workspace')}.\n\n¿Confirmas? Responde «sí» o «cancelar»."
+            elif isinstance(reply, str) and reply.startswith("CONTACT_ACTION::"):
+                data = json.loads(reply.split("::", 1)[1])
+                pending = {"action": data.get("action"), "args": data.get("args") or {}}
+                from .context import set_pending_contact
+                set_pending_contact(pending)
+                set_task_state("google contacts", "contact", "", pending.get("action", ""), "high", "awaiting_confirmation", f"Preparado para {pending.get('action','acción')}")
+                reply = f"⚠️ La habilidad «{used_skill.get('name')}» ha preparado una acción de Google Contacts.\n\n¿Confirmas? Responde «sí» o «cancelar»."
+            _remember_turn("user", msg)
+            _remember_turn("assistant", reply)
+            return reply
+        except Exception as exc:
+            reply = f"No he podido ejecutar la habilidad «{skill.get('name','')}»: {exc}"
+            _remember_turn("user", msg)
+            _remember_turn("assistant", reply)
+            return reply
+
     # V17: el agente semántico es ahora la ruta principal para TODO el lenguaje natural.
     # Las acciones de seguridad (enviar/cancelar/guardar) se resuelven antes para
     # mantener controles explícitos. El resto pasa por el modelo para interpretar
@@ -2086,6 +2134,10 @@ def persistence_status_api():
         files = list_files()
     except Exception:
         files = []
+    try:
+        skills_count = len(list_skills())
+    except Exception:
+        skills_count = 0
     data_dir = str(os.environ.get("ZAR_DATA_DIR") or "")
     persistent = bool(data_dir and (data_dir == "/data" or "LOCALAPPDATA" in data_dir.upper() or ".zar" in data_dir.lower()))
     return jsonify({
@@ -2098,6 +2150,7 @@ def persistence_status_api():
         "conversations": len(convs),
         "memories": len(mems),
         "files": len(files),
+        "skills": skills_count,
         "research_reports": len(reports),
         "knowledge_sources": int(kstats.get("sources", 0) or 0),
         "knowledge_chunks": int(kstats.get("chunks", 0) or 0),
@@ -2509,6 +2562,75 @@ def video_cancel_publication(pubid):
     items=_load_publications(); new=[x for x in items if x.get('id')!=pubid]
     if len(new)==len(items): return jsonify({'ok':False,'error':'Publicación no encontrada.'}),404
     _save_publications(new); return jsonify({'ok':True})
+
+
+@app.get("/api/skills")
+def api_skills():
+    return jsonify({"ok": True, "skills": list_skills()})
+
+
+@app.post("/api/skills")
+def api_skill_create():
+    try:
+        data = request.get_json(silent=True) or {}
+        return jsonify({"ok": True, "skill": create_skill(data)})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+
+
+@app.patch("/api/skills/<skill_id>")
+def api_skill_update(skill_id):
+    try:
+        item = update_skill(skill_id, request.get_json(silent=True) or {})
+        if not item:
+            return jsonify({"ok": False, "error": "Habilidad no encontrada."}), 404
+        return jsonify({"ok": True, "skill": item})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+
+
+@app.delete("/api/skills/<skill_id>")
+def api_skill_delete(skill_id):
+    if not delete_skill(skill_id):
+        return jsonify({"ok": False, "error": "Habilidad no encontrada."}), 404
+    return jsonify({"ok": True})
+
+
+@app.post("/api/skills/<skill_id>/execute")
+def api_skill_execute(skill_id):
+    try:
+        data = request.get_json(silent=True) or {}
+        message = str(data.get("message") or "").strip()
+        if not message:
+            return jsonify({"ok": False, "error": "Indica qué quieres hacer con esta habilidad."}), 400
+        from .agent import api_agent, local_agent
+        cfg = load()
+        provider = cfg.get("provider")
+        if provider == "api":
+            runner = lambda prompt: api_agent(prompt, cfg)
+        elif provider == "openrouter":
+            runner = lambda prompt: api_agent(prompt, {**cfg, "provider": "openrouter"})
+        elif provider == "local":
+            runner = lambda prompt: local_agent(prompt, cfg)
+        else:
+            raise RuntimeError("Motor de IA no válido.")
+        result, skill = execute_skill(skill_id, message, runner)
+        if isinstance(result, str) and result.startswith("HE_EMAIL::"):
+            draft = json.loads(result.split("::", 1)[1])
+            _set_pending(_pending_email_from(draft))
+            set_focus("email_draft", draft.get("subject") or "borrador actual")
+            result = "He preparado un borrador de correo y lo he dejado pendiente de confirmación en ZAR. Revisa el chat para continuar."
+        elif isinstance(result, str) and result.startswith("WORKSPACE_ACTION::"):
+            action = json.loads(result.split("::", 1)[1])
+            pending = {"service": action.get("service", "Google Workspace"), "action": action.get("action", "acción"), "args": action.get("args") or {}}
+            set_pending_workspace(pending)
+            set_task_state("google workspace", (pending.get("service") or "workspace").lower(), "", pending.get("action", ""), "high", "awaiting_confirmation", f"Preparado para {pending.get('action','acción')}")
+            result = f"He preparado {pending.get('action','acción')} en {pending.get('service','Google Workspace')}. Confírmalo desde el chat."
+        _remember_turn("user", message)
+        _remember_turn("assistant", str(result))
+        return jsonify({"ok": True, "result": str(result), "skill": skill})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
 
 
 @app.get("/api/models")

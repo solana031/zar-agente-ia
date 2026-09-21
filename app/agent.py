@@ -29,6 +29,15 @@ def _set_tool_user_message(message):
 def _system_prompt(current_message=""):
     memory_text = "\n".join(f"- {m['text']}" for m in memories()[-60:]) or "(sin recuerdos explícitos)"
     try:
+        from .skills import list_skills
+        saved_skills = list_skills()
+        skills_text = "\n".join(
+            f"- {s.get('name','(sin nombre)')}: {s.get('description') or 'sin descripción'}; activadores: {', '.join(s.get('triggers') or []) or 'ninguno'}"
+            for s in saved_skills if s.get('enabled', True)
+        ) or "(sin habilidades activas)"
+    except Exception:
+        skills_text = "(habilidades no disponibles)"
+    try:
         retrieved_memory = memory_context_for(current_message, limit=8, max_chars=12000) if current_message else ""
     except Exception:
         retrieved_memory = ""
@@ -132,6 +141,8 @@ def _system_prompt(current_message=""):
         "Estado persistente actual de Zar:\n" + "\n".join(context_lines) + "\n\n"
         "Conversación reciente (úsala para resolver referencias como «ese», «lo de antes», etc.):\n" + conversation_text + "\n\n"
         "Memoria explícita del usuario:\n" + memory_text + "\n\n"
+        "Habilidades guardadas y activas de ZAR:\n" + skills_text + "\n\n"
+        "Si el usuario pide ejecutar una habilidad por su nombre, la aplicación puede activarla antes de llegar al modelo. No inventes habilidades que no aparezcan en esta lista.\n\n"
         "Memoria y conocimiento recuperados automáticamente de conversaciones, archivos y proyectos locales:\n" + (retrieved_memory or "(no se encontraron coincidencias relevantes)")
     )
 

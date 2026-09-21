@@ -443,6 +443,7 @@ input:-webkit-autofill,textarea:-webkit-autofill,select:-webkit-autofill{
 .zarForecastDay small{display:block;color:#8f8175;font-size:7.5px;margin-top:4px;line-height:1.25}
 @media(max-width:900px){.zarWeatherHero{grid-template-columns:1fr}.zarForecastGrid{grid-template-columns:repeat(7,minmax(90px,1fr));overflow-x:auto}}
 </style>
+<link rel="stylesheet" href="/static/skills.css">
 </head>
 <body>
 <div class="app">
@@ -453,6 +454,7 @@ input:-webkit-autofill,textarea:-webkit-autofill,select:-webkit-autofill{
     <button onclick="newChat()">＋ Nueva conversación <span class="info" data-tip="Empieza una conversación nueva y limpia el contexto activo de trabajo. La memoria permanente no se borra.">i</span></button>
     <button onclick="showConversations()">🗂️ Conversaciones <span class="info" data-tip="Consulta conversaciones anteriores. Se conservan aunque al recargar Zar se inicie una conversación nueva.">i</span></button>
     <button onclick="showMemory()">🧠 Memoria <span class="info" data-tip="Gestiona los recuerdos y preferencias permanentes de Zar.">i</span></button>
+    <button type="button" onclick="window.ZARSkills&&window.ZARSkills.open()">🧩 Habilidades <span class="info" data-tip="Crea procedimientos reutilizables que ZAR puede ejecutar cuando se los pidas.">i</span></button>
     <button onclick="showFiles()">📁 Archivos <span class="info" data-tip="Guarda, organiza, busca y recupera tus archivos desde la memoria persistente de Zar.">i</span></button>
     <button onclick="showMedia()">🎬 Multimedia <span class="info" data-tip="Busca YouTube/Spotify y abre el Creador de vídeos para montar fotos, vídeos, música generada y transiciones.">i</span></button>
     <button class="editorNavBtn" onclick="enterMediaEditor()">🎬 <b>Editor multimedia</b><span class="editorNavBadge">EDITAR</span><span class="info" data-tip="Abre el estudio de edición de Zar para fotos, vídeos y audio. Puedes trabajar con controles o pedir cambios por voz y texto.">i</span></button>
@@ -2309,4 +2311,5 @@ function setBackupRecommended(){const e=backupPickerEls();e.gmail.checked=true;e
 function getSelectedBackupOptions(){const e=backupPickerEls();return {gmail:{messages:e.gmailMessages.checked,drafts:e.gmailDrafts.checked,attachments:e.gmailAttachments.checked},contacts:e.contacts.checked,calendar:e.calendar.checked,tasks:e.tasks.checked,drive:{metadata:e.driveMetadata.checked,content:e.driveContent.checked}}}
 async function startSelectedBackup(){const e=backupPickerEls();const options=getSelectedBackupOptions();const any=options.gmail.messages||options.gmail.drafts||options.gmail.attachments||options.contacts||options.calendar||options.tasks||options.drive.metadata||options.drive.content;if(!any){alert('Selecciona al menos un bloque de datos.');return}try{const r=await fetch('/api/google/backup/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({options})});const j=await r.json();if(!r.ok||!j.ok)throw new Error(j.error||'No se pudo iniciar la copia.');if(j.started===false&&j.reason==='already_running'){e.modal.classList.add('isRunning');alert('Ya hay una copia ejecutándose. Espera a que termine y después podrás lanzar la seleccionada.');return}closeBackupPicker();startBackupProgressPolling();updateBackupProgress({status:'running',progress:0,current_service:'Preparando',message:'Preparando la copia seleccionada…'});setTimeout(state,250);if(document.getElementById('controlHealthHero'))setTimeout(loadControlHealth,300)}catch(err){alert('⚠️ '+(err.message||err))}}
 </script>
+<script src="/static/skills.js"></script>
 </body></html>
