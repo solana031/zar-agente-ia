@@ -1,0 +1,4 @@
+ZAR v27.39 mobile deployment package.
+Upload this ZIP to the root of the GitHub repository on branch main.
+GitHub Actions will extract it into the repository root and remove the ZIP.
+Railway must build from the resulting normalized commit.

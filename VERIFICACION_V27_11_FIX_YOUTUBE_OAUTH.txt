@@ -1,0 +1,6 @@
+FIX: YouTube OAuth separado del OAuth de Google Workspace.
+- google_token.json conserva Gmail/Calendar/Drive/etc. y ya no solicita youtube.upload.
+- youtube_token.json usa exclusivamente https://www.googleapis.com/auth/youtube.upload.
+- /connect/youtube inicia un flujo OAuth independiente con el mismo cliente OAuth.
+- /oauth2callback detecta si la autorización corresponde a Google Workspace o YouTube.
+Esto evita el Error 400: invalid_request "This request contains scopes that cannot be requested together" para drive.file + youtube.upload.

@@ -1,0 +1,7 @@
+ZAR v27.9 Studio Preview Fix
+
+- Corrige la recursión de renderVideoCreator que provocaba Maximum call stack size exceeded.
+- Añade reproducción/escucha explícita de audio y vídeo en Studio.
+- Añade controles de volumen 0-100% y mute para el reproductor de audio y la previsualización de vídeo.
+- Añade control de volumen a la música generada dentro del editor de vídeo.
+- Mantiene Calendar, Gmail, autenticación y el resto del proyecto sin cambios funcionales intencionados.

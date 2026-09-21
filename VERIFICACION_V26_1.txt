@@ -1,0 +1,1 @@
+V26.1: se corrige el error de JavaScript introducido por los botones de YouTube/Spotify, que impedía ejecutar cualquier botón o enviar con Enter. No cambia la UI ni las integraciones existentes.

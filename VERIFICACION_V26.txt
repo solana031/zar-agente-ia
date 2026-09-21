@@ -1,0 +1,1 @@
+V26: multimedia cloud-safe, rutas deterministas para YouTube/Spotify, panel dedicado, contexto de última búsqueda.

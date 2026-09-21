@@ -1,0 +1,5 @@
+V21.4
+- Gemini primary with automatic Gemini 3.5 Flash-Lite fallback on HTTP 429 / RESOURCE_EXHAUSTED.
+- File analysis retries with Gemini fallback model on quota exhaustion.
+- OpenRouter remains disabled by default.
+- V20/V21 chat UI and file storage preserved.

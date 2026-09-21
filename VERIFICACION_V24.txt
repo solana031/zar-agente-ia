@@ -1,0 +1,8 @@
+V24 verification
+- Added Google Contacts integration (People API) using OAuth scope contacts.
+- Added live Internet search using Gemini Google Search grounding.
+- Added direct public webpage text extraction via web_open.
+- Added UI endpoint /api/web/search and Contacts endpoint /api/contacts.
+- Existing V23 Maps/Places/Routes, Workspace, Gmail, Calendar, files, memory, voice and chat layout retained.
+- Python files pass AST syntax validation.
+- The Internet search feature uses GEMINI_API_KEY (or configured Gemini API key) and therefore does not require a separate search provider key.

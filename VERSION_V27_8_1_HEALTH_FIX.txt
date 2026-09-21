@@ -1,0 +1,4 @@
+Zar V27.8.1 - Healthcheck crash fix
+- Removed duplicate /health route causing Flask AssertionError during Gunicorn boot.
+- Preserves the original /health endpoint.
+- No functional changes to Studio/Audio features.

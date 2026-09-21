@@ -1,0 +1,7 @@
+Zar V27.8
+- Python: app/main.py y app/audio_studio.py compilados correctamente.
+- JavaScript: script de app/templates/index.html validado con Node --check.
+- Audio: generación WAV procedural validada con proyecto de 5s.
+- Audio Studio: proyecto nuevo, render, preview, parámetros y FX de voz implementados.
+- Orden universal: imagen/vídeo/audio conectados a sus respectivas rutas.
+- /health se mantiene en main.py.

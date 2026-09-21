@@ -1,0 +1,12 @@
+VERIFICACION ZAR v27.11
+
+[OK] app/cloud_auth.py includes youtube.upload scope.
+[OK] app/youtube.py created with OAuth credentials, channel status, resumable upload and video status.
+[OK] app/main.py includes /connect/youtube and /api/youtube/status.
+[OK] YouTube publication endpoint starts background upload and persists result in publication queue.
+[OK] Scheduled YouTube uploads use private + status.publishAt.
+[OK] Existing publication confirmation is still required before API upload.
+[OK] index.html JavaScript syntax checked with Node.js.
+[OK] Python modules syntax checked with py_compile.
+
+Runtime dependency google-api-python-client is already present in requirements.txt.

@@ -1,0 +1,21 @@
+ZAR v27.11 — YouTube API real publishing
+
+Base: v27.10 Studio Pro Compact + publication queue.
+
+Added:
+- YouTube Data API v3 integration using the existing Google OAuth client.
+- OAuth scope: https://www.googleapis.com/auth/youtube.upload
+- /connect/youtube flow reusing the existing Google OAuth credentials.
+- YouTube connection/channel status in the Studio publish modal.
+- Real resumable MP4 uploads through videos.insert.
+- Immediate publication request (public when the project is allowed to publish publicly).
+- Scheduled publication using status.publishAt; scheduled videos are uploaded private as required by YouTube.
+- Publication queue status: uploading, uploaded, scheduled, error.
+- YouTube video URL stored after upload.
+- API endpoint to inspect uploaded video processing/status.
+- Existing non-YouTube sharing flows remain unchanged.
+
+Important:
+- The user must re-authorize Google after the new youtube.upload scope is added.
+- Unverified YouTube API projects created after 28 July 2020 may have videos.insert uploads restricted to private until YouTube audit/verification. ZAR reports the resulting privacy status.
+- No YouTube video is uploaded until the user confirms the publication action in ZAR.

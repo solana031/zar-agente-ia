@@ -19,12 +19,8 @@ def upcoming_events(days=7,max_results=10):
 def calendar_status():
     info=service().calendars().get(calendarId='primary').execute(); return {'ok':True,'summary':info.get('summary',''),'timeZone':info.get('timeZone',''),'id':info.get('id','')}
 
-def create_event(summary,start_iso,end_iso,description='',location='',all_day=False):
-    if all_day:
-        body={'summary':summary,'description':description,'start':{'date':start_iso[:10]},'end':{'date':end_iso[:10]}}
-    else:
-        body={'summary':summary,'description':description,'start':{'dateTime':start_iso,'timeZone':'Europe/Madrid'},'end':{'dateTime':end_iso,'timeZone':'Europe/Madrid'}}
-    if location: body['location']=location
+def create_event(summary,start_iso,end_iso,description=''):
+    body={'summary':summary,'description':description,'start':{'dateTime':start_iso,'timeZone':'Europe/Madrid'},'end':{'dateTime':end_iso,'timeZone':'Europe/Madrid'}}
     return service().events().insert(calendarId='primary',body=body).execute()
 
 

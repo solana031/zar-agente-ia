@@ -105,7 +105,8 @@ def archive_current_conversation(title=None):
         "messages": current,
     }
     threads.append(item)
-    threads = threads[-200:]
+    # v30: keep the complete conversation archive. The UI may paginate what it
+    # displays, but stored conversations are never silently discarded.
     save(_threads_file(), threads)
     return item
 

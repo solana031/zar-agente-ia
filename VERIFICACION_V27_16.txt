@@ -1,0 +1,6 @@
+ZAR v27.16
+- Google Forms: routing prioritizes explicit Forms/formulario intent over Gmail.
+- Natural survey/questionnaire creation is routed to Google Forms.
+- Google Forms creation uses info.title only on forms.create; description is added with batchUpdate.
+- Voice input: continuous recognition, 3-second silence debounce, resilient restart after browser recognition end, transcript preserved across restarts.
+- Sensitive Workspace actions remain behind the existing confirmation flow.

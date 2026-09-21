@@ -1643,7 +1643,7 @@ def studio_weather():
     except Exception:
         return jsonify({"ok":False,"error":"Faltan coordenadas."}),400
     try:
-        r=_requests.get("https://api.open-meteo.com/v1/forecast",params={"latitude":lat,"longitude":lon,"current":"temperature_2m,apparent_temperature,weather_code,wind_speed_10m,wind_direction_10m,relative_humidity_2m,cloud_cover","daily":"weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max","forecast_days":5,"timezone":"auto"},timeout=15)
+        r=_requests.get("https://api.open-meteo.com/v1/forecast",params={"latitude":lat,"longitude":lon,"current":"temperature_2m,apparent_temperature,weather_code,wind_speed_10m","timezone":"auto"},timeout=15)
         r.raise_for_status(); return jsonify({"ok":True,"data":r.json()})
     except Exception as exc:
         return jsonify({"ok":False,"error":str(exc)}),400
@@ -1657,21 +1657,6 @@ def calendar_month_api():
         month=int(request.args.get("month") or datetime.now().month)
         if month < 1 or month > 12: raise ValueError("Mes no válido.")
         return jsonify({"ok":True,"year":year,"month":month,"events":month_events(year,month)})
-    except Exception as exc:
-        return jsonify({"ok":False,"error":str(exc)}),400
-
-@app.post("/api/calendar/create")
-def calendar_create_api():
-    data=request.get_json(silent=True) or {}
-    summary=(data.get("summary") or "").strip()
-    start=(data.get("start_iso") or "").strip()
-    end=(data.get("end_iso") or "").strip()
-    if not summary or not start or not end:
-        return jsonify({"ok":False,"error":"Faltan título, fecha u hora."}),400
-    try:
-        from .google_calendar import create_event
-        ev=create_event(summary,start,end,(data.get("description") or "").strip(),(data.get("location") or "").strip(),bool(data.get("all_day")))
-        return jsonify({"ok":True,"event":{"id":ev.get("id"),"summary":ev.get("summary",summary),"htmlLink":ev.get("htmlLink")}})
     except Exception as exc:
         return jsonify({"ok":False,"error":str(exc)}),400
 

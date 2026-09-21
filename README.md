@@ -1,57 +1,49 @@
-# ZAR — Agente personal IA
+# Zar Agente IA — V27.4
 
-Versión de referencia: **29.3.4**
-
-Este repositorio contiene la versión web consolidada de ZAR. La base mantiene las funciones incorporadas hasta v29.3.4 y los arreglos recientes de interfaz y fiabilidad de botones.
-
-## Funciones incluidas
-
-- Chat con contexto persistente, conversaciones archivadas y memoria.
-- Memoria e indexación local de información y archivos.
-- Gestión de archivos, análisis y recuperación desde almacenamiento persistente.
-- Google: autenticación OAuth y conexión con Gmail, Calendar, Drive, Docs, Sheets, Slides, Forms, Contactos y Tareas según los permisos autorizados.
-- Copia local de datos autorizados de Google y estado de conexión.
-- Búsqueda web y Deep Research.
-- Google Maps.
-- Voz: transcripción, limpieza de audio de entrada y lectura de respuestas.
-- Selector de motor de IA, incluyendo Gemini y soporte para proveedor local/Ollama.
-- Multimedia: YouTube, Spotify, creador/editor de vídeo y estudio de audio.
-- Edición de imágenes y comandos de edición por texto/voz.
-- Publicación de vídeo con flujo oficial de YouTube y cola de publicaciones.
-- Centro de control y estado de salud de ZAR.
-- Interfaz responsive para escritorio y móvil.
-- Correcciones de navegación, botones, compositor inferior y límites visuales del hover.
-
-## Estructura
-
-- `app/` — aplicación Flask y módulos de ZAR.
-- `app/templates/index.html` — interfaz web principal.
-- `app/static/` — iconos, marca y recursos estáticos.
-- `.github/workflows/prepare-zar-release.yml` — validación y empaquetado automático.
-- `requirements.txt` — dependencias de producción.
-- `Procfile` — arranque para Railway/Gunicorn.
-- `config.example.json` — ejemplo de configuración local sin credenciales.
-
-## Variables de entorno
-
-Las credenciales y secretos deben configurarse en Railway (o en el entorno de ejecución), nunca en GitHub. El `.gitignore` excluye `credentials.json`, tokens OAuth, `config.json` y datos persistentes.
-
-Entre las variables usadas por ZAR pueden encontrarse las de Gemini/IA, Google OAuth, YouTube OAuth, `PUBLIC_BASE_URL`, `GOOGLE_REDIRECT_URI`, `ZAR_SESSION_SECRET` y las variables de configuración de almacenamiento/servicios. Mantén las variables que ya funcionan en Railway al desplegar esta versión.
-
-## Despliegue en GitHub + Railway
-
-1. Crea un repositorio limpio.
-2. Sube el **contenido descomprimido** de este ZIP en la raíz del repositorio. No subas el ZIP como un archivo dentro del repositorio.
-3. Comprueba que `.github/workflows/prepare-zar-release.yml` exista en la rama principal.
-4. En GitHub entra en `Actions` y ejecuta **ZAR Web — Validate and Package** con `Run workflow`.
-5. El workflow valida Python, HTML/JavaScript, estructura y versiones, y genera un artefacto ZIP.
-6. En Railway, despliega el repositorio/commit de GitHub manteniendo las variables de entorno y el volumen persistente `/data` que ya utiliza ZAR.
-
-## Importante
-
-No subas credenciales, tokens ni secretos al repositorio. Para actualizar ZAR, parte siempre de la última versión consolidada y sustituye los archivos de la aplicación; el workflow no cambia con cada número de versión.
+V27.4 separa tres espacios: Zar principal (chat), Centro de control y Zar Studio / Editor multimedia. Además mejora el panel derecho de escritorio y corrige la capa visual de los tooltips `i` del menú izquierdo.
 
 
-## Persistencia de datos
+### V22.5 — ajuste visual de marca
+- La marca superior izquierda usa únicamente la silueta estilizada de Zar.
+- Se elimina el texto «Zar» y «SIEMPRE CONTIGO» de ese bloque.
+- No se modifica el layout del chat, compositor, Workspace, Gmail, Calendar ni archivos.
+V22.3: corrección de la capa semántica para interceptar WORKSPACE_ACTION y convertirlo en acción pendiente con confirmación explícita. Los marcadores internos ya no se muestran en el chat.
 
-ZAR mantiene conversaciones, memoria, archivos, copias de Google y proyectos en `ZAR_DATA_DIR` (por defecto `/data`). En Railway ese directorio debe estar montado en el volumen persistente del servicio. Los ZIP de nuevas versiones solo reemplazan el código del repositorio; no deben contener ni sobrescribir `/data`. Por ello, actualizar ZAR mediante el workflow de ZIP no borra la información del usuario mientras el servicio conserve el mismo volumen persistente.
+Zar V21 — Archivos inteligentes
+
+# Zar V18 — Orquestador general + interfaz premium + móvil
+
+V18 mantiene el agente semántico y añade:
+- estado persistente de tarea (intención, objeto, acción, riesgo y estado);
+- política explícita para diferenciar acciones no destructivas de acciones sensibles/irreversibles;
+- interfaz de escritorio renovada en negro/marrón/oro;
+- login con fondo de Zar, panel translúcido y diseño responsive;
+- control de lectura en voz alta con icono 🔊/🔇 en vez de checkbox;
+- navegación móvil con barra inferior y paneles;
+- identidad visual con retrato dominante de Zar.
+
+Mantén las variables de Railway, OAuth, Gmail, Calendar y el volumen `/data`. No subas secretos a GitHub.
+
+
+## V19 — chat viewport
+- El área de chat es la única zona que hace scroll.
+- El compositor (texto + micrófono + sonido + enviar) permanece siempre visible dentro del viewport.
+- Los mensajes quedan anclados abajo y crecen hacia arriba como en un chat moderno.
+- La misma estructura se adapta a móvil sin scroll global de página.
+
+V21.1: corrección del JavaScript del chat/archivos; el compositor vuelve a responder al clic y Enter envía (Shift+Enter salto de línea).
+
+V21.1: corregido el JavaScript del cliente; vuelven a funcionar los botones del compositor, la voz, el sonido, adjuntar archivos y Enter (Shift+Enter inserta salto de línea). También se corrigieron los handlers del panel de archivos.
+
+V21.3 corrige el fallo de arranque de la ruta Gemini primaria: app/agent.py importa os correctamente para la política de fallback opcional.
+
+
+## V21.4 - fallback Gemini
+
+Si el modelo Gemini principal alcanza un 429 de cuota, Zar intenta automáticamente `gemini-3.5-flash-lite` con la misma API key/proyecto. Se puede cambiar con `ZAR_GEMINI_FALLBACK_MODEL`. OpenRouter sigue siendo opcional mediante `ZAR_ALLOW_OPENROUTER_FALLBACK=true`.
+
+V25.0 añade un espaciador de chat robusto: cuando hay pocos mensajes, quedan alineados abajo; cuando el historial desborda, se puede recorrer libremente desde arriba hasta abajo. El compositor y sus controles permanecen fuera del flujo del historial.
+
+
+## V27.1
+Editor multimedia inteligente con edición no destructiva, comandos por voz/texto, efectos por tramo de tiempo, biblioteca amplia de transiciones y optimización heurística para vídeo corto. Consulta README_V27_1.md.
