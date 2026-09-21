@@ -429,6 +429,20 @@ input:-webkit-autofill,textarea:-webkit-autofill,select:-webkit-autofill{
 }
 </style>
 
+<style id="zar-v3011-weather">
+.zarWeatherHero{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:12px}
+.zarWeatherMain,.zarWeatherDetails,.zarForecast{min-width:0}
+.zarWeatherSubline{margin-top:10px;padding-top:9px;border-top:1px solid rgba(101,70,42,.42);color:#a89582;font-size:9px;line-height:1.5}
+.zarForecastHeader{display:flex;justify-content:space-between;gap:10px;align-items:center;margin-bottom:8px}
+.zarForecastHeader b{color:#d9c19f;font-size:10px}
+.zarForecastHeader span{color:#7f746b;font-size:8px}
+.zarForecastGrid{grid-template-columns:repeat(7,minmax(95px,1fr));overflow-x:auto;padding-bottom:3px}
+.zarForecastDay{min-height:118px;padding:9px 6px}
+.zarForecastIcon{font-size:22px;margin:5px 0 3px}
+.zarForecastFeels{display:block;color:#9c8e80;font-size:8px;margin-top:4px}
+.zarForecastDay small{display:block;color:#8f8175;font-size:7.5px;margin-top:4px;line-height:1.25}
+@media(max-width:900px){.zarWeatherHero{grid-template-columns:1fr}.zarForecastGrid{grid-template-columns:repeat(7,minmax(90px,1fr));overflow-x:auto}}
+</style>
 </head>
 <body>
 <div class="app">
@@ -1347,12 +1361,20 @@ function openPanel(){panel.style.display='block'}
 // V27.53: restore the main chat send flow and attachment queue.
 let zarPendingFiles=[];
 let zarSending=false;
+function syncComposerFileState(){
+  const c=document.querySelector('.composer');
+  if(!c)return;
+  c.classList.toggle('hasPendingFiles',zarPendingFiles.length>0);
+  c.classList.toggle('hasUploadPanel',!!document.getElementById('zarUploadPanel')?.classList.contains('open'));
+  if(typeof updateComposerSpace==='function') requestAnimationFrame(updateComposerSpace);
+}
 function renderPendingFiles(){
   const box=document.getElementById('zarPendingFiles');
   if(!box)return;
-  if(!zarPendingFiles.length){box.classList.remove('open');box.innerHTML='';return;}
+  if(!zarPendingFiles.length){box.classList.remove('open');box.innerHTML='';syncComposerFileState();return;}
   box.classList.add('open');
   box.innerHTML=zarPendingFiles.map((f,i)=>'<div class="zarPendingChip"><span title="'+escHtml(f.name)+'">📎 '+escHtml(f.name)+'</span><button type="button" onclick="removePendingFile('+i+')" title="Quitar">×</button></div>').join('');
+  syncComposerFileState();
 }
 function stageFiles(fileList){
   const files=Array.from(fileList||[]);
@@ -1392,7 +1414,7 @@ async function uploadPendingFiles(){
   const files=zarPendingFiles.slice();
   const panel=document.getElementById('zarUploadPanel');
   const status=document.getElementById('uploadStatus');
-  if(panel){panel.classList.add('open');panel.innerHTML=files.map(f=>'<div class="zarUploadRow"><span class="zarUploadDot"></span><span>'+escHtml(f.name)+'</span></div>').join('');}
+  if(panel){panel.classList.add('open');panel.innerHTML=files.map(f=>'<div class="zarUploadRow"><span class="zarUploadDot"></span><span>'+escHtml(f.name)+'</span></div>').join('');syncComposerFileState();}
   if(status)status.textContent='Subiendo archivo'+(files.length>1?'s':'')+'…';
   const fd=new FormData();
   files.forEach(f=>fd.append('files',f));
@@ -1403,6 +1425,7 @@ async function uploadPendingFiles(){
   if(status)status.textContent='Archivo'+(files.length>1?'s':'')+' guardado'+(files.length>1?'s':'')+' correctamente.';
   if(panel){
     panel.innerHTML=(j.files||[]).map(f=>'<div class="zarUploadRow"><span class="zarUploadDot"></span><span><b>'+escHtml(f.name||'Archivo')+'</b><br><span class="zarSavedPath">Guardado correctamente</span></span></div>').join('');
+    setTimeout(()=>{panel.classList.remove('open');syncComposerFileState();},1800);
   }
   return j.files||[];
 }
@@ -1465,7 +1488,7 @@ function usePrompt(text){
 }
 function esc(s){return String(s).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;')}
 function escHtml(s){return String(s??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('\"','&quot;').replaceAll("'",'&#39;')}
-document.getElementById('filePreviewModal')?.addEventListener('click',e=>{if(e.target.id==='filePreviewModal')closeFilePreview()});document.addEventListener('keydown',e=>{if(e.key==='Escape')closeFilePreview()});speakEnabled=localStorage.getItem('zar_speak')==='1';setVoiceInputMode(voiceInputMode);updateSpeakUI();document.getElementById('fileInput').addEventListener('change',e=>stageFiles(e.target.files));startFreshPage();
+document.getElementById('filePreviewModal')?.addEventListener('click',e=>{if(e.target.id==='filePreviewModal')closeFilePreview()});document.addEventListener('keydown',e=>{if(e.key==='Escape')closeFilePreview()});speakEnabled=localStorage.getItem('zar_speak')==='1';setVoiceInputMode(voiceInputMode);updateSpeakUI();document.getElementById('fileInput').addEventListener('change',e=>stageFiles(e.target.files));renderPendingFiles();syncComposerFileState();startFreshPage();
 </script>
 <script>
 // V27.9 override: video surface now opens a real project directly and preserves the mode tabs.
@@ -1747,6 +1770,18 @@ async function checkYouTubeStatus(){try{const j=await fetch('/api/youtube/status
 })();
 </script>
 <!-- ZAR v29.3.9 · BUTTON RELIABILITY + HOVER BOUNDARY FIX -->
+<style id="zar-v3011-composer-fix">
+/* v30.1.1: attachment chips/status must never push the text box below the viewport. */
+.composer.hasPendingFiles{height:170px;min-height:170px;max-height:170px}
+.composer.hasUploadPanel{height:188px;min-height:188px;max-height:188px}
+.composer.hasPendingFiles.hasUploadPanel{height:188px;min-height:188px;max-height:188px}
+@media (max-width:720px){
+  .composer.hasPendingFiles{height:auto;min-height:0;max-height:190px}
+  .composer.hasUploadPanel{height:auto;min-height:0;max-height:210px}
+  .composer.hasPendingFiles.hasUploadPanel{height:auto;min-height:0;max-height:210px}
+  .composer.hasPendingFiles .composerMain,.composer.hasUploadPanel .composerMain{flex-shrink:0}
+}
+</style>
 <style id="zar-v2934-button-reliability">
   /* Bottom quick/home actions stay inside their own visual area. */
   .quick,
@@ -2004,7 +2039,7 @@ async function showStudioCalendar(){await showMobileCalendar()}
 async function zarLoadWeather(){
  zarPanelEnhanced();body.innerHTML='<div class="zarPanelHero"><div><h3>☁️ Tiempo de Zar</h3><p>Condiciones actuales y previsión para tu ubicación.</p></div></div><div id="zarWeatherBody"><div class="vcHint2">Pidiendo ubicación al navegador…</div></div>';openPanel();
  if(!navigator.geolocation){document.getElementById('zarWeatherBody').innerHTML='<div class="zarWeatherMain">⚠️ Tu navegador no permite obtener la ubicación.</div>';return}
- navigator.geolocation.getCurrentPosition(async pos=>{try{const j=await fetch('/api/studio/weather?lat='+encodeURIComponent(pos.coords.latitude)+'&lon='+encodeURIComponent(pos.coords.longitude)+'&_='+Date.now(),{cache:'no-store'}).then(r=>r.json());if(!j.ok)throw new Error(j.error||'No se pudo obtener el tiempo.');const c=j.data.current||{},daily=j.data.daily||{},times=daily.time||[], codes=daily.weather_code||[], max=daily.temperature_2m_max||[], min=daily.temperature_2m_min||[], rain=daily.precipitation_probability_max||[];const labels={0:'Despejado',1:'Mayormente despejado',2:'Parcialmente nublado',3:'Nublado',45:'Niebla',48:'Niebla',51:'Llovizna',53:'Llovizna',55:'Llovizna intensa',61:'Lluvia',63:'Lluvia moderada',65:'Lluvia intensa',71:'Nieve',80:'Chubascos',81:'Chubascos',82:'Chubascos fuertes',95:'Tormenta'};const icons={0:'☀️',1:'🌤️',2:'⛅',3:'☁️',45:'🌫️',48:'🌫️',51:'🌦️',53:'🌦️',55:'🌧️',61:'🌧️',63:'🌧️',65:'🌧️',71:'❄️',80:'🌦️',81:'🌧️',82:'⛈️',95:'⛈️'};const forecast=times.slice(0,5).map((t,i)=>'<div class="zarForecastDay"><b>'+new Date(t+'T12:00:00').toLocaleDateString('es-ES',{weekday:'short'})+'</b><div style="font-size:20px;margin-top:4px">'+(icons[codes[i]]||'☁️')+'</div><strong>'+Math.round(max[i]??0)+'° / '+Math.round(min[i]??0)+'°</strong><small>'+Math.round(rain[i]??0)+'% lluvia</small></div>').join('');document.getElementById('zarWeatherBody').innerHTML='<div class="zarWeatherHero"><div class="zarWeatherMain"><div class="zarWeatherIcon">'+(icons[c.weather_code]||'☁️')+'</div><div class="zarWeatherTemp">'+(c.temperature_2m??'—')+'°C</div><b style="color:#d9c19f">'+zarEsc(labels[c.weather_code]||'Condiciones actuales')+'</b><div class="vcHint2" style="margin-top:5px">Sensación '+(c.apparent_temperature??'—')+'°C</div></div><div class="zarWeatherDetails"><div class="zarWeatherGrid"><div class="zarWeatherMetric"><b>💨 '+(c.wind_speed_10m??'—')+' km/h</b><span>Viento</span></div><div class="zarWeatherMetric"><b>🧭 '+(c.wind_direction_10m??'—')+'°</b><span>Dirección</span></div><div class="zarWeatherMetric"><b>💧 '+(c.relative_humidity_2m??'—')+'%</b><span>Humedad</span></div><div class="zarWeatherMetric"><b>☁️ '+(c.cloud_cover??'—')+'%</b><span>Nubosidad</span></div></div></div><div class="zarForecast"><b style="color:#d9c19f;font-size:10px">Previsión de 5 días</b><div class="zarForecastGrid" style="margin-top:8px">'+forecast+'</div></div></div>'}catch(e){document.getElementById('zarWeatherBody').innerHTML='<div class="zarWeatherMain">⚠️ '+zarEsc(e.message||'No se pudo obtener el tiempo.')+'</div>'}},()=>{document.getElementById('zarWeatherBody').innerHTML='<div class="zarWeatherMain">⚠️ No se concedió acceso a la ubicación. Permítelo en el navegador para consultar el tiempo.</div>'},{enableHighAccuracy:false,timeout:7000,maximumAge:300000})
+ navigator.geolocation.getCurrentPosition(async pos=>{try{const j=await fetch('/api/studio/weather?lat='+encodeURIComponent(pos.coords.latitude)+'&lon='+encodeURIComponent(pos.coords.longitude)+'&_='+Date.now(),{cache:'no-store'}).then(r=>r.json());if(!j.ok)throw new Error(j.error||'No se pudo obtener el tiempo.');const c=j.data.current||{},daily=j.data.daily||{},times=daily.time||[],codes=daily.weather_code||[],max=daily.temperature_2m_max||[],min=daily.temperature_2m_min||[],appMax=daily.apparent_temperature_max||[],appMin=daily.apparent_temperature_min||[],rain=daily.precipitation_probability_max||[],prec=daily.precipitation_sum||[],sunrise=daily.sunrise||[],sunset=daily.sunset||[],uv=daily.uv_index_max||[],windMax=daily.wind_speed_10m_max||[],gustMax=daily.wind_gusts_10m_max||[];const labels={0:'Despejado',1:'Mayormente despejado',2:'Parcialmente nublado',3:'Nublado',45:'Niebla',48:'Niebla',51:'Llovizna',53:'Llovizna',55:'Llovizna intensa',61:'Lluvia',63:'Lluvia moderada',65:'Lluvia intensa',71:'Nieve',80:'Chubascos',81:'Chubascos',82:'Chubascos fuertes',95:'Tormenta'};const icons={0:'☀️',1:'🌤️',2:'⛅',3:'☁️',45:'🌫️',48:'🌫️',51:'🌦️',53:'🌦️',55:'🌧️',61:'🌧️',63:'🌧️',65:'🌧️',71:'❄️',80:'🌦️',81:'🌧️',82:'⛈️',95:'⛈️'};const forecast=times.slice(0,7).map((t,i)=>{const d=new Date(t+'T12:00:00');const day=i===0?'Hoy':d.toLocaleDateString('es-ES',{weekday:'short'});const p=rain[i]??0;const ps=prec[i]??0;const am=appMax[i]??max[i]??0;const an=appMin[i]??min[i]??0;return '<div class="zarForecastDay"><b>'+day+'</b><div class="zarForecastIcon">'+(icons[codes[i]]||'☁️')+'</div><strong>'+Math.round(max[i]??0)+'° / '+Math.round(min[i]??0)+'°</strong><span class="zarForecastFeels">Sens. '+Math.round(am)+'° / '+Math.round(an)+'°</span><small>💧 '+Math.round(p)+'% · '+Number(ps).toFixed(1)+' mm</small><small>💨 '+Math.round(windMax[i]??0)+' km/h · UV '+Number(uv[i]??0).toFixed(1)+'</small></div>'}).join('');document.getElementById('zarWeatherBody').innerHTML='<div class="zarWeatherHero"><div class="zarWeatherMain"><div class="zarWeatherIcon">'+(icons[c.weather_code]||'☁️')+'</div><div class="zarWeatherTemp">'+(c.temperature_2m??'—')+'°C</div><b style="color:#d9c19f">'+zarEsc(labels[c.weather_code]||'Condiciones actuales')+'</b><div class="vcHint2" style="margin-top:5px">Sensación '+(c.apparent_temperature??'—')+'°C</div><div class="zarWeatherSubline">'+(c.is_day===0?'🌙 Noche':'☀️ Día')+' · Precipitación '+(c.precipitation??'0')+' mm · Presión '+(c.pressure_msl??'—')+' hPa · ☀️ '+(sunrise[0]?new Date(sunrise[0]).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'}):'—')+'–'+(sunset[0]?new Date(sunset[0]).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'}):'—')+'</div></div><div class="zarWeatherDetails"><div class="zarWeatherGrid"><div class="zarWeatherMetric"><b>💨 '+(c.wind_speed_10m??'—')+' km/h</b><span>Viento</span></div><div class="zarWeatherMetric"><b>🧭 '+(c.wind_direction_10m??'—')+'°</b><span>Dirección</span></div><div class="zarWeatherMetric"><b>💧 '+(c.relative_humidity_2m??'—')+'%</b><span>Humedad</span></div><div class="zarWeatherMetric"><b>☁️ '+(c.cloud_cover??'—')+'%</b><span>Nubosidad</span></div><div class="zarWeatherMetric"><b>💨 '+(c.wind_gusts_10m??'—')+' km/h</b><span>Racha</span></div><div class="zarWeatherMetric"><b>☀️ '+(Number(uv[0]??0).toFixed(1))+'</b><span>UV máximo hoy</span></div></div></div><div class="zarForecast"><div class="zarForecastHeader"><b>Previsión de 7 días</b><span>Máx / mín · lluvia · viento · UV</span></div><div class="zarForecastGrid">'+forecast+'</div></div></div>'}catch(e){document.getElementById('zarWeatherBody').innerHTML='<div class="zarWeatherMain">⚠️ '+zarEsc(e.message||'No se pudo obtener el tiempo.')+'</div>'}},()=>{document.getElementById('zarWeatherBody').innerHTML='<div class="zarWeatherMain">⚠️ No se concedió acceso a la ubicación. Permítelo en el navegador para consultar el tiempo.</div>'},{enableHighAccuracy:false,timeout:7000,maximumAge:300000})
 }
 async function showMobileWeather(){await zarLoadWeather()}
 async function showStudioWeather(){await zarLoadWeather()}

@@ -1643,7 +1643,14 @@ def studio_weather():
     except Exception:
         return jsonify({"ok":False,"error":"Faltan coordenadas."}),400
     try:
-        r=_requests.get("https://api.open-meteo.com/v1/forecast",params={"latitude":lat,"longitude":lon,"current":"temperature_2m,apparent_temperature,weather_code,wind_speed_10m","timezone":"auto"},timeout=15)
+        r=_requests.get("https://api.open-meteo.com/v1/forecast",params={
+            "latitude":lat,
+            "longitude":lon,
+            "current":"temperature_2m,apparent_temperature,weather_code,wind_speed_10m,wind_direction_10m,wind_gusts_10m,relative_humidity_2m,cloud_cover,precipitation,pressure_msl,is_day",
+            "daily":"weather_code,temperature_2m_max,temperature_2m_min,apparent_temperature_max,apparent_temperature_min,precipitation_probability_max,precipitation_sum,sunrise,sunset,uv_index_max,wind_speed_10m_max,wind_gusts_10m_max",
+            "forecast_days":7,
+            "timezone":"auto"
+        },timeout=15)
         r.raise_for_status(); return jsonify({"ok":True,"data":r.json()})
     except Exception as exc:
         return jsonify({"ok":False,"error":str(exc)}),400

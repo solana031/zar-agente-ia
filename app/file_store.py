@@ -11,13 +11,16 @@ from urllib.parse import quote
 from .user_scope import safe_slug
 
 DATA_DIR = Path(os.environ.get('ZAR_DATA_DIR', '/data'))
-FILES_DIR = DATA_DIR / 'files'
-META_FILE = FILES_DIR / 'index.json'
 
 def _files_dir():
     d = DATA_DIR / 'users' / safe_slug() / 'files'
     d.mkdir(parents=True, exist_ok=True)
     return d
+
+# v30.1.1: reads, previews, downloads and indexing must use the same
+# user-scoped directory as save_upload().
+FILES_DIR = DATA_DIR / 'users' / safe_slug() / 'files'
+META_FILE = FILES_DIR / 'index.json'
 
 def _meta_file():
     return _files_dir() / 'index.json'
