@@ -444,6 +444,16 @@ input:-webkit-autofill,textarea:-webkit-autofill,select:-webkit-autofill{
 @media(max-width:900px){.zarWeatherHero{grid-template-columns:1fr}.zarForecastGrid{grid-template-columns:repeat(7,minmax(90px,1fr));overflow-x:auto}}
 </style>
 <link rel="stylesheet" href="/static/skills.css">
+<style id="zar-v307-learning-composer-fix">
+:root{--zar-os-bottom-gap:0px}
+@media(min-width:721px){
+  .composer{bottom:calc(8px + var(--zar-os-bottom-gap));padding-bottom:6px}
+  .chat{padding-bottom:calc(var(--composer-space,108px) + 18px + var(--zar-os-bottom-gap))}
+  .side{padding-bottom:calc(18px + var(--zar-os-bottom-gap));box-sizing:border-box}
+}
+.zarLearningActive{border-color:#6b5031!important;color:#e3c48d!important;background:rgba(92,62,27,.18)!important}
+.zarLearningActive[hidden]{display:none}
+</style>
 </head>
 <body>
 <div class="app">
@@ -509,7 +519,7 @@ input:-webkit-autofill,textarea:-webkit-autofill,select:-webkit-autofill{
       <div class="welcome" id="welcome"><div class="hero zarHeroLogo"><img src="/static/zar-silhouette.png" alt="Zar, asistente inteligente"></div><div class="zarWordmark">Z A R</div><div class="zarTagline">TU ASISTENTE INTELIGENTE</div><div class="homeActions" aria-label="Accesos rápidos de Zar"><button type="button" onclick="showMobileCalendar()"><span>📅</span><b>Calendario</b><small>Organiza tu tiempo</small></button><button type="button" onclick="showFiles()"><span>📁</span><b>Archivos</b><small>Guarda y organiza</small></button><button type="button" onclick="showMobileWeather()"><span>☀️</span><b>Tiempo</b><small>Consulta el tiempo</small></button><button type="button" onclick="mobileOpenEditor()"><span>▶️</span><b>Zar Studio</b><small>Crea con IA</small></button><button type="button" onclick="showMemory()"><span>🧠</span><b>Memoria</b><small>Tu contexto</small></button><button type="button" onclick="showTasks()"><span>☑️</span><b>Tareas</b><small>Organiza tu día</small></button><button type="button" onclick="showControlCenter()"><span>⚙️</span><b>Control ZAR</b><small>Modelos y servicios</small></button><button type="button" onclick="showResearch()"><span>🔎</span><b>Investigación</b><small>Estudios profundos</small></button></div></div>
       <div id="chat" class="chat" tabindex="0" aria-label="Historial de conversación"></div><div class="chatScrollControls" aria-label="Controles de desplazamiento"><button type="button" onclick="scrollChat(-1)" title="Subir por la conversación">↑</button><button type="button" onclick="scrollChat(1)" title="Bajar al último mensaje">↓</button></div>
     </div>
-    <div class="composer"><input id="fileInput" class="fileInput" type="file" multiple accept="image/*,video/*,audio/*,.pdf,.txt,.csv,.doc,.docx,.xls,.xlsx,.ppt,.pptx"><div id="zarPendingFiles" class="zarPendingFiles"></div><div id="zarUploadPanel" class="zarUploadPanel"></div><div class="quick"><button onclick="usePrompt('¿Qué hora es?')">🕒 Hora</button><button onclick="usePrompt('Recuerda que ...')">🧠 Recordar</button><button onclick="usePrompt('Mira mi último correo y dime qué quiere')">✉️ Correo</button><button onclick="usePrompt('¿Qué tengo mañana?')">📅 Calendario</button><button onclick="usePrompt('Busca información sobre ...')">🌐 Buscar</button><button onclick="showResearch()">🔎 Investigación</button></div><div class="composerLabel">Habla o escribe con Zar</div><button id="zarActiveSkills" class="zarActiveSkills" type="button" onclick="window.ZARSkills&&window.ZARSkills.open()">🧩 Habilidades activas: comprobando…</button><div class="composerMain"><textarea id="input" placeholder="Escribe un mensaje a Zar..."></textarea><button id="attachBtn" class="attachBtn" onclick="document.getElementById('fileInput').click()" title="Adjuntar y guardar archivos en la memoria de Zar">📎</button><button id="mic" class="send" onclick="toggleVoice()" title="Hablar con Zar">🎙️</button><button id="speakBtn" class="soundBtn" onclick="toggleSpeak()" title="Activar o silenciar lectura en voz alta">🔇</button><button class="send" onclick="send()" title="Enviar mensaje">➤</button></div><div id="uploadStatus" style="font-size:10px;color:#9da5ab;min-height:14px;margin-top:2px"></div><div id="voiceStatus" class="voiceStatus" style="font-size:10px;color:#9da5ab;min-height:14px"></div></div>
+    <div class="composer"><input id="fileInput" class="fileInput" type="file" multiple accept="image/*,video/*,audio/*,.pdf,.txt,.csv,.doc,.docx,.xls,.xlsx,.ppt,.pptx"><div id="zarPendingFiles" class="zarPendingFiles"></div><div id="zarUploadPanel" class="zarUploadPanel"></div><div class="quick"><button onclick="usePrompt('¿Qué hora es?')">🕒 Hora</button><button onclick="usePrompt('Recuerda que ...')">🧠 Recordar</button><button onclick="usePrompt('Mira mi último correo y dime qué quiere')">✉️ Correo</button><button onclick="usePrompt('¿Qué tengo mañana?')">📅 Calendario</button><button onclick="usePrompt('Busca información sobre ...')">🌐 Buscar</button><button onclick="showResearch()">🔎 Investigación</button></div><div class="composerLabel">Habla o escribe con Zar</div><button id="zarActiveSkills" class="zarActiveSkills" type="button" onclick="window.ZARSkills&&window.ZARSkills.open()">🧩 Habilidades activas: comprobando…</button><button id="zarLearningActive" class="zarActiveSkills zarLearningActive" type="button" hidden onclick="window.ZARSkills&&window.ZARSkills.open()">🧠 Aprendizaje en curso…</button><div class="composerMain"><textarea id="input" placeholder="Escribe un mensaje a Zar..."></textarea><button id="attachBtn" class="attachBtn" onclick="document.getElementById('fileInput').click()" title="Adjuntar y guardar archivos en la memoria de Zar">📎</button><button id="mic" class="send" onclick="toggleVoice()" title="Hablar con Zar">🎙️</button><button id="speakBtn" class="soundBtn" onclick="toggleSpeak()" title="Activar o silenciar lectura en voz alta">🔇</button><button class="send" onclick="send()" title="Enviar mensaje">➤</button></div><div id="uploadStatus" style="font-size:10px;color:#9da5ab;min-height:14px;margin-top:2px"></div><div id="voiceStatus" class="voiceStatus" style="font-size:10px;color:#9da5ab;min-height:14px"></div></div>
   </section>
 </main>
 <aside class="right">
@@ -1418,7 +1428,16 @@ async function openConversationArchive(id){try{const j=await fetch('/api/convers
 function showTools(){body.innerHTML='<h3>Herramientas</h3><p>Zar interpreta tu intención y elige la herramienta adecuada. Las acciones sensibles requieren confirmación.</p><div>✉️ Gmail</div><div>📅 Calendar</div><div>☁️ Google Drive</div><div>📄 Google Docs</div><div>📊 Google Sheets</div><div>📽️ Google Slides</div><div>📝 Google Forms</div><div>🧠 Memoria</div><div>▶️ YouTube</div><div>🎵 Spotify</div>';openPanel()}
 function showHelp(){body.innerHTML='<h3>Cómo funciona</h3><p>Zar interpreta lenguaje natural y usa el contexto persistente para entender referencias como «eso», «ese correo», «la reunión» o «lo de antes».</p><p>Las lecturas, búsquedas, análisis y borradores son acciones no destructivas. Los envíos y cambios externos requieren confirmación explícita.</p>';openPanel()}
 function showMobileSettings(section){body.innerHTML='<h3>Ajustes</h3><div class="card"><p>En móvil puedes controlar voz, motor de IA y Google desde este panel.</p><button class="btn" onclick="showVoice()">🎙️ Voz</button> <button class="btn" onclick="showProvider()">🤖 IA</button> <button class="btn" onclick="showGmail()">✉️ Google</button></div>';openPanel()}
+function updateOsBottomGap(){
+  const root=document.documentElement;
+  try{
+    const diff=Math.max(0,(Number(screen.height)||0)-(Number(screen.availHeight)||0));
+    const gap=(diff>20&&diff<140)?Math.min(72,diff+6):0;
+    root.style.setProperty('--zar-os-bottom-gap',gap+'px');
+  }catch(e){root.style.setProperty('--zar-os-bottom-gap','0px');}
+}
 function updateComposerSpace(){
+  updateOsBottomGap();
   const root=document.documentElement;
   const composer=document.querySelector('.composer');
   if(!composer)return;
@@ -1426,7 +1445,7 @@ function updateComposerSpace(){
   const gap=18;
   root.style.setProperty('--composer-space',(h+gap)+'px');
 }
-window.addEventListener('resize',updateComposerSpace,{passive:true});
+window.addEventListener('resize',updateComposerSpace,{passive:true}); window.addEventListener('pageshow',updateOsBottomGap,{passive:true});
 window.addEventListener('orientationchange',()=>setTimeout(updateComposerSpace,120),{passive:true});
 if('ResizeObserver' in window){
   const ro=new ResizeObserver(()=>updateComposerSpace());
@@ -1605,11 +1624,18 @@ function updateActiveSkillsUI(active){
   el.classList.add('hasSkills');
 }
 window.ZARShowActiveSkills=function(active){updateActiveSkillsUI(active);};
+async function refreshLearningIndicator(){
+  const el=document.getElementById('zarLearningActive'); if(!el)return;
+  try{const j=await fetch('/api/learning?_='+Date.now(),{cache:'no-store'}).then(r=>r.json()); const jobs=j.jobs||[]; const a=jobs.find(x=>['queued','researching','synthesizing'].includes(x.status));
+    if(!a){el.hidden=true; return;}
+    el.hidden=false; const p=Math.max(0,Math.min(100,Number(a.progress)||0)); el.textContent='🧠 Aprendizaje en curso: '+(a.topic||'aprendizaje')+' · '+p+'%';
+  }catch(e){el.hidden=true;}
+}
 async function refreshActiveSkills(){
   try{const j=await fetch('/api/skills?_='+Date.now(),{cache:'no-store'}).then(r=>r.json());if(j.ok)updateActiveSkillsUI((j.skills||[]).filter(x=>x.enabled));}
   catch(e){updateActiveSkillsUI([]);}
 }
-refreshActiveSkills();
+refreshActiveSkills(); refreshLearningIndicator(); setInterval(refreshActiveSkills,5000); setInterval(refreshLearningIndicator,2500);
 async function uploadPendingFiles(){
   if(!zarPendingFiles.length)return [];
   const files=zarPendingFiles.slice();

@@ -1266,16 +1266,16 @@ def _process_chat_message(msg):
 
     # ZAR Learning: una petición explícita de "aprender/estudiar/dominar" crea
     # un proceso persistente de investigación y convierte el resultado en una habilidad.
-    learning_match = re.match(r"^\s*(?:zar[,:]?\s*)?(?:quiero que aprendas|aprende|aprende a|estudia|domina|formate en|aprende todo lo necesario sobre)\s+(.+)$", msg, re.I)
+    learning_match = re.match(r"^\s*(?:zar[,:]?\s*)?(?:quiero que aprendas|quiero que aprenda|quiero enseñarte|quiero enseñarte a|aprende|aprende a|estudia|domina|fórmate en|formate en|aprende todo lo necesario sobre|quiero que estudies|quiero que domines)\s+(.+)$", msg, re.I)
     if learning_match:
         try:
             topic = learning_match.group(1).strip().rstrip(".")
             # Mantener la petición original como objetivo; el proceso se ejecuta en segundo plano.
             job = start_learning(topic, msg, [])
             reply = (f"🧠 He iniciado el aprendizaje de «{topic}».\n\n"
-                     "Voy a investigar fuentes públicas, organizar un plan de estudio, comprobar conocimientos "
-                     "y guardar una habilidad reutilizable. El proceso continúa en segundo plano y quedará "
-                     "asociado a tu memoria persistente.")
+                     "Voy a investigar fuentes públicas, organizar un currículo, comprobar conocimientos y guardar "
+                     "el conocimiento y una habilidad reutilizable. El proceso continúa en segundo plano. "
+                     "Puedes abrir 🧩 Habilidades para ver la fase, consultas, fuentes, tiempo transcurrido y estimación restante.")
             _remember_turn("user", msg); _remember_turn("assistant", reply)
             return reply
         except Exception as exc:
@@ -2615,7 +2615,7 @@ def api_learning():
     jobs = list_jobs()
     now = time.time()
     for job in jobs:
-        if job.get("status") in ("queued", "researching", "synthesizing") and job.get("updated_at") and now - float(job.get("updated_at")) > 600:
+        if job.get("status") in ("queued", "researching", "synthesizing") and job.get("updated_at") and now - float(job.get("updated_at")) > 90:
             # A daemon learning thread does not survive a Railway restart. Preserve the job and expose it as resumable.
             job["status"] = "paused"
             job["phase"] = "Pausado"

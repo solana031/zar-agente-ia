@@ -205,7 +205,11 @@ def start_learning(topic, goal="", references=None):
     if not topic: raise ValueError("Indica qué quieres que aprenda ZAR.")
     references = [str(x).strip() for x in (references or []) if str(x).strip()][:10]
     job_id = uuid.uuid4().hex; now = time.time()
-    _set_job(job_id, status="queued", progress=1, phase="En cola", message="Preparando investigación…", topic=topic, goal=goal, references=references, created_at=now, updated_at=now, started_at=None, estimated_seconds=180, queries_total=0, queries_done=0, source_count=0)
+    qs = _queries(topic, str(goal or "").strip(), references)
+    estimate = max(120, 45 + len(qs) * 22)
+    # Publicamos inmediatamente un estado observable. Así la UI no se queda en
+    # «En cola / 0 %» mientras el worker arranca.
+    _set_job(job_id, status="researching", progress=5, phase="Preparando investigación", message="Iniciando el investigador de ZAR…", topic=topic, goal=goal, references=references, created_at=now, updated_at=now, started_at=now, estimated_seconds=estimate, queries_total=len(qs), queries_done=0, source_count=0)
     threading = __import__('threading')
     threading.Thread(target=_run_job, args=(job_id, topic, str(goal or "").strip(), references), daemon=True, name=f"zar-learning-{job_id[:8]}").start()
     return get_job(job_id)
