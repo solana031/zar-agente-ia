@@ -17,3 +17,6 @@
 .zarLearningNote{padding:10px 12px;border-left:2px solid #a87d35;background:rgba(168,125,53,.07);color:#a99e8e;font-size:12px;line-height:1.5}
 .zarLearningStatus{margin-top:12px;padding:10px 12px;border-radius:9px;background:#0b0a08;color:#d8c8a8;border:1px solid #3b2d1c}
 @media(max-width:700px){.zarLearningHead{flex-direction:column}.zarSkillLearn{width:100%}}
+
+.zarLearningProgressWrap{margin-top:12px;display:grid;grid-template-columns:1fr 48px;gap:8px;align-items:center}.zarLearningProgress{height:9px;border-radius:999px;background:#17120d;border:1px solid #3b2d1c;overflow:hidden}.zarLearningProgress span{display:block;height:100%;width:0;background:linear-gradient(90deg,#8f6329,#e0b66e);transition:width .45s ease}.zarLearningProgressWrap>div:last-child{text-align:right;color:#e7c98e;font-weight:800;font-size:11px}.zarLearningMetrics{display:flex;flex-wrap:wrap;gap:7px;margin-top:10px}.zarLearningMetrics span{padding:7px 9px;border-radius:8px;background:#0c0a08;border:1px solid #302519;color:#9f978b;font-size:10px}.zarLearningMetrics b{color:#e4d0ad}.zarLearningStatus{line-height:1.45}.zarSkillCard .zarSkillMeta .learned{color:#d7b56f}
+@media(max-width:700px){.zarLearningMetrics{display:grid;grid-template-columns:1fr 1fr}.zarLearningProgressWrap{grid-template-columns:1fr 44px}}

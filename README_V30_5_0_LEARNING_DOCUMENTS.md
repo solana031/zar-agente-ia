@@ -1,4 +1,4 @@
-# ZAR v30.5.0 — Aprendizaje persistente + comprensión documental
+# ZAR v30.6.0 — Aprendizaje persistente + comprensión documental
 
 ## Aprendizaje
 - Comando natural: «quiero que aprendas…», «aprende a…», «estudia…», «domina…».

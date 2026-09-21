@@ -51,42 +51,69 @@
   function showLearning(){
     const box=document.getElementById('zarLearningBox'); if(!box)return;
     box.hidden=false;
-    box.innerHTML=`<div class="zarLearningHead"><div><span>🧠 APRENDIZAJE PERSISTENTE</span><h3>Enseñar a ZAR</h3><p>ZAR investigará fuentes públicas, organizará un plan y guardará lo aprendido como conocimiento y habilidad reutilizable.</p></div><button id="zarLearnClose" type="button">×</button></div>
+    box.innerHTML=`<div class="zarLearningHead"><div><span>🧠 APRENDIZAJE PERSISTENTE 2.0</span><h3>Enseñar a ZAR</h3><p>ZAR investiga fuentes públicas, organiza un currículo, guarda el conocimiento y crea una capacidad reutilizable. El progreso se muestra por fases y fuentes, no solo por un porcentaje.</p></div><button id="zarLearnClose" type="button">×</button></div>
       <label>¿Qué quieres que aprenda?<input id="learnTopic" maxlength="180" placeholder="Ej. edición profesional de fotografía"></label>
       <label>Objetivo<textarea id="learnGoal" maxlength="1500" placeholder="Ej. que pueda analizar fotos, explicarme técnicas y ayudarme a editar imágenes profesionalmente."></textarea></label>
       <label>Referencias opcionales · una URL por línea<textarea id="learnRefs" placeholder="https://...\nhttps://..."></textarea></label>
-      <div class="zarLearningNote">También puedes enseñarle idiomas, programación, edición, diseño o conocimientos de un documento adjunto. ZAR no modifica su propio código automáticamente.</div>
+      <div class="zarLearningNote">Puedes enseñarle fotografía, idiomas, programación, diseño, workflows de ZAR o conocimiento de un documento. El aprendizaje inicial crea conocimiento y una habilidad; después puedes pedirle que practique y superar las comprobaciones de dominio. ZAR no modifica su propio código automáticamente.</div>
       <div class="zarSkillEditorActions"><button id="zarLearnCancel">Cancelar</button><button id="zarLearnStart" class="zarSkillPrimary">🧠 Empezar a aprender</button></div>
-      <div id="zarLearnStatus" class="zarLearningStatus" hidden></div>`;
+      <div id="zarLearnStatus" class="zarLearningStatus" hidden></div>
+      <div id="zarLearnMetrics" class="zarLearningMetrics" hidden></div>
+      <div id="zarLearnProgressWrap" class="zarLearningProgressWrap" hidden><div class="zarLearningProgress"><span id="zarLearnProgressBar"></span></div><div id="zarLearnProgressLabel">0%</div></div>`;
     box.querySelector('#zarLearnClose').onclick=()=>box.hidden=true;
     box.querySelector('#zarLearnCancel').onclick=()=>box.hidden=true;
     box.querySelector('#zarLearnStart').onclick=startLearning;
+    loadLearningState();
+  }
+  function formatDuration(sec){sec=Math.max(0,Math.round(Number(sec)||0)); if(sec<60)return sec+' s'; const m=Math.floor(sec/60),s=sec%60; return m+' min'+(s?' '+s+' s':'');}
+  function renderLearningJob(job,status,metrics,wrap,bar,label){
+    const p=Math.max(0,Math.min(100,Number(job.progress)||0));
+    wrap.hidden=false; bar.style.width=p+'%'; label.textContent=p+'%';
+    status.hidden=false;
+    const elapsed=Number(job.elapsed_seconds)||((job.started_at?Date.now()/1000-job.started_at:0));
+    const est=Number(job.estimated_seconds)||0; const remaining=est&&elapsed<est?est-elapsed:0;
+    status.innerHTML='🧠 <b>'+esc(job.phase||'Aprendiendo…')+'</b> · '+esc(job.message||'Procesando…')+(job.status==='paused'?' <button type="button" id="zarResumeLearning" class="zarInlineResume">▶ Reanudar</button>':'');
+    if(job.status==='paused'){const rb=document.getElementById('zarResumeLearning');if(rb)rb.onclick=()=>resumeLearning(job.id);}
+    metrics.hidden=false;
+    metrics.innerHTML='<span>⏱️ Transcurrido: <b>'+formatDuration(elapsed)+'</b></span><span>⏳ Estimado restante: <b>'+(remaining?formatDuration(remaining):'calculando…')+'</b></span><span>🔎 Fuentes: <b>'+Number(job.source_count||0)+'</b></span><span>🌐 Consultas: <b>'+Number(job.queries_done||0)+'/'+Number(job.queries_total||0)+'</b></span>';
+  }
+  async function loadLearningState(){
+    try{
+      const data=await api('/api/learning?_='+Date.now());
+      const jobs=data.jobs||[]; const active=jobs.find(j=>['queued','researching','synthesizing','paused'].includes(j.status));
+      if(active){
+        document.getElementById('learnTopic').value=active.topic||''; document.getElementById('learnGoal').value=active.goal||''; document.getElementById('learnRefs').value=(active.references||[]).join('\n');
+        const status=document.getElementById('zarLearnStatus'); const metrics=document.getElementById('zarLearnMetrics'); const wrap=document.getElementById('zarLearnProgressWrap'); const bar=document.getElementById('zarLearnProgressBar'); const label=document.getElementById('zarLearnProgressLabel');
+        renderLearningJob(active,status,metrics,wrap,bar,label); pollLearning(active.id,status,metrics,wrap,bar,label); return;
+      }
+      const last=jobs[0]; if(last&&last.status==='completed'){
+        const status=document.getElementById('zarLearnStatus'); status.hidden=false; status.innerHTML='✅ <b>Último aprendizaje completado.</b> '+esc(last.topic||'')+' · '+Number(last.source_count||0)+' fuentes · '+formatDuration(last.elapsed_seconds||0)+'.';
+      }
+    }catch(e){}
   }
   async function startLearning(){
-    const topic=document.getElementById('learnTopic').value.trim();
-    const goal=document.getElementById('learnGoal').value.trim();
-    const references=document.getElementById('learnRefs').value.split('\n').map(x=>x.trim()).filter(Boolean);
-    const status=document.getElementById('zarLearnStatus'); status.hidden=false; status.textContent='⏳ Iniciando investigación…';
-    try{
-      if(!topic)throw new Error('Indica qué quieres que aprenda ZAR.');
-      const data=await api('/api/learning/start',{method:'POST',body:JSON.stringify({topic,goal,references})});
-      const id=data.job.id;
-      status.textContent='🧠 Aprendizaje iniciado. ZAR está investigando en segundo plano…';
-      pollLearning(id,status);
-    }catch(e){status.textContent='⚠️ '+e.message}
+    const topic=document.getElementById('learnTopic').value.trim(), goal=document.getElementById('learnGoal').value.trim(), references=document.getElementById('learnRefs').value.split('\n').map(x=>x.trim()).filter(Boolean);
+    const status=document.getElementById('zarLearnStatus'), metrics=document.getElementById('zarLearnMetrics'), wrap=document.getElementById('zarLearnProgressWrap'), bar=document.getElementById('zarLearnProgressBar'), label=document.getElementById('zarLearnProgressLabel');
+    status.hidden=false; status.textContent='⏳ Preparando aprendizaje…';
+    try{if(!topic)throw new Error('Indica qué quieres que aprenda ZAR.'); const data=await api('/api/learning/start',{method:'POST',body:JSON.stringify({topic,goal,references})}); const id=data.job.id; renderLearningJob(data.job,status,metrics,wrap,bar,label); pollLearning(id,status,metrics,wrap,bar,label);}catch(e){status.textContent='⚠️ '+e.message;}
   }
-  async function pollLearning(id,status){
+  async function resumeLearning(id){
     try{
-      const data=await api('/api/learning/'+encodeURIComponent(id));
-      const job=data.job||{};
+      const data=await api('/api/learning/'+encodeURIComponent(id)+'/resume',{method:'POST'});
+      const status=document.getElementById('zarLearnStatus'),metrics=document.getElementById('zarLearnMetrics'),wrap=document.getElementById('zarLearnProgressWrap'),bar=document.getElementById('zarLearnProgressBar'),label=document.getElementById('zarLearnProgressLabel');
+      renderLearningJob(data.job,status,metrics,wrap,bar,label); pollLearning(id,status,metrics,wrap,bar,label);
+    }catch(e){const status=document.getElementById('zarLearnStatus');status.hidden=false;status.innerHTML='⚠️ '+esc(e.message);}
+  }
+  async function pollLearning(id,status,metrics,wrap,bar,label){
+    try{
+      const data=await api('/api/learning/'+encodeURIComponent(id)+'?_='+Date.now()), job=data.job||{};
+      renderLearningJob(job,status,metrics,wrap,bar,label);
       if(job.status==='completed'){
-        status.textContent='✅ Aprendizaje completado. ZAR ha guardado el conocimiento y creado una habilidad reutilizable.';
-        await loadSkills(); return;
+        status.innerHTML='✅ <b>Aprendizaje inicial completado.</b> ZAR ha guardado el conocimiento y creado una habilidad reutilizable. Ahora puede practicar y comprobar dominio.'; await loadSkills(); return;
       }
-      if(job.status==='error'){status.textContent='⚠️ '+(job.message||'El aprendizaje no pudo completarse.');return}
-      status.textContent='🧠 '+(job.message||'Aprendiendo…')+' '+(job.progress||0)+'%';
-      setTimeout(()=>pollLearning(id,status),1800);
-    }catch(e){status.textContent='⚠️ '+e.message}
+      if(job.status==='error'){status.innerHTML='⚠️ <b>Aprendizaje detenido:</b> '+esc(job.message||'Error desconocido');return;}
+      setTimeout(()=>pollLearning(id,status,metrics,wrap,bar,label),1800);
+    }catch(e){status.innerHTML='⚠️ '+esc(e.message||'No se pudo consultar el aprendizaje.');setTimeout(()=>pollLearning(id,status,metrics,wrap,bar,label),4000);}
   }
 
   function showEditor(skill=null){

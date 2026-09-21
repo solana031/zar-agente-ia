@@ -38,6 +38,11 @@ def _system_prompt(current_message=""):
     except Exception:
         skills_text = "(habilidades no disponibles)"
     try:
+        from .learning import context_for as learned_context_for
+        learned_text = learned_context_for(current_message, max_chars=9000) if current_message else learned_context_for("", max_chars=7000)
+    except Exception:
+        learned_text = ""
+    try:
         retrieved_memory = memory_context_for(current_message, limit=8, max_chars=12000) if current_message else ""
     except Exception:
         retrieved_memory = ""
@@ -143,6 +148,7 @@ def _system_prompt(current_message=""):
         "Memoria explícita del usuario:\n" + memory_text + "\n\n"
         "Habilidades guardadas y activas de ZAR:\n" + skills_text + "\n\n"
         "Si el usuario pide ejecutar una habilidad por su nombre, la aplicación puede activarla antes de llegar al modelo. No inventes habilidades que no aparezcan en esta lista.\n\n"
+        "CONOCIMIENTO APRENDIDO PERSISTENTE RELEVANTE:\n" + (learned_text or "(no hay conocimiento aprendido relevante para esta petición)") + "\n\n"
         "Memoria y conocimiento recuperados automáticamente de conversaciones, archivos y proyectos locales:\n" + (retrieved_memory or "(no se encontraron coincidencias relevantes)")
     )
 

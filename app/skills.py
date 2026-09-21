@@ -76,6 +76,8 @@ def create_skill(data):
         "steps": steps,
         "tools": tools,
         "triggers": triggers,
+        "category": str(data.get("category") or "procedure").strip()[:40],
+        "learning_id": str(data.get("learning_id") or "").strip()[:80],
         "enabled": bool(data.get("enabled", True)),
         "created_at": now,
         "updated_at": now,
@@ -106,6 +108,10 @@ def update_skill(skill_id, data):
             item["tools"] = _clean_list(data.get("tools"), separator=",", limit=30, item_limit=80)
         if "triggers" in data:
             item["triggers"] = _clean_list(data.get("triggers"), separator=",", limit=20, item_limit=160)
+        if "category" in data:
+            item["category"] = str(data.get("category") or "procedure").strip()[:40]
+        if "learning_id" in data:
+            item["learning_id"] = str(data.get("learning_id") or "").strip()[:80]
         if "enabled" in data:
             item["enabled"] = bool(data.get("enabled"))
         item["updated_at"] = time.time()
@@ -150,18 +156,28 @@ def build_execution_prompt(skill, user_message):
         f"{i + 1}. {s}" for i, s in enumerate(skill.get("steps") or [])
     ) or "(sin pasos predefinidos; resuelve la tarea con criterio)"
     tools = ", ".join(skill.get("tools") or []) or "las herramientas disponibles de ZAR"
+    learned = ""
+    if skill.get("learning_id"):
+        try:
+            from .learning import context_for
+            learned = context_for(skill.get("name") or "", max_chars=9000)
+        except Exception:
+            learned = ""
     return (
         "ESTÁS EJECUTANDO UNA HABILIDAD GUARDADA DE ZAR.\n"
         f"Nombre: {skill.get('name')}\n"
         f"Descripción: {skill.get('description') or '(sin descripción)'}\n"
+        f"Categoría: {skill.get('category') or 'procedure'}\n"
         f"Herramientas previstas: {tools}\n"
         "Procedimiento de la habilidad:\n"
         + steps
-        + "\n\nReglas de ejecución: usa las herramientas reales de ZAR cuando correspondan; "
-        "respeta siempre las confirmaciones de seguridad para acciones externas; no envíes "
-        "correos ni modifiques datos externos sin la confirmación que exige ZAR; no inventes "
-        "resultados; no modifiques el código de ZAR ni sus permisos. Si falta un dato "
-        "imprescindible, pregúntalo.\n\n"
+        + ("\n\nCONOCIMIENTO APRENDIDO RELEVANTE:\n" + learned if learned else "")
+        + "\n\nReglas de ejecución: primero identifica la tarea concreta y después usa las herramientas reales de ZAR "
+        "cuando correspondan. Verifica los resultados de las herramientas antes de afirmarlos. Respeta siempre "
+        "las confirmaciones de seguridad para acciones externas; no envíes correos ni modifiques datos externos "
+        "sin la confirmación que exige ZAR. Si la habilidad requiere información actual, consulta la web; si "
+        "requiere un archivo, usa el archivo real. No inventes resultados, no modifiques el código de ZAR ni sus "
+        "permisos y, si falta un dato imprescindible, pregúntalo.\n\n"
         "Orden original del usuario:\n"
         + (user_message or "")
     )
