@@ -17,10 +17,14 @@ def _files_dir():
     d.mkdir(parents=True, exist_ok=True)
     return d
 
-# v30.1.1: reads, previews, downloads and indexing must use the same
-# user-scoped directory as save_upload().
-FILES_DIR = DATA_DIR / 'users' / safe_slug() / 'files'
-META_FILE = FILES_DIR / 'index.json'
+# v30.1.2: never freeze the active user at module-import time. Flask sets
+# the user scope per request, so every read/write path must resolve dynamically.
+def files_dir():
+    return _files_dir()
+
+# Kept as a compatibility alias for legacy imports. Internal code must use
+# files_dir() so concurrent users never share the anonymous/import-time path.
+FILES_DIR = None
 
 def _meta_file():
     return _files_dir() / 'index.json'

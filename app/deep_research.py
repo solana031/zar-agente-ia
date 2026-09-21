@@ -1,4 +1,4 @@
-"""ZAR v30.1.1 — Deep Research router and archive.
+"""ZAR v30.1.2 — Deep Research router and archive.
 
 Uses Google's Interactions API because Gemini Deep Research is exposed there and
 requires background execution for long-running research tasks.

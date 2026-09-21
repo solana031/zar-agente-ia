@@ -23,7 +23,7 @@ from .gmail import gmail_status
 from .google_workspace import workspace_status
 from .google_backup import start_google_backup, backup_status, maybe_start_google_backup
 from .context import get_context, set_active_email, set_pending_email, mark_saved_draft, clear_pending, set_summary, reset_context, set_pending_calendar, clear_pending_calendar, set_focus, clear_focus, set_task_state, clear_task_state, set_last_uploaded_file, set_pending_workspace, clear_pending_workspace, set_last_contact, set_media, set_last_video_project
-from .file_store import save_upload, get_file, list_files, search_files, public_item, delete_file, FILES_DIR
+from .file_store import save_upload, get_file, list_files, search_files, public_item, delete_file, files_dir
 from .knowledge import context_for as memory_context_for, search as search_memory, stats as memory_stats, memory_insights, index_file_from_disk, bootstrap_from_legacy
 from .memory3 import stats as memory3_stats, recent as memory3_recent, search as memory3_search, reindex_existing as memory3_reindex
 from .web_search import search_inspiration_images, analyze_inspiration_image
@@ -2003,7 +2003,7 @@ def upload_file():
             item = save_upload(fs, note=note)
             saved.append(public_item(item))
             try:
-                index_file_from_disk(item, FILES_DIR / item.get("category", "sin_clasificar") / item.get("stored_name", ""))
+                index_file_from_disk(item, files_dir() / item.get("category", "sin_clasificar") / item.get("stored_name", ""))
             except Exception as exc:
                 item["knowledge_index_error"] = str(exc)
             set_last_uploaded_file(item)
@@ -2041,7 +2041,7 @@ def preview_file(file_id):
     item = get_file(file_id)
     if not item:
         return jsonify({"error":"Archivo no encontrado."}), 404
-    path = FILES_DIR / item.get("category", "sin_clasificar") / item.get("stored_name", "")
+    path = files_dir() / item.get("category", "sin_clasificar") / item.get("stored_name", "")
     if not path.exists():
         return jsonify({"error":"El archivo no está disponible en el almacenamiento."}), 404
     mime = (item.get("mime") or mimetypes.guess_type(str(path))[0] or "application/octet-stream").lower()
@@ -2099,7 +2099,7 @@ def download_file(file_id):
     item = get_file(file_id)
     if not item:
         return jsonify({"error": "Archivo no encontrado."}), 404
-    path = FILES_DIR / item.get("category", "sin_clasificar") / item.get("stored_name", "")
+    path = files_dir() / item.get("category", "sin_clasificar") / item.get("stored_name", "")
     if not path.exists():
         return jsonify({"error": "El archivo no está disponible en el almacenamiento."}), 404
     return send_file(path, as_attachment=True, download_name=item.get("name", "archivo"), mimetype=item.get("mime") or None)

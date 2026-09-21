@@ -7,7 +7,7 @@ from pathlib import Path
 import requests
 
 from .config import load
-from .file_store import get_file, update_file, FILES_DIR, public_item
+from .file_store import get_file, update_file, files_dir, public_item
 
 
 def _gemini_root(base_url: str) -> str:
@@ -68,7 +68,7 @@ def analyze_file(file_id: str):
     item = get_file(file_id)
     if not item:
         raise FileNotFoundError('Archivo no encontrado en la memoria de Zar.')
-    path = FILES_DIR / item.get('category', 'sin_clasificar') / item.get('stored_name', '')
+    path = files_dir() / item.get('category', 'sin_clasificar') / item.get('stored_name', '')
     if not path.exists():
         raise FileNotFoundError('El archivo no está disponible en el almacenamiento.')
 
@@ -109,7 +109,7 @@ def analyze_file(file_id: str):
     enriched = update_file(file_id, category=category, note=note)
     # Persist structured metadata directly in the index while retaining compatibility with previous schema.
     try:
-        index_path = FILES_DIR / 'index.json'
+        index_path = files_dir() / 'index.json'
         data = json.loads(index_path.read_text(encoding='utf-8')) if index_path.exists() else []
         for row in data:
             if row.get('id') == file_id:
