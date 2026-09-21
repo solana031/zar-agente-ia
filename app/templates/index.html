@@ -453,6 +453,60 @@ input:-webkit-autofill,textarea:-webkit-autofill,select:-webkit-autofill{
 }
 .zarLearningActive{border-color:#6b5031!important;color:#e3c48d!important;background:rgba(92,62,27,.18)!important}
 .zarLearningActive[hidden]{display:none}
+<style id="zar-v308-composer-polish">
+/* ZAR 30.8.0 · compositor visible above the Windows taskbar + cleaner action rail */
+@media (min-width:721px){
+  :root{--zar-os-bottom-gap:44px}
+  .composer{
+    bottom:calc(8px + var(--zar-os-bottom-gap));
+    height:146px;min-height:146px;max-height:146px;
+    padding:5px 0 7px;
+    box-sizing:border-box;
+  }
+  .composerMain{
+    min-height:58px;
+    align-items:stretch;
+    gap:7px;
+    padding:6px;
+    box-sizing:border-box;
+  }
+  .composerMain textarea{
+    min-height:58px;
+    height:auto;
+    align-self:stretch;
+    box-sizing:border-box;
+  }
+  .composerMain > button{
+    align-self:stretch;
+    height:auto!important;
+    min-height:58px;
+    width:52px!important;
+    flex:0 0 52px!important;
+    display:grid;
+    place-items:center;
+    border-radius:13px;
+    font-size:18px;
+    line-height:1;
+    transition:transform .15s ease,border-color .15s ease,background .15s ease,box-shadow .15s ease;
+  }
+  .composerMain > button:hover{
+    transform:translateY(-1px);
+    border-color:#d8ad70;
+    box-shadow:0 7px 18px rgba(0,0,0,.25);
+  }
+  .composerMain > #attachBtn{background:linear-gradient(180deg,#191512,#100d0b);color:#e8d8c4}
+  .composerMain > #mic{background:linear-gradient(180deg,#2a2119,#18120e);color:#e7c38f;border-color:#6d5030}
+  .composerMain > #speakBtn{background:linear-gradient(180deg,#191512,#100d0b);color:#d9c7b1}
+  .composerMain > button:last-child{background:linear-gradient(180deg,#e1bb7b,#b98444);color:#1a120b;border-color:#a5743b;box-shadow:0 8px 18px rgba(185,139,85,.16)}
+  .zarActiveSkills,.zarLearningActive{
+    flex:0 0 auto;
+    max-width:calc(100% - 14px);
+    min-height:24px;
+    box-sizing:border-box;
+  }
+  .side{padding-bottom:calc(24px + var(--zar-os-bottom-gap))!important}
+}
+</style>
 </style>
 </head>
 <body>

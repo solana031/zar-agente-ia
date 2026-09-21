@@ -185,7 +185,15 @@
     }
   }
 
-  function openSkills(){ensureUI();document.getElementById('zarSkillsPanel').classList.add('open');loadSkills()}
+  async function openSkills(){
+    ensureUI();
+    document.getElementById('zarSkillsPanel').classList.add('open');
+    // Al abrir Habilidades también recuperamos los aprendizajes en segundo plano.
+    // Antes solo se cargaban las habilidades guardadas, por eso un aprendizaje
+    // iniciado desde el chat no aparecía en este panel.
+    await loadSkills();
+    await loadLearningState();
+  }
   function closeSkills(){document.getElementById('zarSkillsPanel')?.classList.remove('open')}
   window.ZARSkills={open:openSkills,load:loadSkills};
   window.ZARSkillsGetActive=()=>skills.filter(s=>s.enabled);
