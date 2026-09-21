@@ -5,6 +5,7 @@ import re
 import shutil
 import threading
 import uuid
+import hashlib
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import quote
@@ -31,6 +32,11 @@ def _meta_file():
 LOCK = threading.RLock()
 ALLOWED_CATEGORIES = {'sin_clasificar','facturas','finanzas','documentos','recibos','contratos','personal','fotos','otros'}
 MAX_BYTES = int(os.environ.get('ZAR_MAX_UPLOAD_BYTES', str(500 * 1024 * 1024)))
+
+class DuplicateFileError(ValueError):
+    def __init__(self, item):
+        self.item = item
+        super().__init__('El archivo ya existe en la biblioteca de Zar.')
 
 
 def _load():
@@ -88,6 +94,10 @@ def save_upload(file_storage, note=''):
     data = file_storage.read()
     if len(data) > MAX_BYTES:
         raise ValueError(f'El archivo supera el límite de {MAX_BYTES // (1024*1024)} MB.')
+    sha256 = hashlib.sha256(data).hexdigest()
+    existing = next((x for x in _load() if x.get('sha256') == sha256), None)
+    if existing:
+        raise DuplicateFileError(existing)
     file_id = uuid.uuid4().hex
     category = _guess_category(filename, mime)
     ext = Path(filename).suffix
@@ -106,6 +116,10 @@ def save_upload(file_storage, note=''):
         'created_at': now,
         'updated_at': now,
         'analysis': {},
+        'sha256': sha256,
+        'indexing_status': 'pending',
+        'indexing_error': '',
+        'indexed_at': '',
     }
     with LOCK:
         all_items = _load(); all_items.append(item); _save(all_items)
@@ -196,4 +210,8 @@ def public_item(item):
     out['extension'] = Path(item.get('name','')).suffix.lower().lstrip('.') or 'sin extensión'
     out['size_bytes'] = int(item.get('size') or 0)
     out['zar_path'] = f"Archivos de Zar / {item.get('category','sin_clasificar')} / {item.get('name','archivo')}"
+    out['indexing_status'] = item.get('indexing_status') or 'unknown'
+    out['indexing_error'] = item.get('indexing_error') or ''
+    out['indexed_at'] = item.get('indexed_at') or ''
+    out['sha256'] = item.get('sha256') or ''
     return out

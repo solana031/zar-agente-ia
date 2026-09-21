@@ -1,6 +1,6 @@
 """ZAR package bootstrap.
 
-v30.0.0: local user data lives outside the code repository so updating/replacing
+v30.3.0: local user data lives outside the code repository so updating/replacing
 ZAR versions does not erase conversations, memory, files, research or Google
 session state. Railway keeps using ZAR_DATA_DIR=/data when configured.
 """

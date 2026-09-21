@@ -1,3 +1,4 @@
+# ZAR v30.3.0 — Memoria + Archivos 2.0
 from flask import Flask, render_template, request, jsonify, redirect, session, send_file
 import threading
 import webbrowser
@@ -24,7 +25,7 @@ from .gmail import gmail_status
 from .google_workspace import workspace_status
 from .google_backup import start_google_backup, backup_status, normalize_backup_options
 from .context import get_context, set_active_email, set_pending_email, mark_saved_draft, clear_pending, set_summary, reset_context, set_pending_calendar, clear_pending_calendar, set_focus, clear_focus, set_task_state, clear_task_state, set_last_uploaded_file, set_pending_workspace, clear_pending_workspace, set_last_contact, set_media, set_last_video_project
-from .file_store import save_upload, get_file, list_files, search_files, public_item, delete_file, files_dir
+from .file_store import save_upload, get_file, list_files, search_files, public_item, delete_file, files_dir, DuplicateFileError
 from .knowledge import context_for as memory_context_for, search as search_memory, stats as memory_stats, memory_insights, index_file_from_disk, bootstrap_from_legacy
 from .memory3 import stats as memory3_stats, recent as memory3_recent, search as memory3_search, reindex_existing as memory3_reindex
 from .web_search import search_inspiration_images, analyze_inspiration_image
@@ -2121,31 +2122,77 @@ def upload_file():
     if not files:
         return jsonify({"error": "No se recibió ningún archivo."}), 400
     note = (request.form.get("note") or "").strip()
-    saved = []
-    errors = []
+    saved, duplicates, errors = [], [], []
     for fs in files:
         try:
             item = save_upload(fs, note=note)
-            saved.append(public_item(item))
+            path = files_dir() / item.get("category", "sin_clasificar") / item.get("stored_name", "")
+            # Index immediately when possible. The status is persisted so the UI
+            # can distinguish a saved file from a searchable/indexed file.
             try:
-                index_file_from_disk(item, files_dir() / item.get("category", "sin_clasificar") / item.get("stored_name", ""))
+                raw = list_files()
+                for x in raw:
+                    if x.get("id") == item.get("id"):
+                        x["indexing_status"] = "indexing"
+                from .file_store import _save as _file_save
+                _file_save(raw)
+                index_file_from_disk(item, path)
+                now = datetime.now(timezone.utc).isoformat()
+                raw = list_files()
+                for x in raw:
+                    if x.get("id") == item.get("id"):
+                        x.update({"indexing_status":"indexed","indexing_error":"","indexed_at":now})
+                _file_save(raw)
             except Exception as exc:
-                item["knowledge_index_error"] = str(exc)
+                raw = list_files()
+                for x in raw:
+                    if x.get("id") == item.get("id"):
+                        x.update({"indexing_status":"error","indexing_error":str(exc)})
+                try:
+                    from .file_store import _save as _file_save
+                    _file_save(raw)
+                except Exception:
+                    pass
+            item = get_file(item.get("id")) or item
+            saved.append(public_item(item))
             set_last_uploaded_file(item)
             set_focus("file", item.get("name", "archivo"))
             set_task_state("guardar archivo", "file", item.get("id", ""), "guardar", "low", "file_saved", f"Archivo guardado: {item.get('name')}")
+        except DuplicateFileError as exc:
+            duplicates.append(public_item(exc.item))
         except Exception as exc:
             errors.append(str(exc))
-    if not saved:
-        return jsonify({"error": errors[0] if errors else "No se pudo guardar el archivo."}), 400
-    return jsonify({"ok": True, "files": saved, "errors": errors})
+    if not saved and not duplicates:
+        return jsonify({"ok": False, "error": errors[0] if errors else "No se pudo guardar el archivo."}), 400
+    return jsonify({"ok": True, "files": saved, "duplicates": duplicates, "errors": errors})
 
 @app.get("/api/files")
 def files_api():
     category = (request.args.get("category") or "").strip()
     query = (request.args.get("q") or "").strip()
     items = search_files(query, category, 500) if query else list_files(category)[:500]
-    return jsonify({"ok": True, "files": [public_item(x) for x in items]})
+    # v30.3: searching the Files panel also searches indexed document content,
+    # not only filenames/notes. Metadata matches remain included.
+    if query:
+        try:
+            from .knowledge import search_hybrid
+            hits = [r for r in search_hybrid(query, limit=80) if r.get("source_type") == "file"]
+            by_id = {x.get("id"): x for x in items}
+            for hit in hits:
+                fid = str(hit.get("source_id") or "")
+                if not fid:
+                    continue
+                if fid not in by_id:
+                    f = get_file(fid)
+                    if f and (not category or f.get("category") == category):
+                        by_id[fid] = f
+            items = list(by_id.values())
+            # Put stronger content/metadata matches first without changing stored data.
+            rank = {str(h.get("source_id")): float(h.get("relevance") or 0) for h in hits}
+            items.sort(key=lambda x: (rank.get(str(x.get("id")), 0), x.get("created_at", "")), reverse=True)
+        except Exception:
+            pass
+    return jsonify({"ok": True, "query": query, "files": [public_item(x) for x in items]})
 
 @app.post("/api/files/<file_id>/analyze")
 def analyze_file_api(file_id):
@@ -2231,7 +2278,45 @@ def download_file(file_id):
 
 @app.delete("/api/files/<file_id>")
 def remove_file(file_id):
-    return jsonify({"ok": delete_file(file_id)})
+    ok = delete_file(file_id)
+    if ok:
+        try:
+            from .knowledge import delete_source
+            delete_source("file", file_id)
+        except Exception:
+            pass
+    return jsonify({"ok": ok, "deleted": file_id if ok else None})
+
+@app.post("/api/files/<file_id>/reindex")
+def reindex_file_api(file_id):
+    item = get_file(file_id)
+    if not item:
+        return jsonify({"ok": False, "error": "Archivo no encontrado."}), 404
+    path = files_dir() / item.get("category", "sin_clasificar") / item.get("stored_name", "")
+    if not path.exists():
+        return jsonify({"ok": False, "error": "El archivo no está disponible en el almacenamiento."}), 404
+    try:
+        from .knowledge import index_file_from_disk
+        result = index_file_from_disk(item, path)
+        now = datetime.now(timezone.utc).isoformat()
+        raw = list_files()
+        for x in raw:
+            if x.get("id") == file_id:
+                x.update({"indexing_status":"indexed","indexing_error":"","indexed_at":now})
+        from .file_store import _save as _file_save
+        _file_save(raw)
+        return jsonify({"ok": True, "file": public_item(get_file(file_id)), "index": result})
+    except Exception as exc:
+        raw = list_files()
+        for x in raw:
+            if x.get("id") == file_id:
+                x.update({"indexing_status":"error","indexing_error":str(exc)})
+        try:
+            from .file_store import _save as _file_save
+            _file_save(raw)
+        except Exception:
+            pass
+        return jsonify({"ok": False, "error": str(exc), "file": public_item(get_file(file_id))}), 200
 
 @app.post("/api/context/reset")
 def reset_chat_context():
@@ -2242,6 +2327,19 @@ def reset_chat_context():
 @app.get("/api/conversations")
 def conversations_api():
     return jsonify({"ok": True, "conversations": list_conversations(80)})
+
+@app.get("/api/conversations/search")
+def conversations_search_api():
+    q = (request.args.get("q") or "").strip()
+    if not q:
+        return jsonify({"ok": False, "error": "Falta la búsqueda."}), 400
+    try:
+        from .knowledge import search_hybrid
+        allowed = {"chat", "memory", "file", "google_gmail", "google_drive_content", "google_calendar", "google_contact", "google_task"}
+        rows = [r for r in search_hybrid(q, limit=40) if r.get("source_type") in allowed]
+        return jsonify({"ok": True, "query": q, "results": rows[:30]})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
 
 @app.get("/api/conversations/<thread_id>")
 def conversation_archive_api(thread_id):
