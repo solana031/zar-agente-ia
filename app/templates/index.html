@@ -1164,12 +1164,20 @@ async function verifyGoogleServices(){
   const target=document.getElementById('healthServiceGrid');
   if(target) target.innerHTML='<div class="healthService" style="grid-column:1/-1"><span class="hsIcon">🩺</span><div><strong>Verificando servicios…</strong><small>Comprobando las APIs de Google con la cuenta actual.</small></div><span class="hsDot reauth"></span></div>';
   try{
-    const j=await fetch('/api/google/services/check?_='+Date.now(),{cache:'no-store'}).then(r=>r.json());
-    if(!j.ok)throw new Error(j.error||'No se pudieron verificar los servicios.');
+    const r=await fetch('/api/google/services/check?_='+Date.now(),{cache:'no-store',headers:{'Accept':'application/json'}});
+    const ct=(r.headers.get('content-type')||'').toLowerCase();
+    let j=null;
+    if(ct.includes('application/json')) j=await r.json();
+    else {
+      const raw=(await r.text()).replace(/\s+/g,' ').trim().slice(0,180);
+      if(r.status===404) throw new Error('El servidor no tiene disponible la comprobación en vivo de Google. Reinicia el despliegue con la versión actual de ZAR.');
+      throw new Error('El servidor devolvió una respuesta no válida ('+r.status+'). '+raw);
+    }
+    if(!r.ok||!j.ok)throw new Error(j.error||'No se pudieron verificar los servicios.');
     const grid=document.getElementById('healthServiceGrid');
     if(grid) grid.innerHTML=(j.services||[]).map(s=>'<div class="healthService"><span class="hsIcon">'+s.icon+'</span><div><strong>'+escHtml(s.name)+'</strong><small>'+escHtml(s.detail)+(s.latency_ms!=null?' · '+s.latency_ms+' ms':'')+'</small></div><span class="hsDot '+s.status+'"></span></div>').join('');
     const account=document.getElementById('healthAccount');
-    if(account){const stamp=new Date(j.checked_at||Date.now()).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit',second:'2-digit'});account.innerHTML='<b>Cuenta:</b> '+escHtml(j.account||'No disponible')+' · <span style="color:#8e8278">Token persistente: '+(j.google?.has_refresh_token?'sí':'sí')+'</span><div class="healthLiveMeta">🩺 Última comprobación en vivo: '+stamp+'</div>'}
+    if(account){const stamp=new Date(j.checked_at||Date.now()).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit',second:'2-digit'});account.innerHTML='<b>Cuenta:</b> '+escHtml(j.account||'No disponible')+' · <span style="color:#8e8278">Token persistente: '+(j.has_refresh_token?'sí':'no')+'</span><div class="healthLiveMeta">🩺 Última comprobación en vivo: '+stamp+'</div>'}
     return j;
   }catch(e){
     if(target) target.innerHTML='<div class="healthService" style="grid-column:1/-1"><span class="hsIcon">⚠️</span><div><strong>No se pudieron verificar los servicios</strong><small>'+escHtml(e.message||'Error de conexión')+'</small></div><span class="hsDot error"></span></div>';

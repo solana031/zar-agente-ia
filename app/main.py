@@ -659,7 +659,10 @@ def google_services_check():
     Scope authorization and live API availability are reported separately so the
     UI never labels a service operational merely because its OAuth scope exists.
     """
-    g = auth_status()
+    try:
+        g = auth_status()
+    except Exception as exc:
+        return jsonify({"ok": False, "connected": False, "checked_at": datetime.now(timezone.utc).isoformat(), "services": [], "error": "No se pudo consultar la sesión de Google: " + str(exc)[:240]}), 502
     if not g.get("connected"):
         return jsonify({"ok": False, "connected": False, "checked_at": time.time(), "services": [], "error": "Google no está conectado."}), 401
 
@@ -676,8 +679,11 @@ def google_services_check():
         "forms": {"name":"Forms", "icon":"📋", "scope":"https://www.googleapis.com/auth/forms.body"},
     }
     rows=[]
-    creds=get_credentials(auto_refresh=True)
     checked_at=datetime.now(timezone.utc).isoformat()
+    try:
+        creds=get_credentials(auto_refresh=True)
+    except Exception as exc:
+        return jsonify({"ok": False, "connected": False, "checked_at": checked_at, "services": [], "error": "No se pudieron cargar las credenciales de Google: " + str(exc)[:240]}), 502
     if not creds:
         return jsonify({"ok": False, "connected": False, "checked_at": checked_at, "services": [], "error": "No se pudieron cargar las credenciales de Google."}), 401
 
