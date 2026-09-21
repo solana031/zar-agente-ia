@@ -386,21 +386,47 @@ def _run_backup(reason="google_connected", user_id=None):
             raise RuntimeError("No hay credenciales Google válidas para crear la copia.")
         svcs = _services(creds)
         stats = {"started_at": _LAST["started_at"], "reason": reason}
-        stats.update(_backup_gmail(svcs["gmail"], out))
-        stats.update(_backup_contacts(svcs["people"], out))
-        stats.update(_backup_calendar(svcs["calendar"], out))
-        try:
-            stats.update(_backup_tasks(svcs["tasks"], out))
-        except Exception as exc:
-            stats["tasks_error"] = str(exc)
-            _json(out / "tasks.json", [])
-        stats.update(_backup_drive(svcs["drive"], out))
+        service_errors = {}
+
+        # Each Google service is backed up independently. A quota/rate-limit
+        # error in Gmail must not abort Contacts, Calendar, Tasks or Drive.
+        # This is especially important because Gmail's messages.list can hit
+        # the per-user quota while the other APIs remain perfectly usable.
+        for key, fn, empty_files in [
+            ("gmail", lambda: _backup_gmail(svcs["gmail"], out), []),
+            ("contacts", lambda: _backup_contacts(svcs["people"], out), []),
+            ("calendar", lambda: _backup_calendar(svcs["calendar"], out), []),
+            ("tasks", lambda: _backup_tasks(svcs["tasks"], out), []),
+            ("drive", lambda: _backup_drive(svcs["drive"], out), []),
+        ]:
+            try:
+                stats.update(fn())
+            except Exception as exc:
+                service_errors[key] = str(exc)
+                stats[f"{key}_error"] = str(exc)
+                # Leave an explicit empty snapshot for services that could not
+                # be copied, while preserving all other successful services.
+                if key == "gmail":
+                    _json(out / "messages.json", [])
+                    _json(out / "labels.json", [])
+                    _json(out / "drafts.json", [])
+                elif key == "contacts":
+                    _json(out / "contacts.json", [])
+                elif key == "calendar":
+                    _json(out / "calendar.json", [])
+                elif key == "tasks":
+                    _json(out / "tasks.json", [])
+                elif key == "drive":
+                    _json(out / "drive_files.json", [])
+
+        stats["service_errors"] = service_errors
         stats.update(_index_backup(out, stats))
         stats["finished_at"] = datetime.now(timezone.utc).isoformat()
         _json(out / "manifest.json", stats)
         _json(_backup_root(user_id) / "latest.json", {"path": str(out), "manifest": stats})
+        final_status = "done_with_warnings" if service_errors else "done"
         with _LOCK:
-            _LAST = {"status": "done", "started_at": stats["started_at"], "finished_at": stats["finished_at"], "path": str(out), "error": None, "stats": stats}
+            _LAST = {"status": final_status, "started_at": stats["started_at"], "finished_at": stats["finished_at"], "path": str(out), "error": None, "stats": stats}
     except Exception as exc:
         with _LOCK:
             _LAST = {"status": "error", "started_at": _LAST.get("started_at"), "finished_at": datetime.now(timezone.utc).isoformat(), "path": str(out), "error": str(exc)}
