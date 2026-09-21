@@ -251,7 +251,7 @@ def _set_pending(draft):
 def _job_path(job_id):
     return JOB_DIR / f"{job_id}.json"
 
-def _write_job(job_id, status, reply=None, error=None, action=None, user_id=None):
+def _write_job(job_id, status, reply=None, error=None, action=None, user_id=None, skills=None):
     payload = {"status": status}
     if user_id: payload["user_id"] = user_id
     if action is not None:
@@ -260,6 +260,8 @@ def _write_job(job_id, status, reply=None, error=None, action=None, user_id=None
         payload["reply"] = reply
     if error is not None:
         payload["error"] = error
+    if skills is not None:
+        payload["skills"] = skills
     path = _job_path(job_id)
     tmp = path.with_suffix(".tmp")
     tmp.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
@@ -2628,7 +2630,8 @@ def api_skill_execute(skill_id):
             result = f"He preparado {pending.get('action','acción')} en {pending.get('service','Google Workspace')}. Confírmalo desde el chat."
         _remember_turn("user", message)
         _remember_turn("assistant", str(result))
-        return jsonify({"ok": True, "result": str(result), "skill": skill})
+        active_skills = [{"id": s.get("id"), "name": s.get("name"), "enabled": True} for s in list_skills() if s.get("enabled", True)]
+        return jsonify({"ok": True, "result": str(result), "skill": skill, "active_skills": active_skills})
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
 

@@ -85,7 +85,15 @@
       resultBox.hidden=false; resultBox.className='zarSkillResult'; resultBox.textContent='⏳ Ejecutando habilidad…';
       try{
         const data=await api('/api/skills/'+encodeURIComponent(id)+'/execute',{method:'POST',body:JSON.stringify({message:input})});
+        const active=data.active_skills||[];
         resultBox.className='zarSkillResult success'; resultBox.textContent=data.result||data.message||'Habilidad ejecutada correctamente.';
+        // Llevar el resultado directamente al chat principal.
+        closeSkills();
+        if(typeof window.ZARShowActiveSkills==='function') window.ZARShowActiveSkills(active);
+        if(typeof window.ZARAddChatMessage==='function'){
+          window.ZARAddChatMessage('user',input);
+          window.ZARAddChatMessage('assistant',data.result||data.message||'Habilidad ejecutada correctamente.');
+        }
         await loadSkills();
       }catch(e){
         resultBox.className='zarSkillResult error'; resultBox.textContent='⚠️ '+e.message;
@@ -96,5 +104,7 @@
   function openSkills(){ensureUI();document.getElementById('zarSkillsPanel').classList.add('open');loadSkills()}
   function closeSkills(){document.getElementById('zarSkillsPanel')?.classList.remove('open')}
   window.ZARSkills={open:openSkills,load:loadSkills};
+  window.ZARSkillsGetActive=()=>skills.filter(s=>s.enabled);
+
   document.addEventListener('DOMContentLoaded',()=>{ensureUI();});
 })();
