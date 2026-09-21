@@ -45,7 +45,6 @@ jobs:
 
           if [ ! -f "$WORKFLOW" ]; then
             echo "ERROR: Falta el workflow permanente: $WORKFLOW"
-            echo "Créalo primero en GitHub y vuelve a subir el ZIP."
             exit 1
           fi
 
@@ -71,8 +70,6 @@ jobs:
 
           ROOT="/tmp/zar-extracted"
 
-          # Si el ZIP contiene una única carpeta y nada más,
-          # utilizamos esa carpeta como raíz del proyecto.
           DIRECTORIES=("$ROOT"/*/)
           FILES=("$ROOT"/*)
 
@@ -85,27 +82,58 @@ jobs:
           echo "SOURCE_DIR=$SOURCE_DIR" >> "$GITHUB_ENV"
           echo "Contenido usado como raíz de ZAR: $SOURCE_DIR"
 
+      - name: Proteger datos persistentes de ZAR
+        shell: bash
+        run: |
+          set -e
+
+          # El estado de ZAR vive en el Volume de Railway (/data).
+          # Nunca debe formar parte de una release de código.
+
+          PROTECTED_DIRS=(
+            "data"
+            "users"
+            "backups"
+            "jobs"
+            "audio_studio"
+            "video_creator"
+          )
+
+          for item in "${PROTECTED_DIRS[@]}"; do
+            if [ -e "$SOURCE_DIR/$item" ]; then
+              echo "Eliminando estado runtime del ZIP: $SOURCE_DIR/$item"
+              rm -rf "$SOURCE_DIR/$item"
+            fi
+          done
+
+          # Bases de datos, tokens y estado runtime nunca entran en una release.
+          find "$SOURCE_DIR" -type f \( \
+            -name '*.sqlite3' -o \
+            -name '*.sqlite' -o \
+            -name '*.db' -o \
+            -name 'google_token.json' -o \
+            -name 'youtube_token.json' -o \
+            -name 'oauth_pending.json' \
+          \) -print -delete
+
+          echo "Protección de datos persistentes completada."
+
       - name: Reemplazar el contenido del repositorio
         shell: bash
         run: |
           set -e
 
-          # Elimina el contenido actual, pero conserva .git.
           find . -mindepth 1 -maxdepth 1 ! -name '.git' -exec rm -rf {} +
 
-          # Copia el contenido completo del ZIP.
           cp -a "$SOURCE_DIR"/. .
 
-          # Nunca permitimos que un ZIP de versión quede almacenado
-          # dentro del repositorio final.
           find . -type f -name '*.zip' -delete
 
-          # El workflow permanente siempre se conserva en esta ruta.
+          # El workflow permanente siempre se conserva.
           rm -rf .github
           mkdir -p .github/workflows
           cp /tmp/zar-protect/zar-auto-update.yml .github/workflows/zar-auto-update.yml
 
-          # Limpieza de archivos temporales habituales.
           find . -type d -name '__pycache__' -prune -exec rm -rf {} +
           find . -type f \( -name '*.pyc' -o -name '*.pyo' \) -delete
           find . -type f -name '.DS_Store' -delete
@@ -114,11 +142,6 @@ jobs:
         shell: bash
         run: |
           set -e
-
-          echo ""
-          echo "=========================================="
-          echo "REPOSITORIO ACTUALIZADO"
-          echo "=========================================="
 
           if [ ! -f "requirements.txt" ]; then
             echo "WARNING: No existe requirements.txt"
@@ -133,11 +156,14 @@ jobs:
             exit 1
           fi
 
-          echo "Archivos principales:"
-          find . -maxdepth 2 -type f | sort | sed -n '1,120p'
+          for item in data users backups jobs audio_studio video_creator; do
+            if [ -e "$item" ]; then
+              echo "ERROR: El estado runtime quedó dentro del repositorio: $item"
+              exit 1
+            fi
+          done
 
-          echo ""
-          echo "Comprobación final completada."
+          echo "OK: el almacenamiento runtime permanece fuera del repositorio."
 
       - name: Commit y actualizar main
         shell: bash
