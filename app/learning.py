@@ -319,7 +319,11 @@ def resume_learning(job_id):
     topic = str(job.get("topic") or "").strip()
     if not topic:
         raise ValueError("El aprendizaje no tiene tema recuperable.")
-    _set_job(job_id, status="queued", progress=max(1, min(5, int(job.get("progress") or 1))), phase="Reanudando", message="Reanudando aprendizaje…", resumed_at=time.time())
+    now = time.time()
+    # Cambiamos el estado de forma atómica antes de lanzar el worker para que
+    # ninguna actualización concurrente de la UI pueda volver a mostrar
+    # "Reanudar" durante el arranque.
+    _set_job(job_id, status="researching", progress=max(1, min(5, int(job.get("progress") or 1))), phase="Reanudando", message="Reanudando aprendizaje…", resumed_at=now, heartbeat_at=now)
     import threading
     threading.Thread(target=_run_job, args=(job_id, topic, str(job.get("goal") or ""), list(job.get("references") or [])), daemon=True, name=f"zar-learning-resume-{job_id[:8]}").start()
     return get_job(job_id)

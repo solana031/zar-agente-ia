@@ -107,19 +107,30 @@
     metrics.innerHTML='<span>⏱️ Transcurrido: <b>'+formatDuration(elapsed)+'</b></span><span>⏳ Estimado restante: <b>'+(remaining?formatDuration(remaining):'calculando…')+'</b></span><span>🔎 Fuentes: <b>'+Number(job.source_count||0)+'</b></span><span>🌐 Consultas: <b>'+Number(job.queries_done||0)+'/'+Number(job.queries_total||0)+'</b></span>';
   }
   function renderLearningJobs(jobs){
-    const box=document.getElementById('zarLearningJobs'); if(!box)return; window.__zarLearningJobs=jobs||[];
-    const relevant=(jobs||[]).filter(j=>j && ['queued','researching','synthesizing','paused','completed','error'].includes(j.status)).slice(0,8);
+    const box=document.getElementById('zarLearningJobs'); if(!box)return;
+    const incoming=Array.isArray(jobs)?jobs:[];
+    // Mantener el estado de reanudación de forma optimista: mientras la petición
+    // /resume esté en curso, jamás volvemos a pintar el botón "Reanudar" aunque
+    // una respuesta concurrente del endpoint todavía devuelva "paused".
+    window.__zarLearningJobs=incoming.map(j=>{
+      if(!j)return j;
+      if(resumePending.has(j.id)) return {...j,status:['queued','researching','synthesizing'].includes(j.status)?j.status:'queued',phase:j.phase||'Reanudando',message:j.message||'Reanudando aprendizaje…'};
+      return j;
+    });
+    const relevant=window.__zarLearningJobs.filter(j=>j && ['queued','researching','synthesizing','paused','completed','error'].includes(j.status)).slice(0,8);
     if(!relevant.length){box.innerHTML='';return;}
     box.innerHTML='<div class="zarLearningJobsHead">🧠 <b>Aprendizajes de ZAR</b><span>estado persistente</span></div>'+relevant.map(j=>{
       const p=Math.max(0,Math.min(100,Number(j.progress)||0));
-      const active=['queued','researching','synthesizing'].includes(j.status);
-      const paused=j.status==='paused'; const done=j.status==='completed';
-      const phase=done?'Aprendizaje completado':paused?'Aprendizaje pausado':active?(j.phase||'Aprendizaje en curso'):'Aprendizaje detenido';
+      const pending=resumePending.has(j.id);
+      const active=pending||['queued','researching','synthesizing'].includes(j.status);
+      const paused=!pending&&j.status==='paused'; const done=j.status==='completed';
+      const phase=done?'Aprendizaje completado':pending?'Reanudando aprendizaje…':paused?'Aprendizaje pausado':active?(j.phase||'Aprendizaje en curso'):'Aprendizaje detenido';
       const cls=done?'done':paused?'paused':j.status==='error'?'error':'active';
-      const resumeBtn=paused?(resumePending.has(j.id)?'<button class="zarInlineResume isPending" disabled>⏳ Reanudando…</button>':'<button class="zarInlineResume" data-resume="'+esc(j.id)+'">▶ Reanudar</button>'):'';
-      return '<article class="zarLearningJobCard '+cls+'"><div class="zarLearningJobIcon">'+(done?'✓':paused?'Ⅱ':j.status==='error'?'!':'🧠')+'</div><div class="zarLearningJobMain"><div class="zarLearningJobTitle">'+esc(j.topic||'Aprendizaje')+'</div><div class="zarLearningJobPhase">'+esc(phase)+' <span>· '+esc(j.message||'')+'</span></div><div class="zarLearningMini"><div><span style="width:'+p+'%"></span></div><b>'+p+'%</b></div><div class="zarLearningJobMeta">⏱️ '+formatDuration(j.elapsed_seconds||0)+' · 🔎 '+Number(j.source_count||0)+' fuentes · 🌐 '+Number(j.queries_done||0)+'/'+Number(j.queries_total||0)+' consultas'+(j.estimated_seconds?' · ⏳ '+(Number(j.estimated_seconds)>Number(j.elapsed_seconds||0)?formatDuration(Number(j.estimated_seconds)-Number(j.elapsed_seconds||0)):'calculando…'):'')+'</div></div><div class="zarLearningJobActions">'+resumeBtn+'<button class="zarInlineDelete" data-delete-learning="'+esc(j.id)+'" title="Eliminar aprendizaje">🗑️</button></div></article>';
+      const resumeBtn=paused?'<button class="zarInlineResume" data-resume="'+esc(j.id)+'" '+(pending?'disabled':'')+'>'+ (pending?'⏳ Reanudando…':'▶ Reanudar') +'</button>':'';
+      return '<article class="zarLearningJobCard '+cls+'"><div class="zarLearningJobIcon">'+(done?'✓':paused?'Ⅱ':j.status==='error'?'!':'🧠')+'</div><div class="zarLearningJobMain"><div class="zarLearningJobTitle">'+esc(j.topic||'Aprendizaje')+'</div><div class="zarLearningJobPhase">'+esc(phase)+' <span>· '+esc(pending?'La sesión está arrancando de nuevo…':(j.message||''))+'</span></div><div class="zarLearningMini"><div><span style="width:'+p+'%"></span></div><b>'+p+'%</b></div><div class="zarLearningJobMeta">⏱️ '+formatDuration(j.elapsed_seconds||0)+' · 🔎 '+Number(j.source_count||0)+' fuentes · 🌐 '+Number(j.queries_done||0)+'/'+Number(j.queries_total||0)+' consultas'+(j.estimated_seconds?' · ⏳ '+(Number(j.estimated_seconds)>Number(j.elapsed_seconds||0)?formatDuration(Number(j.estimated_seconds)-Number(j.elapsed_seconds||0)):'calculando…'):'')+'</div></div><div class="zarLearningJobActions">'+resumeBtn+'<button class="zarInlineDelete" data-delete-learning="'+esc(j.id)+'" title="Eliminar aprendizaje">🗑️</button></div></article>';
     }).join('');
-    box.querySelectorAll('[data-resume]').forEach(b=>b.onclick=()=>resumeLearning(b.dataset.resume)); box.querySelectorAll('[data-delete-learning]').forEach(b=>b.onclick=()=>deleteLearning(b.dataset.deleteLearning));
+    box.querySelectorAll('[data-resume]').forEach(b=>b.onclick=()=>resumeLearning(b.dataset.resume));
+    box.querySelectorAll('[data-delete-learning]').forEach(b=>b.onclick=()=>deleteLearning(b.dataset.deleteLearning));
   }
   async function deleteLearning(id){
     const job=(window.__zarLearningJobs||[]).find(x=>x.id===id);
@@ -153,24 +164,32 @@
   async function resumeLearning(id){
     if(resumePending.has(id))return;
     resumePending.add(id);
-    renderLearningJobs(window.__zarLearningJobs||[]);
+    // Pintado inmediato: el usuario debe ver el cambio sin cerrar/reabrir el panel.
+    const current=(window.__zarLearningJobs||[]).map(j=>j&&j.id===id?{...j,status:'queued',phase:'Reanudando',message:'Reanudando aprendizaje…'}:j);
+    renderLearningJobs(current);
+    const status=document.getElementById('zarLearnStatus'),metrics=document.getElementById('zarLearnMetrics'),wrap=document.getElementById('zarLearnProgressWrap'),bar=document.getElementById('zarLearnProgressBar'),label=document.getElementById('zarLearnProgressLabel');
+    if(status){status.hidden=false;status.innerHTML='🧠 <b>Reanudando aprendizaje…</b> · La sesión se está iniciando de nuevo.';}
     try{
       const data=await api('/api/learning/'+encodeURIComponent(id)+'/resume',{method:'POST'});
+      const job=data.job||{};
+      // El botón no puede volver a aparecer por una respuesta "paused" vieja.
       resumePending.delete(id);
-      const status=document.getElementById('zarLearnStatus'),metrics=document.getElementById('zarLearnMetrics'),wrap=document.getElementById('zarLearnProgressWrap'),bar=document.getElementById('zarLearnProgressBar'),label=document.getElementById('zarLearnProgressLabel');
-      renderLearningJob(data.job,status,metrics,wrap,bar,label);
-      renderLearningJobs([data.job].concat((window.__zarLearningJobs||[]).filter(j=>j.id!==id)));
+      const normalized={...job,status:['queued','researching','synthesizing','completed'].includes(job.status)?job.status:'researching',phase:job.status==='completed'?'Completado':(job.phase||'Reanudando'),message:job.message||'Reanudando aprendizaje…'};
+      const merged=[normalized].concat((window.__zarLearningJobs||[]).filter(j=>j.id!==id));
+      renderLearningJobs(merged);
+      renderLearningJob(normalized,status,metrics,wrap,bar,label);
       pollLearning(id,status,metrics,wrap,bar,label);
     }catch(e){
       resumePending.delete(id);
       renderLearningJobs(window.__zarLearningJobs||[]);
-      const status=document.getElementById('zarLearnStatus');status.hidden=false;status.innerHTML='⚠️ '+esc(e.message);
+      if(status){status.hidden=false;status.innerHTML='⚠️ '+esc(e.message||'No se pudo reanudar el aprendizaje.');}
     }
   }
   async function pollLearning(id,status,metrics,wrap,bar,label){
     try{
       const data=await api('/api/learning/'+encodeURIComponent(id)+'?_='+Date.now()), job=data.job||{};
       renderLearningJob(job,status,metrics,wrap,bar,label);
+      if(resumePending.has(id) && ['queued','researching','synthesizing','completed'].includes(job.status)) resumePending.delete(id);
       renderLearningJobs(data.jobs||[job]);
       if(job.status==='completed'){
         status.innerHTML='✅ <b>Aprendizaje inicial completado.</b> ZAR ha guardado el conocimiento y creado una habilidad reutilizable. Ahora puede practicar y comprobar dominio.'; await loadSkills(); return;
