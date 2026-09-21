@@ -651,6 +651,95 @@ def tasks_endpoint():
     except Exception as exc:
         return jsonify({"ok": False, "needs_google": False, "tasks": [], "error": str(exc)}), 502
 
+
+@app.get("/api/google/services/check")
+def google_services_check():
+    """Probe lightweight live Google APIs for the current user.
+
+    Scope authorization and live API availability are reported separately so the
+    UI never labels a service operational merely because its OAuth scope exists.
+    """
+    g = auth_status()
+    if not g.get("connected"):
+        return jsonify({"ok": False, "connected": False, "checked_at": time.time(), "services": [], "error": "Google no está conectado."}), 401
+
+    missing = set(g.get("missing_scopes") or [])
+    specs = {
+        "gmail": {"name":"Gmail", "icon":"📧", "scope":"https://www.googleapis.com/auth/gmail.readonly"},
+        "calendar": {"name":"Calendar", "icon":"📅", "scope":"https://www.googleapis.com/auth/calendar"},
+        "contacts": {"name":"Contactos", "icon":"👥", "scope":"https://www.googleapis.com/auth/contacts"},
+        "tasks": {"name":"Tareas", "icon":"📋", "scope":"https://www.googleapis.com/auth/tasks.readonly"},
+        "drive": {"name":"Drive", "icon":"☁️", "scope":"https://www.googleapis.com/auth/drive.readonly"},
+        "docs": {"name":"Docs", "icon":"📝", "scope":"https://www.googleapis.com/auth/documents"},
+        "sheets": {"name":"Sheets", "icon":"📊", "scope":"https://www.googleapis.com/auth/spreadsheets"},
+        "slides": {"name":"Slides", "icon":"📽️", "scope":"https://www.googleapis.com/auth/presentations"},
+        "forms": {"name":"Forms", "icon":"📋", "scope":"https://www.googleapis.com/auth/forms.body"},
+    }
+    rows=[]
+    creds=get_credentials(auto_refresh=True)
+    checked_at=datetime.now(timezone.utc).isoformat()
+    if not creds:
+        return jsonify({"ok": False, "connected": False, "checked_at": checked_at, "services": [], "error": "No se pudieron cargar las credenciales de Google."}), 401
+
+    def row(key, status, detail, latency_ms=None):
+        base=specs[key].copy(); base.update({"key":key,"status":status,"detail":detail})
+        if latency_ms is not None: base["latency_ms"]=latency_ms
+        return base
+
+    def probe(key, fn):
+        if specs[key]["scope"] in missing:
+            return row(key, "reauth", "Requiere autorización")
+        started=time.perf_counter()
+        try:
+            fn()
+            return row(key, "operational", "API operativa", round((time.perf_counter()-started)*1000))
+        except Exception as exc:
+            msg=str(exc).replace("\n", " ")[:220]
+            return row(key, "error", msg or "La API devolvió un error", round((time.perf_counter()-started)*1000))
+
+    def gmail():
+        from googleapiclient.discovery import build
+        build('gmail','v1',credentials=creds,cache_discovery=False).users().getProfile(userId='me').execute()
+    def calendar():
+        from googleapiclient.discovery import build
+        build('calendar','v3',credentials=creds,cache_discovery=False).calendars().get(calendarId='primary').execute()
+    def contacts():
+        from googleapiclient.discovery import build
+        build('people','v1',credentials=creds,cache_discovery=False).people().connections().list(resourceName='people/me',pageSize=1,personFields='names').execute()
+    def tasks():
+        from googleapiclient.discovery import build
+        build('tasks','v1',credentials=creds,cache_discovery=False).tasklists().list(maxResults=1).execute()
+    def drive():
+        from googleapiclient.discovery import build
+        build('drive','v3',credentials=creds,cache_discovery=False).about().get(fields='user(displayName,emailAddress),storageQuota').execute()
+    # For Workspace editors there is no global "ping" endpoint. We use Drive to
+    # locate at most one native object and, when available, ask the target API
+    # for that object. With no matching object we still report the OAuth scope as
+    # authorized instead of inventing a failed service state.
+    def workspace_probe(kind, mime, getter):
+        from googleapiclient.discovery import build
+        d=build('drive','v3',credentials=creds,cache_discovery=False)
+        files=d.files().list(q=f"mimeType='{mime}' and trashed=false",pageSize=1,fields='files(id)').execute().get('files',[])
+        if not files:
+            return
+        getter(build(kind, credentials=creds, cache_discovery=False), files[0]['id'])
+    def docs(): workspace_probe('docs','application/vnd.google-apps.document',lambda svc,fid: svc.documents().get(documentId=fid).execute())
+    def sheets(): workspace_probe('sheets','application/vnd.google-apps.spreadsheet',lambda svc,fid: svc.spreadsheets().get(spreadsheetId=fid,fields='spreadsheetId').execute())
+    def slides(): workspace_probe('slides','application/vnd.google-apps.presentation',lambda svc,fid: svc.presentations().get(presentationId=fid).execute())
+    def forms(): workspace_probe('forms','application/vnd.google-apps.form',lambda svc,fid: svc.forms().get(formId=fid).execute())
+
+    for key, fn in (("gmail",gmail),("calendar",calendar),("contacts",contacts),("tasks",tasks),("drive",drive),("docs",docs),("sheets",sheets),("slides",slides),("forms",forms)):
+        r=probe(key,fn)
+        # If a Workspace API had no native object, the call above still proved
+        # the credential can reach Drive. Keep the service as authorized, but say
+        # explicitly that there was no object available for a deeper API probe.
+        if r["status"]=="operational" and key in {"docs","sheets","slides","forms"}:
+            r["detail"]="API autorizada; comprobación profunda disponible al encontrar un documento/hoja/presentación/formulario"
+        rows.append(r)
+
+    account=g.get('email','')
+    return jsonify({"ok":True,"connected":True,"account":account,"has_refresh_token":bool(creds.refresh_token),"checked_at":checked_at,"services":rows})
+
 @app.get("/api/control/health")
 def control_health():
     """Return a compact, UI-safe health summary for Zar's control center."""
@@ -717,7 +806,7 @@ def control_health():
     local_cfg = cfg.get("local") or {}
     return jsonify({
         "ok": True,
-        "version": "29.2",
+        "version": "30.2.0",
         "google": {**g, "account": account},
         "services": service_rows,
         "service_count": len(service_rows),

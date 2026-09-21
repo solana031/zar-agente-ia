@@ -47,3 +47,7 @@ V25.0 añade un espaciador de chat robusto: cuando hay pocos mensajes, quedan al
 
 ## V27.1
 Editor multimedia inteligente con edición no destructiva, comandos por voz/texto, efectos por tramo de tiempo, biblioteca amplia de transiciones y optimización heurística para vídeo corto. Consulta README_V27_1.md.
+
+
+## v30.2.0 — Google 2.0
+Incluye comprobación en vivo de las APIs de Google y panel de conexiones por servicio, conservando Memoria, Archivos y Deep Research de las versiones anteriores.
