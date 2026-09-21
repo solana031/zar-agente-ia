@@ -2,6 +2,16 @@ credentials.json
 google_token.json
 youtube_token.json
 config.json
+oauth_pending.json
 __pycache__/
 *.pyc
 /data/
+/data
+users/
+backups/
+jobs/
+audio_studio/
+video_creator/
+*.sqlite3
+*.sqlite
+*.db
