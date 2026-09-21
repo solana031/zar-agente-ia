@@ -9,6 +9,7 @@
   let skills=[];
   let editing=null;
   let runningId=null;
+  const resumePending=new Set();
 
   function ensureUI(){
     if(document.getElementById('zarSkillsPanel')) return;
@@ -20,12 +21,40 @@
       <div class="zarSkillsToolbar"><button id="zarSkillNew" class="zarSkillPrimary">＋ Nueva habilidad</button><button id="zarLearnNew" class="zarSkillLearn">🧠 Enseñar a ZAR</button><button id="zarSkillRefresh">↻ Actualizar</button><span id="zarSkillsCount"></span></div>
       <div id="zarSkillsEditor" class="zarSkillsEditor" hidden></div><div id="zarLearningBox" class="zarLearningBox" hidden></div><div id="zarLearningJobs" class="zarLearningJobs"></div>
       <div id="zarSkillsList" class="zarSkillsList"></div>
+    </div>
+    <div id="zarConfirmModal" class="zarConfirmModal" hidden aria-hidden="true">
+      <div class="zarConfirmCard" role="dialog" aria-modal="true" aria-labelledby="zarConfirmTitle">
+        <div class="zarConfirmIcon">!</div><div class="zarConfirmBody"><h3 id="zarConfirmTitle">Confirmar acción</h3><p id="zarConfirmText"></p></div>
+        <div class="zarConfirmActions"><button type="button" id="zarConfirmNo">No, conservar</button><button type="button" id="zarConfirmYes" class="danger">Sí, eliminar definitivamente</button></div>
+      </div>
     </div>`;
     document.body.appendChild(panel);
     panel.querySelector('.zarSkillsClose').onclick=closeSkills;
     panel.addEventListener('click',e=>{if(e.target===panel)closeSkills()});
     panel.querySelector('#zarSkillNew').onclick=()=>showEditor(); panel.querySelector('#zarLearnNew').onclick=showLearning;
     panel.querySelector('#zarSkillRefresh').onclick=loadSkills;
+    const modal=panel.querySelector('#zarConfirmModal');
+    modal.addEventListener('click',e=>{if(e.target===modal) closeConfirm(false)});
+    panel.querySelector('#zarConfirmNo').onclick=()=>closeConfirm(false);
+    panel.querySelector('#zarConfirmYes').onclick=()=>closeConfirm(true);
+  }
+
+  let confirmResolver=null;
+  function openConfirm(title,text){
+    ensureUI();
+    const modal=document.getElementById('zarConfirmModal');
+    document.getElementById('zarConfirmTitle').textContent=title||'Confirmar acción';
+    document.getElementById('zarConfirmText').textContent=text||'';
+    modal.hidden=false; modal.setAttribute('aria-hidden','false');
+    requestAnimationFrame(()=>modal.classList.add('open'));
+    return new Promise(resolve=>{confirmResolver=resolve;});
+  }
+  function closeConfirm(answer){
+    const modal=document.getElementById('zarConfirmModal');
+    if(!modal)return;
+    modal.classList.remove('open'); modal.setAttribute('aria-hidden','true');
+    setTimeout(()=>{modal.hidden=true;},160);
+    const r=confirmResolver; confirmResolver=null; if(r)r(Boolean(answer));
   }
 
   async function loadSkills(){
@@ -72,7 +101,7 @@
     status.hidden=false;
     const elapsed=Number(job.elapsed_seconds)||((job.started_at?Date.now()/1000-job.started_at:0));
     const est=Number(job.estimated_seconds)||0; const remaining=est&&elapsed<est?est-elapsed:0;
-    status.innerHTML='🧠 <b>'+esc(job.phase||'Aprendiendo…')+'</b> · '+esc(job.message||'Procesando…')+(job.status==='paused'?' <button type="button" id="zarResumeLearning" class="zarInlineResume">▶ Reanudar</button>':'');
+    status.innerHTML='🧠 <b>'+esc(job.phase||'Aprendiendo…')+'</b> · '+esc(job.message||'Procesando…')+(job.status==='paused'&&!resumePending.has(job.id)?' <button type="button" id="zarResumeLearning" class="zarInlineResume">▶ Reanudar</button>':job.status==='paused'?' <button type="button" class="zarInlineResume isPending" disabled>⏳ Reanudando…</button>':'');
     if(job.status==='paused'){const rb=document.getElementById('zarResumeLearning');if(rb)rb.onclick=()=>resumeLearning(job.id);}
     metrics.hidden=false;
     metrics.innerHTML='<span>⏱️ Transcurrido: <b>'+formatDuration(elapsed)+'</b></span><span>⏳ Estimado restante: <b>'+(remaining?formatDuration(remaining):'calculando…')+'</b></span><span>🔎 Fuentes: <b>'+Number(job.source_count||0)+'</b></span><span>🌐 Consultas: <b>'+Number(job.queries_done||0)+'/'+Number(job.queries_total||0)+'</b></span>';
@@ -87,15 +116,17 @@
       const paused=j.status==='paused'; const done=j.status==='completed';
       const phase=done?'Aprendizaje completado':paused?'Aprendizaje pausado':active?(j.phase||'Aprendizaje en curso'):'Aprendizaje detenido';
       const cls=done?'done':paused?'paused':j.status==='error'?'error':'active';
-      return '<article class="zarLearningJobCard '+cls+'"><div class="zarLearningJobIcon">'+(done?'✓':paused?'Ⅱ':j.status==='error'?'!':'🧠')+'</div><div class="zarLearningJobMain"><div class="zarLearningJobTitle">'+esc(j.topic||'Aprendizaje')+'</div><div class="zarLearningJobPhase">'+esc(phase)+' <span>· '+esc(j.message||'')+'</span></div><div class="zarLearningMini"><div><span style="width:'+p+'%"></span></div><b>'+p+'%</b></div><div class="zarLearningJobMeta">⏱️ '+formatDuration(j.elapsed_seconds||0)+' · 🔎 '+Number(j.source_count||0)+' fuentes · 🌐 '+Number(j.queries_done||0)+'/'+Number(j.queries_total||0)+' consultas'+(j.estimated_seconds?' · ⏳ '+(Number(j.estimated_seconds)>Number(j.elapsed_seconds||0)?formatDuration(Number(j.estimated_seconds)-Number(j.elapsed_seconds||0)):'calculando…'):'')+'</div></div><div class="zarLearningJobActions">'+(paused?'<button class="zarInlineResume" data-resume="'+esc(j.id)+'">▶ Reanudar</button>':'')+'<button class="zarInlineDelete" data-delete-learning="'+esc(j.id)+'" title="Eliminar aprendizaje">🗑️</button></div></article>';
+      const resumeBtn=paused?(resumePending.has(j.id)?'<button class="zarInlineResume isPending" disabled>⏳ Reanudando…</button>':'<button class="zarInlineResume" data-resume="'+esc(j.id)+'">▶ Reanudar</button>'):'';
+      return '<article class="zarLearningJobCard '+cls+'"><div class="zarLearningJobIcon">'+(done?'✓':paused?'Ⅱ':j.status==='error'?'!':'🧠')+'</div><div class="zarLearningJobMain"><div class="zarLearningJobTitle">'+esc(j.topic||'Aprendizaje')+'</div><div class="zarLearningJobPhase">'+esc(phase)+' <span>· '+esc(j.message||'')+'</span></div><div class="zarLearningMini"><div><span style="width:'+p+'%"></span></div><b>'+p+'%</b></div><div class="zarLearningJobMeta">⏱️ '+formatDuration(j.elapsed_seconds||0)+' · 🔎 '+Number(j.source_count||0)+' fuentes · 🌐 '+Number(j.queries_done||0)+'/'+Number(j.queries_total||0)+' consultas'+(j.estimated_seconds?' · ⏳ '+(Number(j.estimated_seconds)>Number(j.elapsed_seconds||0)?formatDuration(Number(j.estimated_seconds)-Number(j.elapsed_seconds||0)):'calculando…'):'')+'</div></div><div class="zarLearningJobActions">'+resumeBtn+'<button class="zarInlineDelete" data-delete-learning="'+esc(j.id)+'" title="Eliminar aprendizaje">🗑️</button></div></article>';
     }).join('');
     box.querySelectorAll('[data-resume]').forEach(b=>b.onclick=()=>resumeLearning(b.dataset.resume)); box.querySelectorAll('[data-delete-learning]').forEach(b=>b.onclick=()=>deleteLearning(b.dataset.deleteLearning));
   }
   async function deleteLearning(id){
     const job=(window.__zarLearningJobs||[]).find(x=>x.id===id);
     const label=job?.topic||'este aprendizaje';
-    if(!confirm('¿Eliminar '+label+'? Si está en marcha, se cancelará de forma segura.'))return;
-    try{await api('/api/learning/'+encodeURIComponent(id),{method:'DELETE'}); await loadLearningState(); await loadSkills();}
+    const ok=await openConfirm('Eliminar aprendizaje definitivamente', '¿Quieres eliminar definitivamente «'+label+'»? Si está en marcha, ZAR lo cancelará de forma segura. Si eliges «No, conservar», no se borrará nada.');
+    if(!ok)return;
+    try{await api('/api/learning/'+encodeURIComponent(id),{method:'DELETE'}); resumePending.delete(id); await loadLearningState(); await loadSkills();}
     catch(e){alert(e.message||'No se pudo eliminar el aprendizaje.');}
   }
   async function loadLearningState(){
@@ -120,11 +151,21 @@
     try{if(!topic)throw new Error('Indica qué quieres que aprenda ZAR.'); const data=await api('/api/learning/start',{method:'POST',body:JSON.stringify({topic,goal,references})}); const id=data.job.id; renderLearningJob(data.job,status,metrics,wrap,bar,label); renderLearningJobs([data.job]); pollLearning(id,status,metrics,wrap,bar,label);}catch(e){status.textContent='⚠️ '+e.message;}
   }
   async function resumeLearning(id){
+    if(resumePending.has(id))return;
+    resumePending.add(id);
+    renderLearningJobs(window.__zarLearningJobs||[]);
     try{
       const data=await api('/api/learning/'+encodeURIComponent(id)+'/resume',{method:'POST'});
+      resumePending.delete(id);
       const status=document.getElementById('zarLearnStatus'),metrics=document.getElementById('zarLearnMetrics'),wrap=document.getElementById('zarLearnProgressWrap'),bar=document.getElementById('zarLearnProgressBar'),label=document.getElementById('zarLearnProgressLabel');
-      renderLearningJob(data.job,status,metrics,wrap,bar,label); renderLearningJobs([data.job]); pollLearning(id,status,metrics,wrap,bar,label);
-    }catch(e){const status=document.getElementById('zarLearnStatus');status.hidden=false;status.innerHTML='⚠️ '+esc(e.message);}
+      renderLearningJob(data.job,status,metrics,wrap,bar,label);
+      renderLearningJobs([data.job].concat((window.__zarLearningJobs||[]).filter(j=>j.id!==id)));
+      pollLearning(id,status,metrics,wrap,bar,label);
+    }catch(e){
+      resumePending.delete(id);
+      renderLearningJobs(window.__zarLearningJobs||[]);
+      const status=document.getElementById('zarLearnStatus');status.hidden=false;status.innerHTML='⚠️ '+esc(e.message);
+    }
   }
   async function pollLearning(id,status,metrics,wrap,bar,label){
     try{
@@ -162,7 +203,7 @@
     const skill=skills.find(x=>x.id===id); if(!skill)return;
     const card=document.getElementById('run-'+id);
     if(act==='edit'){showEditor(skill);return}
-    if(act==='del'){if(!confirm('¿Eliminar la habilidad «'+skill.name+'»?'))return;try{await api('/api/skills/'+encodeURIComponent(id),{method:'DELETE'});await loadSkills()}catch(e){alert(e.message)}return}
+    if(act==='del'){const ok=await openConfirm('Eliminar habilidad definitivamente','¿Quieres eliminar definitivamente la habilidad «'+skill.name+'»? Esta acción no se puede deshacer.');if(!ok)return;try{await api('/api/skills/'+encodeURIComponent(id),{method:'DELETE'});await loadSkills()}catch(e){alert(e.message)}return}
     if(act==='toggle'){try{await api('/api/skills/'+encodeURIComponent(id),{method:'PATCH',body:JSON.stringify({enabled:!skill.enabled})});await loadSkills()}catch(e){alert(e.message)}return}
     if(act==='run'){card?.classList.add('open');card?.querySelector('textarea')?.focus();return}
     if(act==='cancelrun'){card?.classList.remove('open');return}

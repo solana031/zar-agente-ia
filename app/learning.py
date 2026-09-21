@@ -139,9 +139,52 @@ def _queries(topic, goal, refs):
 
 
 def _search_one(q):
-    from .web_search import google_web_search
-    res = google_web_search(q, instructions="Recopila fuentes útiles para estudiar el tema; prioriza documentación oficial, recursos educativos y referencias profesionales.")
-    return {"query": q, "ok": bool(res.get("ok")), "text": (res.get("text") or "")[:9000], "sources": res.get("sources") or []}
+    """Run one learning search without allowing a provider stall to block the job.
+
+    The learning worker must keep making observable progress even if a remote
+    search provider hangs.  We give the preferred grounded search a short
+    window and then use ZAR's independent public-search fallback.
+    """
+    from .web_search import google_web_search, _fallback_web_search
+    result = {"value": None}
+    finished = threading.Event()
+
+    def worker():
+        try:
+            result["value"] = google_web_search(
+                q,
+                instructions=(
+                    "Recopila fuentes útiles para estudiar el tema; prioriza "
+                    "documentación oficial, recursos educativos y referencias profesionales."
+                ),
+            )
+        except Exception as exc:
+            result["value"] = {"ok": False, "error": str(exc)}
+        finally:
+            finished.set()
+
+    t = threading.Thread(target=worker, daemon=True, name="zar-learning-search")
+    t.start()
+    # Never wait indefinitely for a remote provider.
+    if not finished.wait(35):
+        try:
+            fallback = _fallback_web_search(
+                q,
+                "Recopila resultados públicos útiles para estudiar el tema; prioriza fuentes fiables y educativas.",
+            )
+        except Exception as exc:
+            fallback = {"ok": False, "error": str(exc)}
+        res = fallback
+    else:
+        res = result.get("value") or {"ok": False, "error": "Sin resultado de búsqueda."}
+    return {
+        "query": q,
+        "ok": bool(res.get("ok")),
+        "text": (res.get("text") or "")[:9000],
+        "sources": res.get("sources") or [],
+        "provider": res.get("provider") or "",
+        "error": res.get("error") or "",
+    }
 
 
 def _cancel_requested(job_id):
@@ -189,15 +232,22 @@ def _run_job(job_id, topic, goal, references):
             for future in as_completed(futures):
                 if _cancel_requested(job_id): return
                 q = futures[future]; done += 1
+                item = None
                 try:
-                    item = future.result()
-                    if item["ok"]:
-                        research.append(item); sources.extend(item["sources"])
+                    item = future.result(timeout=2)
+                    if item.get("ok"):
+                        research.append(item); sources.extend(item.get("sources") or [])
+                    else:
+                        research.append(item)
                 except Exception as exc:
-                    research.append({"query": q, "ok": False, "text": f"Error de fuente: {exc}", "sources": []})
+                    item = {"query": q, "ok": False, "text": f"Error de fuente: {exc}", "sources": []}
+                    research.append(item)
                 seen = {s.get("url") for s in sources if s.get("url")}
                 progress = 8 + int(done / max(1, len(qs)) * 60)
-                _set_job(job_id, progress=progress, phase="Investigando fuentes", message=f"Investigación {done}/{len(qs)}: {q[:100]}", queries_done=done, source_count=len(seen), elapsed_seconds=round(time.time()-started,1), estimated_seconds=estimate)
+                msg = f"Investigación {done}/{len(qs)}: {q[:100]}"
+                if not item.get("ok"):
+                    msg += " · sin resultado utilizable"
+                _set_job(job_id, progress=progress, phase="Investigando fuentes", message=msg, queries_done=done, source_count=len(seen), elapsed_seconds=round(time.time()-started,1), estimated_seconds=estimate)
 
         seen, clean = set(), []
         for s in sources:
