@@ -1,5 +1,6 @@
 """ZAR package bootstrap.
 
+
 Persistent-state rule:
 - Code/releases live in the repository and may be replaced on deployment.
 - User state lives outside the repository in ZAR_DATA_DIR.
