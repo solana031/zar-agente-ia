@@ -32,15 +32,27 @@ def _extract_json(text: str):
 
 def _prompt():
     return (
-        "Analiza el archivo adjunto como documento administrativo. Devuelve SOLO un objeto JSON válido, sin markdown. "
-        "Si no es una factura, recibo o documento con esos campos, deja los campos no aplicables como cadenas vacías. "
-        "No inventes datos. Usa exactamente estas claves: "
-        "document_type, category, summary, description, vendor, invoice_number, document_date, due_date, total_amount, "
-        "currency, tax_amount, reference, tags. "
+        "Analiza exhaustivamente el archivo adjunto como documento, imagen o comprobante. "
+        "Devuelve SOLO un objeto JSON válido, sin markdown. No inventes datos y marca como no legible "
+        "lo que no pueda determinarse. Identifica el tipo de documento, idioma y propósito. Extrae todos "
+        "los datos visibles relevantes, no solo los de una factura. Usa exactamente estas claves: "
+        "document_type, document_subtype, language, summary, description, issuer, recipient, vendor, "
+        "invoice_number, reference, document_date, due_date, dates, addresses, emails, phones, "
+        "identifiers, currency, total_amount, subtotal, tax_amount, taxes, discounts, amounts, "
+        "line_items, people, entities, tables, tags, full_text, visual_observations. "
+        "dates debe ser una lista de fechas detectadas; amounts una lista de importes con su etiqueta y moneda "
+        "si aparece; line_items una lista de conceptos/cantidades/precios/impuestos; taxes una lista con tipo, "
+        "porcentaje y cantidad; people y entities deben conservar nombres y roles; tables debe representar "
+        "las tablas legibles; identifiers debe recoger DNI/NIE/NIF/CIF, números de factura, cuentas, referencias "
+        "u otros identificadores visibles, sin inventar ni ocultar datos. full_text debe contener una "
+        "transcripción fiel de todo el texto legible, respetando el orden aproximado. "
+        "Si es una foto, captura o documento escaneado, aplica OCR visual. Si es un PDF, analiza todas las "
+        "páginas que puedas. Para facturas, reconoce proveedor, receptor, número, fecha, vencimiento, divisa, "
+        "subtotal, IVA/impuestos, descuentos, total y líneas. Para nóminas, reconoce empresa, trabajador, "
+        "periodo, conceptos, devengos, deducciones, bases, impuestos y líquido. Para cualquier otro documento, "
+        "extrae los campos específicos que sean visibles dentro de las claves genéricas. "
         "category debe ser una de: facturas, recibos, contratos, finanzas, documentos, personal, fotos, otros, sin_clasificar. "
-        "total_amount y tax_amount deben ser cadenas conservando el importe tal como aparece. "
-        "tags debe ser una lista corta de palabras. "
-        "Para una foto de una factura, identifica proveedor, número, fecha, vencimiento, total, moneda e impuestos si son legibles."
+        "tags debe ser una lista corta de palabras."
     )
 
 
@@ -100,6 +112,16 @@ def analyze_file(file_id: str):
         if not fallback_model or fallback_model == model:
             raise
         analysis = _native_gemini(parts, fallback_model, key, base_url)
+
+    # Mantener la ficha rica pero acotada para que el índice persistente no crezca sin control.
+    if isinstance(analysis.get('full_text'), str):
+        analysis['full_text'] = analysis['full_text'][:30000]
+    for key, limit in [('description',6000),('summary',3000),('visual_observations',5000)]:
+        if isinstance(analysis.get(key), str):
+            analysis[key] = analysis[key][:limit]
+    for key in ('dates','addresses','emails','phones','identifiers','amounts','line_items','people','entities','tables','taxes','tags'):
+        if not isinstance(analysis.get(key), list):
+            analysis[key] = []
 
     category = str(analysis.get('category') or item.get('category') or 'sin_clasificar').strip().lower()
     aliases = {'factura':'facturas','invoice':'facturas','recibo':'recibos','ticket':'recibos','contrato':'contratos','documento':'documentos','foto':'fotos'}

@@ -31,6 +31,7 @@ from .memory3 import stats as memory3_stats, recent as memory3_recent, search as
 from .web_search import search_inspiration_images, analyze_inspiration_image
 from .deep_research import start_research, wait_for_research, save_report, list_reports, get_report, get_research, extract_report
 from .skills import list_skills, get_skill, create_skill, update_skill, delete_skill, execute_skill, match_skill
+from .learning import list_learning, list_jobs, get_job, start_learning, learn_from_file, active_learning_count
 from .video_creator import create_project, list_projects, get_project, project_path, add_media as video_add_media, generate_music, render_project, media_path, set_project, update_media, delete_media, move_media, transition_catalog, apply_edit_command, viral_optimize, add_text_overlay, update_text_overlay, delete_text_overlay
 from .audio_studio import create_project as audio_create_project, list_projects as audio_list_projects, save_settings as audio_save_settings, render_base as audio_render_base, apply_voice_effect as audio_apply_voice_effect, audio_command as interpret_audio_command
 from .studio_agent import interpret as interpret_studio_command
@@ -1241,6 +1242,47 @@ def _process_chat_message(msg):
             _remember_turn("user",msg); _remember_turn("assistant",reply)
             return reply
 
+    # Aprender de un documento recién adjuntado: usa la última referencia de archivo
+    # guardada en el contexto de usuario y conserva el análisis en aprendizaje persistente.
+    if re.search(r"\b(aprende|estudia|aprende de|analiza y aprende|memoriza)\b.*\b(documento|archivo|factura|nómina|nomina|pdf|imagen)\b", msg, re.I):
+        try:
+            last = get_context().get("last_uploaded_file") or {}
+            file_id = last.get("id") if isinstance(last, dict) else None
+            if file_id:
+                learned = learn_from_file(file_id)
+                analysis = learned.get("analysis") or {}
+                reply = ("🧠 He aprendido de «%s».\n\nTipo: %s\nResumen: %s\n"
+                         "He guardado su estructura y los datos detectados en tu espacio persistente de ZAR. "
+                         "Puedes pedirme que busque, explique o compare cualquier dato del documento."
+                         % (last.get("name","documento"), analysis.get("document_type","documento"), analysis.get("summary") or analysis.get("description") or "sin resumen"))
+            else:
+                reply="No tengo un documento recién adjuntado en el contexto. Sube el archivo y dime «aprende de este documento»."
+            _remember_turn("user",msg); _remember_turn("assistant",reply)
+            return reply
+        except Exception as exc:
+            reply=f"No he podido aprender del documento: {exc}"
+            _remember_turn("user",msg); _remember_turn("assistant",reply)
+            return reply
+
+    # ZAR Learning: una petición explícita de "aprender/estudiar/dominar" crea
+    # un proceso persistente de investigación y convierte el resultado en una habilidad.
+    learning_match = re.match(r"^\s*(?:zar[,:]?\s*)?(?:quiero que aprendas|aprende|aprende a|estudia|domina|formate en|aprende todo lo necesario sobre)\s+(.+)$", msg, re.I)
+    if learning_match:
+        try:
+            topic = learning_match.group(1).strip().rstrip(".")
+            # Mantener la petición original como objetivo; el proceso se ejecuta en segundo plano.
+            job = start_learning(topic, msg, [])
+            reply = (f"🧠 He iniciado el aprendizaje de «{topic}».\n\n"
+                     "Voy a investigar fuentes públicas, organizar un plan de estudio, comprobar conocimientos "
+                     "y guardar una habilidad reutilizable. El proceso continúa en segundo plano y quedará "
+                     "asociado a tu memoria persistente.")
+            _remember_turn("user", msg); _remember_turn("assistant", reply)
+            return reply
+        except Exception as exc:
+            reply=f"No he podido iniciar el aprendizaje: {exc}"
+            _remember_turn("user",msg); _remember_turn("assistant",reply)
+            return reply
+
     # ZAR Skills: una invocación explícita de una habilidad guardada tiene
     # prioridad sobre el enrutador general. La habilidad se ejecuta con el
     # mismo motor y herramientas que una petición normal, pero sus pasos quedan
@@ -2156,6 +2198,8 @@ def persistence_status_api():
         "research_reports": len(reports),
         "knowledge_sources": int(kstats.get("sources", 0) or 0),
         "knowledge_chunks": int(kstats.get("chunks", 0) or 0),
+        "learning_topics": len(list_learning()),
+        "learning_jobs": len(list_jobs()),
     })
 
 
@@ -2565,6 +2609,37 @@ def video_cancel_publication(pubid):
     if len(new)==len(items): return jsonify({'ok':False,'error':'Publicación no encontrada.'}),404
     _save_publications(new); return jsonify({'ok':True})
 
+
+@app.get("/api/learning")
+def api_learning():
+    return jsonify({"ok": True, "topics": list_learning(), "jobs": list_jobs()})
+
+@app.get("/api/learning/<job_id>")
+def api_learning_job(job_id):
+    job = get_job(job_id)
+    if not job:
+        return jsonify({"ok": False, "error": "Aprendizaje no encontrado."}), 404
+    return jsonify({"ok": True, "job": job})
+
+@app.post("/api/learning/start")
+def api_learning_start():
+    try:
+        data=request.get_json(silent=True) or {}
+        topic=str(data.get("topic") or "").strip()
+        goal=str(data.get("goal") or "").strip()
+        refs=data.get("references") or []
+        if isinstance(refs,str):
+            refs=[x.strip() for x in refs.splitlines() if x.strip()]
+        return jsonify({"ok":True,"job":start_learning(topic,goal,refs)})
+    except Exception as exc:
+        return jsonify({"ok":False,"error":str(exc)}),400
+
+@app.post("/api/learning/file/<file_id>")
+def api_learning_file(file_id):
+    try:
+        return jsonify(learn_from_file(file_id))
+    except Exception as exc:
+        return jsonify({"ok":False,"error":str(exc)}),400
 
 @app.get("/api/skills")
 def api_skills():

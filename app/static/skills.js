@@ -17,14 +17,14 @@
     panel.innerHTML=`<div class="zarSkillsShell">
       <div class="zarSkillsHead"><div><div class="zarSkillsEyebrow">ZAR · SISTEMA DE HABILIDADES</div><h2>🧩 Habilidades</h2><p>Procedimientos reutilizables que quedan guardados en el almacenamiento persistente de ZAR.</p></div><button class="zarSkillsClose" type="button" aria-label="Cerrar">×</button></div>
       <div class="zarSkillHint">Puedes crear una habilidad como «Informe semanal», indicar sus pasos y las herramientas que debería usar. Después puedes decir en el chat: <b>«ZAR, ejecuta mi habilidad Informe semanal sobre esta semana»</b>.</div>
-      <div class="zarSkillsToolbar"><button id="zarSkillNew" class="zarSkillPrimary">＋ Nueva habilidad</button><button id="zarSkillRefresh">↻ Actualizar</button><span id="zarSkillsCount"></span></div>
-      <div id="zarSkillsEditor" class="zarSkillsEditor" hidden></div>
+      <div class="zarSkillsToolbar"><button id="zarSkillNew" class="zarSkillPrimary">＋ Nueva habilidad</button><button id="zarLearnNew" class="zarSkillLearn">🧠 Enseñar a ZAR</button><button id="zarSkillRefresh">↻ Actualizar</button><span id="zarSkillsCount"></span></div>
+      <div id="zarSkillsEditor" class="zarSkillsEditor" hidden></div><div id="zarLearningBox" class="zarLearningBox" hidden></div>
       <div id="zarSkillsList" class="zarSkillsList"></div>
     </div>`;
     document.body.appendChild(panel);
     panel.querySelector('.zarSkillsClose').onclick=closeSkills;
     panel.addEventListener('click',e=>{if(e.target===panel)closeSkills()});
-    panel.querySelector('#zarSkillNew').onclick=()=>showEditor();
+    panel.querySelector('#zarSkillNew').onclick=()=>showEditor(); panel.querySelector('#zarLearnNew').onclick=showLearning;
     panel.querySelector('#zarSkillRefresh').onclick=loadSkills;
   }
 
@@ -46,6 +46,47 @@
       <div class="zarSkillRunBox" id="run-${esc(s.id)}"><label class="zarSkillRunLabel">Trabajo concreto <span>· qué quieres que haga ZAR con esta habilidad</span></label><textarea aria-label="Trabajo concreto para la habilidad" placeholder="Ej.: prepara un informe breve sobre cómo está funcionando ZAR…"></textarea><div class="zarSkillRunActions"><span class="zarSkillRunStatus">La habilidad se ejecutará con los pasos y herramientas guardados.</span><button data-act="cancelrun" data-id="${esc(s.id)}">Cancelar</button><button class="zarSkillPrimary" data-act="confirmrun" data-id="${esc(s.id)}">▶ Ejecutar ahora</button></div><div class="zarSkillResult" hidden></div></div>
     </article>`).join('');
     list.querySelectorAll('button[data-act]').forEach(b=>b.onclick=()=>skillAction(b.dataset.act,b.dataset.id));
+  }
+
+  function showLearning(){
+    const box=document.getElementById('zarLearningBox'); if(!box)return;
+    box.hidden=false;
+    box.innerHTML=`<div class="zarLearningHead"><div><span>🧠 APRENDIZAJE PERSISTENTE</span><h3>Enseñar a ZAR</h3><p>ZAR investigará fuentes públicas, organizará un plan y guardará lo aprendido como conocimiento y habilidad reutilizable.</p></div><button id="zarLearnClose" type="button">×</button></div>
+      <label>¿Qué quieres que aprenda?<input id="learnTopic" maxlength="180" placeholder="Ej. edición profesional de fotografía"></label>
+      <label>Objetivo<textarea id="learnGoal" maxlength="1500" placeholder="Ej. que pueda analizar fotos, explicarme técnicas y ayudarme a editar imágenes profesionalmente."></textarea></label>
+      <label>Referencias opcionales · una URL por línea<textarea id="learnRefs" placeholder="https://...\nhttps://..."></textarea></label>
+      <div class="zarLearningNote">También puedes enseñarle idiomas, programación, edición, diseño o conocimientos de un documento adjunto. ZAR no modifica su propio código automáticamente.</div>
+      <div class="zarSkillEditorActions"><button id="zarLearnCancel">Cancelar</button><button id="zarLearnStart" class="zarSkillPrimary">🧠 Empezar a aprender</button></div>
+      <div id="zarLearnStatus" class="zarLearningStatus" hidden></div>`;
+    box.querySelector('#zarLearnClose').onclick=()=>box.hidden=true;
+    box.querySelector('#zarLearnCancel').onclick=()=>box.hidden=true;
+    box.querySelector('#zarLearnStart').onclick=startLearning;
+  }
+  async function startLearning(){
+    const topic=document.getElementById('learnTopic').value.trim();
+    const goal=document.getElementById('learnGoal').value.trim();
+    const references=document.getElementById('learnRefs').value.split('\n').map(x=>x.trim()).filter(Boolean);
+    const status=document.getElementById('zarLearnStatus'); status.hidden=false; status.textContent='⏳ Iniciando investigación…';
+    try{
+      if(!topic)throw new Error('Indica qué quieres que aprenda ZAR.');
+      const data=await api('/api/learning/start',{method:'POST',body:JSON.stringify({topic,goal,references})});
+      const id=data.job.id;
+      status.textContent='🧠 Aprendizaje iniciado. ZAR está investigando en segundo plano…';
+      pollLearning(id,status);
+    }catch(e){status.textContent='⚠️ '+e.message}
+  }
+  async function pollLearning(id,status){
+    try{
+      const data=await api('/api/learning/'+encodeURIComponent(id));
+      const job=data.job||{};
+      if(job.status==='completed'){
+        status.textContent='✅ Aprendizaje completado. ZAR ha guardado el conocimiento y creado una habilidad reutilizable.';
+        await loadSkills(); return;
+      }
+      if(job.status==='error'){status.textContent='⚠️ '+(job.message||'El aprendizaje no pudo completarse.');return}
+      status.textContent='🧠 '+(job.message||'Aprendiendo…')+' '+(job.progress||0)+'%';
+      setTimeout(()=>pollLearning(id,status),1800);
+    }catch(e){status.textContent='⚠️ '+e.message}
   }
 
   function showEditor(skill=null){

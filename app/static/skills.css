@@ -3,3 +3,17 @@
 .zarSkillRunLabel{display:block;color:#a99b8c;font-size:9px;margin-bottom:6px}.zarSkillRunStatus{margin-right:auto;color:#8f8377;font-size:9px}.zarSkillRunBox.busy{opacity:.9}.zarSkillRunBox.busy textarea{opacity:.65}.zarSkillRunBox.busy .zarSkillRunActions button{pointer-events:none;opacity:.65}.zarSkillResult.success{border-color:#365d48;color:#c9efd8}.zarSkillResult.error{border-color:#6b3d2f;color:#f0c4b2}@media(max-width:720px){.zarSkillRunActions{flex-wrap:wrap}.zarSkillRunStatus{width:100%;margin:0 0 3px}}
 
 .zarActiveSkills{display:flex;align-items:center;gap:6px;width:fit-content;max-width:100%;margin:0 7px 2px;padding:5px 9px;border:1px solid #3b2d21;border-radius:999px;background:rgba(17,13,10,.72);color:#9d9082;font-size:9px;line-height:1.2;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.zarActiveSkills.hasSkills{border-color:#6b5031;color:#dfc59f;background:rgba(83,57,28,.18)}.zarActiveSkills:hover{border-color:#c69a5b;color:#ecd4ad}.zarActiveSkills:focus-visible{outline:2px solid rgba(216,173,112,.55);outline-offset:2px}@media(max-width:720px){.zarActiveSkills{max-width:calc(100% - 12px);font-size:8px;margin-left:6px;margin-right:6px}}
+
+.zarSkillLearn{border-color:rgba(191,150,72,.55);background:rgba(191,150,72,.08)}
+.zarLearningBox{margin:12px 0;padding:18px;border:1px solid rgba(191,150,72,.35);border-radius:14px;background:rgba(16,12,8,.9)}
+.zarLearningHead{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;margin-bottom:14px}
+.zarLearningHead span{font-size:11px;letter-spacing:.16em;color:#b99a63}
+.zarLearningHead h3{margin:4px 0;font-size:22px}
+.zarLearningHead p{margin:0;color:#b9b0a4;max-width:760px;line-height:1.5}
+.zarLearningHead button{border:1px solid #5d4a31;background:#16110c;color:#e6d7bc;border-radius:9px;width:34px;height:34px;font-size:20px}
+.zarLearningBox label{display:block;margin:12px 0;color:#d8c7aa;font-size:13px}
+.zarLearningBox input,.zarLearningBox textarea{display:block;width:100%;box-sizing:border-box;margin-top:7px;background:#090806;color:#eee4d3;border:1px solid #4c3a25;border-radius:10px;padding:11px 12px;font:inherit}
+.zarLearningBox textarea{min-height:76px;resize:vertical}
+.zarLearningNote{padding:10px 12px;border-left:2px solid #a87d35;background:rgba(168,125,53,.07);color:#a99e8e;font-size:12px;line-height:1.5}
+.zarLearningStatus{margin-top:12px;padding:10px 12px;border-radius:9px;background:#0b0a08;color:#d8c8a8;border:1px solid #3b2d1c}
+@media(max-width:700px){.zarLearningHead{flex-direction:column}.zarSkillLearn{width:100%}}
