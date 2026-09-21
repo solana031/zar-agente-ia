@@ -325,6 +325,34 @@ def search(query, limit=10):
     return search_hybrid(query, limit)
 
 
+def file_context_for(query, limit=6, max_chars=10000):
+    """Recupera contexto priorizando archivos/documentos del usuario.
+    No sustituye a la memoria general: es una capa específica para preguntas
+    sobre documentos, hojas, PDFs, imágenes y archivos guardados en Zar.
+    """
+    rows = search_hybrid(query, limit=max(8, min(int(limit or 6) * 3, 30)))
+    allowed = {"file", "google_drive_content"}
+    rows = [r for r in rows if r.get("source_type") in allowed]
+    out = []
+    used = 0
+    seen = set()
+    for r in rows:
+        key = (r.get("source_id"), r.get("chunk_id"))
+        if key in seen:
+            continue
+        seen.add(key)
+        label = r.get("title") or "Archivo"
+        piece = f"[{label} · {r.get('source_type')}] {r.get('content','')}"
+        if used + len(piece) > max_chars:
+            piece = piece[:max(0, max_chars - used)]
+        if piece:
+            out.append(piece)
+            used += len(piece)
+        if len(out) >= max(1, int(limit or 6)) or used >= max_chars:
+            break
+    return "\n".join(out)
+
+
 def context_for(query, limit=8, max_chars=12000):
     rows = search_hybrid(query, limit)
     out = []

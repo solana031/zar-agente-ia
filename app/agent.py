@@ -5,7 +5,7 @@ import requests
 try:
     from .model_router import model_for
     from .memory import memories, history, conversation
-    from .knowledge import context_for as memory_context_for
+    from .knowledge import context_for as memory_context_for, file_context_for
     from .config import load
     from .tools import TOOL_DEFINITIONS, execute_tool
     from .deep_research import is_deep_research_request
@@ -13,7 +13,8 @@ try:
 except ImportError:
     from model_router import model_for
     from memory import memories, history, conversation
-    from .config import load
+    from knowledge import context_for as memory_context_for, file_context_for
+    from config import load
     from .tools import TOOL_DEFINITIONS, execute_tool
     from .deep_research import is_deep_research_request
     from .hybrid import parse_reminder, calendar_query_days, is_reminder_request, gmail_intent, gmail_direct_intent, gmail_is_complex_request, gmail_compound_intent, workspace_intent, contacts_intent, media_intent
@@ -31,6 +32,10 @@ def _system_prompt(current_message=""):
         retrieved_memory = memory_context_for(current_message, limit=8, max_chars=12000) if current_message else ""
     except Exception:
         retrieved_memory = ""
+    try:
+        retrieved_files = file_context_for(current_message, limit=6, max_chars=10000) if current_message else ""
+    except Exception:
+        retrieved_files = ""
     try:
         from .context import get_context
     except ImportError:
@@ -59,6 +64,8 @@ def _system_prompt(current_message=""):
     conversation_text = "\n".join(recent_lines) or "(sin conversación previa)"
     if retrieved_memory:
         conversation_text += "\n\nCONOCIMIENTO LOCAL RELEVANTE:\n" + retrieved_memory
+    if retrieved_files:
+        conversation_text += "\n\nARCHIVOS Y DOCUMENTOS RELEVANTES DEL USUARIO:\n" + retrieved_files
     # Memory 3.0 must be actual prompt context, not merely an internal search.
     # Keep a small recent candidate set as a deterministic safety net when an
     # embedding provider is unavailable, then add semantic matches on top.

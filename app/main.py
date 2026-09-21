@@ -1929,6 +1929,60 @@ def video_project_download(pid):
         return jsonify({"ok":False,"error":"Todavía no hay una exportación."}), 404
     return send_file(p["output"]["path"], mimetype="video/mp4", as_attachment=True, download_name=(re.sub(r'[^\w\-]+','_',p.get('name','zar_video'))[:80]+'.mp4'))
 
+@app.get("/api/persistence/status")
+def persistence_status_api():
+    """Resumen de lo que ZAR conserva fuera del código de la versión desplegada."""
+    try:
+        from .knowledge import stats as knowledge_stats
+        kstats = knowledge_stats()
+    except Exception:
+        kstats = {"sources": 0, "chunks": 0}
+    try:
+        reports = list_reports(5000)
+    except Exception:
+        reports = []
+    try:
+        convs = list_conversations(5000)
+    except Exception:
+        convs = []
+    try:
+        mems = memories()
+    except Exception:
+        mems = []
+    try:
+        files = list_files()
+    except Exception:
+        files = []
+    data_dir = str(os.environ.get("ZAR_DATA_DIR") or "")
+    persistent = bool(data_dir and (data_dir == "/data" or "LOCALAPPDATA" in data_dir.upper() or ".zar" in data_dir.lower()))
+    return jsonify({
+        "ok": True,
+        "storage": {
+            "data_dir": data_dir or "data/",
+            "persistent_target": persistent,
+            "note": "Los datos de usuario viven fuera del código de la versión; en Railway requieren un Volume montado en /data."
+        },
+        "conversations": len(convs),
+        "memories": len(mems),
+        "files": len(files),
+        "research_reports": len(reports),
+        "knowledge_sources": int(kstats.get("sources", 0) or 0),
+        "knowledge_chunks": int(kstats.get("chunks", 0) or 0),
+    })
+
+
+@app.get("/api/files/context")
+def files_context_api():
+    q = (request.args.get("q") or "").strip()
+    if not q:
+        return jsonify({"ok": False, "error": "Falta la búsqueda."}), 400
+    try:
+        from .knowledge import file_context_for
+        return jsonify({"ok": True, "query": q, "context": file_context_for(q, limit=8, max_chars=14000)})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 200
+
+
 @app.post("/api/files/upload")
 def upload_file():
     files = request.files.getlist("files")
