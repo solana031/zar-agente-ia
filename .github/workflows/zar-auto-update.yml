@@ -105,6 +105,158 @@ jobs:
           echo ""
           echo "PERSISTENCIA DEL REPOSITORIO: OK"
 
+      # ==========================================================
+      # GENERACIÓN DE RELEASE
+      # ==========================================================
+
+      - name: Crear release ZIP de ZAR 30.3.1
+        if: ${{ env.DRY_RUN == 'true' }}
+        shell: bash
+        run: |
+          set -e
+
+          RELEASE_DIR="/tmp/zar-release"
+          ZIP_PATH="/tmp/ZAR_v30_3_1.zip"
+
+          echo "=============================================="
+          echo " CREANDO ZAR v30.3.1"
+          echo "=============================================="
+
+          rm -rf "$RELEASE_DIR"
+          rm -f "$ZIP_PATH"
+
+          mkdir -p "$RELEASE_DIR"
+
+          echo ""
+          echo "Copiando código actual..."
+
+          cp -a ./. "$RELEASE_DIR/"
+
+          # ------------------------------------------------------
+          # NUNCA incluir datos persistentes ni runtime
+          # ------------------------------------------------------
+
+          echo ""
+          echo "Eliminando datos persistentes/runtime del paquete..."
+
+          rm -rf \
+            "$RELEASE_DIR/.git" \
+            "$RELEASE_DIR/data" \
+            "$RELEASE_DIR/users" \
+            "$RELEASE_DIR/backups" \
+            "$RELEASE_DIR/jobs" \
+            "$RELEASE_DIR/audio_studio" \
+            "$RELEASE_DIR/video_creator"
+
+          # ------------------------------------------------------
+          # Eliminar cachés Python
+          # ------------------------------------------------------
+
+          find "$RELEASE_DIR" \
+            -type d \
+            -name '__pycache__' \
+            -prune \
+            -exec rm -rf {} +
+
+          # ------------------------------------------------------
+          # Eliminar bases de datos, tokens y otros runtime
+          # ------------------------------------------------------
+
+          find "$RELEASE_DIR" -type f \
+            \( \
+              -name '*.pyc' \
+              -o -name '*.pyo' \
+              -o -name '*.sqlite3' \
+              -o -name '*.sqlite' \
+              -o -name '*.db' \
+              -o -name 'google_token.json' \
+              -o -name 'youtube_token.json' \
+              -o -name 'oauth_pending.json' \
+              -o -name '*.zip' \
+            \) \
+            -delete
+
+          # ------------------------------------------------------
+          # Actualizar versión
+          # ------------------------------------------------------
+
+          echo ""
+          echo "Actualizando versión a 30.3.1..."
+
+          printf '30.3.1\n' > "$RELEASE_DIR/VERSION"
+          printf '30.3.1\n' > "$RELEASE_DIR/VERSION.txt"
+
+          if [ -f "$RELEASE_DIR/app/VERSION.txt" ]; then
+            printf '30.3.1\n' > "$RELEASE_DIR/app/VERSION.txt"
+          fi
+
+          # ------------------------------------------------------
+          # Crear ZIP con los archivos directamente en la raíz
+          # ------------------------------------------------------
+
+          echo ""
+          echo "Comprimiendo release..."
+
+          cd "$RELEASE_DIR"
+
+          zip -qr "$ZIP_PATH" .
+
+          # ------------------------------------------------------
+          # Validar ZIP
+          # ------------------------------------------------------
+
+          echo ""
+          echo "=============================================="
+          echo " VALIDANDO ZIP"
+          echo "=============================================="
+
+          unzip -tq "$ZIP_PATH"
+
+          echo ""
+          echo "Comprobando versión..."
+
+          unzip -p "$ZIP_PATH" VERSION | tr -d '\r' | grep -qx "30.3.1"
+
+          echo "OK: versión 30.3.1"
+
+          # ------------------------------------------------------
+          # Comprobar que NO hay datos persistentes
+          # ------------------------------------------------------
+
+          echo ""
+          echo "Comprobando que el ZIP no contiene datos persistentes..."
+
+          if unzip -l "$ZIP_PATH" | grep -E \
+            '(^|/)(data|users|backups|jobs|audio_studio|video_creator)(/|$)|\.(sqlite3?|db)$|/(google_token|youtube_token|oauth_pending)\.json$'; then
+
+            echo ""
+            echo "ERROR: el ZIP contiene datos persistentes/runtime."
+            echo "La release NO se publicará."
+            exit 1
+          fi
+
+          echo "OK: no se han incluido datos persistentes."
+
+          echo ""
+          echo "=============================================="
+          echo " RELEASE CREADA CORRECTAMENTE"
+          echo "=============================================="
+
+          ls -lh "$ZIP_PATH"
+
+      - name: Publicar ZAR v30.3.1 como artifact
+        if: ${{ env.DRY_RUN == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ZAR-v30.3.1-release
+          path: /tmp/ZAR_v30_3_1.zip
+          if-no-files-found: error
+          retention-days: 30
+
+      # ==========================================================
+      # ACTUALIZACIÓN NORMAL DESDE ZIP
+      # ==========================================================
+
       - name: Comprobar ZIP
         if: ${{ env.DRY_RUN != 'true' }}
         shell: bash
@@ -119,6 +271,7 @@ jobs:
           fi
 
           echo "ZIP detectado: $ZIP_FILE"
+
           echo "ZIP_FILE=$ZIP_FILE" >> "$GITHUB_ENV"
 
       - name: Preparar extracción
@@ -212,6 +365,12 @@ jobs:
           echo ""
           echo "La protección de persistencia está activa."
           echo ""
+          echo "El release ZIP se ha generado como artifact."
+          echo ""
+
+      # ==========================================================
+      # PROTECCIÓN DURANTE UNA ACTUALIZACIÓN REAL
+      # ==========================================================
 
       - name: Guardar workflow permanente
         if: ${{ env.DRY_RUN != 'true' }}
@@ -220,6 +379,7 @@ jobs:
           set -e
 
           mkdir -p /tmp/zar-protect
+
           cp ".github/workflows/zar-auto-update.yml" \
              "/tmp/zar-protect/zar-auto-update.yml"
 
@@ -264,14 +424,18 @@ jobs:
 
           cp -a "$SOURCE_DIR"/. .
 
+          # El ZIP utilizado para actualizar nunca queda almacenado
+          # dentro del repositorio.
           find . -type f -name '*.zip' -delete
 
+          # Restaurar el workflow permanente.
           rm -rf .github
           mkdir -p .github/workflows
 
           cp "/tmp/zar-protect/zar-auto-update.yml" \
              ".github/workflows/zar-auto-update.yml"
 
+          # Limpieza final.
           find . -type d -name '__pycache__' -prune -exec rm -rf {} +
           find . -type f \( -name '*.pyc' -o -name '*.pyo' \) -delete
           find . -type f -name '.DS_Store' -delete
@@ -303,7 +467,7 @@ jobs:
           set -e
 
           git config user.name "github-actions[bot]"
-          git.config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
           git add -A
 
@@ -313,4 +477,5 @@ jobs:
           fi
 
           git commit -m "[zar-auto-update] Actualizar ZAR desde ZIP"
+
           git push
