@@ -31,7 +31,7 @@ from .memory3 import stats as memory3_stats, recent as memory3_recent, search as
 from .web_search import search_inspiration_images, analyze_inspiration_image
 from .deep_research import start_research, wait_for_research, save_report, list_reports, get_report, get_research, extract_report
 from .skills import list_skills, get_skill, create_skill, update_skill, delete_skill, execute_skill, match_skill
-from .learning import list_learning, list_jobs, get_job, start_learning, resume_learning, learn_from_file, active_learning_count
+from .learning import list_learning, list_jobs, get_job, start_learning, resume_learning, learn_from_file, active_learning_count, delete_learning
 from .video_creator import create_project, list_projects, get_project, project_path, add_media as video_add_media, generate_music, render_project, media_path, set_project, update_media, delete_media, move_media, transition_catalog, apply_edit_command, viral_optimize, add_text_overlay, update_text_overlay, delete_text_overlay
 from .audio_studio import create_project as audio_create_project, list_projects as audio_list_projects, save_settings as audio_save_settings, render_base as audio_render_base, apply_voice_effect as audio_apply_voice_effect, audio_command as interpret_audio_command
 from .studio_agent import interpret as interpret_studio_command
@@ -2615,11 +2615,14 @@ def api_learning():
     jobs = list_jobs()
     now = time.time()
     for job in jobs:
-        if job.get("status") in ("queued", "researching", "synthesizing") and job.get("updated_at") and now - float(job.get("updated_at")) > 90:
-            # A daemon learning thread does not survive a Railway restart. Preserve the job and expose it as resumable.
-            job["status"] = "paused"
-            job["phase"] = "Pausado"
-            job["message"] = "La sesión de aprendizaje se detuvo o fue reiniciada. Puedes reanudarla sin perder el tema ni las referencias."
+        if job.get("status") in ("queued", "researching", "synthesizing"):
+            heartbeat = float(job.get("heartbeat_at") or job.get("updated_at") or 0)
+            if heartbeat and now - heartbeat > 180:
+                from .learning import _set_job
+                _set_job(job.get("id"), status="paused", phase="Pausado", message="La sesión de aprendizaje dejó de responder. Puedes reanudarla sin perder el tema ni las referencias.")
+                job["status"] = "paused"
+                job["phase"] = "Pausado"
+                job["message"] = "La sesión de aprendizaje dejó de responder. Puedes reanudarla sin perder el tema ni las referencias."
     return jsonify({"ok": True, "topics": list_learning(), "jobs": jobs})
 
 @app.get("/api/learning/<job_id>")
@@ -2633,6 +2636,15 @@ def api_learning_job(job_id):
 def api_learning_resume(job_id):
     try:
         return jsonify({"ok": True, "job": resume_learning(job_id)})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+
+@app.delete("/api/learning/<job_id>")
+def api_learning_delete(job_id):
+    try:
+        if not delete_learning(job_id):
+            return jsonify({"ok": False, "error": "Aprendizaje no encontrado."}), 404
+        return jsonify({"ok": True})
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
 

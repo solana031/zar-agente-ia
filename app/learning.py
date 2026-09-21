@@ -12,7 +12,7 @@ El aprendizaje no equivale a dominio absoluto: ZAR conserva un currículo y
 pruebas de dominio para que el conocimiento pueda ampliarse y actualizarse.
 """
 from __future__ import annotations
-import json, os, re, time, uuid
+import json, os, re, time, uuid, threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 import requests
@@ -51,12 +51,19 @@ def list_learning():
     return list(_load().get("topics", {}).values())
 
 
-def list_jobs():
-    return sorted(list(_load().get("jobs", {}).values()), key=lambda x: x.get("created_at", 0), reverse=True)[:30]
+def _live_job(job):
+    if not job:
+        return job
+    out = dict(job)
+    if out.get("status") in ("queued", "researching", "synthesizing") and out.get("started_at"):
+        out["elapsed_seconds"] = round(max(0, time.time() - float(out.get("started_at") or time.time())), 1)
+    return out
 
+def list_jobs():
+    return [_live_job(x) for x in sorted(list(_load().get("jobs", {}).values()), key=lambda x: x.get("created_at", 0), reverse=True)[:30]]
 
 def get_job(job_id):
-    return _load().get("jobs", {}).get(job_id)
+    return _live_job(_load().get("jobs", {}).get(job_id))
 
 
 def _set_job(job_id, **changes):
@@ -137,18 +144,50 @@ def _search_one(q):
     return {"query": q, "ok": bool(res.get("ok")), "text": (res.get("text") or "")[:9000], "sources": res.get("sources") or []}
 
 
+def _cancel_requested(job_id):
+    job = _load().get("jobs", {}).get(job_id) or {}
+    return bool(job.get("cancel_requested")) or job.get("status") == "cancelled"
+
+def delete_learning(job_id):
+    data = _load(); job = data.get("jobs", {}).get(job_id)
+    if not job:
+        return False
+    status = job.get("status")
+    topic = str(job.get("topic") or "").lower()
+    if status in ("queued", "researching", "synthesizing"):
+        job["cancel_requested"] = True; job["status"] = "cancelled"; job["phase"] = "Eliminado"
+        job["message"] = "Aprendizaje eliminado por el usuario."; job["updated_at"] = time.time()
+        data.setdefault("topics", {}).pop(topic, None); _save(data); return True
+    result = job.get("result") or {}; skill_id = result.get("skill_id") or job.get("skill_id")
+    data.get("jobs", {}).pop(job_id, None); data.setdefault("topics", {}).pop(topic, None); _save(data)
+    if skill_id:
+        try:
+            from .skills import delete_skill; delete_skill(skill_id)
+        except Exception: pass
+    return True
+
 def _run_job(job_id, topic, goal, references):
     started = time.time()
+    heartbeat_stop = threading.Event()
+    def heartbeat():
+        while not heartbeat_stop.wait(5):
+            try:
+                if _cancel_requested(job_id): return
+                _set_job(job_id, heartbeat_at=time.time(), elapsed_seconds=round(time.time()-started,1))
+            except Exception: return
+    threading.Thread(target=heartbeat, daemon=True, name=f"zar-learning-heartbeat-{job_id[:8]}").start()
     try:
         qs = _queries(topic, goal, references)
+        if _cancel_requested(job_id): return
         estimate = max(120, 45 + len(qs) * 22)
-        _set_job(job_id, status="researching", progress=5, phase="Preparando investigación", message="Preparando fuentes…", started_at=started, estimated_seconds=estimate, queries_total=len(qs), queries_done=0, source_count=0)
+        _set_job(job_id, status="researching", progress=5, phase="Preparando investigación", message="Preparando fuentes…", started_at=started, estimated_seconds=estimate, queries_total=len(qs), queries_done=0, queries_started=min(3, len(qs)), source_count=0, heartbeat_at=time.time())
         research, sources = [], []
         # Tres búsquedas simultáneas reducen el tiempo total sin disparar una avalancha de peticiones.
         with ThreadPoolExecutor(max_workers=3) as pool:
             futures = {pool.submit(_search_one, q): q for q in qs}
             done = 0
             for future in as_completed(futures):
+                if _cancel_requested(job_id): return
                 q = futures[future]; done += 1
                 try:
                     item = future.result()
@@ -165,9 +204,11 @@ def _run_job(job_id, topic, goal, references):
             u = s.get("url")
             if u and u not in seen:
                 seen.add(u); clean.append(s)
+        if _cancel_requested(job_id): return
         _set_job(job_id, progress=70, phase="Sintetizando conocimiento", message=f"He reunido {len(clean)} fuentes. Organizando el conocimiento…", source_count=len(clean), elapsed_seconds=round(time.time()-started,1), estimated_seconds=estimate)
         plan = _synth(topic, goal, references, research)
         _set_job(job_id, progress=88, phase="Creando capacidad reutilizable", message="Generando currículo, comprobaciones y habilidad…", source_count=len(clean), elapsed_seconds=round(time.time()-started,1), estimated_seconds=estimate)
+        if _cancel_requested(job_id): return
         now = time.time(); learning_id = uuid.uuid4().hex
         knowledge_digest = "\n\n".join([f"CONSULTA: {x.get('query')}\n{x.get('text','')}" for x in research])[:35000]
         skill = create_skill({
@@ -197,7 +238,10 @@ def _run_job(job_id, topic, goal, references):
             "updated_at": time.time()
         }); _save(d)
     except Exception as exc:
-        _set_job(job_id, status="error", progress=100, phase="Error", message=str(exc)[:1200], elapsed_seconds=round(time.time()-started,1))
+        if not _cancel_requested(job_id):
+            _set_job(job_id, status="error", progress=100, phase="Error", message=str(exc)[:1200], elapsed_seconds=round(time.time()-started,1))
+    finally:
+        heartbeat_stop.set()
 
 
 def start_learning(topic, goal="", references=None):

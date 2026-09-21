@@ -78,7 +78,7 @@
     metrics.innerHTML='<span>⏱️ Transcurrido: <b>'+formatDuration(elapsed)+'</b></span><span>⏳ Estimado restante: <b>'+(remaining?formatDuration(remaining):'calculando…')+'</b></span><span>🔎 Fuentes: <b>'+Number(job.source_count||0)+'</b></span><span>🌐 Consultas: <b>'+Number(job.queries_done||0)+'/'+Number(job.queries_total||0)+'</b></span>';
   }
   function renderLearningJobs(jobs){
-    const box=document.getElementById('zarLearningJobs'); if(!box)return;
+    const box=document.getElementById('zarLearningJobs'); if(!box)return; window.__zarLearningJobs=jobs||[];
     const relevant=(jobs||[]).filter(j=>j && ['queued','researching','synthesizing','paused','completed','error'].includes(j.status)).slice(0,8);
     if(!relevant.length){box.innerHTML='';return;}
     box.innerHTML='<div class="zarLearningJobsHead">🧠 <b>Aprendizajes de ZAR</b><span>estado persistente</span></div>'+relevant.map(j=>{
@@ -87,9 +87,16 @@
       const paused=j.status==='paused'; const done=j.status==='completed';
       const phase=done?'Aprendizaje completado':paused?'Aprendizaje pausado':active?(j.phase||'Aprendizaje en curso'):'Aprendizaje detenido';
       const cls=done?'done':paused?'paused':j.status==='error'?'error':'active';
-      return '<article class="zarLearningJobCard '+cls+'"><div class="zarLearningJobIcon">'+(done?'✓':paused?'Ⅱ':j.status==='error'?'!':'🧠')+'</div><div class="zarLearningJobMain"><div class="zarLearningJobTitle">'+esc(j.topic||'Aprendizaje')+'</div><div class="zarLearningJobPhase">'+esc(phase)+' <span>· '+esc(j.message||'')+'</span></div><div class="zarLearningMini"><div><span style="width:'+p+'%"></span></div><b>'+p+'%</b></div><div class="zarLearningJobMeta">⏱️ '+formatDuration(j.elapsed_seconds||0)+' · 🔎 '+Number(j.source_count||0)+' fuentes · 🌐 '+Number(j.queries_done||0)+'/'+Number(j.queries_total||0)+' consultas'+(j.estimated_seconds?' · ⏳ '+(Number(j.estimated_seconds)>Number(j.elapsed_seconds||0)?formatDuration(Number(j.estimated_seconds)-Number(j.elapsed_seconds||0)):'calculando…'):'')+'</div></div>'+(paused?'<button class="zarInlineResume" data-resume="'+esc(j.id)+'">▶ Reanudar</button>':'')+'</article>';
+      return '<article class="zarLearningJobCard '+cls+'"><div class="zarLearningJobIcon">'+(done?'✓':paused?'Ⅱ':j.status==='error'?'!':'🧠')+'</div><div class="zarLearningJobMain"><div class="zarLearningJobTitle">'+esc(j.topic||'Aprendizaje')+'</div><div class="zarLearningJobPhase">'+esc(phase)+' <span>· '+esc(j.message||'')+'</span></div><div class="zarLearningMini"><div><span style="width:'+p+'%"></span></div><b>'+p+'%</b></div><div class="zarLearningJobMeta">⏱️ '+formatDuration(j.elapsed_seconds||0)+' · 🔎 '+Number(j.source_count||0)+' fuentes · 🌐 '+Number(j.queries_done||0)+'/'+Number(j.queries_total||0)+' consultas'+(j.estimated_seconds?' · ⏳ '+(Number(j.estimated_seconds)>Number(j.elapsed_seconds||0)?formatDuration(Number(j.estimated_seconds)-Number(j.elapsed_seconds||0)):'calculando…'):'')+'</div></div><div class="zarLearningJobActions">'+(paused?'<button class="zarInlineResume" data-resume="'+esc(j.id)+'">▶ Reanudar</button>':'')+'<button class="zarInlineDelete" data-delete-learning="'+esc(j.id)+'" title="Eliminar aprendizaje">🗑️</button></div></article>';
     }).join('');
-    box.querySelectorAll('[data-resume]').forEach(b=>b.onclick=()=>resumeLearning(b.dataset.resume));
+    box.querySelectorAll('[data-resume]').forEach(b=>b.onclick=()=>resumeLearning(b.dataset.resume)); box.querySelectorAll('[data-delete-learning]').forEach(b=>b.onclick=()=>deleteLearning(b.dataset.deleteLearning));
+  }
+  async function deleteLearning(id){
+    const job=(window.__zarLearningJobs||[]).find(x=>x.id===id);
+    const label=job?.topic||'este aprendizaje';
+    if(!confirm('¿Eliminar '+label+'? Si está en marcha, se cancelará de forma segura.'))return;
+    try{await api('/api/learning/'+encodeURIComponent(id),{method:'DELETE'}); await loadLearningState(); await loadSkills();}
+    catch(e){alert(e.message||'No se pudo eliminar el aprendizaje.');}
   }
   async function loadLearningState(){
     try{
