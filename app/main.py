@@ -22,7 +22,7 @@ from .config import load, save
 from .google_calendar import calendar_status
 from .gmail import gmail_status
 from .google_workspace import workspace_status
-from .google_backup import start_google_backup, backup_status, maybe_start_google_backup
+from .google_backup import start_google_backup, backup_status, maybe_start_google_backup, normalize_backup_options
 from .context import get_context, set_active_email, set_pending_email, mark_saved_draft, clear_pending, set_summary, reset_context, set_pending_calendar, clear_pending_calendar, set_focus, clear_focus, set_task_state, clear_task_state, set_last_uploaded_file, set_pending_workspace, clear_pending_workspace, set_last_contact, set_media, set_last_video_project
 from .file_store import save_upload, get_file, list_files, search_files, public_item, delete_file, files_dir
 from .knowledge import context_for as memory_context_for, search as search_memory, stats as memory_stats, memory_insights, index_file_from_disk, bootstrap_from_legacy
@@ -802,6 +802,7 @@ def control_health():
     backup_state = "not_started"
     if bs.get("status") == "running": backup_state = "running"
     elif bs.get("status") == "done": backup_state = "done"
+    elif bs.get("status") == "done_with_warnings": backup_state = "done_with_warnings"
     elif bs.get("status") == "error": backup_state = "error"
 
     authorized_count = sum(1 for x in service_rows if x["status"] == "connected")
@@ -813,7 +814,7 @@ def control_health():
     local_cfg = cfg.get("local") or {}
     return jsonify({
         "ok": True,
-        "version": "30.2.5",
+        "version": "30.2.6",
         "google": {**g, "account": account},
         "services": service_rows,
         "service_count": len(service_rows),
@@ -825,6 +826,13 @@ def control_health():
             "finished_at": bs.get("finished_at"),
             "path": bs.get("path"),
             "error": bs.get("error"),
+            "progress": bs.get("progress", 0),
+            "message": bs.get("message"),
+            "current_service": bs.get("current_service"),
+            "completed_services": bs.get("completed_services", 0),
+            "total_services": bs.get("total_services", 0),
+            "options": bs.get("options") or bstats.get("backup_options"),
+            "service_states": bs.get("service_states") or {},
             "stats": bstats,
         },
         "memory": {**memory_stats(), "memory3": memory3_stats(), "insights": memory_insights()},
@@ -848,7 +856,9 @@ def google_backup_start():
     try:
         if not auth_status().get("connected"):
             return jsonify({"ok": False, "error": "Google no está conectado."}), 401
-        return jsonify({"ok": True, **start_google_backup("manual")})
+        payload = request.get_json(silent=True) or {}
+        options = normalize_backup_options(payload.get("options"))
+        return jsonify({"ok": True, **start_google_backup("manual", options=options)})
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 500
 

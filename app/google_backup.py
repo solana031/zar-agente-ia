@@ -32,6 +32,43 @@ def _backup_root(user_id=None):
 _LOCK = threading.Lock()
 _LAST = {"status": "never", "started_at": None, "finished_at": None, "path": None, "error": None, "progress": 0, "current_service": None, "completed_services": 0, "total_services": 5, "message": "Sin copia en curso.", "service_states": {}}
 
+DEFAULT_BACKUP_OPTIONS = {
+    "gmail": {"messages": True, "drafts": True, "attachments": True},
+    "contacts": True,
+    "calendar": True,
+    "tasks": True,
+    "drive": {"metadata": True, "content": True},
+}
+
+def normalize_backup_options(options=None):
+    """Normalize the user's backup selection; defaults to a complete Google snapshot."""
+    if not isinstance(options, dict):
+        options = {}
+    out = {
+        "gmail": {
+            "messages": bool((options.get("gmail") or {}).get("messages", DEFAULT_BACKUP_OPTIONS["gmail"]["messages"])),
+            "drafts": bool((options.get("gmail") or {}).get("drafts", DEFAULT_BACKUP_OPTIONS["gmail"]["drafts"])),
+            "attachments": bool((options.get("gmail") or {}).get("attachments", DEFAULT_BACKUP_OPTIONS["gmail"]["attachments"])),
+        },
+        "contacts": bool(options.get("contacts", DEFAULT_BACKUP_OPTIONS["contacts"])),
+        "calendar": bool(options.get("calendar", DEFAULT_BACKUP_OPTIONS["calendar"])),
+        "tasks": bool(options.get("tasks", DEFAULT_BACKUP_OPTIONS["tasks"])),
+        "drive": {
+            "metadata": bool((options.get("drive") or {}).get("metadata", DEFAULT_BACKUP_OPTIONS["drive"]["metadata"])),
+            "content": bool((options.get("drive") or {}).get("content", DEFAULT_BACKUP_OPTIONS["drive"]["content"])),
+        },
+    }
+    # Attachments need message traversal to know which message owns them.
+    if out["gmail"]["attachments"]:
+        out["gmail"]["messages"] = True
+    if not (out["gmail"]["messages"] or out["gmail"]["drafts"] or out["gmail"]["attachments"]):
+        out["gmail"] = {"messages": False, "drafts": False, "attachments": False}
+    return out
+
+def _has_backup_selection(options):
+    o = normalize_backup_options(options)
+    return any([o["gmail"]["messages"], o["gmail"]["drafts"], o["gmail"]["attachments"], o["contacts"], o["calendar"], o["tasks"], o["drive"]["metadata"], o["drive"]["content"]])
+
 
 def _json(path, data):
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -90,51 +127,57 @@ def _header(msg, name):
     return ""
 
 
-def _backup_gmail(svc, out):
+def _backup_gmail(svc, out, options=None, progress_cb=None):
+    options = normalize_backup_options(options)["gmail"]
     items = []
-    token = None
-    max_attachments_mb = float(os.environ.get("ZAR_GOOGLE_BACKUP_MAX_ATTACHMENT_MB", "25"))
-    max_attachment_bytes = int(max_attachments_mb * 1024 * 1024)
     attachment_dir = out / "gmail_attachments"
-    attachment_dir.mkdir(exist_ok=True)
     attachments_downloaded = 0
     attachments_skipped = 0
-
-    while True:
-        data = svc.users().messages().list(
-            userId="me", maxResults=500, includeSpamTrash=True, pageToken=token
-        ).execute()
-        for ref in data.get("messages", []):
+    if options["messages"]:
+        refs = []
+        token = None
+        while True:
+            data = svc.users().messages().list(userId="me", maxResults=500, includeSpamTrash=True, pageToken=token).execute()
+            refs.extend(data.get("messages", []))
+            token = data.get("nextPageToken")
+            if not token:
+                break
+        total = max(1, len(refs))
+        for pos, ref in enumerate(refs, 1):
             msg = svc.users().messages().get(userId="me", id=ref["id"], format="full").execute()
             items.append(msg)
-            # Preserve actual attachments when Google exposes an attachmentId.
-            for part in _walk_parts(msg.get("payload", {})):
-                filename = part.get("filename")
-                attachment_id = (part.get("body") or {}).get("attachmentId")
-                if not filename or not attachment_id:
-                    continue
-                size = int((part.get("body") or {}).get("size") or 0)
-                if size > max_attachment_bytes:
-                    attachments_skipped += 1
-                    continue
-                try:
-                    att = svc.users().messages().attachments().get(
-                        userId="me", messageId=msg["id"], id=attachment_id
-                    ).execute()
-                    data64 = att.get("data", "")
-                    raw = base64.urlsafe_b64decode(data64 + "=" * (-len(data64) % 4))
-                    target = attachment_dir / f"{_safe_name(msg['id'])}_{_safe_name(filename)}"
-                    target.write_bytes(raw)
-                    attachments_downloaded += 1
-                except Exception:
-                    attachments_skipped += 1
-        token = data.get("nextPageToken")
-        if not token:
-            break
-
-    _json(out / "messages.json", items)
-    _json(out / "labels.json", svc.users().labels().list(userId="me").execute().get("labels", []))
-    try:
+            if options["attachments"]:
+                attachment_dir.mkdir(exist_ok=True)
+                for part in _walk_parts(msg.get("payload", {})):
+                    filename = part.get("filename")
+                    attachment_id = (part.get("body") or {}).get("attachmentId")
+                    if not filename or not attachment_id:
+                        continue
+                    size = int((part.get("body") or {}).get("size") or 0)
+                    max_attachment_bytes = int(float(os.environ.get("ZAR_GOOGLE_BACKUP_MAX_ATTACHMENT_MB", "25")) * 1024 * 1024)
+                    if size > max_attachment_bytes:
+                        attachments_skipped += 1
+                        continue
+                    try:
+                        att = svc.users().messages().attachments().get(userId="me", messageId=msg["id"], id=attachment_id).execute()
+                        data64 = att.get("data", "")
+                        raw = base64.urlsafe_b64decode(data64 + "=" * (-len(data64) % 4))
+                        target = attachment_dir / f"{_safe_name(msg['id'])}_{_safe_name(filename)}"
+                        target.write_bytes(raw)
+                        attachments_downloaded += 1
+                    except Exception:
+                        attachments_skipped += 1
+            if progress_cb:
+                progress_cb(pos / total, f"Gmail · mensaje {pos}/{len(refs)}")
+    if options["messages"]:
+        _json(out / "messages.json", items)
+        _json(out / "labels.json", svc.users().labels().list(userId="me").execute().get("labels", []))
+        try:
+            profile = svc.users().getProfile(userId="me").execute()
+            _json(out / "profile.json", profile)
+        except Exception:
+            pass
+    if options["drafts"]:
         drafts = []
         token = None
         while True:
@@ -145,14 +188,9 @@ def _backup_gmail(svc, out):
             if not token:
                 break
         _json(out / "drafts.json", drafts)
-    except Exception:
-        drafts = []
-    profile = svc.users().getProfile(userId="me").execute()
-    _json(out / "profile.json", profile)
-    return {"messages": len(items), "gmail_labels": len(json.loads((out / "labels.json").read_text())), "drafts": len(drafts), "gmail_attachments_downloaded": attachments_downloaded, "gmail_attachments_skipped": attachments_skipped}
+    return {"messages": len(items), "gmail_labels": len(json.loads((out / "labels.json").read_text())) if (out / "labels.json").exists() else 0, "drafts": len(drafts) if options["drafts"] else 0, "gmail_attachments_downloaded": attachments_downloaded, "gmail_attachments_skipped": attachments_skipped}
 
-
-def _backup_contacts(svc, out):
+def _backup_contacts(svc, out, options=None, progress_cb=None):
     people = []
     token = None
     while True:
@@ -166,10 +204,11 @@ def _backup_contacts(svc, out):
         if not token:
             break
     _json(out / "contacts.json", people)
+    if progress_cb: progress_cb(1.0, f"Contactos · {len(people)} contactos")
     return {"contacts": len(people)}
 
 
-def _backup_calendar(svc, out):
+def _backup_calendar(svc, out, options=None, progress_cb=None):
     calendars = svc.calendarList().list(maxResults=250).execute().get("items", [])
     result = []
     for cal in calendars:
@@ -187,10 +226,11 @@ def _backup_calendar(svc, out):
                 break
         result.append({"calendar": cal, "events": events})
     _json(out / "calendar.json", result)
+    if progress_cb: progress_cb(1.0, f"Calendar · {sum(len(x["events"]) for x in result)} eventos")
     return {"calendars": len(calendars), "events": sum(len(x["events"]) for x in result)}
 
 
-def _backup_tasks(svc, out):
+def _backup_tasks(svc, out, options=None, progress_cb=None):
     result = []
     lists = svc.tasks().tasklists().list(maxResults=100).execute().get("items", [])
     for tl in lists:
@@ -207,10 +247,12 @@ def _backup_tasks(svc, out):
                 break
         result.append({"tasklist": tl, "tasks": tasks})
     _json(out / "tasks.json", result)
+    if progress_cb: progress_cb(1.0, f"Tareas · {sum(len(x["tasks"]) for x in result)} tareas")
     return {"tasklists": len(lists), "tasks": sum(len(x["tasks"]) for x in result)}
 
 
-def _backup_drive(svc, out):
+def _backup_drive(svc, out, options=None, progress_cb=None):
+    options = normalize_backup_options(options)["drive"]
     files = []
     token = None
     while True:
@@ -223,12 +265,14 @@ def _backup_drive(svc, out):
         token = data.get("nextPageToken")
         if not token:
             break
-    _json(out / "drive_files.json", files)
+    if options["metadata"] or options["content"]:
+        _json(out / "drive_files.json", files)
 
     max_mb = float(os.environ.get("ZAR_GOOGLE_BACKUP_MAX_FILE_MB", "25"))
     max_bytes = int(max_mb * 1024 * 1024)
     content_dir = out / "drive_content"
-    content_dir.mkdir(exist_ok=True)
+    if options["content"]:
+        content_dir.mkdir(exist_ok=True)
     downloaded = 0
     skipped_large = 0
     native = {
@@ -236,11 +280,14 @@ def _backup_drive(svc, out):
         "application/vnd.google-apps.spreadsheet": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         "application/vnd.google-apps.presentation": "application/pdf",
     }
-    for f in files:
+    for pos, f in enumerate(files, 1):
         fid = f.get("id")
         size = int(f.get("size") or 0)
         mime = f.get("mimeType", "")
         if not fid:
+            continue
+        if not options["content"]:
+            if progress_cb: progress_cb(pos / max(1, len(files)), f"Drive · metadatos {pos}/{len(files)}")
             continue
         if size > max_bytes and mime not in native:
             skipped_large += 1
@@ -261,13 +308,16 @@ def _backup_drive(svc, out):
             target = content_dir / f"{_safe_name(fid)}_{_safe_name(f.get('name'))}{ext}"
             target.write_bytes(buf.getvalue())
             downloaded += 1
+            if progress_cb: progress_cb(pos / max(1, len(files)), f"Drive · archivo {pos}/{len(files)}")
         except Exception as exc:
             f["backup_error"] = str(exc)
     _json(out / "drive_files.json", files)
+    if progress_cb: progress_cb(1.0, f"Drive · {len(files)} archivos")
     return {"drive_files": len(files), "drive_downloaded": downloaded, "drive_skipped_large": skipped_large}
 
 
-def _index_backup(out, stats):
+def _index_backup(out, stats, options=None):
+    options = normalize_backup_options(options)
     """Index the useful structured snapshot into Zar's offline knowledge base."""
     try:
         from .knowledge import index_source
@@ -277,6 +327,8 @@ def _index_backup(out, stats):
     errors = 0
     # Gmail
     try:
+        if not (out / "messages.json").exists():
+            raise FileNotFoundError
         messages = json.loads((out / "messages.json").read_text(encoding="utf-8"))
         max_index = int(os.environ.get("ZAR_GOOGLE_BACKUP_INDEX_MAX_MESSAGES", "50000"))
         for msg in messages[:max_index]:
@@ -291,6 +343,8 @@ def _index_backup(out, stats):
         errors += 1
     # Contacts
     try:
+        if not (out / "contacts.json").exists():
+            raise FileNotFoundError
         contacts = json.loads((out / "contacts.json").read_text(encoding="utf-8"))
         for person in contacts:
             names = person.get("names") or []
@@ -302,6 +356,8 @@ def _index_backup(out, stats):
         errors += 1
     # Calendar
     try:
+        if not (out / "calendar.json").exists():
+            raise FileNotFoundError
         calendars = json.loads((out / "calendar.json").read_text(encoding="utf-8"))
         for group in calendars:
             cal = group.get("calendar", {})
@@ -315,6 +371,8 @@ def _index_backup(out, stats):
         errors += 1
     # Tasks
     try:
+        if not (out / "tasks.json").exists():
+            raise FileNotFoundError
         groups = json.loads((out / "tasks.json").read_text(encoding="utf-8"))
         for group in groups:
             tl = group.get("tasklist", {})
@@ -328,6 +386,8 @@ def _index_backup(out, stats):
         errors += 1
     # Drive metadata + extracted content, keeping raw files in the backup tree.
     try:
+        if not (out / "drive_files.json").exists():
+            raise FileNotFoundError
         files = json.loads((out / "drive_files.json").read_text(encoding="utf-8"))
         for f in files:
             title = f.get("name") or "Archivo de Drive"
@@ -371,12 +431,24 @@ def _index_backup(out, stats):
     return {"indexed": indexed, "index_errors": errors}
 
 
-def _run_backup(reason="google_connected", user_id=None):
+def _set_service_progress(frac, message, total_services, service_idx):
+    with _LOCK:
+        total = max(1, int(total_services or 1))
+        base = ((service_idx - 1) / total) * 80
+        span = 80 / total
+        _LAST["progress"] = round(base + max(0, min(1, float(frac or 0))) * span)
+        _LAST["message"] = message
+        _LAST["current_service"] = message.split(" · ", 1)[0]
+
+def _run_backup(reason="google_connected", user_id=None, options=None):
     global _LAST
     user_id = user_id or get_current_user()
+    options = normalize_backup_options(options)
+    if not _has_backup_selection(options):
+        raise RuntimeError("No has seleccionado ningún bloque de datos para la copia.")
     set_current_user(user_id)
     with _LOCK:
-        _LAST = {"status": "running", "started_at": datetime.now(timezone.utc).isoformat(), "finished_at": None, "path": None, "error": None, "progress": 0, "current_service": "Preparando", "completed_services": 0, "total_services": 5, "message": "Preparando la copia de seguridad…", "service_states": {}}
+        _LAST = {"status": "running", "started_at": datetime.now(timezone.utc).isoformat(), "finished_at": None, "path": None, "error": None, "progress": 0, "current_service": "Preparando", "completed_services": 0, "total_services": 0, "message": "Preparando la copia de seguridad…", "service_states": {}, "options": options}
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     out = _backup_root(user_id) / stamp
     out.mkdir(parents=True, exist_ok=True)
@@ -392,14 +464,21 @@ def _run_backup(reason="google_connected", user_id=None):
         # error in Gmail must not abort Contacts, Calendar, Tasks or Drive.
         # This is especially important because Gmail's messages.list can hit
         # the per-user quota while the other APIs remain perfectly usable.
-        service_plan = [
-            ("gmail", "Gmail", lambda: _backup_gmail(svcs["gmail"], out)),
-            ("contacts", "Contactos", lambda: _backup_contacts(svcs["people"], out)),
-            ("calendar", "Calendar", lambda: _backup_calendar(svcs["calendar"], out)),
-            ("tasks", "Tareas", lambda: _backup_tasks(svcs["tasks"], out)),
-            ("drive", "Drive", lambda: _backup_drive(svcs["drive"], out)),
-        ]
+        service_plan = []
+        if options["gmail"]["messages"] or options["gmail"]["drafts"] or options["gmail"]["attachments"]:
+            service_plan.append(("gmail", "Gmail", lambda: _backup_gmail(svcs["gmail"], out, options, lambda frac, msg: _set_service_progress(frac, msg, total_services, idx))))
+        if options["contacts"]:
+            service_plan.append(("contacts", "Contactos", lambda: _backup_contacts(svcs["people"], out, options, lambda frac, msg: _set_service_progress(frac, msg, total_services, idx))))
+        if options["calendar"]:
+            service_plan.append(("calendar", "Calendar", lambda: _backup_calendar(svcs["calendar"], out, options, lambda frac, msg: _set_service_progress(frac, msg, total_services, idx))))
+        if options["tasks"]:
+            service_plan.append(("tasks", "Tareas", lambda: _backup_tasks(svcs["tasks"], out, options, lambda frac, msg: _set_service_progress(frac, msg, total_services, idx))))
+        if options["drive"]["metadata"] or options["drive"]["content"]:
+            service_plan.append(("drive", "Drive", lambda: _backup_drive(svcs["drive"], out, options, lambda frac, msg: _set_service_progress(frac, msg, total_services, idx))))
         total_services = len(service_plan)
+        with _LOCK:
+            _LAST["total_services"] = total_services
+            _LAST["options"] = options
         for idx, (key, label, fn) in enumerate(service_plan, 1):
             with _LOCK:
                 _LAST["current_service"] = label
@@ -434,11 +513,12 @@ def _run_backup(reason="google_connected", user_id=None):
                 _LAST["progress"] = round((idx / total_services) * 80)
 
         stats["service_errors"] = service_errors
+        stats["backup_options"] = options
         with _LOCK:
             _LAST["current_service"] = "Indexando datos"
             _LAST["message"] = "Indexando la copia para poder consultarla sin conexión…"
             _LAST["progress"] = 85
-        stats.update(_index_backup(out, stats))
+        stats.update(_index_backup(out, stats, options))
         with _LOCK:
             _LAST["progress"] = 95
             _LAST["current_service"] = "Finalizando"
@@ -448,19 +528,19 @@ def _run_backup(reason="google_connected", user_id=None):
         _json(_backup_root(user_id) / "latest.json", {"path": str(out), "manifest": stats})
         final_status = "done_with_warnings" if service_errors else "done"
         with _LOCK:
-            _LAST = {"status": final_status, "started_at": stats["started_at"], "finished_at": stats["finished_at"], "path": str(out), "error": None, "stats": stats, "progress": 100, "current_service": "Completada", "completed_services": total_services, "total_services": total_services, "message": "Copia de seguridad completada." if not service_errors else "Copia completada con incidencias; revisa los servicios marcados.", "service_states": dict(_LAST.get("service_states") or {})}
+            _LAST = {"status": final_status, "started_at": stats["started_at"], "finished_at": stats["finished_at"], "path": str(out), "error": None, "stats": stats, "progress": 100, "current_service": "Completada", "completed_services": total_services, "total_services": total_services, "message": "Copia de seguridad completada." if not service_errors else "Copia completada con incidencias; revisa los servicios marcados.", "service_states": dict(_LAST.get("service_states") or {}), "options": options}
     except Exception as exc:
         with _LOCK:
             _LAST = {"status": "error", "started_at": _LAST.get("started_at"), "finished_at": datetime.now(timezone.utc).isoformat(), "path": str(out), "error": str(exc), "progress": int(_LAST.get("progress") or 0), "current_service": _LAST.get("current_service"), "completed_services": int(_LAST.get("completed_services") or 0), "total_services": int(_LAST.get("total_services") or 5), "message": "La copia se ha detenido por un error.", "service_states": dict(_LAST.get("service_states") or {})}
 
 
-def start_google_backup(reason="google_connected", user_id=None):
+def start_google_backup(reason="google_connected", user_id=None, options=None):
     """Start a non-blocking full snapshot after Google authentication succeeds."""
     user_id = user_id or get_current_user()
     with _LOCK:
         if _LAST.get("status") == "running":
             return {"started": False, "reason": "already_running"}
-    t = threading.Thread(target=_run_backup, args=(reason, user_id), daemon=True, name="zar-google-backup")
+    t = threading.Thread(target=_run_backup, args=(reason, user_id, options), daemon=True, name="zar-google-backup")
     t.start()
     return {"started": True, "reason": reason}
 
