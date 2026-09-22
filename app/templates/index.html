@@ -1009,7 +1009,7 @@ input:-webkit-autofill,textarea:-webkit-autofill,select:-webkit-autofill{
 </div></div>
       <div id="chat" class="chat" tabindex="0" aria-label="Historial de conversación"></div><div class="chatScrollControls" aria-label="Controles de desplazamiento"><button type="button" onclick="scrollChat(-1)" title="Subir por la conversación">↑</button><button type="button" onclick="scrollChat(1)" title="Bajar al último mensaje">↓</button></div>
     </div>
-    <div class="composer"><input id="fileInput" class="fileInput" type="file" multiple accept="image/*,video/*,audio/*,.pdf,.txt,.csv,.doc,.docx,.xls,.xlsx,.ppt,.pptx"><div id="zarPendingFiles" class="zarPendingFiles"></div><div id="zarUploadPanel" class="zarUploadPanel"></div><div class="quick"><button onclick="usePrompt('¿Qué hora es?')">🕒 Hora</button><button onclick="usePrompt('Recuerda que ...')">🧠 Recordar</button><button onclick="openRecentEmails()">✉️ Correo</button><button onclick="showResearch()">🔎 Investigación</button></div><div class="composerLabel">Habla o escribe con Zar</div><button id="zarActiveSkills" class="zarActiveSkills" type="button" onclick="window.ZARSkills&&window.ZARSkills.open()">📖 Aprendizajes activos: comprobando…</button><button id="zarLearningActive" class="zarActiveSkills zarLearningActive" type="button" hidden onclick="window.ZARSkills&&window.ZARSkills.open()">🧠 Aprendizaje en curso…</button><div class="composerMain"><textarea id="input" placeholder="Escribe un mensaje a Zar..."></textarea><button id="attachBtn" class="attachBtn" onclick="document.getElementById('fileInput').click()" title="Adjuntar y guardar archivos en la memoria de Zar">📎</button><button id="mic" class="send" onclick="toggleVoice()" title="Hablar con Zar">🎙️</button><button id="speakBtn" class="soundBtn" onclick="toggleSpeak()" title="Activar o silenciar lectura en voz alta">🔇</button><button class="send" onclick="send()" title="Enviar mensaje">➤</button></div><div id="uploadStatus" style="font-size:10px;color:#9da5ab;min-height:14px;margin-top:2px"></div><div id="voiceStatus" class="voiceStatus" style="font-size:10px;color:#9da5ab;min-height:14px"></div></div>
+    <div class="composer"><input id="fileInput" class="fileInput" type="file" multiple accept="image/*,video/*,audio/*,.pdf,.txt,.csv,.doc,.docx,.xls,.xlsx,.ppt,.pptx"><div id="zarPendingFiles" class="zarPendingFiles"></div><div id="zarUploadPanel" class="zarUploadPanel"></div><div class="quick"><button onclick="usePrompt('¿Qué hora es?')">🕒 Hora</button><button onclick="usePrompt('Recuerda que ...')">🧠 Recordar</button><button onclick="openRecentEmails()">✉️ Correo</button></div><div class="composerLabel">Habla o escribe con Zar</div><button id="zarActiveSkills" class="zarActiveSkills" type="button" onclick="window.ZARSkills&&window.ZARSkills.open()">📖 Aprendizajes activos: comprobando…</button><button id="zarLearningActive" class="zarActiveSkills zarLearningActive" type="button" hidden onclick="window.ZARSkills&&window.ZARSkills.open()">🧠 Aprendizaje en curso…</button><div class="composerMain"><textarea id="input" placeholder="Escribe un mensaje a Zar..."></textarea><button id="attachBtn" class="attachBtn" onclick="document.getElementById('fileInput').click()" title="Adjuntar y guardar archivos en la memoria de Zar">📎</button><button id="mic" class="send" onclick="toggleVoice()" title="Hablar con Zar">🎙️</button><button id="speakBtn" class="soundBtn" onclick="toggleSpeak()" title="Activar o silenciar lectura en voz alta">🔇</button><button class="send" onclick="send()" title="Enviar mensaje">➤</button></div><div id="uploadStatus" style="font-size:10px;color:#9da5ab;min-height:14px;margin-top:2px"></div><div id="voiceStatus" class="voiceStatus" style="font-size:10px;color:#9da5ab;min-height:14px"></div></div>
   </section>
 </main>
 <aside class="right">
@@ -3302,7 +3302,7 @@ body.zar-light.zar-studio-preview-focus #mediaWorkspace .studioStagePro2{
 </script>
 
 <style id="zar-v30-10-19-home-dock-centering">
-/* v30.10.19 · Home dock: 3x3 on each side of the ZAR logo + drag/drop persistence. */
+/* v30.10.20 · Home dock: 3x3 on each side of the ZAR logo + drag/drop persistence. */
 @media (min-width:1101px){
   /* The grid already reserves the right rail. Do not subtract the rail a second time
      with margin-right: that was the source of the left-shifted chat when a single rail
@@ -3470,6 +3470,119 @@ body.zar-light .zarDockGrid:empty::after{border-color:#c8b39b!important;color:#9
   setTimeout(syncCenter,120);
 })();
 </script>
+
+<style id="zar-v30-10-20-ui-fixes">
+/* v30.10.20 — 9 home actions + empty slots, centered composer, Studio Pro layout */
+#chatContent .composer{align-items:center!important;width:100%!important;box-sizing:border-box!important;}
+#chatContent .composerLabel{width:min(100%,1120px)!important;margin:0 auto 3px!important;text-align:center!important;align-self:center!important;color:var(--muted)!important;letter-spacing:.02em!important;}
+#chatContent .quick{width:min(100%,1120px)!important;margin:0 auto!important;justify-content:center!important;display:flex!important;gap:7px!important;}
+#chatContent .zarActiveSkills,#chatContent .zarLearningActive{align-self:center!important;}
+#chatContent .composerMain{width:min(100%,1120px)!important;margin:0 auto!important;box-sizing:border-box!important;}
+
+/* Home dock: 18 real slots, only the original 9 actions populated. */
+.zarDockGrid{grid-template-columns:repeat(3,minmax(0,1fr))!important;grid-template-rows:repeat(3,minmax(58px,1fr))!important;}
+.zarDockSlot{min-width:0;min-height:58px;border:1px dashed rgba(109,80,51,.48);border-radius:13px;background:rgba(12,9,7,.18);display:block;position:relative;transition:.15s;}
+.zarDockSlot:empty::after{content:'Arrastra aquí';position:absolute;inset:0;display:grid;place-items:center;color:#675849;font-size:8px;letter-spacing:.03em;pointer-events:none;}
+.zarDockSlot.dropTarget{border-color:#f0cc91!important;background:rgba(91,68,45,.16)!important;box-shadow:0 0 0 2px rgba(216,173,112,.14),0 10px 24px rgba(0,0,0,.2)!important;}
+.zarDockSlot .zarDockItem{width:100%;height:100%;box-sizing:border-box;}
+body.zar-light .zarDockSlot{border-color:#c8b39b;background:rgba(255,250,244,.55);}
+body.zar-light .zarDockSlot:empty::after{color:#907d69;}
+
+/* ZAR Studio: adopt the attached editor's Media / Preview / Inspector / Timeline composition. */
+#mediaWorkspace .editorWorkspaceBodyInner{max-width:1700px!important;width:100%!important;margin:0 auto!important;display:grid!important;grid-template-columns:minmax(205px,240px) minmax(0,1fr) minmax(245px,290px)!important;grid-template-rows:minmax(500px,1fr) auto auto!important;gap:10px!important;align-items:stretch!important;}
+#mediaWorkspace .zarStudioProStage{grid-column:2!important;grid-row:1!important;min-width:0!important;margin:0!important;}
+#mediaWorkspace .zarStudioMedia{grid-column:1!important;grid-row:1!important;margin:0!important;align-self:stretch!important;overflow:auto!important;min-width:0!important;background:linear-gradient(180deg,rgba(25,19,15,.94),rgba(10,8,7,.96))!important;border-radius:14px!important;padding:10px!important;}
+#mediaWorkspace .zarStudioInspector{grid-column:3!important;grid-row:1!important;margin:0!important;align-self:stretch!important;overflow:auto!important;min-width:0!important;}
+#mediaWorkspace .zarStudioOptions{grid-column:3!important;grid-row:2!important;margin:0!important;min-width:0!important;}
+#mediaWorkspace .zarStudioText{grid-column:3!important;grid-row:3!important;margin:0!important;min-width:0!important;max-height:280px!important;overflow:auto!important;}
+#mediaWorkspace .zarStudioTimelineExtra{grid-column:1/-1!important;grid-row:2!important;}
+#mediaWorkspace .studioStage{min-width:0!important;min-height:0!important;display:grid!important;grid-template-rows:minmax(390px,1fr) auto!important;gap:10px!important;padding:10px!important;background:linear-gradient(145deg,#17120e,#080706)!important;border:1px solid rgba(216,173,112,.18)!important;border-radius:18px!important;box-sizing:border-box!important;}
+#mediaWorkspace .studioStage .studioCanvas{min-width:0!important;min-height:0!important;display:flex!important;flex-direction:column!important;align-items:center!important;justify-content:center!important;background:radial-gradient(circle at 50% 30%,rgba(216,173,112,.07),#050403 62%)!important;border:1px solid rgba(216,173,112,.12)!important;border-radius:14px!important;padding:12px!important;position:relative!important;}
+#mediaWorkspace .studioStage .studioTimeline{min-width:0!important;margin:0!important;border-radius:12px!important;}
+#mediaWorkspace .stageViewport{width:min(100%,1050px)!important;max-width:none!important;aspect-ratio:16/9!important;max-height:calc(100vh - 390px)!important;}
+#mediaWorkspace .stageToolbar{width:min(100%,1050px)!important;box-sizing:border-box!important;justify-content:center!important;}
+#mediaWorkspace .studioToolbar{grid-column:2!important;grid-row:1!important;align-self:end!important;z-index:6!important;margin:0 auto 6px!important;width:min(100%,1050px)!important;}
+#mediaWorkspace .vcBadge2{grid-column:2!important;grid-row:1!important;align-self:start!important;z-index:5!important;}
+/* Drop target: importing media must stay inside ZAR Studio; never navigate the browser. */
+#mediaWorkspace.zarMediaDragActive{outline:2px solid rgba(216,173,112,.55)!important;outline-offset:-2px!important;}
+#mediaWorkspace.zarMediaDragActive .studioStage{box-shadow:0 0 0 2px rgba(216,173,112,.22),0 24px 80px rgba(0,0,0,.42)!important;}
+#zarMediaDropHint{position:fixed;inset:0;z-index:6000;display:grid;place-items:center;pointer-events:none;background:rgba(7,5,4,.38);backdrop-filter:blur(3px);}
+#zarMediaDropHint>div{padding:22px 30px;border:1px dashed #d8ad70;border-radius:18px;background:rgba(19,14,10,.94);color:#ecd0a6;font:700 18px Georgia,serif;box-shadow:0 25px 90px rgba(0,0,0,.6);}
+
+body.zar-light #mediaWorkspace .studioStage{background:linear-gradient(145deg,#f3e9df,#e6d8ca)!important;border-color:#cdbba6!important;}
+body.zar-light #mediaWorkspace .studioStage .studioCanvas{background:radial-gradient(circle at 50% 30%,rgba(168,120,62,.10),#eee5db 64%)!important;border-color:#cdbba6!important;}
+body.zar-light #mediaWorkspace .vcFiles,body.zar-light #mediaWorkspace .vcEditor,body.zar-light #mediaWorkspace .vcTwo{background:linear-gradient(180deg,#fffaf4,#f1e7dc)!important;border-color:#cdbba6!important;color:#4a3828!important;}
+body.zar-light #mediaWorkspace .stageToolbar{background:#f4ebe1!important;border-color:#cdbba6!important;}
+
+@media(max-width:1100px){
+  #mediaWorkspace .studioStage{grid-template-columns:210px minmax(0,1fr)!important;grid-template-rows:minmax(360px,1fr) auto auto!important;}
+  #mediaWorkspace .studioStage .studioCanvas{grid-column:2!important;grid-row:1!important;}
+  #mediaWorkspace .vcFiles{grid-column:1!important;grid-row:1!important;}
+  #mediaWorkspace .vcEditor{grid-column:1/-1!important;grid-row:3!important;}
+  #mediaWorkspace .vcTwo{grid-column:1/-1!important;grid-row:3!important;}
+  #mediaWorkspace .videoOverlayTools{grid-column:1/-1!important;grid-row:3!important;}
+}
+@media(max-width:720px){
+  #mediaWorkspace .studioStage{display:flex!important;flex-direction:column!important;}
+  #mediaWorkspace .studioStage .studioCanvas,#mediaWorkspace .vcFiles,#mediaWorkspace .vcEditor,#mediaWorkspace .vcTwo,#mediaWorkspace .videoOverlayTools{width:100%!important;box-sizing:border-box!important;}
+  #mediaWorkspace .stageViewport{max-height:none!important;}
+}
+</style>
+<script id="zar-v30-10-20-fixes-js">
+(function(){
+  'use strict';
+  /* Keep only the nine original home actions; expose all 18 positions as real drop slots. */
+  const original=[
+    ['calendar','📅','Calendario','Organiza tu tiempo','showMobileCalendar'],
+    ['files','📁','Archivos','Guarda y organiza','showFiles'],
+    ['weather','☀️','Tiempo','Consulta el tiempo','showMobileWeather'],
+    ['studio','▶️','Zar Studio','Crea con IA','mobileOpenEditor'],
+    ['memory','🧠','Memoria','Tu contexto','showMemory'],
+    ['tasks','☑️','Tareas','Organiza tu día','showTasks'],
+    ['control','⚙️','Control ZAR','Modelos y servicios','showControlCenter'],
+    ['research','🔎','Investigación','Estudios profundos','showResearch'],
+    ['learning','📖','Aprendizajes','Enseña a ZAR','openLearning']
+  ];
+  const byId=Object.fromEntries(original.map(x=>[x[0],x]));
+  const KEY='zar_home_dock_slots_v2';
+  const defaultSlots=['calendar','files','weather','studio','memory','tasks','control','research','learning',null,null,null,null,null,null,null,null,null];
+  function load(){try{const x=JSON.parse(localStorage.getItem(KEY)||'null');if(Array.isArray(x)&&x.length===18)return x.map(id=>byId[id]?id:null)}catch(e){}return defaultSlots.slice()}
+  function save(x){try{localStorage.setItem(KEY,JSON.stringify(x))}catch(e){}}
+  function action(id){const it=byId[id];if(!it)return;if(id==='learning'){window.ZARSkills&&window.ZARSkills.open();return}const fn=it[4];try{if(typeof window[fn]==='function')window[fn]()}catch(e){}}
+  function button(id){const it=byId[id],b=document.createElement('button');b.type='button';b.className='zarDockItem';b.draggable=true;b.dataset.dockId=id;b.innerHTML='<span class="dockGrip">⋮⋮</span><span class="dockIcon">'+it[1]+'</span><b>'+it[2]+'</b><small>'+it[3]+'</small>';b.title='Arrastra para mover · '+it[2];
+    b.addEventListener('click',()=>{if(b.dataset.justDragged==='1'){b.dataset.justDragged='';return}action(id)});
+    b.addEventListener('dragstart',e=>{b.classList.add('dragging');e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',id)});
+    b.addEventListener('dragend',()=>{b.classList.remove('dragging');document.querySelectorAll('.zarDockSlot').forEach(x=>x.classList.remove('dropTarget'))});
+    return b;
+  }
+  function slot(i,id,arr){const el=document.createElement('div');el.className='zarDockSlot';el.dataset.slot=String(i);
+    el.addEventListener('dragover',e=>{e.preventDefault();e.stopPropagation();e.dataTransfer.dropEffect='move';if(!document.querySelector('.zarDockItem.dragging'))return;el.classList.add('dropTarget')});
+    el.addEventListener('dragleave',()=>el.classList.remove('dropTarget'));
+    el.addEventListener('drop',e=>{e.preventDefault();e.stopPropagation();el.classList.remove('dropTarget');const from=e.dataTransfer.getData('text/plain');if(!from||!byId[from])return;const a=load(),fi=a.indexOf(from),ti=i;if(fi<0||fi===ti)return;[a[fi],a[ti]]=[a[ti],a[fi]];save(a);render();const moved=document.querySelector('[data-dock-id="'+from+'"]');if(moved){moved.dataset.justDragged='1';setTimeout(()=>moved.dataset.justDragged='',250)}});
+    if(id)el.appendChild(button(id));return el;
+  }
+  function render(){const L=document.querySelector('.zarDockLeft'),R=document.querySelector('.zarDockRight');if(!L||!R)return;L.innerHTML='';R.innerHTML='';const a=load();a.slice(0,9).forEach((id,i)=>L.appendChild(slot(i,id,a)));a.slice(9,18).forEach((id,i)=>R.appendChild(slot(i+9,id,a)));}
+  window.ZARResetHomeDock=function(){localStorage.removeItem(KEY);localStorage.removeItem('zar_home_dock_order_v1');render()};
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',render,{once:true});else render();
+
+  /* Prevent the browser from treating dragged videos as navigation/new tabs. */
+  let dragDepth=0, hint=null;
+  function studio(){return document.getElementById('mediaWorkspace')}
+  function isStudioVisible(){const s=studio();return s&&!s.hidden&&getComputedStyle(s).display!=='none'}
+  function ensureHint(){if(hint)return;hint=document.createElement('div');hint.id='zarMediaDropHint';hint.innerHTML='<div>🎬 Suelta aquí para añadir el vídeo a ZAR Studio</div>';document.body.appendChild(hint)}
+  function hideHint(){if(hint){hint.remove();hint=null}}
+  window.addEventListener('dragenter',e=>{if(!isStudioVisible()||!e.dataTransfer?.types?.includes('Files'))return;e.preventDefault();dragDepth++;studio().classList.add('zarMediaDragActive');ensureHint()});
+  window.addEventListener('dragover',e=>{if(!isStudioVisible()||!e.dataTransfer?.types?.includes('Files'))return;e.preventDefault();e.stopPropagation();if(e.dataTransfer)e.dataTransfer.dropEffect='copy'});
+  window.addEventListener('dragleave',e=>{if(!isStudioVisible())return;dragDepth=Math.max(0,dragDepth-1);if(dragDepth===0){studio().classList.remove('zarMediaDragActive');hideHint()}});
+  window.addEventListener('drop',async e=>{if(!isStudioVisible()||!e.dataTransfer?.files?.length)return;e.preventDefault();e.stopPropagation();dragDepth=0;const ws=studio();ws.classList.remove('zarMediaDragActive');hideHint();const files=[...e.dataTransfer.files].filter(f=>/^((image|video)\/)/i.test(f.type)||/\.(mp4|mov|m4v|webm|avi|mkv|jpg|jpeg|png|webp|gif)$/i.test(f.name));if(!files.length)return;const max=2*1024*1024*1024;const bad=files.filter(f=>f.size>max);if(bad.length){const r=document.getElementById('vcRender');if(r)r.textContent='⚠️ '+bad.map(f=>f.name).join(', ')+' supera el límite de 2 GB.';return}const status=document.getElementById('vcRender');if(status)status.textContent='📥 Añadiendo medios arrastrados a ZAR Studio…';try{const fd=new FormData();files.forEach(f=>fd.append('files',f));const p=window.zarVideoProject;if(!p?.id)throw new Error('Abre primero un proyecto de vídeo.');const r=await fetch('/api/video/projects/'+encodeURIComponent(p.id)+'/media',{method:'POST',body:fd});const j=await r.json();if(!r.ok||!j.project)throw new Error(j.error||'No se pudieron añadir los medios.');window.zarVideoProject=j.project;if(typeof window.renderVideoCreator==='function')window.renderVideoCreator(j.project);if(status)status.textContent='✅ '+files.length+' medio(s) añadido(s) al proyecto.'}catch(err){if(status)status.textContent='⚠️ '+(err.message||'No se pudieron añadir los medios.')}} ,true);
+
+  /* Re-run the Studio layout after every render so it survives project refreshes. */
+  function arrange(){const root=document.getElementById('editorWorkspaceBodyInner');if(!root)return;const stage=root.querySelector('.studioStage');if(!stage)return;root.classList.add('zarStudioEditorLayout');stage.classList.add('zarStudioProStage');const media=root.querySelector('.vcFiles');if(media)media.classList.add('zarStudioMedia');const eds=root.querySelectorAll('.vcEditor');if(eds[0])eds[0].classList.add('zarStudioInspector');if(eds[1])eds[1].classList.add('zarStudioTimelineExtra');const opts=root.querySelector('.vcTwo');if(opts)opts.classList.add('zarStudioOptions');const text=root.querySelector('#vcOverlayTools');if(text)text.classList.add('zarStudioText');}
+  const old=window.renderVideoCreator; if(typeof old==='function'){window.renderVideoCreator=function(p){const r=old.apply(this,arguments);setTimeout(arrange,40);setTimeout(arrange,220);return r}}
+  document.addEventListener('DOMContentLoaded',()=>{setTimeout(arrange,250)});
+})();
+</script>
+
 </body></html>
 
 <style id="zar-v30-10-16-floating-shell">
