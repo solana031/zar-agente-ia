@@ -998,7 +998,15 @@ input:-webkit-autofill,textarea:-webkit-autofill,select:-webkit-autofill{
   </section>
   <section class="content" id="chatContent">
     <div class="chatArea">
-      <div class="welcome" id="welcome"><div class="hero zarHeroLogo"><img src="/static/zar-silhouette.png" alt="Zar, asistente inteligente"></div><div class="zarWordmark">Z A R</div><div class="zarTagline">TU ASISTENTE INTELIGENTE</div><div class="homeActions" aria-label="Accesos rápidos de Zar"><button type="button" onclick="showMobileCalendar()"><span>📅</span><b>Calendario</b><small>Organiza tu tiempo</small></button><button type="button" onclick="showFiles()"><span>📁</span><b>Archivos</b><small>Guarda y organiza</small></button><button type="button" onclick="showMobileWeather()"><span>☀️</span><b>Tiempo</b><small>Consulta el tiempo</small></button><button type="button" onclick="mobileOpenEditor()"><span>▶️</span><b>Zar Studio</b><small>Crea con IA</small></button><button type="button" onclick="showMemory()"><span>🧠</span><b>Memoria</b><small>Tu contexto</small></button><button type="button" onclick="showTasks()"><span>☑️</span><b>Tareas</b><small>Organiza tu día</small></button><button type="button" onclick="showControlCenter()"><span>⚙️</span><b>Control ZAR</b><small>Modelos y servicios</small></button><button type="button" onclick="showResearch()"><span>🔎</span><b>Investigación</b><small>Estudios profundos</small></button><button type="button" onclick="window.ZARSkills&&window.ZARSkills.open()"><span>📖</span><b>Aprendizajes</b><small>Enseña a ZAR</small></button></div></div>
+      <div class="welcome" id="welcome"><div class="zarHomeDock" id="zarHomeDock" aria-label="Funciones principales de Zar">
+  <div class="zarDockGrid zarDockLeft" data-dock-side="left" aria-label="Funciones principales izquierda"></div>
+  <div class="zarHomeCenter">
+    <div class="hero zarHeroLogo"><img src="/static/zar-silhouette.png" alt="Zar, asistente inteligente"></div>
+    <div class="zarWordmark">Z A R</div><div class="zarTagline">TU ASISTENTE INTELIGENTE</div>
+    <div class="zarDockHint">Arrastra cualquier función para reorganizar tu escritorio</div>
+  </div>
+  <div class="zarDockGrid zarDockRight" data-dock-side="right" aria-label="Funciones principales derecha"></div>
+</div></div>
       <div id="chat" class="chat" tabindex="0" aria-label="Historial de conversación"></div><div class="chatScrollControls" aria-label="Controles de desplazamiento"><button type="button" onclick="scrollChat(-1)" title="Subir por la conversación">↑</button><button type="button" onclick="scrollChat(1)" title="Bajar al último mensaje">↓</button></div>
     </div>
     <div class="composer"><input id="fileInput" class="fileInput" type="file" multiple accept="image/*,video/*,audio/*,.pdf,.txt,.csv,.doc,.docx,.xls,.xlsx,.ppt,.pptx"><div id="zarPendingFiles" class="zarPendingFiles"></div><div id="zarUploadPanel" class="zarUploadPanel"></div><div class="quick"><button onclick="usePrompt('¿Qué hora es?')">🕒 Hora</button><button onclick="usePrompt('Recuerda que ...')">🧠 Recordar</button><button onclick="openRecentEmails()">✉️ Correo</button><button onclick="showResearch()">🔎 Investigación</button></div><div class="composerLabel">Habla o escribe con Zar</div><button id="zarActiveSkills" class="zarActiveSkills" type="button" onclick="window.ZARSkills&&window.ZARSkills.open()">📖 Aprendizajes activos: comprobando…</button><button id="zarLearningActive" class="zarActiveSkills zarLearningActive" type="button" hidden onclick="window.ZARSkills&&window.ZARSkills.open()">🧠 Aprendizaje en curso…</button><div class="composerMain"><textarea id="input" placeholder="Escribe un mensaje a Zar..."></textarea><button id="attachBtn" class="attachBtn" onclick="document.getElementById('fileInput').click()" title="Adjuntar y guardar archivos en la memoria de Zar">📎</button><button id="mic" class="send" onclick="toggleVoice()" title="Hablar con Zar">🎙️</button><button id="speakBtn" class="soundBtn" onclick="toggleSpeak()" title="Activar o silenciar lectura en voz alta">🔇</button><button class="send" onclick="send()" title="Enviar mensaje">➤</button></div><div id="uploadStatus" style="font-size:10px;color:#9da5ab;min-height:14px;margin-top:2px"></div><div id="voiceStatus" class="voiceStatus" style="font-size:10px;color:#9da5ab;min-height:14px"></div></div>
@@ -3290,6 +3298,176 @@ body.zar-light.zar-studio-preview-focus #mediaWorkspace .studioStagePro2{
   window.addEventListener('resize',()=>{
     document.querySelectorAll('#mediaWorkspace .studioStagePro2').forEach(x=>x.style.removeProperty('margin-left'));
   },{passive:true});
+})();
+</script>
+
+<style id="zar-v30-10-19-home-dock-centering">
+/* v30.10.19 · Home dock: 3x3 on each side of the ZAR logo + drag/drop persistence. */
+@media (min-width:1101px){
+  /* The grid already reserves the right rail. Do not subtract the rail a second time
+     with margin-right: that was the source of the left-shifted chat when a single rail
+     was hidden. */
+  .app .main{margin-right:0!important;width:auto!important;}
+  .app.rail-collapsed .main{margin-right:0!important;}
+  .app .composer{left:0!important;right:0!important;}
+  .app.rail-collapsed .composer{right:0!important;}
+  .app.menu-collapsed .composer{left:0!important;}
+
+  #chatContent.content{width:100%!important;max-width:none!important;margin:0!important;padding-left:clamp(14px,2vw,32px)!important;padding-right:clamp(14px,2vw,32px)!important;}
+  #chatContent .chatArea{width:100%!important;max-width:none!important;align-items:stretch!important;}
+  #chatContent .welcome{width:100%!important;max-width:1420px!important;margin:14px auto 10px!important;padding:18px 16px 20px!important;box-sizing:border-box!important;}
+
+  .zarHomeDock{display:grid!important;grid-template-columns:minmax(0,1fr) minmax(190px,230px) minmax(0,1fr)!important;align-items:center!important;gap:18px!important;width:100%!important;max-width:1420px!important;margin:0 auto!important;}
+  .zarHomeCenter{display:flex!important;flex-direction:column!important;align-items:center!important;justify-content:center!important;min-width:0!important;padding:4px 0!important;}
+  .zarDockGrid{display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr))!important;grid-template-rows:repeat(3,minmax(54px,1fr))!important;gap:8px!important;min-width:0!important;}
+  .zarDockItem{position:relative!important;min-width:0!important;min-height:58px!important;border:1px solid rgba(73,53,34,.95)!important;border-radius:13px!important;background:linear-gradient(145deg,rgba(29,22,17,.96),rgba(13,10,8,.96))!important;color:#eee5dc!important;text-align:left!important;padding:8px 9px!important;display:grid!important;grid-template-columns:24px minmax(0,1fr)!important;grid-template-rows:auto auto!important;column-gap:7px!important;align-items:center!important;box-shadow:0 8px 22px rgba(0,0,0,.15)!important;transition:transform .14s,border-color .14s,background .14s,opacity .14s!important;cursor:grab!important;}
+  .zarDockItem:active{cursor:grabbing!important;}
+  .zarDockItem:hover{border-color:var(--gold)!important;transform:translateY(-1px)!important;background:linear-gradient(145deg,rgba(55,39,24,.98),rgba(17,12,9,.98))!important;}
+  .zarDockItem.dragging{opacity:.38!important;transform:scale(.98)!important;}
+  .zarDockItem.dropTarget{border-color:#f0cc91!important;box-shadow:0 0 0 2px rgba(216,173,112,.18),0 12px 28px rgba(0,0,0,.24)!important;}
+  .zarDockItem .dockIcon{grid-row:1/3;display:grid;place-items:center;font-size:18px;line-height:1;}
+  .zarDockItem b{font-size:9px!important;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;align-self:end;}
+  .zarDockItem small{font-size:7px!important;color:#8e8379!important;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;align-self:start;}
+  .zarDockItem .dockGrip{position:absolute;right:5px;top:4px;font-size:8px;color:#6e5b48;opacity:.8;pointer-events:none;}
+  .zarHomeCenter .zarHeroLogo{width:92px!important;height:92px!important;margin:0 auto 5px!important;}
+  .zarHomeCenter .zarWordmark{font-size:28px!important;}
+  .zarHomeCenter .zarTagline{font-size:8px!important;}
+  .zarDockHint{margin-top:9px;color:#77695e;font-size:7px;letter-spacing:.06em;text-align:center;max-width:190px;line-height:1.35;}
+  .zarDockGrid:empty::after{content:'Arrastra aquí';display:grid;place-items:center;min-height:58px;border:1px dashed rgba(109,80,51,.5);border-radius:13px;color:#6e5d4c;font-size:8px;}
+
+  /* Chat itself is centered in the actual main column, not the full browser viewport. */
+  #chatContent .chat{width:min(100%,1120px)!important;max-width:1120px!important;margin:0 auto!important;}
+  #chatContent .quick,#chatContent .zarActiveSkills,#chatContent .zarLearningActive,#chatContent .composerMain,#chatContent #uploadStatus,#chatContent #voiceStatus{width:min(100%,1120px)!important;margin-left:auto!important;margin-right:auto!important;}
+}
+
+/* If only the left rail is hidden, the remaining main grid column is the exact center. */
+@media (min-width:1101px){
+  .app.menu-collapsed{grid-template-columns:0 minmax(0,1fr) 292px!important;}
+  .app.menu-collapsed.rail-collapsed{grid-template-columns:0 minmax(0,1fr) 44px!important;}
+}
+
+/* Light theme: the new dock follows the complete ZAR beige/cream palette. */
+body.zar-light .zarDockItem{background:linear-gradient(145deg,#fffaf4,#eee3d6)!important;color:#4a3828!important;border-color:#cbb69d!important;box-shadow:0 8px 20px rgba(92,64,38,.10)!important;}
+body.zar-light .zarDockItem:hover{background:linear-gradient(145deg,#f3e6d7,#e6d6c4)!important;border-color:#a8783e!important;color:#3b281a!important;}
+body.zar-light .zarDockItem small{color:#806f5e!important;}
+body.zar-light .zarDockHint{color:#806f5e!important;}
+body.zar-light .zarDockGrid:empty::after{border-color:#c8b39b!important;color:#907d69!important;}
+
+/* Never show a stale "learning in progress" strip when there is no active job. */
+#zarLearningActive[hidden]{display:none!important;visibility:hidden!important;height:0!important;min-height:0!important;margin:0!important;padding:0!important;border:0!important;}
+
+@media (max-width:1100px){
+  .zarHomeDock{display:flex!important;flex-direction:column!important;gap:10px!important;width:100%!important;}
+  .zarHomeCenter{order:1!important;}
+  .zarDockLeft{order:2!important;}
+  .zarDockRight{order:3!important;}
+  .zarDockGrid{width:100%!important;grid-template-columns:repeat(3,minmax(0,1fr))!important;grid-template-rows:auto!important;}
+  .zarDockItem{min-height:56px!important;}
+}
+@media (max-width:720px){
+  .zarDockGrid{gap:6px!important;}
+  .zarDockItem{padding:7px 6px!important;grid-template-columns:20px minmax(0,1fr)!important;column-gap:4px!important;min-height:53px!important;}
+  .zarDockItem .dockIcon{font-size:15px!important;}
+  .zarDockItem b{font-size:8px!important;}
+  .zarDockItem small{font-size:6.5px!important;}
+  .zarHomeCenter .zarHeroLogo{width:78px!important;height:78px!important;}
+}
+</style>
+<script id="zar-v30-10-19-home-dock-js">
+(function(){
+  'use strict';
+  const KEY='zar_home_dock_order_v1';
+  const items=[
+    ['calendar','📅','Calendario','Organiza tu tiempo','showMobileCalendar'],
+    ['files','📁','Archivos','Guarda y organiza','showFiles'],
+    ['weather','☀️','Tiempo','Consulta el tiempo','showMobileWeather'],
+    ['studio','▶️','Zar Studio','Crea con IA','mobileOpenEditor'],
+    ['memory','🧠','Memoria','Tu contexto','showMemory'],
+    ['tasks','☑️','Tareas','Organiza tu día','showTasks'],
+    ['control','⚙️','Control ZAR','Modelos y servicios','showControlCenter'],
+    ['research','🔎','Investigación','Estudios profundos','showResearch'],
+    ['learning','📖','Aprendizajes','Enseña a ZAR','openLearning'],
+    ['conversations','🗂️','Conversaciones','Historial de chats','showConversations'],
+    ['voice','🎙️','Voz','Habla con ZAR','showVoice'],
+    ['gmail','✉️','Gmail','Correo y borradores','showGmail'],
+    ['contacts','👤','Contactos','Google People','showContacts'],
+    ['maps','📍','Google Maps','Lugares y rutas','showMaps'],
+    ['workspace','☁️','Workspace','Drive, Docs y más','showWorkspace'],
+    ['internet','🌐','Internet','Búsqueda actual','showWebSearch'],
+    ['ai','🤖','Motor de IA','Modelo y proveedor','showProvider'],
+    ['focus','⛶','Modo enfoque','Pantalla despejada','toggleFocusMode']
+  ];
+  const byId=Object.fromEntries(items.map(x=>[x[0],x]));
+  const fallback=items.map(x=>x[0]);
+  function loadOrder(){
+    try{
+      const raw=JSON.parse(localStorage.getItem(KEY)||'null');
+      if(!Array.isArray(raw)) return fallback.slice();
+      const valid=raw.filter(id=>byId[id]);
+      fallback.forEach(id=>{if(!valid.includes(id))valid.push(id)});
+      return valid.slice(0,18);
+    }catch(e){return fallback.slice();}
+  }
+  function saveOrder(order){try{localStorage.setItem(KEY,JSON.stringify(order))}catch(e){}}
+  function actionFor(id){
+    if(id==='openLearning') return ()=>window.ZARSkills&&window.ZARSkills.open();
+    const fn=byId[id]?.[4];
+    return ()=>{try{if(typeof window[fn]==='function')window[fn]();}catch(e){}};
+  }
+  function makeButton(item){
+    const [id,icon,title,desc]=item;
+    const b=document.createElement('button');
+    b.type='button'; b.className='zarDockItem'; b.draggable=true; b.dataset.dockId=id;
+    b.setAttribute('aria-label',title+' · '+desc); b.title='Arrastra para mover · '+title;
+    b.innerHTML='<span class="dockGrip">⋮⋮</span><span class="dockIcon">'+icon+'</span><b>'+title+'</b><small>'+desc+'</small>';
+    b.addEventListener('click',e=>{if(b.dataset.justDragged==='1'){b.dataset.justDragged='';return;}actionFor(id)();});
+    b.addEventListener('dragstart',e=>{
+      b.classList.add('dragging'); e.dataTransfer.effectAllowed='move'; e.dataTransfer.setData('text/plain',id);
+    });
+    b.addEventListener('dragend',()=>{b.classList.remove('dragging');document.querySelectorAll('.zarDockItem').forEach(x=>x.classList.remove('dropTarget'));});
+    b.addEventListener('dragover',e=>{e.preventDefault();e.dataTransfer.dropEffect='move';if(!b.classList.contains('dragging'))b.classList.add('dropTarget');});
+    b.addEventListener('dragleave',()=>b.classList.remove('dropTarget'));
+    b.addEventListener('drop',e=>{
+      e.preventDefault();b.classList.remove('dropTarget');
+      const from=e.dataTransfer.getData('text/plain'); const to=id;
+      if(!from||from===to)return;
+      const order=loadOrder(); const a=order.indexOf(from), z=order.indexOf(to); if(a<0||z<0)return;
+      [order[a],order[z]]=[order[z],order[a]]; saveOrder(order); render();
+      const moved=document.querySelector('[data-dock-id="'+from+'"]'); if(moved){moved.dataset.justDragged='1';setTimeout(()=>moved.dataset.justDragged='',250)}
+    });
+    return b;
+  }
+  function render(){
+    const left=document.querySelector('.zarDockLeft'), right=document.querySelector('.zarDockRight');
+    if(!left||!right)return;
+    left.innerHTML='';right.innerHTML='';
+    loadOrder().forEach((id,i)=>{
+      const item=byId[id]; if(!item)return;
+      (i<9?left:right).appendChild(makeButton(item));
+    });
+  }
+  function init(){render();
+    const learning=document.getElementById('zarLearningActive');
+    if(learning && learning.dataset.initialized!=='1'){learning.hidden=true;learning.dataset.initialized='1';}
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();
+  window.ZARResetHomeDock=function(){localStorage.removeItem(KEY);render();};
+})();
+</script>
+<script id="zar-v30-10-19-centering-fix">
+(function(){
+  function syncCenter(){
+    const app=document.querySelector('.app'); if(!app)return;
+    /* The grid columns are the single source of truth for available width. */
+    if(window.innerWidth>1100){
+      document.querySelectorAll('.app .main').forEach(el=>{el.style.setProperty('margin-right','0','important');});
+      document.querySelectorAll('.app .content').forEach(el=>{el.style.setProperty('margin-left','0','important');el.style.setProperty('margin-right','0','important');});
+    }
+    if(typeof updateComposerSpace==='function')requestAnimationFrame(updateComposerSpace);
+  }
+  window.addEventListener('resize',syncCenter,{passive:true});
+  document.addEventListener('DOMContentLoaded',()=>setTimeout(syncCenter,40));
+  setTimeout(syncCenter,120);
 })();
 </script>
 </body></html>
