@@ -704,6 +704,89 @@ input:-webkit-autofill,textarea:-webkit-autofill,select:-webkit-autofill{
 }
 </style>
 
+
+<style id="zar-v30-10-9-composer-fit">
+/* ZAR v30.10.9 · El compositor inferior usa exactamente el hueco entre
+   el panel izquierdo fijo y el rail derecho desplegable. */
+@media (min-width:1101px){
+  /* main ya reserva el espacio del rail mediante margin-right.
+     El compositor se posiciona dentro de main, no respecto a toda la ventana. */
+  .main{
+    position:relative!important;
+    min-width:0!important;
+    margin-right:340px!important;
+    overflow:hidden!important;
+  }
+  .app.rail-collapsed .main{
+    margin-right:46px!important;
+  }
+
+  .composer{
+    position:absolute!important;
+    left:0!important;
+    right:0!important;
+    bottom:calc(8px + var(--zar-os-bottom-gap))!important;
+    width:auto!important;
+    max-width:none!important;
+    margin:0!important;
+    box-sizing:border-box!important;
+    z-index:110!important;
+  }
+  .app.rail-collapsed .composer{
+    left:0!important;
+    right:0!important;
+  }
+
+  /* Todos los elementos inferiores heredan exactamente ese ancho. */
+  .composer .quick,
+  .composer .zarActiveSkills,
+  .composer .zarLearningActive,
+  .composerMain,
+  .composer #uploadStatus,
+  .composer #voiceStatus{
+    box-sizing:border-box!important;
+    max-width:100%!important;
+  }
+
+  .composer .quick{
+    width:100%!important;
+    margin-left:0!important;
+    margin-right:0!important;
+    overflow:hidden!important;
+  }
+  .composerMain{
+    width:100%!important;
+    margin-left:0!important;
+    margin-right:0!important;
+  }
+
+  /* Cuando el hueco se estrecha, los accesos se compactan antes de desbordarse. */
+  .composer .quick button{
+    min-width:0!important;
+    width:auto!important;
+    overflow:hidden!important;
+    text-overflow:ellipsis!important;
+    white-space:nowrap!important;
+  }
+
+  /* El bloque superior conserva el centrado respecto al hueco real. */
+  #chatContent .welcome{
+    width:min(100%,980px)!important;
+    max-width:980px!important;
+    margin-left:auto!important;
+    margin-right:auto!important;
+  }
+}
+
+@media (min-width:721px) and (max-width:1100px){
+  .composer{
+    width:100%!important;
+    max-width:none!important;
+    box-sizing:border-box!important;
+  }
+}
+</style>
+
 </head>
 <body>
 <div class="app">
@@ -714,7 +797,7 @@ input:-webkit-autofill,textarea:-webkit-autofill,select:-webkit-autofill{
     <button onclick="newChat()">＋ Nueva conversación <span class="info" data-tip="Empieza una conversación nueva y limpia el contexto activo de trabajo. La memoria permanente no se borra.">i</span></button>
     <button onclick="showConversations()">🗂️ Conversaciones <span class="info" data-tip="Consulta conversaciones anteriores. Se conservan aunque al recargar Zar se inicie una conversación nueva.">i</span></button>
     <button onclick="showMemory()">🧠 Memoria <span class="info" data-tip="Gestiona los recuerdos y preferencias permanentes de Zar.">i</span></button>
-    <button class="workspaceNavItem" type="button" onclick="window.ZARSkills&&window.ZARSkills.open()">🧠 Aprendizajes <span class="info" data-tip="Enseña temas a ZAR y gestiona aprendizajes y habilidades persistentes.">i</span></button>
+    <button class="workspaceNavItem" type="button" onclick="window.ZARSkills&&window.ZARSkills.open()">🧩 Aprendizajes <span class="info" data-tip="Enseña temas a ZAR y gestiona aprendizajes y habilidades persistentes.">i</span></button>
     <button onclick="showFiles()">📁 Archivos <span class="info" data-tip="Guarda, organiza, busca y recupera tus archivos desde la memoria persistente de Zar.">i</span></button>
     <button class="workspaceNavItem" onclick="showMedia()">🎬 Multimedia <span class="info" data-tip="Busca YouTube/Spotify y abre el Creador de vídeos para montar fotos, vídeos, música generada y transiciones.">i</span></button>
     <button class="workspaceNavItem editorNavBtn" onclick="enterMediaEditor()">🎬 <b>Editor multimedia</b><span class="editorNavBadge">EDITAR</span><span class="info" data-tip="Abre el estudio de edición de Zar para fotos, vídeos y audio. Puedes trabajar con controles o pedir cambios por voz y texto.">i</span></button>
@@ -766,7 +849,7 @@ input:-webkit-autofill,textarea:-webkit-autofill,select:-webkit-autofill{
   </section>
   <section class="content" id="chatContent">
     <div class="chatArea">
-      <div class="welcome" id="welcome"><div class="hero zarHeroLogo"><img src="/static/zar-silhouette.png" alt="Zar, asistente inteligente"></div><div class="zarWordmark">Z A R</div><div class="zarTagline">TU ASISTENTE INTELIGENTE</div><div class="homeActions" aria-label="Accesos rápidos de Zar"><button type="button" onclick="showMobileCalendar()"><span>📅</span><b>Calendario</b><small>Organiza tu tiempo</small></button><button type="button" onclick="showFiles()"><span>📁</span><b>Archivos</b><small>Guarda y organiza</small></button><button type="button" onclick="showMobileWeather()"><span>☀️</span><b>Tiempo</b><small>Consulta el tiempo</small></button><button type="button" onclick="mobileOpenEditor()"><span>▶️</span><b>Zar Studio</b><small>Crea con IA</small></button><button type="button" onclick="showMemory()"><span>🧠</span><b>Memoria</b><small>Tu contexto</small></button><button type="button" onclick="showTasks()"><span>☑️</span><b>Tareas</b><small>Organiza tu día</small></button><button type="button" onclick="showControlCenter()"><span>⚙️</span><b>Control ZAR</b><small>Modelos y servicios</small></button><button type="button" onclick="showResearch()"><span>🔎</span><b>Investigación</b><small>Estudios profundos</small></button><button type="button" onclick="window.ZARSkills&&window.ZARSkills.open()"><span>🧠</span><b>Aprendizajes</b><small>Enseña a ZAR</small></button></div></div>
+      <div class="welcome" id="welcome"><div class="hero zarHeroLogo"><img src="/static/zar-silhouette.png" alt="Zar, asistente inteligente"></div><div class="zarWordmark">Z A R</div><div class="zarTagline">TU ASISTENTE INTELIGENTE</div><div class="homeActions" aria-label="Accesos rápidos de Zar"><button type="button" onclick="showMobileCalendar()"><span>📅</span><b>Calendario</b><small>Organiza tu tiempo</small></button><button type="button" onclick="showFiles()"><span>📁</span><b>Archivos</b><small>Guarda y organiza</small></button><button type="button" onclick="showMobileWeather()"><span>☀️</span><b>Tiempo</b><small>Consulta el tiempo</small></button><button type="button" onclick="mobileOpenEditor()"><span>▶️</span><b>Zar Studio</b><small>Crea con IA</small></button><button type="button" onclick="showMemory()"><span>🧠</span><b>Memoria</b><small>Tu contexto</small></button><button type="button" onclick="showTasks()"><span>☑️</span><b>Tareas</b><small>Organiza tu día</small></button><button type="button" onclick="showControlCenter()"><span>⚙️</span><b>Control ZAR</b><small>Modelos y servicios</small></button><button type="button" onclick="showResearch()"><span>🔎</span><b>Investigación</b><small>Estudios profundos</small></button><button type="button" onclick="window.ZARSkills&&window.ZARSkills.open()"><span>🧩</span><b>Aprendizajes</b><small>Enseña a ZAR</small></button></div></div>
       <div id="chat" class="chat" tabindex="0" aria-label="Historial de conversación"></div><div class="chatScrollControls" aria-label="Controles de desplazamiento"><button type="button" onclick="scrollChat(-1)" title="Subir por la conversación">↑</button><button type="button" onclick="scrollChat(1)" title="Bajar al último mensaje">↓</button></div>
     </div>
     <div class="composer"><input id="fileInput" class="fileInput" type="file" multiple accept="image/*,video/*,audio/*,.pdf,.txt,.csv,.doc,.docx,.xls,.xlsx,.ppt,.pptx"><div id="zarPendingFiles" class="zarPendingFiles"></div><div id="zarUploadPanel" class="zarUploadPanel"></div><div class="quick"><button onclick="usePrompt('¿Qué hora es?')">🕒 Hora</button><button onclick="usePrompt('Recuerda que ...')">🧠 Recordar</button><button onclick="usePrompt('Mira mi último correo y dime qué quiere')">✉️ Correo</button><button onclick="usePrompt('¿Qué tengo mañana?')">📅 Calendario</button><button onclick="usePrompt('Busca información sobre ...')">🌐 Buscar</button><button onclick="showResearch()">🔎 Investigación</button></div><div class="composerLabel">Habla o escribe con Zar</div><button id="zarActiveSkills" class="zarActiveSkills" type="button" onclick="window.ZARSkills&&window.ZARSkills.open()">🧩 Habilidades activas: comprobando…</button><button id="zarLearningActive" class="zarActiveSkills zarLearningActive" type="button" hidden onclick="window.ZARSkills&&window.ZARSkills.open()">🧠 Aprendizaje en curso…</button><div class="composerMain"><textarea id="input" placeholder="Escribe un mensaje a Zar..."></textarea><button id="attachBtn" class="attachBtn" onclick="document.getElementById('fileInput').click()" title="Adjuntar y guardar archivos en la memoria de Zar">📎</button><button id="mic" class="send" onclick="toggleVoice()" title="Hablar con Zar">🎙️</button><button id="speakBtn" class="soundBtn" onclick="toggleSpeak()" title="Activar o silenciar lectura en voz alta">🔇</button><button class="send" onclick="send()" title="Enviar mensaje">➤</button></div><div id="uploadStatus" style="font-size:10px;color:#9da5ab;min-height:14px;margin-top:2px"></div><div id="voiceStatus" class="voiceStatus" style="font-size:10px;color:#9da5ab;min-height:14px"></div></div>
