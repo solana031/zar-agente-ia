@@ -1,3 +1,9 @@
+## ZAR v30.10.17 · Inicio centrado y accesos arrastrables
+- El área central se recentra automáticamente al ocultar uno o ambos paneles laterales.
+- El inicio usa dos matrices 3x3 alrededor del logo central, con 18 accesos principales.
+- Los accesos se pueden arrastrar entre las 18 posiciones y la distribución queda guardada en el navegador.
+- «Aprendizaje en curso» solo aparece cuando existe un trabajo activo real.
+
 # Zar Agente IA — V27.4
 
 V27.4 separa tres espacios: Zar principal (chat), Centro de control y Zar Studio / Editor multimedia. Además mejora el panel derecho de escritorio y corrige la capa visual de los tooltips `i` del menú izquierdo.

@@ -2976,6 +2976,322 @@ function getSelectedBackupOptions(){const e=backupPickerEls();return {gmail:{mes
 async function startSelectedBackup(){const e=backupPickerEls();const options=getSelectedBackupOptions();const any=options.gmail.messages||options.gmail.drafts||options.gmail.attachments||options.contacts||options.calendar||options.tasks||options.drive.metadata||options.drive.content;if(!any){alert('Selecciona al menos un bloque de datos.');return}try{const r=await fetch('/api/google/backup/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({options})});const j=await r.json();if(!r.ok||!j.ok)throw new Error(j.error||'No se pudo iniciar la copia.');if(j.started===false&&j.reason==='already_running'){e.modal.classList.add('isRunning');alert('Ya hay una copia ejecutándose. Espera a que termine y después podrás lanzar la seleccionada.');return}closeBackupPicker();startBackupProgressPolling();updateBackupProgress({status:'running',progress:0,current_service:'Preparando',message:'Preparando la copia seleccionada…'});setTimeout(state,250);if(document.getElementById('controlHealthHero'))setTimeout(loadControlHealth,300)}catch(err){alert('⚠️ '+(err.message||err))}}
 </script>
 <script src="/static/skills.js"></script>
+
+<style id="zar-v30-10-18-ui">
+/* ZAR v30.10.18 — Light theme completion, safe Focus Mode and redesigned Studio */
+body.zar-light{
+  background:linear-gradient(180deg,#f7f2ea 0%,#eee5d9 100%)!important;
+  color:#2c2119!important;
+}
+body.zar-light .app,
+body.zar-light .main,
+body.zar-light .top,
+body.zar-light .content,
+body.zar-light .chatArea,
+body.zar-light .mediaWorkspace,
+body.zar-light .editorWorkspaceBody{
+  background:transparent!important;
+  color:#2c2119!important;
+}
+body.zar-light .top{
+  background:rgba(250,247,242,.94)!important;
+  border-color:#d3c1ac!important;
+}
+body.zar-light .side,
+body.zar-light .right{
+  background:rgba(239,231,221,.96)!important;
+  border-color:#cbb9a5!important;
+}
+body.zar-light .nav button{color:#4a3b2e!important}
+body.zar-light .nav button:hover,
+body.zar-light .nav button.active{
+  background:linear-gradient(90deg,#e6d8c8,#f3ece4)!important;
+  color:#33251b!important;
+  box-shadow:inset 2px 0 0 #a8783e!important;
+}
+body.zar-light .topIconBtn,
+body.zar-light .mobileMenu,
+body.zar-light .pill{
+  background:#fffaf4!important;color:#4a3828!important;border-color:#cbb69d!important;
+}
+body.zar-light .welcome h2,
+body.zar-light .zarWordmark,
+body.zar-light .zarTagline{color:#5a4028!important}
+body.zar-light .chat{color:#2c2119!important}
+body.zar-light .msg.user{background:#eadcc9!important;color:#2c2119!important;border-color:#c8ad8d!important}
+body.zar-light .msg.assistant{background:#fffdf9!important;color:#2c2119!important;border-color:#d2c0ab!important}
+body.zar-light .composer{
+  background:linear-gradient(180deg,rgba(247,242,234,0),rgba(247,242,234,.96) 45%,#f7f2ea 100%)!important;
+}
+body.zar-light .composerMain{background:#fffdf9!important;border-color:#cbb69d!important}
+body.zar-light .composerMain textarea{color:#2c2119!important}
+body.zar-light .quick button,
+body.zar-light .homeActions button,
+body.zar-light .btn,
+body.zar-light .btnSmall,
+body.zar-light .studioTool,
+body.zar-light .editorModeTab{
+  background:#fffaf4!important;color:#4a3828!important;border-color:#cbb69d!important;
+}
+body.zar-light .quick button:hover,
+body.zar-light .homeActions button:hover,
+body.zar-light .btn:hover,
+body.zar-light .btnSmall:hover,
+body.zar-light .studioTool:hover,
+body.zar-light .studioTool.active,
+body.zar-light .editorModeTab.active{
+  background:#eadcc9!important;border-color:#a8783e!important;color:#3b281a!important;
+}
+/* Make every known studio surface light */
+body.zar-light .mediaWorkspaceHead,
+body.zar-light .editorWorkspaceBody,
+body.zar-light .studioProjectBar,
+body.zar-light .studioGlass,
+body.zar-light .vcEditor,
+body.zar-light .vcFiles,
+body.zar-light .studioTimeline,
+body.zar-light .studioToolbar,
+body.zar-light .studioCompact,
+body.zar-light .studioLaunchCard,
+body.zar-light .studioLearning,
+body.zar-light .audioStudio,
+body.zar-light .audioPanel,
+body.zar-light .imageStudio{
+  background:linear-gradient(145deg,#fffaf4,#f1e8dd)!important;
+  color:#2c2119!important;
+  border-color:#cdbba6!important;
+  box-shadow:0 12px 35px rgba(76,55,35,.10)!important;
+}
+body.zar-light .studioProjectName,
+body.zar-light .studioProjectMain,
+body.zar-light .studioProjectBar h1,
+body.zar-light .mediaWorkspaceHead h1,
+body.zar-light .vcEditorTitle,
+body.zar-light .studioGlass h4,
+body.zar-light .studioLaunchCard strong{color:#4b3523!important}
+body.zar-light .studioProjectMeta,
+body.zar-light .vcHint2,
+body.zar-light .studioLaunchCard small,
+body.zar-light .studioCanvasHint,
+body.zar-light .studioShareHint,
+body.zar-light .studioWorkspaceText{color:#796958!important}
+body.zar-light .studioStagePro2,
+body.zar-light .studioStage{
+  background:radial-gradient(circle at 50% 15%,#eadfce,#cfc0ae 100%)!important;
+  border-color:#bda78e!important;
+}
+body.zar-light .studioViewportPro2,
+body.zar-light .videoStagePro{
+  background:linear-gradient(145deg,#e8dfd4,#c9bcae)!important;
+  border-color:#bda78e!important;
+}
+body.zar-light .stageViewport,
+body.zar-light .studioStageMedia,
+body.zar-light .vcPreview{
+  background:#fff!important;border-color:#c7b39b!important;
+}
+body.zar-light .studioTrack{
+  background:#e5d9ca!important;border-color:#c8b49d!important;
+}
+body.zar-light .studioTrackClip,
+body.zar-light .videoTrackClip,
+body.zar-light .audioTrackClip{
+  background:linear-gradient(180deg,#eadcc9,#d8c5ad)!important;
+  color:#4a3421!important;border-color:#b48a59!important;
+}
+body.zar-light .studioEmptyVisual h3{color:#5a4028!important}
+body.zar-light .studioEmptyVisual p{color:#766858!important}
+body.zar-light input,
+body.zar-light textarea,
+body.zar-light select{
+  background:#fffdf9!important;color:#2c2119!important;border-color:#cbb69d!important;
+}
+body.zar-light select option{background:#fffdf9!important;color:#2c2119!important}
+body.zar-light .zarOverlayCard,
+body.zar-light .zarSettingsSection,
+body.zar-light .commandPaletteBox,
+body.zar-light .filePreviewCard{
+  background:#fffaf4!important;color:#2c2119!important;border-color:#cbb69d!important;
+}
+body.zar-light .commandItem{background:#f6eee5!important;color:#3a2a1e!important;border-color:#d3c0aa!important}
+body.zar-light ::-webkit-scrollbar-track{background:#e8ded2!important}
+body.zar-light ::-webkit-scrollbar-thumb{background:#bda78d!important}
+body.zar-light ::-webkit-scrollbar-thumb:hover{background:#a8783e!important}
+
+/* Focus mode: hide rails but always preserve the main workspace */
+.app.focus-mode{
+  grid-template-columns:minmax(0,1fr)!important;
+  width:100%!important;
+  min-width:0!important;
+}
+.app.focus-mode .side,
+.app.focus-mode .right{display:none!important}
+.app.focus-mode .main{
+  grid-column:1!important;
+  width:100%!important;
+  min-width:0!important;
+  min-height:0!important;
+}
+.app.focus-mode .top{width:100%!important}
+.app.focus-mode .content,
+.app.focus-mode #chatContent,
+.app.focus-mode #mediaWorkspace,
+.app.focus-mode .editorWorkspaceBody{
+  width:100%!important;
+  max-width:none!important;
+  box-sizing:border-box!important;
+}
+body.zar-light .app.focus-mode .main{background:transparent!important}
+
+/* ZAR Studio — closer to a professional editor: top project bar, large preview,
+   compact controls, timeline, and inspector-like lower tools. */
+#mediaWorkspace{min-width:0!important}
+#mediaWorkspace .editorWorkspaceBody{padding:10px 14px 24px!important}
+#mediaWorkspace .editorWorkspaceBodyInner{max-width:1500px!important;margin:0 auto!important}
+#mediaWorkspace .studioProjectBar{min-height:58px!important}
+#mediaWorkspace .studioStagePro2{
+  min-height:clamp(440px,58vh,760px)!important;
+  display:grid!important;
+  grid-template-rows:minmax(300px,1fr) auto!important;
+  gap:10px!important;
+}
+#mediaWorkspace .studioViewportPro2{
+  min-height:clamp(330px,50vh,650px)!important;
+  position:relative!important;
+  padding:18px!important;
+}
+#mediaWorkspace .stageViewport{
+  width:min(1100px,96%)!important;
+  max-width:1100px!important;
+  aspect-ratio:16/9!important;
+}
+#mediaWorkspace .stageViewport video,
+#mediaWorkspace .stageViewport img{
+  width:100%!important;height:100%!important;object-fit:contain!important;
+}
+#mediaWorkspace .stageToolbar{
+  display:flex!important;align-items:center!important;gap:7px!important;
+  flex-wrap:wrap!important;padding:8px!important;
+  background:rgba(13,10,8,.94)!important;border:1px solid #493626!important;border-radius:12px!important;
+}
+body.zar-light #mediaWorkspace .stageToolbar{
+  background:#f4ebe1!important;border-color:#cdbba6!important;
+}
+#mediaWorkspace .studioTimeline{min-height:120px!important}
+#mediaWorkspace .studioToolbar{position:sticky!important;bottom:8px!important;z-index:8!important;backdrop-filter:blur(10px)!important}
+#mediaWorkspace .vcEditor,
+#mediaWorkspace .vcFiles,
+#mediaWorkspace .studioGlass{border-radius:14px!important}
+#mediaWorkspace .vcTwo{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:10px!important}
+#mediaWorkspace .vcFiles{margin-top:10px!important}
+#mediaWorkspace .studioProjectManager{margin-top:10px!important}
+
+/* Expanded preview / theater mode */
+body.zar-studio-preview-focus{overflow:hidden!important}
+body.zar-studio-preview-focus #mediaWorkspace .studioStagePro2{
+  position:fixed!important;inset:68px 22px 22px 22px!important;
+  z-index:5000!important;width:auto!important;height:auto!important;
+  min-height:0!important;margin:0!important;
+  background:#070605!important;
+  box-shadow:0 35px 120px rgba(0,0,0,.72),0 0 0 1px rgba(216,173,112,.35)!important;
+}
+body.zar-studio-preview-focus #mediaWorkspace .studioViewportPro2{
+  min-height:0!important;height:100%!important;
+}
+body.zar-studio-preview-focus #mediaWorkspace .stageViewport{
+  width:min(92vw,1500px)!important;max-width:none!important;
+  max-height:calc(100vh - 170px)!important;
+}
+body.zar-studio-preview-focus #mediaWorkspace .studioTimeline{display:none!important}
+body.zar-studio-preview-focus #mediaWorkspace .stageToolbar{position:absolute!important;left:14px!important;right:14px!important;bottom:14px!important;z-index:5!important}
+body.zar-studio-preview-focus #mediaWorkspace .studioStagePro2::before{
+  content:"ZAR STUDIO · VISTA PREVIA";position:absolute;top:12px;left:16px;
+  color:#e6c58f;font-size:10px;font-weight:800;letter-spacing:.16em;z-index:6;
+  pointer-events:none;
+}
+body.zar-light.zar-studio-preview-focus #mediaWorkspace .studioStagePro2{
+  background:#eee5da!important;
+}
+@media(max-width:900px){
+  #mediaWorkspace .vcTwo{grid-template-columns:1fr!important}
+  #mediaWorkspace .stageViewport{width:96%!important}
+}
+</style>
+
+<script id="zar-v30-10-18-fixes">
+(function(){
+  'use strict';
+
+  /* Focus mode: do not restore a stale state on page load. It remains an
+     explicit session action, preventing the blank-screen state seen after reload/navigation. */
+  try{ localStorage.removeItem('zar_focus_mode'); }catch(e){}
+  function zarFocusSafe(){
+    const app=document.querySelector('.app');
+    if(!app)return;
+    const active=!app.classList.contains('focus-mode');
+    app.classList.toggle('focus-mode',active);
+    const b=document.getElementById('focusModeBtn');
+    if(b){
+      b.classList.toggle('active',active);
+      b.textContent=active?'✕':'⛶';
+      b.title=active?'Salir del modo enfoque (Ctrl+Shift+F)':'Modo enfoque (Ctrl+Shift+F)';
+    }
+    if(active && typeof setRightRailCollapsed==='function'){
+      try{setRightRailCollapsed(true,false)}catch(e){}
+    }
+    try{localStorage.removeItem('zar_focus_mode')}catch(e){}
+    requestAnimationFrame(()=>window.dispatchEvent(new Event('resize')));
+  }
+  window.toggleFocusMode=zarFocusSafe;
+  document.addEventListener('DOMContentLoaded',()=>{
+    const app=document.querySelector('.app');
+    app?.classList.remove('focus-mode');
+    const b=document.getElementById('focusModeBtn');
+    if(b){b.classList.remove('active');b.textContent='⛶';b.title='Modo enfoque (Ctrl+Shift+F)'}
+  },{once:true});
+
+  /* Preview theater button for the video editor. */
+  window.zarToggleStudioPreviewFocus=function(){
+    document.body.classList.toggle('zar-studio-preview-focus');
+    const on=document.body.classList.contains('zar-studio-preview-focus');
+    const b=document.getElementById('zarStudioPreviewFocusBtn');
+    if(b){
+      b.textContent=on?'✕ Salir de vista grande':'⛶ Vista grande';
+      b.title=on?'Cerrar vista previa ampliada':'Ampliar pantalla de previsualización';
+    }
+  };
+  document.addEventListener('keydown',e=>{
+    if(e.key==='Escape' && document.body.classList.contains('zar-studio-preview-focus')){
+      window.zarToggleStudioPreviewFocus();
+    }
+  });
+
+  function installStudioPreviewButton(){
+    const bar=document.querySelector('#editorWorkspaceBodyInner .stageToolbar');
+    if(!bar || document.getElementById('zarStudioPreviewFocusBtn')) return;
+    const b=document.createElement('button');
+    b.id='zarStudioPreviewFocusBtn';
+    b.type='button';
+    b.className='studioTool';
+    b.textContent='⛶ Vista grande';
+    b.title='Ampliar pantalla de previsualización';
+    b.onclick=window.zarToggleStudioPreviewFocus;
+    bar.appendChild(b);
+  }
+  const observer=new MutationObserver(()=>installStudioPreviewButton());
+  const boot=()=>{
+    const root=document.getElementById('editorWorkspaceBodyInner');
+    if(root) observer.observe(root,{childList:true,subtree:true});
+    installStudioPreviewButton();
+  };
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot,{once:true});else boot();
+
+  /* Keep the editor centered and responsive whenever the side rails change. */
+  window.addEventListener('resize',()=>{
+    document.querySelectorAll('#mediaWorkspace .studioStagePro2').forEach(x=>x.style.removeProperty('margin-left'));
+  },{passive:true});
+})();
+</script>
 </body></html>
 
 <style id="zar-v30-10-16-floating-shell">
