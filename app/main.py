@@ -2617,7 +2617,7 @@ def api_learning():
     for job in jobs:
         if job.get("status") in ("queued", "researching", "synthesizing"):
             heartbeat = float(job.get("heartbeat_at") or job.get("updated_at") or 0)
-            if heartbeat and now - heartbeat > 180:
+            if heartbeat and now - heartbeat > 360:
                 from .learning import _set_job
                 _set_job(job.get("id"), status="paused", phase="Pausado", message="La sesión de aprendizaje dejó de responder. Puedes reanudarla sin perder el tema ni las referencias.")
                 job["status"] = "paused"
@@ -2630,10 +2630,12 @@ def api_learning_job(job_id):
     job = get_job(job_id)
     if not job:
         return jsonify({"ok": False, "error": "Aprendizaje no encontrado."}), 404
-    # Durable learning pump: every status poll may advance exactly one persisted
-    # step. There is no long-lived Flask/Gunicorn learning thread to lose.
+    # The learning worker runs independently of the browser. If Railway has
+    # restarted the process, this status request transparently starts it again.
     if job.get("status") in ("queued", "researching", "synthesizing"):
-        job = advance_learning(job_id) or job
+        from .learning import _ensure_learning_worker
+        _ensure_learning_worker(job_id)
+        job = get_job(job_id) or job
     return jsonify({"ok": True, "job": job})
 
 @app.post("/api/learning/<job_id>/resume")

@@ -196,7 +196,7 @@
         status.innerHTML='✅ <b>Aprendizaje inicial completado.</b> ZAR ha guardado el conocimiento y creado una habilidad reutilizable. Ahora puede practicar y comprobar dominio.'; await loadSkills(); return;
       }
       if(job.status==='error'){status.innerHTML='⚠️ <b>Aprendizaje detenido:</b> '+esc(job.message||'Error desconocido');return;}
-      setTimeout(()=>pollLearning(id,status,metrics,wrap,bar,label),1800);
+      setTimeout(()=>pollLearning(id,status,metrics,wrap,bar,label),2500);
     }catch(e){status.innerHTML='⚠️ '+esc(e.message||'No se pudo consultar el aprendizaje.');setTimeout(()=>pollLearning(id,status,metrics,wrap,bar,label),4000);}
   }
 

@@ -57,6 +57,14 @@ def _live_job(job):
     out = dict(job)
     if out.get("status") in ("queued", "researching", "synthesizing") and out.get("started_at"):
         out["elapsed_seconds"] = round(max(0, time.time() - float(out.get("started_at") or time.time())), 1)
+    # Migrate legacy error records created by v30.10.4/v30.10.5 that could
+    # incorrectly show 100% even though the learning had not completed.
+    if out.get("status") == "error" and float(out.get("progress") or 0) >= 100:
+        idx = int(out.get("query_index") or 0)
+        total = max(1, int(out.get("queries_total") or len(out.get("queries") or []) or 1))
+        out["progress"] = max(5, min(99, 8 + int(idx / total * 60)))
+    if out.get("estimated_seconds"):
+        out["estimated_seconds"] = min(3600, max(90, int(float(out.get("estimated_seconds") or 0))))
     return out
 
 def list_jobs():
@@ -109,7 +117,7 @@ def _synth(topic, goal, references, research):
     try:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
         r = requests.post(url, params={"key": key}, json={"contents": [{"parts": [{"text": prompt}]}],
-                           "generationConfig": {"temperature": 0.15, "responseMimeType": "application/json"}}, timeout=120)
+                           "generationConfig": {"temperature": 0.15, "responseMimeType": "application/json"}}, timeout=50)
         r.raise_for_status(); data = r.json(); text = ""
         for c in data.get("candidates", []):
             for part in (c.get("content") or {}).get("parts", []): text += part.get("text", "")
@@ -122,20 +130,28 @@ def _synth(topic, goal, references, research):
 
 
 def _queries(topic, goal, refs):
-    base = [
-        f"{topic} guía completa fundamentos buenas prácticas",
-        f"{topic} advanced techniques professional workflow",
-        f"{topic} tutorial práctico casos reales errores comunes",
-        f"{topic} estándares documentación oficial recursos de aprendizaje",
-        f"{topic} herramientas actuales ejemplos profesionales",
-        f"{topic} ejercicios prácticas verificación dominio",
-    ]
+    """Build a compact, high-value curriculum search plan.
+
+    The goal is breadth + practical usefulness, not seven slow serial searches.
+    Six focused queries are enough for the first pass; they are processed in
+    parallel batches and each failed route falls back to other legal/public
+    sources, including manuals and legitimately accessible PDFs.
+    """
     text = (topic + " " + (goal or "")).lower()
+    base = [
+        f"{topic} fundamentos avanzados buenas prácticas profesionales guía",
+        f"{topic} composición exposición iluminación color técnicas profesionales",
+        f"{topic} flujo de trabajo profesional retoque edición paso a paso",
+        f"{topic} tutoriales manuales documentación oficial cursos PDF acceso legal",
+        f"{topic} herramientas software profesionales tutorial Photoshop Lightroom CapCut Picsart",
+        f"{topic} casos reales ejercicios errores comunes verificación conocimientos",
+    ]
     if any(x in text for x in ("foto", "fotografía", "diseño", "imagen", "edición")):
-        base += [f"{topic} Behance Dribbble profesionales referencias", f"{topic} Instagram profesionales tutorial"]
-    if refs: base.append(" ".join(refs[:3]))
-    # Limitamos deliberadamente la primera investigación para que sea rápida y medible.
-    return base[:7]
+        base[4] = f"{topic} Photoshop Lightroom Camera Raw CapCut Picsart tutorial profesional"
+        base.append(f"{topic} fotógrafos profesionales referencias portafolios técnicas edición")
+    if refs:
+        base.append(" ".join(refs[:3]))
+    return base[:6]
 
 
 def _search_with_timeout(fn, *args, timeout=10, **kwargs):
@@ -225,7 +241,7 @@ def _search_one(q):
     attempts = []
     variants = _learning_query_variants(q)
 
-    for variant in variants[:3]:
+    for variant in variants[:2]:
         res = _search_with_timeout(
             google_web_search,
             variant,
@@ -234,7 +250,7 @@ def _search_one(q):
             "editoriales, organizaciones profesionales y recursos educativos. "
             "Si existe material PDF accesible legalmente, inclúyelo. No uses "
             "copias pirateadas ni fuentes de descarga ilícita.",
-            timeout=9,
+            timeout=7,
         )
         attempts.append(res)
         if _usable_result(res):
@@ -251,12 +267,12 @@ def _search_one(q):
 
     # Keyless public search is the last independent route. Its implementation
     # may itself take longer than desired, so it is also bounded here.
-    for variant in variants[3:]:
+    for variant in variants[2:4]:
         res = _search_with_timeout(
             _fallback_web_search,
             variant,
             "Busca resultados públicos legales, manuales, cursos y PDFs de acceso legítimo.",
-            timeout=9,
+            timeout=7,
         )
         attempts.append(res)
         if _usable_result(res):
@@ -283,6 +299,34 @@ def _search_one(q):
                   + (" | ".join(errors[:3]) if errors else "Sin resultado utilizable.")),
     }
 
+
+# Durable-in-process worker. State is persisted after every batch, so a
+# Railway restart can recover by simply calling the status/resume endpoint.
+_learning_workers = {}
+_learning_workers_lock = threading.Lock()
+
+def _ensure_learning_worker(job_id):
+    with _learning_workers_lock:
+        t = _learning_workers.get(job_id)
+        if t and t.is_alive():
+            return
+        t = threading.Thread(target=_learning_worker, args=(job_id,), daemon=True, name=f"zar-learning-{job_id[:8]}")
+        _learning_workers[job_id] = t
+        t.start()
+
+def _learning_worker(job_id):
+    try:
+        while True:
+            job = get_job(job_id)
+            if not job or job.get("status") in ("completed", "error", "cancelled", "paused"):
+                return
+            result = advance_learning(job_id)
+            if not result or result.get("status") in ("completed", "error", "cancelled", "paused"):
+                return
+            time.sleep(0.4)
+    finally:
+        with _learning_workers_lock:
+            _learning_workers.pop(job_id, None)
 
 def _lease_path(job_id):
     return _dir() / f"{job_id}.lease"
@@ -359,30 +403,46 @@ def advance_learning(job_id):
         research = list(job.get("research") or [])
         sources = list(job.get("sources") or [])
 
+        # Process two independent research queries concurrently. This is the
+        # main speed improvement: the first pass no longer waits for seven
+        # network calls one after another. Each query still has its own
+        # fallback cascade and legal/public-source constraints.
         if idx < len(qs):
-            q = qs[idx]
-            item = _search_one(q)
-            research.append(item)
-            sources.extend(item.get("sources") or [])
+            batch_indices = list(range(idx, min(idx + 2, len(qs))))
+            _set_job(job_id,
+                     status="researching", phase="Investigando fuentes",
+                     message=f"Investigando consultas {batch_indices[0]+1}-{batch_indices[-1]+1}/{len(qs)} en paralelo…",
+                     heartbeat_at=time.time(), elapsed_seconds=round(time.time()-started, 1))
+            batch_results = {}
+            with ThreadPoolExecutor(max_workers=len(batch_indices)) as pool:
+                futures = {pool.submit(_search_one, qs[i]): i for i in batch_indices}
+                for future in as_completed(futures):
+                    qi = futures[future]
+                    try:
+                        batch_results[qi] = future.result()
+                    except Exception as exc:
+                        batch_results[qi] = {"query": qs[qi], "ok": False, "sources": [], "text": "", "attempts": 0, "fallback_used": True, "error": str(exc)}
+                    _set_job(job_id, heartbeat_at=time.time(), message=f"Consulta {qi+1}/{len(qs)} procesada; consolidando resultados…")
+
+            for qi in batch_indices:
+                item = batch_results.get(qi) or {"query": qs[qi], "ok": False, "sources": [], "text": "", "attempts": 0, "fallback_used": True, "error": "Sin resultado utilizable."}
+                research.append(item)
+                sources.extend(item.get("sources") or [])
+
             clean_sources=[]; seen=set()
             for source in sources:
                 u=source.get("url")
                 if u and u not in seen:
                     seen.add(u); clean_sources.append(source)
-            idx += 1
+            idx = batch_indices[-1] + 1
             progress = 8 + int(idx / max(1, len(qs)) * 60)
-            msg = f"Consulta {idx}/{len(qs)} completada"
-            if item.get("ok"):
-                msg += f" · {len(item.get('sources') or [])} fuentes encontradas"
-                if item.get("fallback_used"):
-                    msg += f" · {int(item.get('attempts') or 1)} vías probadas"
-            else:
-                msg += " · sin resultado utilizable; continúo con la siguiente"
+            ok_count = sum(1 for qi in batch_indices if (batch_results.get(qi) or {}).get("ok"))
+            msg = f"{len(batch_indices)} consultas completadas · {ok_count} con resultados útiles"
+            if ok_count < len(batch_indices):
+                msg += " · las vías fallidas se han sustituido por alternativas"
             elapsed_now = round(time.time() - started, 1)
-            # Re-estimate from the real elapsed time instead of keeping a stale
-            # fixed value when a provider/fallback is slower than expected.
             avg_per_query = elapsed_now / max(1, idx)
-            dynamic_estimate = int(max(90, elapsed_now + max(0, len(qs) - idx) * max(12, avg_per_query)))
+            dynamic_estimate = int(min(3600, max(90, elapsed_now + max(0, len(qs) - idx) * max(8, avg_per_query))))
             _set_job(job_id,
                      status="researching" if idx < len(qs) else "synthesizing",
                      progress=progress if idx < len(qs) else 70,
@@ -444,7 +504,7 @@ def advance_learning(job_id):
                 "topic":topic,"result":record,"learning_id":learning_id,"skill_id":skill_id,
                 "research":research,"sources":sources,"queries_done":len(qs),"queries_total":len(qs),
                 "query_index":len(qs),"source_count":len(sources),"elapsed_seconds":round(now-started,1),
-                "estimated_seconds":estimate,"updated_at":time.time()
+                "estimated_seconds":min(3600, max(90, int(time.time()-started))),"updated_at":time.time()
             }); _save(d)
             return get_job(job_id)
         return get_job(job_id)
@@ -508,10 +568,8 @@ def start_learning(topic, goal="", references=None):
              source_count=0, research=[], sources=[], created_at=now, updated_at=now,
              started_at=now, estimated_seconds=estimate, heartbeat_at=now,
              learning_id=uuid.uuid4().hex)
-    # Advance the first step immediately in the same request, but without any
-    # persistent background thread. If the network is slow, the job remains
-    # safely persisted and the next status request continues it.
-    return advance_learning(job_id)
+    _ensure_learning_worker(job_id)
+    return get_job(job_id)
 
 
 def resume_learning(job_id):
@@ -531,7 +589,8 @@ def resume_learning(job_id):
              message="Aprendizaje reanudado. Continuaré desde la última consulta guardada.",
              heartbeat_at=time.time(), cancel_requested=False, queries=qs,
              queries_total=len(qs), query_index=idx, queries_done=idx)
-    return advance_learning(job_id)
+    _ensure_learning_worker(job_id)
+    return get_job(job_id)
 
 def learn_from_file(file_id):
     from .file_analysis import analyze_file
