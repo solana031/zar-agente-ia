@@ -551,6 +551,33 @@ input:-webkit-autofill,textarea:-webkit-autofill,select:-webkit-autofill{
 .zarHeroLogo{background:#000!important;border-color:rgba(216,173,112,.32)!important;overflow:hidden!important;display:grid!important;place-items:center!important;box-shadow:0 14px 40px rgba(0,0,0,.55),inset 0 0 0 1px rgba(216,173,112,.12)!important}
 .zarHeroLogo img{background:#000!important;border-radius:50%!important;object-fit:contain!important;padding:8px!important}
 </style>
+
+<style id="zar-v30-10-7-desktop-layout">
+/* v30.10.7 · escritorio: el chat ocupa exactamente el espacio disponible entre las dos columnas. */
+@media(min-width:1101px){
+  .content{width:100%!important;max-width:none!important;margin:0!important;padding-left:clamp(18px,2vw,28px)!important;padding-right:clamp(18px,2vw,28px)!important}
+  .chatArea,.composer{width:100%;max-width:none!important}
+  .chat{width:100%;max-width:none!important}
+  .zarLearningActive{width:100%!important;max-width:100%!important}
+  /* El rail contextual deja de repetir accesos que ya existen en la navegación izquierda.
+     Las funciones siguen disponibles abajo mediante secciones desplegables. */
+  .zarWorkspaceDock,.controlSummary,.controlGrid{display:none!important}
+  .railHint{margin-top:2px;margin-bottom:10px;font-size:9px;line-height:1.45}
+  .controlHeader{padding-top:4px!important;padding-bottom:9px!important}
+  .controlHeader h2{font-size:20px!important}
+  .controlSection{margin-top:6px!important}
+  .controlSection details{border-radius:12px!important}
+  .controlSection details>summary{min-height:48px!important;padding:9px 10px!important}
+  .controlSection details>summary .summaryText{font-size:10px!important}
+  .controlSection details>summary .summaryText span{font-size:8px!important}
+  .sectionBody{padding:8px!important}
+}
+@media(min-width:721px) and (max-width:1100px){
+  .content{width:100%!important;max-width:none!important;margin:0!important}
+}
+/* El estado de aprendizaje se mantiene contenido en el ancho real del compositor. */
+.zarLearningActive{box-sizing:border-box!important;overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important}
+</style>
 </head>
 <body>
 <div class="app">
