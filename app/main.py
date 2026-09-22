@@ -32,7 +32,7 @@ from .web_search import search_inspiration_images, analyze_inspiration_image
 from .deep_research import start_research, wait_for_research, save_report, list_reports, get_report, get_research, extract_report
 from .skills import list_skills, get_skill, create_skill, update_skill, delete_skill, execute_skill, match_skill
 from .learning import list_learning, list_jobs, get_job, start_learning, resume_learning, learn_from_file, active_learning_count, delete_learning, advance_learning, _ensure_learning_worker
-from .video_creator import create_project, list_projects, get_project, project_path, add_media as video_add_media, generate_music, render_project, media_path, set_project, update_media, delete_media, move_media, transition_catalog, apply_edit_command, viral_optimize, add_text_overlay, update_text_overlay, delete_text_overlay
+from .video_creator import create_project, list_projects, get_project, project_path, add_media as video_add_media, generate_music, render_project, media_path, set_project, update_media, delete_media, move_media, split_media, transition_catalog, apply_edit_command, viral_optimize, add_text_overlay, update_text_overlay, delete_text_overlay
 from .audio_studio import create_project as audio_create_project, list_projects as audio_list_projects, save_settings as audio_save_settings, render_base as audio_render_base, apply_voice_effect as audio_apply_voice_effect, audio_command as interpret_audio_command
 from .studio_agent import interpret as interpret_studio_command
 from .voice_transcription import transcribe_audio
@@ -1972,6 +1972,15 @@ def video_project_media_move(pid):
     data=request.get_json(silent=True) or {}
     try:
         project=move_media(pid,data.get("from"),data.get("to")); return jsonify({"ok":True,"project":project})
+    except Exception as exc:
+        return jsonify({"ok":False,"error":str(exc)}),400
+
+@app.post("/api/video/projects/<pid>/media/<int:index>/split")
+def video_project_media_split(pid,index):
+    data=request.get_json(silent=True) or {}
+    try:
+        project=split_media(pid,index,data.get("at"))
+        return jsonify({"ok":True,"project":project})
     except Exception as exc:
         return jsonify({"ok":False,"error":str(exc)}),400
 

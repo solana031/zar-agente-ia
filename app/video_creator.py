@@ -114,7 +114,7 @@ def create_project(name='', preset='youtube', music_mood='cinematic', transition
         'music_mood':music_mood if music_mood in MOODS else 'cinematic',
         'transition':transition,
         'image_duration':max(1.0,min(float(image_duration or 3.2),10.0)),
-        'media':[],'music':None,
+        'media':[],'music':None,'audio_track':{'trim_start':0.0,'trim_end':None,'volume':1.0},
         'editor': {'quality':'balanced','auto_caption':False,'viral_mode':False,'beat_sync':False,'title':'','description':''},
         'created_at':now_iso(),'updated_at':now_iso()
     }
@@ -138,7 +138,7 @@ def set_project(pid, patch):
     p=get_project(pid)
     if not p: raise ValueError('Proyecto no encontrado.')
     if not isinstance(patch, dict): raise ValueError('Configuración inválida.')
-    allowed={'name','preset','music_mood','transition','image_duration','editor'}
+    allowed={'name','preset','music_mood','transition','image_duration','editor','audio_track'}
     for k,v in patch.items():
         if k not in allowed: continue
         if k=='preset' and v not in PRESETS: continue
@@ -149,6 +149,12 @@ def set_project(pid, patch):
         if k=='music_mood' and v not in MOODS: continue
         if k=='editor' and isinstance(v,dict):
             p['editor'].update(v); continue
+        if k=='audio_track' and isinstance(v,dict):
+            at=p.setdefault('audio_track',{'trim_start':0.0,'trim_end':None,'volume':1.0})
+            if 'trim_start' in v: at['trim_start']=max(0.0,float(v['trim_start'] or 0))
+            if 'trim_end' in v: at['trim_end']=None if v['trim_end'] in (None,'','null') else max(0.05,float(v['trim_end']))
+            if 'volume' in v: at['volume']=max(0.0,min(2.0,float(v['volume'])))
+            continue
         p[k]=v
     p['updated_at']=now_iso(); save_project(p); return {k:v for k,v in p.items() if k!='_path'}
 
@@ -177,7 +183,11 @@ def delete_media(pid, media_index):
     idx=int(media_index)
     if idx<1 or idx>len(p['media']): raise ValueError('Índice de clip fuera de rango.')
     item=p['media'].pop(idx-1)
-    try: media_path(item).unlink(missing_ok=True)
+    # Split clips can reference the same stored file. Only remove the physical file
+    # when no remaining project item points to it.
+    try:
+        shared=any(x.get('stored_name')==item.get('stored_name') for x in p['media'])
+        if not shared: media_path(item).unlink(missing_ok=True)
     except Exception: pass
     p['updated_at']=now_iso(); save_project(p); return {k:v for k,v in p.items() if k!='_path'}
 
@@ -189,6 +199,29 @@ def move_media(pid, old_index, new_index):
     item=p['media'].pop(a-1); p['media'].insert(b-1,item)
     for i,it in enumerate(p['media']): it['order']=i
     p['updated_at']=now_iso(); save_project(p); return {k:v for k,v in p.items() if k!='_path'}
+
+def split_media(pid, index, at_seconds):
+    p=get_project(pid)
+    if not p: raise ValueError('Proyecto no encontrado.')
+    i=int(index)-1
+    if i<0 or i>=len(p['media']): raise ValueError('Índice de clip fuera de rango.')
+    original=_normalize_media_item(p['media'][i],i)
+    start=float(original.get('trim_start',0) or 0)
+    end=original.get('trim_end')
+    if end in (None,'','null'):
+        raise ValueError('Para dividir un clip necesitas primero definir un Fin.')
+    end=float(end)
+    cut=float(at_seconds)
+    if cut<=start+0.05 or cut>=end-0.05: raise ValueError('El punto de corte debe quedar dentro del recorte.')
+    left=dict(original); right=dict(original)
+    left['trim_end']=cut
+    right['trim_start']=cut; right['trim_end']=end
+    right['id']=uuid.uuid4().hex; right['order']=i+1
+    right['name']=f"{original.get('name','Clip')} · parte 2"
+    p['media'][i]=left; p['media'].insert(i+1,right)
+    for n,it in enumerate(p['media']): it['order']=n
+    p['updated_at']=now_iso(); save_project(p)
+    return {k:v for k,v in p.items() if k!='_path'}
 
 def update_media(pid, index, patch):
     p=get_project(pid)
@@ -530,11 +563,27 @@ def render_project(pid, music=True):
         final=output_path(pid)
         music_path=None; music_meta=None
         if music:
+            existing=p.get('music') or {}
+            existing_path=Path(existing.get('path','')) if existing.get('path') else None
             total=max(5,sum(probe_duration(x) for x in clips))
-            music_meta=generate_music(pid,p.get('music_mood','cinematic'),int(math.ceil(total)))
-            music_path=music_meta['path']
+            if existing_path and existing_path.exists():
+                music_path=str(existing_path); music_meta=dict(existing)
+            else:
+                music_meta=generate_music(pid,p.get('music_mood','cinematic'),int(math.ceil(total)))
+                music_path=music_meta['path']
+            at=p.get('audio_track') or {}
+            astart=max(0.0,float(at.get('trim_start',0) or 0))
+            aend=at.get('trim_end')
+            avol=max(0.0,min(2.0,float(at.get('volume',1.0) or 1.0)))
         if music_path:
-            cmd=[ffmpeg(),'-y','-i',str(video_only),'-stream_loop','-1','-i',str(music_path),'-map','0:v:0','-map','1:a:0','-c:v','copy','-c:a','aac','-b:a','192k','-shortest','-movflags','+faststart',str(final)]
+            audio_filter=[]
+            if astart>0: audio_filter.append(f'atrim=start={astart}')
+            if aend not in (None,'','null'): audio_filter.append(f'atrim=end={max(astart+0.05,float(aend))}')
+            if avol!=1.0: audio_filter.append(f'volume={avol}')
+            af=', '.join(audio_filter).replace(', ', ',')
+            cmd=[ffmpeg(),'-y','-i',str(video_only),'-stream_loop','-1','-i',str(music_path),'-map','0:v:0','-map','1:a:0']
+            if af: cmd += ['-af',af]
+            cmd += ['-c:v','copy','-c:a','aac','-b:a','192k','-shortest','-movflags','+faststart',str(final)]
         else:
             cmd=[ffmpeg(),'-y','-i',str(video_only),'-c:v','copy','-movflags','+faststart',str(final)]
         r=subprocess.run(cmd,capture_output=True,text=True,timeout=1200)
