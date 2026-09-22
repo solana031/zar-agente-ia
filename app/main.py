@@ -21,7 +21,7 @@ from .tools import TOOL_DEFINITIONS, execute_tool
 from .memory import memories, remember, delete_memory, history, add_message, conversation, add_conversation_message, clear_conversation, list_conversations, get_conversation_archive, update_conversation_archive
 from .config import load, save
 from .google_calendar import calendar_status
-from .gmail import gmail_status, recent_messages, get_message
+from .gmail import gmail_status
 from .google_workspace import workspace_status
 from .google_backup import start_google_backup, backup_status, normalize_backup_options
 from .context import get_context, set_active_email, set_pending_email, mark_saved_draft, clear_pending, set_summary, reset_context, set_pending_calendar, clear_pending_calendar, set_focus, clear_focus, set_task_state, clear_task_state, set_last_uploaded_file, set_pending_workspace, clear_pending_workspace, set_last_contact, set_media, set_last_video_project
@@ -38,7 +38,6 @@ from .studio_agent import interpret as interpret_studio_command
 from .voice_transcription import transcribe_audio
 from .voice_tts import synthesize
 from .youtube import status as youtube_status, upload as youtube_upload, video_status as youtube_video_status
-from .user_settings import load_settings, save_settings
 from app.youtube_publish import register_youtube
 
 app = Flask(__name__)
@@ -902,35 +901,6 @@ def google_backup_start():
 def api_youtube_status():
     return jsonify(youtube_status())
 
-@app.get("/api/gmail/recent")
-def api_gmail_recent():
-    try:
-        limit = max(1, min(20, int(request.args.get("limit", "10"))))
-        return jsonify({"ok": True, "messages": recent_messages("in:inbox", limit)})
-    except Exception as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 200
-
-@app.get("/api/gmail/messages/<message_id>")
-def api_gmail_message(message_id):
-    try:
-        return jsonify({"ok": True, "message": get_message(message_id)})
-    except Exception as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 200
-
-@app.get("/api/settings")
-def api_settings_get():
-    return jsonify({"ok": True, "settings": load_settings(), "user_id": get_current_user()})
-
-@app.patch("/api/settings")
-def api_settings_update():
-    data = request.get_json(silent=True) or {}
-    allowed = {k: data[k] for k in ("theme", "language", "compact_sidebar") if k in data}
-    if "theme" in allowed and allowed["theme"] not in ("dark", "light"):
-        return jsonify({"ok": False, "error": "Tema no válido."}), 400
-    if "language" in allowed and not isinstance(allowed["language"], str):
-        return jsonify({"ok": False, "error": "Idioma no válido."}), 400
-    return jsonify({"ok": True, "settings": save_settings(allowed)})
-
 @app.get("/connect/gmail")
 def connect_gmail():
     # Gmail and Calendar share the same Google OAuth token in Zar Cloud.
@@ -975,6 +945,27 @@ def connections():
             "authorized": google_authorized
         }
     })
+
+@app.get("/api/gmail/recent")
+def api_gmail_recent():
+    try:
+        if not connected():
+            return jsonify({"ok": False, "error": "Google/Gmail no está conectado."}), 401
+        from .gmail import recent_messages
+        limit=max(1,min(int(request.args.get("limit",10)),25))
+        return jsonify({"ok": True, "messages": recent_messages("in:inbox", limit)})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+@app.get("/api/gmail/message/<message_id>")
+def api_gmail_message(message_id):
+    try:
+        if not connected():
+            return jsonify({"ok": False, "error": "Google/Gmail no está conectado."}), 401
+        from .gmail import get_message
+        return jsonify({"ok": True, "message": get_message(message_id)})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
 
 @app.get("/api/ollama")
 def ollama_status():
