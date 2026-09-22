@@ -841,6 +841,63 @@ input:-webkit-autofill,textarea:-webkit-autofill,select:-webkit-autofill{
 }
 </style>
 
+
+<style id="zar-v30-10-11-ui">
+/* v30.10.11 · aprendizaje visible + compositor elevado + flechas de chat persistentes */
+@media (min-width:721px){
+  :root{--zar-os-bottom-gap:82px}
+  .composer{
+    bottom:calc(12px + var(--zar-os-bottom-gap))!important;
+    height:156px!important;min-height:156px!important;max-height:156px!important;
+    padding-top:7px!important;padding-bottom:8px!important;
+  }
+  .zarActiveSkills,.zarLearningActive{
+    font-size:12px!important;line-height:1.35!important;
+    min-height:30px!important;height:auto!important;
+    padding:6px 10px!important;
+    text-align:left!important;
+    white-space:normal!important;
+    overflow:auto!important;
+    text-overflow:clip!important;
+    border-radius:10px!important;
+  }
+  .zarLearningActive{font-size:12.5px!important;font-weight:750!important;max-height:44px!important}
+  .zarActiveSkills{max-height:44px!important}
+  .chatScrollControls{
+    bottom:190px!important;
+    right:12px!important;
+    z-index:180!important;
+    gap:6px!important;
+  }
+  .chatScrollControls button{
+    width:34px!important;height:34px!important;
+    font-size:18px!important;
+    box-shadow:0 8px 20px rgba(0,0,0,.38)!important;
+  }
+  .nav button.learning-active{
+    background:linear-gradient(90deg,rgba(87,61,34,.96),rgba(40,28,19,.9))!important;
+    box-shadow:inset 3px 0 0 var(--gold),0 5px 16px rgba(0,0,0,.2)!important;
+    border:1px solid rgba(216,173,112,.3)!important;
+  }
+  .nav button.learning-active::after{
+    content:'EN CURSO';
+    margin-left:auto;
+    padding:3px 6px;
+    border-radius:999px;
+    border:1px solid rgba(216,173,112,.45);
+    color:#e8c78f;
+    background:rgba(216,173,112,.1);
+    font-size:7px;font-weight:900;letter-spacing:.08em;
+    animation:zarLearningPulse 1.8s ease-in-out infinite;
+  }
+  .nav button.learning-active .info{margin-left:4px}
+}
+@keyframes zarLearningPulse{0%,100%{opacity:.65}50%{opacity:1;box-shadow:0 0 12px rgba(216,173,112,.18)}}
+@media (max-width:720px){
+  .zarActiveSkills,.zarLearningActive{font-size:11px!important;min-height:28px!important;white-space:normal!important}
+  .chatScrollControls{bottom:128px!important;z-index:160!important}
+}
+</style>
 </head>
 <body>
 <div class="app">
@@ -2020,17 +2077,33 @@ function updateActiveSkillsUI(active){
 }
 window.ZARShowActiveSkills=function(active){updateActiveSkillsUI(active);};
 async function refreshLearningIndicator(){
-  const el=document.getElementById('zarLearningActive'); if(!el)return;
-  try{const j=await fetch('/api/learning?_='+Date.now(),{cache:'no-store'}).then(r=>r.json()); const jobs=j.jobs||[]; const a=jobs.find(x=>['queued','researching','synthesizing'].includes(x.status));
+  const el=document.getElementById('zarLearningActive');
+  const menuButtons=document.querySelectorAll('.nav button[onclick*="ZARSkills"]');
+  try{
+    const j=await fetch('/api/learning?_='+Date.now(),{cache:'no-store'}).then(r=>r.json());
+    const jobs=j.jobs||[];
+    const active=jobs.filter(x=>['queued','researching','synthesizing'].includes(x.status));
+    menuButtons.forEach(b=>{
+      b.classList.toggle('learning-active',active.length>0);
+      b.setAttribute('aria-label',active.length?'Aprendizajes · '+active.length+' aprendizaje(s) en curso':'Aprendizajes');
+      b.title=active.length?'Hay '+active.length+' aprendizaje(s) de ZAR en curso. Haz clic para ver el progreso.':'Abrir Aprendizajes';
+    });
+    if(!el)return;
+    const a=active[0];
     if(!a){el.hidden=true; return;}
-    el.hidden=false; const p=Math.max(0,Math.min(100,Number(a.progress)||0)); el.textContent='🧠 Aprendizaje en curso: '+(a.topic||'aprendizaje')+' · '+p+'%';
-  }catch(e){el.hidden=true;}
+    el.hidden=false;
+    const p=Math.max(0,Math.min(99,Number(a.progress)||0));
+    el.textContent='🧠 Aprendizaje en curso: '+(a.topic||'aprendizaje')+' · '+p+'% · '+Number(a.queries_done||0)+'/'+Number(a.queries_total||0)+' consultas · '+Number(a.source_count||0)+' fuentes';
+  }catch(e){
+    menuButtons.forEach(b=>b.classList.remove('learning-active'));
+    if(el)el.hidden=true;
+  }
 }
 async function refreshActiveSkills(){
   try{const j=await fetch('/api/skills?_='+Date.now(),{cache:'no-store'}).then(r=>r.json());if(j.ok)updateActiveSkillsUI((j.skills||[]).filter(x=>x.enabled));}
   catch(e){updateActiveSkillsUI([]);}
 }
-refreshActiveSkills(); refreshLearningIndicator(); setInterval(refreshActiveSkills,5000); setInterval(refreshLearningIndicator,2500);
+refreshActiveSkills(); refreshLearningIndicator(); setInterval(refreshActiveSkills,5000); setInterval(refreshLearningIndicator,1500);
 async function uploadPendingFiles(){
   if(!zarPendingFiles.length)return [];
   const files=zarPendingFiles.slice();
@@ -2141,7 +2214,7 @@ document.addEventListener('DOMContentLoaded',()=>{
     if(busy || document.hidden) return; busy=true;
     try{ await fetch('/api/learning?_='+Date.now(),{cache:'no-store'}); }catch(e){} finally{busy=false;}
   }
-  setTimeout(tick,1800); setInterval(tick,5000);
+  setTimeout(tick,900); setInterval(tick,2500);
 })();
 
 // V27.9 override: video surface now opens a real project directly and preserves the mode tabs.

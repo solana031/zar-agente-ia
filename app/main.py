@@ -31,7 +31,7 @@ from .memory3 import stats as memory3_stats, recent as memory3_recent, search as
 from .web_search import search_inspiration_images, analyze_inspiration_image
 from .deep_research import start_research, wait_for_research, save_report, list_reports, get_report, get_research, extract_report
 from .skills import list_skills, get_skill, create_skill, update_skill, delete_skill, execute_skill, match_skill
-from .learning import list_learning, list_jobs, get_job, start_learning, resume_learning, learn_from_file, active_learning_count, delete_learning, advance_learning
+from .learning import list_learning, list_jobs, get_job, start_learning, resume_learning, learn_from_file, active_learning_count, delete_learning, advance_learning, _ensure_learning_worker
 from .video_creator import create_project, list_projects, get_project, project_path, add_media as video_add_media, generate_music, render_project, media_path, set_project, update_media, delete_media, move_media, transition_catalog, apply_edit_command, viral_optimize, add_text_overlay, update_text_overlay, delete_text_overlay
 from .audio_studio import create_project as audio_create_project, list_projects as audio_list_projects, save_settings as audio_save_settings, render_base as audio_render_base, apply_voice_effect as audio_apply_voice_effect, audio_command as interpret_audio_command
 from .studio_agent import interpret as interpret_studio_command
@@ -2612,16 +2612,18 @@ def video_cancel_publication(pubid):
 
 @app.get("/api/learning")
 def api_learning():
-    # v30.10.10: one durable bounded step per poll. Reliable across Railway
-    # worker processes; no process-local daemon is required.
+    # v30.10.11: the API never waits for network research. It only wakes the
+    # durable worker; the worker persists progress after every bounded batch.
+    # This makes progress visible immediately and prevents a slow search from
+    # blocking the browser request.
     jobs = list_jobs()
     for job in jobs:
         if job.get("status") in ("queued", "researching", "synthesizing"):
             try:
-                advance_learning(job.get("id"))
+                _ensure_learning_worker(job.get("id"))
             except Exception as exc:
                 from .learning import _set_job
-                _set_job(job.get("id"), status="error", phase="Detenido", message=f"El paso de aprendizaje falló: {exc}", heartbeat_at=time.time())
+                _set_job(job.get("id"), status="error", phase="Detenido", message=f"No se pudo reactivar el aprendizaje: {exc}", heartbeat_at=time.time())
     return jsonify({"ok": True, "topics": list_learning(), "jobs": list_jobs()})
 
 @app.get("/api/learning/<job_id>")
@@ -2631,10 +2633,11 @@ def api_learning_job(job_id):
         return jsonify({"ok": False, "error": "Aprendizaje no encontrado."}), 404
     if job.get("status") in ("queued", "researching", "synthesizing"):
         try:
-            job = advance_learning(job_id) or get_job(job_id) or job
+            _ensure_learning_worker(job_id)
+            job = get_job(job_id) or job
         except Exception as exc:
             from .learning import _set_job
-            _set_job(job_id, status="error", phase="Detenido", message=f"El paso de aprendizaje falló: {exc}", heartbeat_at=time.time())
+            _set_job(job_id, status="error", phase="Detenido", message=f"No se pudo reactivar el aprendizaje: {exc}", heartbeat_at=time.time())
             job = get_job(job_id) or job
     return jsonify({"ok": True, "job": job})
 
