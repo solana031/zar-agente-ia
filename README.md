@@ -51,3 +51,9 @@ Editor multimedia inteligente con edición no destructiva, comandos por voz/text
 
 ## v30.2.0 — Google 2.0
 Incluye comprobación en vivo de las APIs de Google y panel de conexiones por servicio, conservando Memoria, Archivos y Deep Research de las versiones anteriores.
+
+
+## V30.10.15 — Menú lateral como bloque único
+- Al cerrar el menú con ☰, desaparece conjuntamente todo el lateral izquierdo, incluido el logo de ZAR.
+- El área principal ocupa automáticamente el espacio liberado.
+- El lateral vuelve a aparecer completo al abrir el menú.
