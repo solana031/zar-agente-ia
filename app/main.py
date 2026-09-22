@@ -32,7 +32,7 @@ from .web_search import search_inspiration_images, analyze_inspiration_image
 from .deep_research import start_research, wait_for_research, save_report, list_reports, get_report, get_research, extract_report
 from .skills import list_skills, get_skill, create_skill, update_skill, delete_skill, execute_skill, match_skill
 from .learning import list_learning, list_jobs, get_job, start_learning, resume_learning, learn_from_file, active_learning_count, delete_learning, advance_learning, _ensure_learning_worker
-from .video_creator import create_project, list_projects, get_project, project_path, add_media as video_add_media, generate_music, render_project, media_path, set_project, update_media, delete_media, move_media, split_media, transition_catalog, apply_edit_command, viral_optimize, add_text_overlay, update_text_overlay, delete_text_overlay, add_audio_track as video_add_audio_track, delete_audio_track as video_delete_audio_track, update_audio_track as video_update_audio_track, audio_track_path
+from .video_creator import create_project, list_projects, get_project, project_path, add_media as video_add_media, generate_music, render_project, media_path, set_project, update_media, delete_media, move_media, split_media, transition_catalog, apply_edit_command, viral_optimize, add_text_overlay, update_text_overlay, delete_text_overlay
 from .audio_studio import create_project as audio_create_project, list_projects as audio_list_projects, save_settings as audio_save_settings, render_base as audio_render_base, apply_voice_effect as audio_apply_voice_effect, audio_command as interpret_audio_command
 from .studio_agent import interpret as interpret_studio_command
 from .voice_transcription import transcribe_audio
@@ -370,7 +370,7 @@ def _execute_contact_action(pending):
     if action == "crear contacto":
         return gc.create_contact(args.get("name", ""), args.get("email", ""), args.get("phone", ""), args.get("company", ""))
     if action == "actualizar contacto":
-        return gc.update_contact(args.get("resource_name", ""), args.get("etag", ""), args.get("name"), args.get("email"), args.get("phone"), args.get("company"), args.get("nickname"), args.get("address"))
+        return gc.update_contact(args.get("resource_name", ""), args.get("etag", ""), args.get("name"), args.get("email"), args.get("phone"), args.get("company"))
     raise RuntimeError(f"Acción de contacto no soportada: {action}")
 
 
@@ -987,47 +987,13 @@ def ollama_status():
 def contacts_api():
     try:
         q = (request.args.get("q") or "").strip()
-        limit = max(1, min(int(request.args.get("limit") or 1000), 2000))
         try:
-            from .google_contacts import search_contacts, list_connections
+            from .google_contacts import search_contacts
         except ImportError:
-            from google_contacts import search_contacts, list_connections
-        contacts = search_contacts(q, limit) if q else list_connections(limit)
-        contacts = sorted(contacts, key=lambda c: (str(c.get("name") or "").strip().lower(), str(c.get("email") or "").strip().lower()))
-        return jsonify({"ok": True, "contacts": contacts, "count": len(contacts)})
+            from google_contacts import search_contacts
+        return jsonify({"ok": True, "contacts": search_contacts(q, 20)})
     except Exception as exc:
-        return jsonify({"ok": False, "error": str(exc), "contacts": [], "count": 0}), 200
-
-@app.put("/api/contacts/<path:resource_name>")
-def contacts_update_api(resource_name):
-    try:
-        data = request.get_json(silent=True) or {}
-        try:
-            from .google_contacts import update_contact
-        except ImportError:
-            from google_contacts import update_contact
-        result = update_contact(
-            resource_name, data.get("etag", ""), data.get("name"), data.get("email"),
-            data.get("phone"), data.get("company"), data.get("nickname"), data.get("address")
-        )
-        return jsonify({"ok": True, "contact": result})
-    except Exception as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 400
-
-@app.post("/api/contacts")
-def contacts_create_api():
-    try:
-        data = request.get_json(silent=True) or {}
-        name = str(data.get("name") or "").strip()
-        if not name: return jsonify({"ok": False, "error": "El nombre es obligatorio."}), 400
-        try:
-            from .google_contacts import create_contact
-        except ImportError:
-            from google_contacts import create_contact
-        result = create_contact(name, data.get("email", ""), data.get("phone", ""), data.get("company", ""), data.get("nickname", ""), data.get("address", ""))
-        return jsonify({"ok": True, "contact": result})
-    except Exception as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 400
+        return jsonify({"ok": False, "error": str(exc), "contacts": []}), 200
 
 @app.get("/api/web/search")
 def web_search_api():
@@ -2069,41 +2035,6 @@ def video_project_media(pid):
         return jsonify({"ok": True, "files": added, "project": get_project(pid)})
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
-
-@app.post("/api/video/projects/<pid>/audio")
-def video_project_audio(pid):
-    try:
-        files=request.files.getlist("files")
-        if not files: return jsonify({"ok":False,"error":"No se recibieron archivos de audio."}),400
-        added=[video_add_audio_track(pid,f) for f in files]
-        return jsonify({"ok":True,"files":added,"project":get_project(pid)})
-    except Exception as exc:
-        return jsonify({"ok":False,"error":str(exc)}),400
-
-@app.patch("/api/video/projects/<pid>/audio/<track_id>")
-def video_project_audio_update(pid,track_id):
-    try:
-        data=request.get_json(silent=True) or {}
-        return jsonify({"ok":True,"project":video_update_audio_track(pid,track_id,data)})
-    except Exception as exc:
-        return jsonify({"ok":False,"error":str(exc)}),400
-
-@app.delete("/api/video/projects/<pid>/audio/<track_id>")
-def video_project_audio_delete(pid,track_id):
-    try:
-        return jsonify({"ok":True,"project":video_delete_audio_track(pid,track_id)})
-    except Exception as exc:
-        return jsonify({"ok":False,"error":str(exc)}),400
-
-@app.get("/api/video/projects/<pid>/audio/<track_id>/preview")
-def video_project_audio_preview(pid,track_id):
-    p=get_project(pid)
-    if not p: return jsonify({"ok":False,"error":"Proyecto no encontrado."}),404
-    track=next((x for x in p.get("audio_tracks",[]) if x.get("id")==track_id),None)
-    if not track: return jsonify({"ok":False,"error":"Pista no encontrada."}),404
-    path=audio_track_path(track)
-    if not path.exists(): return jsonify({"ok":False,"error":"Archivo no disponible."}),404
-    return send_file(str(path),mimetype=track.get("mime") or None,as_attachment=False,download_name=track.get("name","audio"))
 
 @app.post("/api/video/projects/<pid>/music")
 def video_project_music(pid):

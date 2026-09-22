@@ -114,7 +114,7 @@ def create_project(name='', preset='youtube', music_mood='cinematic', transition
         'music_mood':music_mood if music_mood in MOODS else 'cinematic',
         'transition':transition,
         'image_duration':max(1.0,min(float(image_duration or 3.2),10.0)),
-        'media':[],'music':None,'audio_track':{'trim_start':0.0,'trim_end':None,'volume':1.0},'audio_tracks':[],
+        'media':[],'music':None,'audio_track':{'trim_start':0.0,'trim_end':None,'volume':1.0},
         'editor': {'quality':'balanced','auto_caption':False,'viral_mode':False,'beat_sync':False,'title':'','description':''},
         'created_at':now_iso(),'updated_at':now_iso()
     }
@@ -240,47 +240,6 @@ def update_media(pid, index, patch):
         it[k]=v
     p['updated_at']=now_iso(); save_project(p); return {k:v for k,v in p.items() if k!='_path'}
 
-
-def add_audio_track(pid, file_storage):
-    p=get_project(pid)
-    if not p: raise ValueError('Proyecto no encontrado.')
-    if not file_storage or not file_storage.filename: raise ValueError('No se recibió el archivo de audio.')
-    mime=file_storage.mimetype or ''
-    ext=Path(file_storage.filename).suffix.lower()
-    allowed={'.mp3','.wav','.m4a','.aac','.ogg','.flac','.opus'}
-    if not (mime.startswith('audio/') or ext in allowed): raise ValueError('Solo se admiten archivos de audio.')
-    data=file_storage.read()
-    if len(data)>MAX_VIDEO_UPLOAD: raise ValueError(f'El archivo supera el límite de {MAX_VIDEO_UPLOAD//(1024*1024)} MB.')
-    aid=uuid.uuid4().hex; name=safe_name(file_storage.filename); stored=f'{aid}{ext or ".bin"}'; path=MUSIC_DIR/stored; path.write_bytes(data)
-    item={'id':aid,'name':name,'stored_name':stored,'mime':mime,'size':len(data),'kind':'audio','trim_start':0.0,'trim_end':None,'start':0.0,'volume':1.0}
-    p.setdefault('audio_tracks',[]).append(item); p['updated_at']=now_iso(); save_project(p)
-    item['url']=f'/api/video/projects/{pid}/audio/{aid}/preview'
-    return item
-
-def delete_audio_track(pid, track_id):
-    p=get_project(pid)
-    if not p: raise ValueError('Proyecto no encontrado.')
-    tracks=p.setdefault('audio_tracks',[])
-    idx=next((i for i,x in enumerate(tracks) if x.get('id')==track_id),None)
-    if idx is None: raise ValueError('Pista de audio no encontrada.')
-    item=tracks.pop(idx)
-    try: (MUSIC_DIR/item.get('stored_name','')).unlink(missing_ok=True)
-    except Exception: pass
-    p['updated_at']=now_iso(); save_project(p); return {k:v for k,v in p.items() if k!='_path'}
-
-def update_audio_track(pid, track_id, patch):
-    p=get_project(pid)
-    if not p: raise ValueError('Proyecto no encontrado.')
-    item=next((x for x in p.setdefault('audio_tracks',[]) if x.get('id')==track_id),None)
-    if not item: raise ValueError('Pista de audio no encontrada.')
-    if 'start' in patch: item['start']=max(0.0,float(patch.get('start') or 0))
-    if 'trim_start' in patch: item['trim_start']=max(0.0,float(patch.get('trim_start') or 0))
-    if 'trim_end' in patch: item['trim_end']=None if patch.get('trim_end') in (None,'','null') else max(0.05,float(patch.get('trim_end')))
-    if 'volume' in patch: item['volume']=max(0.0,min(2.0,float(patch.get('volume') or 0)))
-    p['updated_at']=now_iso(); save_project(p); return {k:v for k,v in p.items() if k!='_path'}
-
-def audio_track_path(item):
-    return MUSIC_DIR / str(item.get('stored_name',''))
 
 def _normalize_text_overlay(data):
     import uuid as _uuid
@@ -603,67 +562,28 @@ def render_project(pid, music=True):
         if r.returncode!=0: raise RuntimeError('No se pudo unir el vídeo. '+(r.stderr[-1400:] if r.stderr else ''))
         final=output_path(pid)
         music_path=None; music_meta=None
-        total=max(5,sum(probe_duration(x) for x in clips))
-        audio_sources=[]
         if music:
             existing=p.get('music') or {}
             existing_path=Path(existing.get('path','')) if existing.get('path') else None
+            total=max(5,sum(probe_duration(x) for x in clips))
             if existing_path and existing_path.exists():
                 music_path=str(existing_path); music_meta=dict(existing)
             else:
                 music_meta=generate_music(pid,p.get('music_mood','cinematic'),int(math.ceil(total)))
                 music_path=music_meta['path']
             at=p.get('audio_track') or {}
-            audio_sources.append({'path':music_path,'start':0.0,'trim_start':max(0.0,float(at.get('trim_start',0) or 0)),'trim_end':at.get('trim_end'),'volume':max(0.0,min(2.0,float(at.get('volume',1.0) or 1.0))),'loop':True})
-        # Expose each uploaded video's original audio as an independent timeline source.
-        # The visual clip is still rendered without embedded audio so the editor can mix it separately.
-        cursor=0.0
-        ordered_media=list(p.get('media') or [])
-        for mi,item in enumerate(ordered_media):
-            if item.get('kind')=='video':
-                src=media_path(item)
-                if src.exists():
-                    audio_sources.append({'path':str(src),'start':cursor,'trim_start':max(0.0,float(item.get('trim_start',0) or 0)),'trim_end':item.get('trim_end'),'volume':max(0.0,min(2.0,float(item.get('volume',1.0) or 1.0))),'loop':False})
-            try:
-                seg=probe_duration(media_path(item)) if media_path(item).exists() else float(p.get('image_duration',3.2))
-            except Exception:
-                seg=float(p.get('image_duration',3.2))
-            if item.get('trim_end') not in (None,'','null'):
-                seg=max(0.05,float(item.get('trim_end'))-float(item.get('trim_start',0) or 0))
-            elif item.get('kind')=='image':
-                seg=float(p.get('image_duration',3.2))
-            if mi < len(ordered_media)-1:
-                td=max(0.0,min(2.0,float(item.get('transition_duration',.45) or .45)))
-                cursor += max(0.05,seg-td)
-            else:
-                cursor += max(0.05,seg)
-        for track in p.get('audio_tracks') or []:
-            ap=audio_track_path(track)
-            if ap.exists():
-                audio_sources.append({'path':str(ap),'start':max(0.0,float(track.get('start',0) or 0)),'trim_start':max(0.0,float(track.get('trim_start',0) or 0)),'trim_end':track.get('trim_end'),'volume':max(0.0,min(2.0,float(track.get('volume',1.0) or 1.0))),'loop':False})
-        if audio_sources:
-            cmd=[ffmpeg(),'-y','-i',str(video_only)]
-            for src in audio_sources:
-                if src.get('loop'): cmd += ['-stream_loop','-1']
-                cmd += ['-i',src['path']]
-            filters=[]
-            labels=[]
-            for n,src in enumerate(audio_sources):
-                label=f'[a{n}]'; chain=[]
-                ts=src.get('trim_start',0.0)
-                te=src.get('trim_end')
-                if te not in (None,'','null'):
-                    chain.append(f"atrim=start={ts}:end={max(ts+0.05,float(te))}")
-                elif ts>0:
-                    chain.append(f'atrim=start={ts}')
-                chain.append('asetpts=PTS-STARTPTS')
-                vol=src.get('volume',1.0)
-                if vol!=1.0: chain.append(f'volume={vol}')
-                delay=int(max(0,float(src.get('start',0)))*1000)
-                if delay>0: chain.append(f'adelay={delay}:all=1')
-                filters.append('['+str(n+1)+':a]'+','.join(chain)+label); labels.append(label)
-            filters.append(''.join(labels)+f'amix=inputs={len(labels)}:duration=longest:dropout_transition=2[aout]')
-            cmd += ['-filter_complex',';'.join(filters),'-map','0:v:0','-map','[aout]','-c:v','copy','-c:a','aac','-b:a','192k','-shortest','-movflags','+faststart',str(final)]
+            astart=max(0.0,float(at.get('trim_start',0) or 0))
+            aend=at.get('trim_end')
+            avol=max(0.0,min(2.0,float(at.get('volume',1.0) or 1.0)))
+        if music_path:
+            audio_filter=[]
+            if astart>0: audio_filter.append(f'atrim=start={astart}')
+            if aend not in (None,'','null'): audio_filter.append(f'atrim=end={max(astart+0.05,float(aend))}')
+            if avol!=1.0: audio_filter.append(f'volume={avol}')
+            af=', '.join(audio_filter).replace(', ', ',')
+            cmd=[ffmpeg(),'-y','-i',str(video_only),'-stream_loop','-1','-i',str(music_path),'-map','0:v:0','-map','1:a:0']
+            if af: cmd += ['-af',af]
+            cmd += ['-c:v','copy','-c:a','aac','-b:a','192k','-shortest','-movflags','+faststart',str(final)]
         else:
             cmd=[ffmpeg(),'-y','-i',str(video_only),'-c:v','copy','-movflags','+faststart',str(final)]
         r=subprocess.run(cmd,capture_output=True,text=True,timeout=1200)

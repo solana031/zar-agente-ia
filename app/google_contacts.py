@@ -30,10 +30,6 @@ def _flatten_person(p):
     email = next((x.get('value') for x in emails if x.get('value')), '')
     phone = next((x.get('value') for x in phones if x.get('value')), '')
     company = next((x.get('name') for x in orgs if x.get('name')), '')
-    nicks = p.get('nicknames') or []
-    nickname = next((x.get('value') for x in nicks if x.get('value')), '')
-    addresses = p.get('addresses') or []
-    address = next((x.get('formattedValue') or x.get('streetAddress') for x in addresses if x.get('formattedValue') or x.get('streetAddress')), '')
     return {
         'resourceName': p.get('resourceName',''),
         'etag': p.get('etag',''),
@@ -41,8 +37,6 @@ def _flatten_person(p):
         'email': email,
         'phone': phone,
         'company': company,
-        'nickname': nickname,
-        'address': address,
         'photo': (p.get('photos') or [{}])[0].get('url','') if p.get('photos') else '',
         'raw': p,
     }
@@ -56,7 +50,7 @@ def list_connections(page_size=200):
         req = svc.people().connections().list(
             resourceName='people/me',
             pageSize=min(max(int(page_size), 1), 500),
-            personFields='names,nicknames,emailAddresses,phoneNumbers,organizations,addresses,photos,metadata',
+            personFields='names,emailAddresses,phoneNumbers,organizations,photos,metadata',
             pageToken=page_token,
         )
         data = req.execute()
@@ -84,39 +78,35 @@ def search_contacts(query, limit=10):
 
 def get_contact(resource_name):
     svc = people_service()
-    p = svc.people().get(resourceName=resource_name, personFields='names,nicknames,emailAddresses,phoneNumbers,organizations,addresses,photos,metadata').execute()
+    p = svc.people().get(resourceName=resource_name, personFields='names,emailAddresses,phoneNumbers,organizations,photos,metadata').execute()
     return _flatten_person(p)
 
 
-def create_contact(name, email='', phone='', company='', nickname='', address=''):
+def create_contact(name, email='', phone='', company=''):
     svc = people_service()
     body = {'names':[{'givenName': name}]}
-    if email: body['emailAddresses'] = [{'value': email}]
-    if phone: body['phoneNumbers'] = [{'value': phone}]
-    if company: body['organizations'] = [{'name': company}]
-    if nickname: body['nicknames'] = [{'value': nickname}]
-    if address: body['addresses'] = [{'formattedValue': address, 'streetAddress': address}]
+    if email:
+        body['emailAddresses'] = [{'value': email}]
+    if phone:
+        body['phoneNumbers'] = [{'value': phone}]
+    if company:
+        body['organizations'] = [{'name': company}]
     p = svc.people().createContact(body=body).execute()
     return _flatten_person(p)
 
 
-def update_contact(resource_name, etag, name=None, email=None, phone=None, company=None, nickname=None, address=None):
+def update_contact(resource_name, etag, name=None, email=None, phone=None, company=None):
     svc = people_service()
     body = {'resourceName': resource_name, 'etag': etag}
     fields = []
     if name is not None:
         body['names'] = [{'givenName': name}]; fields.append('names')
     if email is not None:
-        body['emailAddresses'] = [{'value': email}] if str(email).strip() else []; fields.append('emailAddresses')
+        body['emailAddresses'] = [{'value': email}]; fields.append('emailAddresses')
     if phone is not None:
-        body['phoneNumbers'] = [{'value': phone}] if str(phone).strip() else []; fields.append('phoneNumbers')
+        body['phoneNumbers'] = [{'value': phone}]; fields.append('phoneNumbers')
     if company is not None:
-        body['organizations'] = [{'name': company}] if str(company).strip() else []; fields.append('organizations')
-    if nickname is not None:
-        body['nicknames'] = [{'value': nickname}] if str(nickname).strip() else []; fields.append('nicknames')
-    if address is not None:
-        body['addresses'] = [{'formattedValue': address, 'streetAddress': address}] if str(address).strip() else []
-        fields.append('addresses')
+        body['organizations'] = [{'name': company}]; fields.append('organizations')
     if not fields:
         raise ValueError('No hay campos para actualizar.')
     p = svc.people().updateContact(resourceName=resource_name, updatePersonFields=','.join(fields), body=body).execute()
