@@ -170,6 +170,60 @@ body{background:radial-gradient(circle at 50% -10%,rgba(177,124,62,.18),transpar
 @media(max-width:760px){.zarResearchBarRow{grid-template-columns:78px minmax(80px,1fr) 48px}.zarResearchTable{font-size:8px}.zarResearchTable th{font-size:7px}.zarResearchChartHead{align-items:flex-start;flex-direction:column}}
 @media print{.zarResearchTableWrap{overflow:visible}.zarResearchTable{min-width:0;font-size:8px}.zarResearchVisualFallback{min-height:120px}.zarResearchChart{break-inside:avoid}}
 
+
+/* v30.10.10 · workspace sizing, readable status and Studio polish */
+.app:not(.rail-collapsed) .content{width:100%;max-width:none;margin:0;padding-left:clamp(14px,1.8vw,26px);padding-right:clamp(14px,1.8vw,26px)}
+.app.rail-collapsed .content{width:100%;max-width:none;margin:0;padding-left:clamp(14px,1.8vw,26px);padding-right:clamp(14px,1.8vw,26px)}
+.quick{width:100%;margin-left:0;margin-right:0;gap:6px}
+.quick button{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.composer{width:100%;margin-left:0;margin-right:0}
+.composerLabel{font-size:11px;font-weight:650;color:#b8aa9c;margin-left:8px}
+.zarActiveSkills{display:block;width:100%;min-height:28px;height:auto;max-height:44px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left;border:1px solid #4f3a28!important;border-radius:8px!important;background:rgba(18,14,11,.92)!important;color:#d8c7b5!important;padding:6px 9px!important;font-size:11px!important;line-height:1.3!important;margin:0 0 2px!important}
+.zarActiveSkills:hover,.zarActiveSkills:focus-visible{white-space:normal;max-height:64px;overflow:visible;position:relative;z-index:40;border-color:#8c653c!important;background:#17110d!important;box-shadow:0 8px 25px rgba(0,0,0,.35)}
+.zarLearningActive{font-weight:700;color:#e6c58f!important}
+/* Make the contextual helper/tooltip readable and ensure it opens upward from the bottom workspace. */
+.info:hover:after{font-size:11px;line-height:1.5;width:280px;max-width:280px}
+
+/* Studio: consistent professional work surfaces for video/image/audio. */
+.mediaWorkspace{min-width:0!important;min-height:0!important}
+.editorWorkspaceBody{min-width:0!important;min-height:0!important}
+.editorModeTabs{display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px!important;margin-bottom:10px!important}
+.editorModeTab{min-height:42px!important;border-radius:11px!important;font-weight:800!important;letter-spacing:.04em!important}
+.editorWorkspaceBodyInner{min-width:0!important}
+.studioStagePro2,.studioStage{min-width:0!important;width:100%!important}
+.studioViewportPro2,.studioCanvas{min-width:0!important;width:100%!important;background:radial-gradient(circle at 50% 20%,#18120e,#050505 68%)!important;border-radius:16px!important;border:1px solid #3e2e22!important}
+.studioToolbar{display:flex!important;flex-wrap:wrap!important;gap:7px!important;padding:8px!important;border:1px solid #3e2e22!important;border-radius:12px!important;background:linear-gradient(180deg,#17110d,#0c0907)!important}
+.studioTool{min-height:38px!important;border-radius:9px!important}
+.vcEditor,.studioGlass,.audioPanel,.imageTextTools{border-color:#493626!important;background:linear-gradient(180deg,rgba(25,19,15,.97),rgba(12,9,7,.97))!important;box-shadow:0 10px 28px rgba(0,0,0,.18)!important}
+.vcTwo,.vcGrid,.audioWorkGrid{min-width:0!important}
+.imageStudio{display:grid!important;grid-template-columns:minmax(0,1.45fr) minmax(300px,.9fr)!important;gap:12px!important;align-items:start!important}
+.imageCanvasWrap{min-width:0!important;position:sticky;top:8px!important}
+.imageStage{min-height:520px!important;border-radius:16px!important;border:1px solid #493626!important;background:radial-gradient(circle at 50% 30%,#18120e,#050505 72%)!important;box-shadow:inset 0 0 0 1px rgba(255,255,255,.02),0 18px 40px rgba(0,0,0,.28)!important}
+.imageTools{min-width:0!important;display:flex!important;flex-direction:column!important;gap:10px!important}
+.imageToolRow{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:8px!important}
+.imageToolRow label,.audioControls label{font-size:10px!important;color:#c6b7a8!important}
+.imageToolButtons,.toolBtns,.studioQuickTools{display:flex!important;flex-wrap:wrap!important;gap:6px!important}
+.imageToolButtons>*{flex:1 1 120px!important}
+.audioStudio{min-width:0!important}
+.audioTopbar{border:1px solid #493626!important;border-radius:15px!important;padding:14px!important;background:linear-gradient(135deg,#19120e,#0a0807)!important}
+.audioWorkGrid{display:grid!important;grid-template-columns:minmax(0,1.6fr) minmax(290px,.8fr)!important;gap:12px!important}
+.audioMain,.audioControls{min-width:0!important}
+.audioTimeline{overflow:auto!important;border-radius:14px!important;border:1px solid #3e2e22!important;background:#070605!important;padding:10px!important}
+.audioTrackRow{min-width:720px!important}
+.audioTransport{display:flex!important;flex-wrap:wrap!important;gap:7px!important}
+.audioTransport audio{min-width:220px!important;flex:1 1 260px!important}
+.audioInstrumentGrid{display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:6px!important}
+.audioInstrument{min-width:0!important;overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important}
+@media(max-width:1100px) and (min-width:721px){.imageStudio,.audioWorkGrid{grid-template-columns:1fr!important}.imageCanvasWrap{position:relative!important;top:auto!important}.imageStage{min-height:400px!important}}
+@media(max-width:720px){
+  .app:not(.rail-collapsed) .content,.app.rail-collapsed .content{padding-left:8px;padding-right:8px}
+  .quick{display:flex!important;height:34px!important;min-height:34px!important;flex:0 0 34px!important;overflow-x:auto!important;overflow-y:hidden!important}
+  .quick button{height:34px!important;min-height:34px!important;flex:0 0 120px!important;padding:7px!important}
+  .imageStudio,.audioWorkGrid{grid-template-columns:1fr!important}
+  .imageCanvasWrap{position:relative!important;top:auto!important}.imageStage{min-height:320px!important}
+  .imageToolRow{grid-template-columns:1fr 1fr!important}
+  .audioTrackRow{min-width:640px!important}
+}
 </style><style id="v271-editor-style">
 .vcEditor{border:1px solid var(--line);border-radius:14px;background:rgba(16,13,11,.62);padding:10px;margin-top:10px}.vcEditorHead{display:flex;justify-content:space-between;gap:8px;align-items:center}.vcEditorTitle{font-size:12px;font-weight:800}.vcHint2{font-size:10px;color:var(--muted);line-height:1.45}.vcCmd{display:flex;gap:6px;margin-top:8px}.vcCmd textarea{flex:1;min-height:58px;resize:vertical;background:#0d0b09;border:1px solid #4b3928;border-radius:10px;color:#fff;padding:9px;outline:none;font-size:11px}.vcMic{width:42px;height:42px;border-radius:10px;border:1px solid #8f6636;background:#20170f;color:#ead8c3}.vcClip{border:1px solid #3e3024;border-radius:10px;padding:8px;margin-top:7px;background:rgba(9,8,7,.55)}.vcClipRow{display:flex;gap:8px;align-items:center}.vcClipIndex{width:28px;height:28px;border-radius:8px;background:#251b13;border:1px solid #5f472e;display:grid;place-items:center;font-size:11px;font-weight:800}.vcClipName{font-size:10px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1}.vcMini{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px;margin-top:7px}.vcMini label{font-size:8px;color:#9e9388}.vcMini input,.vcMini select{width:100%;height:30px;border:1px solid #4b3928;border-radius:8px;background:#0e0b09;color:#fff;padding:0 6px;font-size:10px}.vcTransitions{margin-top:8px;border-top:1px solid #3b2c20;padding-top:8px}.vcTransitionGroup{margin-top:6px}.vcTransitionGroup b{font-size:9px;color:#d5c0a9}.vcTransitionChips{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}.vcChip{font-size:9px;padding:5px 7px;border-radius:999px;border:1px solid #4b3928;background:#120f0d;color:#ddd1c4;cursor:pointer}.vcChip:hover{border-color:var(--gold);background:#241a12}.vcSelected{border-color:var(--gold);box-shadow:0 0 0 1px rgba(216,173,112,.22) inset}.vcTwo{display:grid;grid-template-columns:1fr 1fr;gap:7px}.vcPlatformRow{display:flex;gap:6px;margin-top:7px}.vcPlatformRow select{flex:1;height:36px}.vcSmallStatus{font-size:9px;color:#b9aea3;margin-top:6px;min-height:16px}.vcBadge2{display:inline-flex;align-items:center;gap:5px;border:1px solid #57412b;padding:5px 7px;border-radius:999px;font-size:9px;color:#dfcfbc;background:#17110d}.vcUnsaved{color:#f2cc89}.vcFrameNote{margin-top:7px;padding:7px;border:1px dashed #5b4633;border-radius:8px;color:#a99d91;font-size:9px;line-height:1.4}.vcOpenTrans{cursor:pointer;color:#e9d4b6;text-decoration:underline}
 @media(max-width:1100px){.vcTwo,.vcMini{grid-template-columns:1fr 1fr}.vcEditor{padding:9px}}
@@ -797,7 +851,7 @@ input:-webkit-autofill,textarea:-webkit-autofill,select:-webkit-autofill{
     <button onclick="newChat()">＋ Nueva conversación <span class="info" data-tip="Empieza una conversación nueva y limpia el contexto activo de trabajo. La memoria permanente no se borra.">i</span></button>
     <button onclick="showConversations()">🗂️ Conversaciones <span class="info" data-tip="Consulta conversaciones anteriores. Se conservan aunque al recargar Zar se inicie una conversación nueva.">i</span></button>
     <button onclick="showMemory()">🧠 Memoria <span class="info" data-tip="Gestiona los recuerdos y preferencias permanentes de Zar.">i</span></button>
-    <button class="workspaceNavItem" type="button" onclick="window.ZARSkills&&window.ZARSkills.open()">🧩 Aprendizajes <span class="info" data-tip="Enseña temas a ZAR y gestiona aprendizajes y habilidades persistentes.">i</span></button>
+    <button class="workspaceNavItem" type="button" onclick="window.ZARSkills&&window.ZARSkills.open()">🧠 Aprendizajes <span class="info" data-tip="Enseña temas a ZAR y gestiona aprendizajes y habilidades persistentes.">i</span></button>
     <button onclick="showFiles()">📁 Archivos <span class="info" data-tip="Guarda, organiza, busca y recupera tus archivos desde la memoria persistente de Zar.">i</span></button>
     <button class="workspaceNavItem" onclick="showMedia()">🎬 Multimedia <span class="info" data-tip="Busca YouTube/Spotify y abre el Creador de vídeos para montar fotos, vídeos, música generada y transiciones.">i</span></button>
     <button class="workspaceNavItem editorNavBtn" onclick="enterMediaEditor()">🎬 <b>Editor multimedia</b><span class="editorNavBadge">EDITAR</span><span class="info" data-tip="Abre el estudio de edición de Zar para fotos, vídeos y audio. Puedes trabajar con controles o pedir cambios por voz y texto.">i</span></button>
@@ -849,7 +903,7 @@ input:-webkit-autofill,textarea:-webkit-autofill,select:-webkit-autofill{
   </section>
   <section class="content" id="chatContent">
     <div class="chatArea">
-      <div class="welcome" id="welcome"><div class="hero zarHeroLogo"><img src="/static/zar-silhouette.png" alt="Zar, asistente inteligente"></div><div class="zarWordmark">Z A R</div><div class="zarTagline">TU ASISTENTE INTELIGENTE</div><div class="homeActions" aria-label="Accesos rápidos de Zar"><button type="button" onclick="showMobileCalendar()"><span>📅</span><b>Calendario</b><small>Organiza tu tiempo</small></button><button type="button" onclick="showFiles()"><span>📁</span><b>Archivos</b><small>Guarda y organiza</small></button><button type="button" onclick="showMobileWeather()"><span>☀️</span><b>Tiempo</b><small>Consulta el tiempo</small></button><button type="button" onclick="mobileOpenEditor()"><span>▶️</span><b>Zar Studio</b><small>Crea con IA</small></button><button type="button" onclick="showMemory()"><span>🧠</span><b>Memoria</b><small>Tu contexto</small></button><button type="button" onclick="showTasks()"><span>☑️</span><b>Tareas</b><small>Organiza tu día</small></button><button type="button" onclick="showControlCenter()"><span>⚙️</span><b>Control ZAR</b><small>Modelos y servicios</small></button><button type="button" onclick="showResearch()"><span>🔎</span><b>Investigación</b><small>Estudios profundos</small></button><button type="button" onclick="window.ZARSkills&&window.ZARSkills.open()"><span>🧩</span><b>Aprendizajes</b><small>Enseña a ZAR</small></button></div></div>
+      <div class="welcome" id="welcome"><div class="hero zarHeroLogo"><img src="/static/zar-silhouette.png" alt="Zar, asistente inteligente"></div><div class="zarWordmark">Z A R</div><div class="zarTagline">TU ASISTENTE INTELIGENTE</div><div class="homeActions" aria-label="Accesos rápidos de Zar"><button type="button" onclick="showMobileCalendar()"><span>📅</span><b>Calendario</b><small>Organiza tu tiempo</small></button><button type="button" onclick="showFiles()"><span>📁</span><b>Archivos</b><small>Guarda y organiza</small></button><button type="button" onclick="showMobileWeather()"><span>☀️</span><b>Tiempo</b><small>Consulta el tiempo</small></button><button type="button" onclick="mobileOpenEditor()"><span>▶️</span><b>Zar Studio</b><small>Crea con IA</small></button><button type="button" onclick="showMemory()"><span>🧠</span><b>Memoria</b><small>Tu contexto</small></button><button type="button" onclick="showTasks()"><span>☑️</span><b>Tareas</b><small>Organiza tu día</small></button><button type="button" onclick="showControlCenter()"><span>⚙️</span><b>Control ZAR</b><small>Modelos y servicios</small></button><button type="button" onclick="showResearch()"><span>🔎</span><b>Investigación</b><small>Estudios profundos</small></button><button type="button" onclick="window.ZARSkills&&window.ZARSkills.open()"><span>🧠</span><b>Aprendizajes</b><small>Enseña a ZAR</small></button></div></div>
       <div id="chat" class="chat" tabindex="0" aria-label="Historial de conversación"></div><div class="chatScrollControls" aria-label="Controles de desplazamiento"><button type="button" onclick="scrollChat(-1)" title="Subir por la conversación">↑</button><button type="button" onclick="scrollChat(1)" title="Bajar al último mensaje">↓</button></div>
     </div>
     <div class="composer"><input id="fileInput" class="fileInput" type="file" multiple accept="image/*,video/*,audio/*,.pdf,.txt,.csv,.doc,.docx,.xls,.xlsx,.ppt,.pptx"><div id="zarPendingFiles" class="zarPendingFiles"></div><div id="zarUploadPanel" class="zarUploadPanel"></div><div class="quick"><button onclick="usePrompt('¿Qué hora es?')">🕒 Hora</button><button onclick="usePrompt('Recuerda que ...')">🧠 Recordar</button><button onclick="usePrompt('Mira mi último correo y dime qué quiere')">✉️ Correo</button><button onclick="usePrompt('¿Qué tengo mañana?')">📅 Calendario</button><button onclick="usePrompt('Busca información sobre ...')">🌐 Buscar</button><button onclick="showResearch()">🔎 Investigación</button></div><div class="composerLabel">Habla o escribe con Zar</div><button id="zarActiveSkills" class="zarActiveSkills" type="button" onclick="window.ZARSkills&&window.ZARSkills.open()">🧩 Habilidades activas: comprobando…</button><button id="zarLearningActive" class="zarActiveSkills zarLearningActive" type="button" hidden onclick="window.ZARSkills&&window.ZARSkills.open()">🧠 Aprendizaje en curso…</button><div class="composerMain"><textarea id="input" placeholder="Escribe un mensaje a Zar..."></textarea><button id="attachBtn" class="attachBtn" onclick="document.getElementById('fileInput').click()" title="Adjuntar y guardar archivos en la memoria de Zar">📎</button><button id="mic" class="send" onclick="toggleVoice()" title="Hablar con Zar">🎙️</button><button id="speakBtn" class="soundBtn" onclick="toggleSpeak()" title="Activar o silenciar lectura en voz alta">🔇</button><button class="send" onclick="send()" title="Enviar mensaje">➤</button></div><div id="uploadStatus" style="font-size:10px;color:#9da5ab;min-height:14px;margin-top:2px"></div><div id="voiceStatus" class="voiceStatus" style="font-size:10px;color:#9da5ab;min-height:14px"></div></div>
@@ -861,7 +915,7 @@ input:-webkit-autofill,textarea:-webkit-autofill,select:-webkit-autofill{
   <div class="railHint">Panel contextual: deja aquí solo los controles que necesites. Puedes ocultarlo para recuperar espacio de trabajo.</div>
   <div class="zarWorkspaceDock">
     <div class="zarWorkspaceDockHead"><span>ESPACIOS ZAR</span><b>Acceso rápido</b></div>
-    <button onclick="window.ZARSkills&&window.ZARSkills.open()"><span>🧩</span><div><b>Habilidades</b><small>Aprendizajes y procedimientos</small></div><i>›</i></button>
+    <button onclick="window.ZARSkills&&window.ZARSkills.open()"><span>🧠</span><div><b>Habilidades</b><small>Aprendizajes y procedimientos</small></div><i>›</i></button>
     <button onclick="showMedia()"><span>🎬</span><div><b>Multimedia</b><small>Vídeo, audio y recursos</small></div><i>›</i></button>
     <button onclick="enterMediaEditor()"><span>✦</span><div><b>ZAR Studio</b><small>Edición profesional</small></div><i>›</i></button>
     <button onclick="enterControlCenter()"><span>⚙️</span><div><b>Centro de control</b><small>Estado, Google y copias</small></div><i>›</i></button>
@@ -2061,6 +2115,35 @@ function escHtml(s){return String(s??'').replaceAll('&','&amp;').replaceAll('<',
 document.getElementById('filePreviewModal')?.addEventListener('click',e=>{if(e.target.id==='filePreviewModal')closeFilePreview()});document.addEventListener('keydown',e=>{if(e.key==='Escape')closeFilePreview()});speakEnabled=localStorage.getItem('zar_speak')==='1';setVoiceInputMode(voiceInputMode);updateSpeakUI();document.getElementById('fileInput').addEventListener('change',e=>stageFiles(e.target.files));renderPendingFiles();syncComposerFileState();startFreshPage();
 </script>
 <script>
+/* ZAR v30.10.10 · Desktop workspace + Studio reliability */
+function editorTarget(){ return document.getElementById('editorWorkspaceBodyInner') || document.getElementById('editorWorkspaceBody'); }
+function toggleRightRail(){
+  const app=document.querySelector('.app'); if(!app) return;
+  const collapsed=app.classList.toggle('rail-collapsed');
+  const btn=document.getElementById('rightRailToggle');
+  const content=document.getElementById('rightRailContent');
+  if(btn){btn.setAttribute('aria-expanded', String(!collapsed)); btn.title=collapsed?'Abrir panel contextual (Ctrl+B)':'Contraer panel contextual (Ctrl+B)';}
+  if(content) content.setAttribute('aria-hidden', String(collapsed));
+  requestAnimationFrame(()=>window.dispatchEvent(new Event('resize')));
+}
+window.toggleRightRail=toggleRightRail;
+document.addEventListener('keydown',e=>{ if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='b'){e.preventDefault();toggleRightRail();} });
+// Keep the contextual rail open by default on desktop, but make its state explicit.
+document.addEventListener('DOMContentLoaded',()=>{
+  const app=document.querySelector('.app'); if(app && !app.classList.contains('rail-collapsed')) app.classList.add('rail-open');
+});
+
+// Poll learning from the main workspace too, not only while Habilidades is open.
+// The backend advances one durable step per poll, so closing the panel does not stop the session.
+(function(){
+  let busy=false;
+  async function tick(){
+    if(busy || document.hidden) return; busy=true;
+    try{ await fetch('/api/learning?_='+Date.now(),{cache:'no-store'}); }catch(e){} finally{busy=false;}
+  }
+  setTimeout(tick,1800); setInterval(tick,5000);
+})();
+
 // V27.9 override: video surface now opens a real project directly and preserves the mode tabs.
 function v279SetActiveStudioTab(mode){
   document.querySelectorAll('.editorModeTab').forEach(el=>{

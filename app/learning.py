@@ -599,7 +599,7 @@ def start_learning(topic, goal="", references=None):
              source_count=0, research=[], sources=[], created_at=now, updated_at=now,
              started_at=now, session_started_at=now, estimated_seconds=estimate, heartbeat_at=now,
              learning_id=uuid.uuid4().hex)
-    _ensure_learning_worker(job_id)
+    # v30.10.10: advanced by durable status polling instead of a process-local daemon.
     return get_job(job_id)
 
 
@@ -621,7 +621,7 @@ def resume_learning(job_id):
              message="Aprendizaje reanudado. Continuaré desde la última consulta guardada con un nuevo presupuesto de hasta 60 minutos.",
              started_at=now, session_started_at=now, heartbeat_at=now, cancel_requested=False, queries=qs,
              queries_total=len(qs), query_index=idx, queries_done=idx, estimated_seconds=min(MAX_LEARNING_SECONDS, max(60, int((len(qs)-idx)*14+30))))
-    _ensure_learning_worker(job_id)
+    # v30.10.10: next status poll advances the resumed job.
     return get_job(job_id)
 
 def learn_from_file(file_id):

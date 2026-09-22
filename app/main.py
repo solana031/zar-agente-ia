@@ -2612,44 +2612,30 @@ def video_cancel_publication(pubid):
 
 @app.get("/api/learning")
 def api_learning():
+    # v30.10.10: one durable bounded step per poll. Reliable across Railway
+    # worker processes; no process-local daemon is required.
     jobs = list_jobs()
-    now = time.time()
     for job in jobs:
         if job.get("status") in ("queued", "researching", "synthesizing"):
-            heartbeat = float(job.get("heartbeat_at") or job.get("updated_at") or 0)
-            elapsed = float(job.get("elapsed_seconds") or 0)
-            # Legacy sessions can be much older than the new one-hour budget.
-            # Finish them from the knowledge already collected instead of
-            # letting them continue searching indefinitely.
-            if elapsed >= 3600:
-                from .learning import _set_job, _ensure_learning_worker
-                _set_job(job.get("id"), status="synthesizing", progress=max(70, min(82, int(job.get("progress") or 70))),
-                         phase="Sintetizando conocimiento",
-                         message="Límite de 60 minutos alcanzado; ZAR está cerrando el aprendizaje con lo ya recopilado.",
-                         heartbeat_at=now, estimated_seconds=3600)
-                job["status"] = "synthesizing"
-                job["phase"] = "Sintetizando conocimiento"
-                job["message"] = "Límite de 60 minutos alcanzado; ZAR está cerrando el aprendizaje con lo ya recopilado."
-                _ensure_learning_worker(job.get("id"))
-            elif heartbeat and now - heartbeat > 360:
+            try:
+                advance_learning(job.get("id"))
+            except Exception as exc:
                 from .learning import _set_job
-                _set_job(job.get("id"), status="paused", phase="Pausado", message="La sesión de aprendizaje dejó de responder. Puedes reanudarla sin perder el tema ni las referencias.")
-                job["status"] = "paused"
-                job["phase"] = "Pausado"
-                job["message"] = "La sesión de aprendizaje dejó de responder. Puedes reanudarla sin perder el tema ni las referencias."
-    return jsonify({"ok": True, "topics": list_learning(), "jobs": jobs})
+                _set_job(job.get("id"), status="error", phase="Detenido", message=f"El paso de aprendizaje falló: {exc}", heartbeat_at=time.time())
+    return jsonify({"ok": True, "topics": list_learning(), "jobs": list_jobs()})
 
 @app.get("/api/learning/<job_id>")
 def api_learning_job(job_id):
     job = get_job(job_id)
     if not job:
         return jsonify({"ok": False, "error": "Aprendizaje no encontrado."}), 404
-    # The learning worker runs independently of the browser. If Railway has
-    # restarted the process, this status request transparently starts it again.
     if job.get("status") in ("queued", "researching", "synthesizing"):
-        from .learning import _ensure_learning_worker
-        _ensure_learning_worker(job_id)
-        job = get_job(job_id) or job
+        try:
+            job = advance_learning(job_id) or get_job(job_id) or job
+        except Exception as exc:
+            from .learning import _set_job
+            _set_job(job_id, status="error", phase="Detenido", message=f"El paso de aprendizaje falló: {exc}", heartbeat_at=time.time())
+            job = get_job(job_id) or job
     return jsonify({"ok": True, "job": job})
 
 @app.post("/api/learning/<job_id>/resume")
