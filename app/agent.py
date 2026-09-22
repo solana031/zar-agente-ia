@@ -10,6 +10,7 @@ try:
     from .tools import TOOL_DEFINITIONS, execute_tool
     from .deep_research import is_deep_research_request
     from .hybrid import parse_reminder, calendar_query_days, is_reminder_request, gmail_intent, gmail_direct_intent, gmail_is_complex_request, gmail_compound_intent, workspace_intent, contacts_intent, media_intent
+    from .user_settings import load_settings
 except ImportError:
     from model_router import model_for
     from memory import memories, history, conversation
@@ -18,6 +19,7 @@ except ImportError:
     from .tools import TOOL_DEFINITIONS, execute_tool
     from .deep_research import is_deep_research_request
     from .hybrid import parse_reminder, calendar_query_days, is_reminder_request, gmail_intent, gmail_direct_intent, gmail_is_complex_request, gmail_compound_intent, workspace_intent, contacts_intent, media_intent
+    from .user_settings import load_settings
 
 def _set_tool_user_message(message):
     try:
@@ -28,6 +30,12 @@ def _set_tool_user_message(message):
 
 def _system_prompt(current_message=""):
     memory_text = "\n".join(f"- {m['text']}" for m in memories()[-60:]) or "(sin recuerdos explícitos)"
+    try:
+        user_settings = load_settings()
+    except Exception:
+        user_settings = {"language": "es-ES"}
+    language = user_settings.get("language", "es-ES")
+    language_label = {"es-ES":"español de España","es-LATAM":"español latinoamericano","en-US":"inglés","fr-FR":"francés","de-DE":"alemán","it-IT":"italiano","pt-PT":"portugués"}.get(language, language)
     try:
         from .skills import list_skills
         saved_skills = list_skills()
@@ -109,7 +117,7 @@ def _system_prompt(current_message=""):
         pass
     return (
         "Eres Zar, un agente de IA personal creado para este usuario. "
-        "Habla en español salvo petición contraria. Sé preciso, cercano y natural. "
+        f"El idioma preferido configurado por el usuario es {language_label}. Responde normalmente en ese idioma salvo que el usuario pida explícitamente otro. Sé preciso, cercano y natural. "
         "El usuario puede hablarte con frases incompletas, pronombres o varias órdenes en una sola frase; "
         "debes inferir la intención usando el contexto reciente y no obligarle a repetir información que ya te ha dado. "
         "Si pide varias cosas en una misma petición, resuélvelas en orden y encadena las herramientas necesarias. "
