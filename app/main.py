@@ -18,7 +18,7 @@ from .cloud_auth import authorization_url, finish_oauth, connected, auth_status,
 from .youtube_auth import authorization_url as youtube_authorization_url, finish_oauth as finish_youtube_oauth, status as youtube_auth_status
 from .agent import respond, summarize_email, draft_reply_email, revise_email_draft
 from .tools import TOOL_DEFINITIONS, execute_tool
-from .memory import memories, remember, delete_memory, history, add_message, conversation, add_conversation_message, clear_conversation, list_conversations, get_conversation_archive
+from .memory import memories, remember, delete_memory, history, add_message, conversation, add_conversation_message, clear_conversation, list_conversations, get_conversation_archive, update_conversation_archive
 from .config import load, save
 from .google_calendar import calendar_status
 from .gmail import gmail_status
@@ -2455,6 +2455,31 @@ def conversation_archive_api(thread_id):
     if not item:
         return jsonify({"ok": False, "error": "Conversación no encontrada."}), 404
     return jsonify({"ok": True, "conversation": item})
+
+@app.patch("/api/conversations/<thread_id>")
+def conversation_archive_update_api(thread_id):
+    data = request.get_json(silent=True) or {}
+    title = data.get("title") if "title" in data else None
+    starred = data.get("starred") if "starred" in data else None
+    if title is not None and not str(title).strip():
+        return jsonify({"ok": False, "error": "El nombre no puede estar vacío."}), 400
+    item = update_conversation_archive(thread_id, title=title, starred=starred)
+    if not item:
+        return jsonify({"ok": False, "error": "Conversación no encontrada."}), 404
+    return jsonify({"ok": True, "conversation": item})
+
+@app.post("/api/conversations/<thread_id>/restore")
+def conversation_archive_restore_api(thread_id):
+    item = get_conversation_archive(thread_id)
+    if not item:
+        return jsonify({"ok": False, "error": "Conversación no encontrada."}), 404
+    messages = item.get("messages") or []
+    try:
+        from .memory import _user_file, save
+        save(_user_file("conversation.json"), messages[-40:])
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+    return jsonify({"ok": True, "conversation": item, "messages": messages})
 
 @app.post("/api/memory")
 def add_memory():

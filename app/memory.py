@@ -115,8 +115,28 @@ def list_conversations(limit=50):
     if not isinstance(threads, list): return []
     out=[]
     for x in reversed(threads[-max(1,int(limit)):]):
-        out.append({k:x.get(k) for k in ("id","title","created_at","updated_at")})
+        out.append({k:x.get(k) for k in ("id","title","created_at","updated_at","starred")})
     return out
+
+
+def update_conversation_archive(thread_id, title=None, starred=None):
+    threads = load(_threads_file(), [])
+    if not isinstance(threads, list):
+        return None
+    found = None
+    for x in threads:
+        if x.get("id") == thread_id:
+            if title is not None:
+                clean = str(title).strip()[:120]
+                if clean:
+                    x["title"] = clean
+            if starred is not None:
+                x["starred"] = bool(starred)
+            found = x
+            break
+    if found is not None:
+        save(_threads_file(), threads)
+    return found
 
 def get_conversation_archive(thread_id):
     for x in load(_threads_file(), []):

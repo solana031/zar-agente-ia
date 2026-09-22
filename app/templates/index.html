@@ -897,6 +897,45 @@ input:-webkit-autofill,textarea:-webkit-autofill,select:-webkit-autofill{
   .zarActiveSkills,.zarLearningActive{font-size:11px!important;min-height:28px!important;white-space:normal!important}
   .chatScrollControls{bottom:128px!important;z-index:160!important}
 }
+
+<style id="zar-v30-10-13-ui">
+/* ZAR 30.10.13 — readable chat, adaptive home, draggable/resizable panels */
+.chat{overflow-y:scroll!important;overflow-x:hidden!important;min-height:0!important;padding-bottom:18px!important;scrollbar-gutter:stable both-edges!important;overscroll-behavior:contain!important;}
+.chat .msg{max-width:min(92%,860px);overflow-wrap:anywhere;word-break:normal;}
+.chatScrollControls{right:12px!important;bottom:190px!important;z-index:500!important;pointer-events:auto!important}
+.chatScrollControls button{width:36px!important;height:36px!important;font-size:18px!important}
+.homeActions{container-type:inline-size;grid-template-columns:repeat(4,minmax(0,1fr))!important;max-width:100%!important;width:100%!important}
+@container (max-width:760px){.homeActions{grid-template-columns:repeat(3,minmax(0,1fr))!important}}
+@container (max-width:560px){.homeActions{grid-template-columns:repeat(2,minmax(0,1fr))!important}}
+@container (max-width:360px){.homeActions{grid-template-columns:1fr!important}}
+.panel{resize:both!important;overflow:auto!important;min-width:320px!important;min-height:220px!important;max-width:calc(100vw - 24px)!important;max-height:calc(100vh - 86px)!important}
+.zarPanelDragHandle{position:absolute;left:14px;top:7px;width:calc(100% - 64px);height:22px;cursor:grab;border-radius:8px;z-index:6;background:linear-gradient(90deg,rgba(216,173,112,.08),transparent 70%);opacity:.6}
+.zarPanelDragHandle::after{content:'⠿  Arrastra para mover';display:block;color:#806b56;font-size:8px;letter-spacing:.04em;padding:5px 7px}
+.zarPanelDragHandle:active{cursor:grabbing;opacity:1}
+.panel > #panelBody{padding-top:6px}
+.zarConversationToolbar{display:flex;gap:7px;flex-wrap:wrap;margin:10px 0}
+.zarConversationSearch{display:flex;gap:7px;margin:8px 0 10px}
+.zarConversationSearch input{flex:1;min-width:0}
+.zarConversationItem{position:relative;border:1px solid #493522;border-radius:12px;padding:10px 10px 10px 12px;margin:7px 0;background:linear-gradient(145deg,rgba(27,20,15,.96),rgba(14,11,9,.96));transition:.15s}
+.zarConversationItem:hover{border-color:#8c653c;transform:translateY(-1px)}
+.zarConversationItem.starred{border-color:#b98a4d;box-shadow:inset 3px 0 0 #d8ad70,0 8px 22px rgba(0,0,0,.2)}
+.zarConversationTop{display:flex;align-items:flex-start;gap:8px}
+.zarConversationTitle{font-weight:800;font-size:11px;line-height:1.35;overflow-wrap:anywhere;flex:1}
+.zarConversationMeta{color:#82766c;font-size:8px;margin-top:4px}
+.zarConversationActions{display:flex;gap:5px;flex-wrap:wrap;margin-top:8px}
+.zarConversationActions button{font-size:9px!important;padding:6px 8px!important}
+.zarStar{border-color:#755735!important;color:#e4c48e!important}
+.zarStar.active{background:#3a2918!important;border-color:#d8ad70!important}
+.zarLearningActive{font-size:12.5px!important;min-height:30px!important;white-space:normal!important;max-height:52px!important;overflow:auto!important}
+.zarActiveSkills{font-size:12px!important;min-height:30px!important;white-space:normal!important;max-height:58px!important;overflow:auto!important;text-overflow:clip!important}
+/* Generic workspace/modal dragging and resizing */
+.zarSkillsPanel{z-index:1300!important}
+.zarSkillsShell{position:relative!important;resize:both!important;overflow:auto!important;min-width:520px;min-height:420px;max-width:94vw;max-height:90vh}
+.zarSkillsDragHandle{position:absolute;left:18px;top:9px;width:calc(100% - 70px);height:24px;cursor:grab;z-index:20;border-radius:8px;background:linear-gradient(90deg,rgba(216,173,112,.08),transparent 70%)}
+.zarSkillsDragHandle::after{content:'⠿  Arrastra para mover';display:block;padding:6px;color:#806b56;font-size:8px}
+.zarSkillsDragHandle:active{cursor:grabbing}
+@media(max-width:720px){.panel{min-width:0!important;width:calc(100vw - 12px)!important;max-width:calc(100vw - 12px)!important}.zarSkillsShell{min-width:0!important;width:94vw!important}.chatScrollControls{bottom:170px!important}.zarPanelDragHandle,.zarSkillsDragHandle{display:none}}
+</style>
 </style>
 </head>
 <body>
@@ -908,7 +947,7 @@ input:-webkit-autofill,textarea:-webkit-autofill,select:-webkit-autofill{
     <button onclick="newChat()">＋ Nueva conversación <span class="info" data-tip="Empieza una conversación nueva y limpia el contexto activo de trabajo. La memoria permanente no se borra.">i</span></button>
     <button onclick="showConversations()">🗂️ Conversaciones <span class="info" data-tip="Consulta conversaciones anteriores. Se conservan aunque al recargar Zar se inicie una conversación nueva.">i</span></button>
     <button onclick="showMemory()">🧠 Memoria <span class="info" data-tip="Gestiona los recuerdos y preferencias permanentes de Zar.">i</span></button>
-    <button class="workspaceNavItem" type="button" onclick="window.ZARSkills&&window.ZARSkills.open()">🧠 Aprendizajes <span class="info" data-tip="Enseña temas a ZAR y gestiona aprendizajes y habilidades persistentes.">i</span></button>
+    <button class="workspaceNavItem" type="button" onclick="window.ZARSkills&&window.ZARSkills.open()">📖 Aprendizajes <span class="info" data-tip="Enseña temas a ZAR y gestiona aprendizajes y habilidades persistentes.">i</span></button>
     <button onclick="showFiles()">📁 Archivos <span class="info" data-tip="Guarda, organiza, busca y recupera tus archivos desde la memoria persistente de Zar.">i</span></button>
     <button class="workspaceNavItem" onclick="showMedia()">🎬 Multimedia <span class="info" data-tip="Busca YouTube/Spotify y abre el Creador de vídeos para montar fotos, vídeos, música generada y transiciones.">i</span></button>
     <button class="workspaceNavItem editorNavBtn" onclick="enterMediaEditor()">🎬 <b>Editor multimedia</b><span class="editorNavBadge">EDITAR</span><span class="info" data-tip="Abre el estudio de edición de Zar para fotos, vídeos y audio. Puedes trabajar con controles o pedir cambios por voz y texto.">i</span></button>
@@ -960,10 +999,10 @@ input:-webkit-autofill,textarea:-webkit-autofill,select:-webkit-autofill{
   </section>
   <section class="content" id="chatContent">
     <div class="chatArea">
-      <div class="welcome" id="welcome"><div class="hero zarHeroLogo"><img src="/static/zar-silhouette.png" alt="Zar, asistente inteligente"></div><div class="zarWordmark">Z A R</div><div class="zarTagline">TU ASISTENTE INTELIGENTE</div><div class="homeActions" aria-label="Accesos rápidos de Zar"><button type="button" onclick="showMobileCalendar()"><span>📅</span><b>Calendario</b><small>Organiza tu tiempo</small></button><button type="button" onclick="showFiles()"><span>📁</span><b>Archivos</b><small>Guarda y organiza</small></button><button type="button" onclick="showMobileWeather()"><span>☀️</span><b>Tiempo</b><small>Consulta el tiempo</small></button><button type="button" onclick="mobileOpenEditor()"><span>▶️</span><b>Zar Studio</b><small>Crea con IA</small></button><button type="button" onclick="showMemory()"><span>🧠</span><b>Memoria</b><small>Tu contexto</small></button><button type="button" onclick="showTasks()"><span>☑️</span><b>Tareas</b><small>Organiza tu día</small></button><button type="button" onclick="showControlCenter()"><span>⚙️</span><b>Control ZAR</b><small>Modelos y servicios</small></button><button type="button" onclick="showResearch()"><span>🔎</span><b>Investigación</b><small>Estudios profundos</small></button><button type="button" onclick="window.ZARSkills&&window.ZARSkills.open()"><span>🧠</span><b>Aprendizajes</b><small>Enseña a ZAR</small></button></div></div>
+      <div class="welcome" id="welcome"><div class="hero zarHeroLogo"><img src="/static/zar-silhouette.png" alt="Zar, asistente inteligente"></div><div class="zarWordmark">Z A R</div><div class="zarTagline">TU ASISTENTE INTELIGENTE</div><div class="homeActions" aria-label="Accesos rápidos de Zar"><button type="button" onclick="showMobileCalendar()"><span>📅</span><b>Calendario</b><small>Organiza tu tiempo</small></button><button type="button" onclick="showFiles()"><span>📁</span><b>Archivos</b><small>Guarda y organiza</small></button><button type="button" onclick="showMobileWeather()"><span>☀️</span><b>Tiempo</b><small>Consulta el tiempo</small></button><button type="button" onclick="mobileOpenEditor()"><span>▶️</span><b>Zar Studio</b><small>Crea con IA</small></button><button type="button" onclick="showMemory()"><span>🧠</span><b>Memoria</b><small>Tu contexto</small></button><button type="button" onclick="showTasks()"><span>☑️</span><b>Tareas</b><small>Organiza tu día</small></button><button type="button" onclick="showControlCenter()"><span>⚙️</span><b>Control ZAR</b><small>Modelos y servicios</small></button><button type="button" onclick="showResearch()"><span>🔎</span><b>Investigación</b><small>Estudios profundos</small></button><button type="button" onclick="window.ZARSkills&&window.ZARSkills.open()"><span>📖</span><b>Aprendizajes</b><small>Enseña a ZAR</small></button></div></div>
       <div id="chat" class="chat" tabindex="0" aria-label="Historial de conversación"></div><div class="chatScrollControls" aria-label="Controles de desplazamiento"><button type="button" onclick="scrollChat(-1)" title="Subir por la conversación">↑</button><button type="button" onclick="scrollChat(1)" title="Bajar al último mensaje">↓</button></div>
     </div>
-    <div class="composer"><input id="fileInput" class="fileInput" type="file" multiple accept="image/*,video/*,audio/*,.pdf,.txt,.csv,.doc,.docx,.xls,.xlsx,.ppt,.pptx"><div id="zarPendingFiles" class="zarPendingFiles"></div><div id="zarUploadPanel" class="zarUploadPanel"></div><div class="quick"><button onclick="usePrompt('¿Qué hora es?')">🕒 Hora</button><button onclick="usePrompt('Recuerda que ...')">🧠 Recordar</button><button onclick="usePrompt('Mira mi último correo y dime qué quiere')">✉️ Correo</button><button onclick="usePrompt('¿Qué tengo mañana?')">📅 Calendario</button><button onclick="usePrompt('Busca información sobre ...')">🌐 Buscar</button><button onclick="showResearch()">🔎 Investigación</button></div><div class="composerLabel">Habla o escribe con Zar</div><button id="zarActiveSkills" class="zarActiveSkills" type="button" onclick="window.ZARSkills&&window.ZARSkills.open()">🧩 Habilidades activas: comprobando…</button><button id="zarLearningActive" class="zarActiveSkills zarLearningActive" type="button" hidden onclick="window.ZARSkills&&window.ZARSkills.open()">🧠 Aprendizaje en curso…</button><div class="composerMain"><textarea id="input" placeholder="Escribe un mensaje a Zar..."></textarea><button id="attachBtn" class="attachBtn" onclick="document.getElementById('fileInput').click()" title="Adjuntar y guardar archivos en la memoria de Zar">📎</button><button id="mic" class="send" onclick="toggleVoice()" title="Hablar con Zar">🎙️</button><button id="speakBtn" class="soundBtn" onclick="toggleSpeak()" title="Activar o silenciar lectura en voz alta">🔇</button><button class="send" onclick="send()" title="Enviar mensaje">➤</button></div><div id="uploadStatus" style="font-size:10px;color:#9da5ab;min-height:14px;margin-top:2px"></div><div id="voiceStatus" class="voiceStatus" style="font-size:10px;color:#9da5ab;min-height:14px"></div></div>
+    <div class="composer"><input id="fileInput" class="fileInput" type="file" multiple accept="image/*,video/*,audio/*,.pdf,.txt,.csv,.doc,.docx,.xls,.xlsx,.ppt,.pptx"><div id="zarPendingFiles" class="zarPendingFiles"></div><div id="zarUploadPanel" class="zarUploadPanel"></div><div class="quick"><button onclick="usePrompt('¿Qué hora es?')">🕒 Hora</button><button onclick="usePrompt('Recuerda que ...')">🧠 Recordar</button><button onclick="usePrompt('Mira mi último correo y dime qué quiere')">✉️ Correo</button><button onclick="usePrompt('¿Qué tengo mañana?')">📅 Calendario</button><button onclick="usePrompt('Busca información sobre ...')">🌐 Buscar</button><button onclick="showResearch()">🔎 Investigación</button></div><div class="composerLabel">Habla o escribe con Zar</div><button id="zarActiveSkills" class="zarActiveSkills" type="button" onclick="window.ZARSkills&&window.ZARSkills.open()">📖 Aprendizajes activos: comprobando…</button><button id="zarLearningActive" class="zarActiveSkills zarLearningActive" type="button" hidden onclick="window.ZARSkills&&window.ZARSkills.open()">🧠 Aprendizaje en curso…</button><div class="composerMain"><textarea id="input" placeholder="Escribe un mensaje a Zar..."></textarea><button id="attachBtn" class="attachBtn" onclick="document.getElementById('fileInput').click()" title="Adjuntar y guardar archivos en la memoria de Zar">📎</button><button id="mic" class="send" onclick="toggleVoice()" title="Hablar con Zar">🎙️</button><button id="speakBtn" class="soundBtn" onclick="toggleSpeak()" title="Activar o silenciar lectura en voz alta">🔇</button><button class="send" onclick="send()" title="Enviar mensaje">➤</button></div><div id="uploadStatus" style="font-size:10px;color:#9da5ab;min-height:14px;margin-top:2px"></div><div id="voiceStatus" class="voiceStatus" style="font-size:10px;color:#9da5ab;min-height:14px"></div></div>
   </section>
 </main>
 <aside class="right">
@@ -972,7 +1011,7 @@ input:-webkit-autofill,textarea:-webkit-autofill,select:-webkit-autofill{
   <div class="railHint">Panel contextual: deja aquí solo los controles que necesites. Puedes ocultarlo para recuperar espacio de trabajo.</div>
   <div class="zarWorkspaceDock">
     <div class="zarWorkspaceDockHead"><span>ESPACIOS ZAR</span><b>Acceso rápido</b></div>
-    <button onclick="window.ZARSkills&&window.ZARSkills.open()"><span>🧠</span><div><b>Habilidades</b><small>Aprendizajes y procedimientos</small></div><i>›</i></button>
+    <button onclick="window.ZARSkills&&window.ZARSkills.open()"><span>📖</span><div><b>Aprendizajes</b><small>Conocimiento y habilidades aprendidas</small></div><i>›</i></button>
     <button onclick="showMedia()"><span>🎬</span><div><b>Multimedia</b><small>Vídeo, audio y recursos</small></div><i>›</i></button>
     <button onclick="enterMediaEditor()"><span>✦</span><div><b>ZAR Studio</b><small>Edición profesional</small></div><i>›</i></button>
     <button onclick="enterControlCenter()"><span>⚙️</span><div><b>Centro de control</b><small>Estado, Google y copias</small></div><i>›</i></button>
@@ -1203,7 +1242,8 @@ async function startFreshPage(){try{await fetch('/api/context/reset',{method:'PO
 async function state(){try{const s=await fetch('/api/state?_='+Date.now(),{cache:'no-store'}).then(r=>r.json());const c=s.config;const gbtn=document.getElementById('googleBtn');if(s.google.authorized){document.getElementById('googlePill').textContent='✓ Conectado';document.getElementById('googleSummaryText').textContent=(Object.values(s.services||{}).filter(Boolean).length||8)+' servicios activos';document.getElementById('googleStatus').textContent=(s.google.missing_scopes&&s.google.missing_scopes.length?'✓ Google conectado · faltan algunos permisos':'✓ Google conectado · Gmail y Calendar listos');document.getElementById('gmailStatus').textContent='✓ Gmail conectado';gbtn.textContent='🔄 Reautorizar Google'}else if(s.google.needs_reauth){document.getElementById('googlePill').textContent='⚠ Reautorizar';document.getElementById('googleSummaryText').textContent='requiere autorización';document.getElementById('googleStatus').textContent='⚠ Google necesita una nueva autorización';document.getElementById('gmailStatus').textContent='⚠ Gmail necesita reautorización';gbtn.textContent='🔑 Reautorizar Google'}else{document.getElementById('googlePill').textContent='○ No conectado';document.getElementById('googleSummaryText').textContent='inicia sesión';document.getElementById('googleStatus').textContent='⚪ Google no está conectado';document.getElementById('gmailStatus').textContent='⚪ Gmail no está conectado';gbtn.textContent='🔗 Conectar Google'}document.getElementById('taskStatus').textContent=formatTask(s.task||s.context?.task||{});document.getElementById('workspaceStatus').textContent=s.google.authorized?'✓ Google Workspace disponible':'⚠ Autoriza Google para activar Workspace';document.getElementById('mapsStatus').textContent=s.maps?.configured?'✓ Google Maps configurado':'⚠ Falta configurar ZAR_MAPS_API_KEY';document.getElementById('contactsStatus').textContent=s.contacts?.available?'✓ Google Contacts disponible':'⚠ Autoriza Google para activar Contactos';const bs=s.google_backup||{};const bstats=bs.stats||{};document.getElementById('backupPill').textContent=bs.status==='done'?'✓ Guardado':(bs.status==='done_with_warnings'?'⚠ Parcial':(bs.status==='running'?'⟳ Copiando':'Pendiente'));document.getElementById('backupStatus').textContent=bs.status==='done'?'✓ Última copia completada '+(bs.finished_at||''):(bs.status==='done_with_warnings'?'⚠ Copia parcial completada '+(bs.finished_at||'')+' · algunos servicios requieren reintento':(bs.status==='running'?'⟳ Creando copia de seguridad…':'⚪ Aún no hay una copia local'));document.getElementById('backupStats').textContent=bstats.messages!=null?('Gmail: '+bstats.messages+' · Contactos: '+(bstats.contacts||0)+' · Eventos: '+(bstats.events||0)+' · Tareas: '+(bstats.tasks||0)+' · Drive: '+(bstats.drive_files||0)+' · Indexados: '+(bstats.indexed||0)):(bstats.service_errors?('Servicios con incidencia: '+Object.keys(bstats.service_errors).join(', ')):'');updateBackupProgress(bs);provider.value=c.provider;apiBase.value=c.api_base_url;apiModel.value=c.api_model;localBase.value=c.local_base_url;localModel.value=c.local_model;toggle();document.getElementById('pill').textContent=c.provider==='api'?'API · '+c.api_model:'Local · '+c.local_model;if(!booted){chat.innerHTML='';document.getElementById('welcome').style.display='block';booted=true}}catch(e){document.getElementById('googleStatus').textContent='No se pudo consultar el estado.';document.getElementById('gmailStatus').textContent='No se pudo consultar el estado.'}}
 let userPinnedChat=false;
 chat.addEventListener('scroll',()=>{const distance=chat.scrollHeight-chat.scrollTop-chat.clientHeight;userPinnedChat=distance>90});
-chat.addEventListener('keydown',e=>{if(e.key==='Home'){e.preventDefault();scrollChatTop()}else if(e.key==='End'){e.preventDefault();scrollChatBottom()}});
+chat.addEventListener('wheel',()=>{userPinnedChat=true},{passive:true});
+chat.addEventListener('keydown',e=>{if(e.key==='PageDown'){e.preventDefault();scrollChat(1)}else if(e.key==='PageUp'){e.preventDefault();scrollChat(-1)}else if(e.key==='Home'){e.preventDefault();scrollChatTop()}else if(e.key==='End'){e.preventDefault();scrollChatBottom()}});
 function scrollChat(direction){const step=Math.max(260,Math.floor(chat.clientHeight*0.72));chat.scrollBy({top:direction*step,left:0,behavior:'smooth'});window.setTimeout(()=>{const d=chat.scrollHeight-chat.scrollTop-chat.clientHeight;userPinnedChat=d>90},350);}
 function scrollChatTop(){chat.scrollTo({top:0,left:0,behavior:'smooth'});userPinnedChat=true;}
 function scrollChatBottom(){chat.scrollTo({top:Math.max(0,chat.scrollHeight-chat.clientHeight),left:0,behavior:'smooth'});userPinnedChat=false;}
@@ -1872,11 +1912,21 @@ async function showTasks(){
 async function showConversations(){
   try{
     const j=await fetch('/api/conversations?_='+Date.now(),{cache:'no-store'}).then(r=>r.json());
-    const arr=j.conversations||[];
-    body.innerHTML='<h3>🗂️ Conversaciones anteriores</h3><p>Cada recarga inicia un hilo nuevo. Las conversaciones anteriores siguen guardadas y aisladas por cuenta.</p><div class="card">'+(arr.length?arr.map(x=>`<div class="memory"><b>💬 ${escHtml(x.title||'Conversación')}</b><div class="meta" style="margin-top:4px">${escHtml(x.updated_at||x.created_at||'')}</div><button onclick="openConversationArchive('${escHtml(x.id)}')">Ver conversación</button></div>`).join(''):'<p>Aún no hay conversaciones archivadas.</p>')+'</div>';openPanel();
+    const arr=(j.conversations||[]).slice().sort((a,b)=>Number(!!b.starred)-Number(!!a.starred));
+    body.innerHTML='<div class="zarPanelHero"><div><h3>🗂️ Conversaciones</h3><p>Abre, renombra o destaca cualquier conversación guardada. Las conversaciones permanecen aisladas por cuenta.</p></div></div><div class="zarConversationToolbar"><button class="btnSmall" onclick="newChat();closePanel()">＋ Nueva conversación</button><button class="btnSmall" onclick="showConversations()">↻ Actualizar</button></div><div class="zarConversationSearch"><input id="zarConversationFilter" placeholder="Filtrar por nombre…" oninput="filterConversationCards(this.value)"></div><div id="zarConversationList">'+(arr.length?arr.map(renderConversationCard).join(''):'<p>Aún no hay conversaciones archivadas.</p>')+'</div>';openPanel();
   }catch(e){body.innerHTML='<h3>🗂️ Conversaciones</h3><p>⚠️ No se pudieron cargar.</p>';openPanel()}
 }
-async function openConversationArchive(id){try{const j=await fetch('/api/conversations/'+encodeURIComponent(id)).then(r=>r.json());if(!j.ok)throw new Error(j.error||'No encontrada');const c=j.conversation||{};const msgs=c.messages||[];body.innerHTML='<h3>💬 '+escHtml(c.title||'Conversación')+'</h3><div class="card">'+(msgs.map(m=>`<div class="memory"><b>${m.role==='user'?'👤 Tú':'🐺 Zar'}</b><div style="margin-top:6px;white-space:pre-wrap">${escHtml(m.content||'')}</div><div class="meta" style="margin-top:4px">${escHtml(m.created_at||'')}</div></div>`).join('')||'<p>Sin mensajes.</p>')+'</div><button class="btn" onclick="showConversations()">← Volver</button>';openPanel()}catch(e){alert(e.message||'No se pudo abrir la conversación')}}
+function renderConversationCard(x){
+  const title=escHtml(x.title||'Conversación');
+  const meta=escHtml(x.updated_at||x.created_at||'');
+  const id=encodeURIComponent(x.id||'');
+  return '<article class="zarConversationItem '+(x.starred?'starred':'')+'" data-conversation-title="'+title.toLowerCase()+'"><div class="zarConversationTop"><div class="zarConversationTitle">'+(x.starred?'⭐ ':'💬 ')+title+'</div></div><div class="zarConversationMeta">'+meta+'</div><div class="zarConversationActions"><button class="btnSmall" onclick="openConversationArchive(\''+id+'\')">Abrir</button><button class="btnSmall" onclick="restoreConversation(\''+id+'\')">↩ Abrir en Chat</button><button class="btnSmall" onclick="renameConversation(\''+id+'\',this)">✏️ Renombrar</button><button class="btnSmall zarStar '+(x.starred?'active':'')+'" onclick="toggleConversationStar(\''+id+'\','+(!x.starred)+')">'+(x.starred?'⭐ Destacada':'☆ Destacar')+'</button></div></article>';
+}
+function filterConversationCards(q){const v=String(q||'').trim().toLowerCase();document.querySelectorAll('#zarConversationList .zarConversationItem').forEach(el=>{el.style.display=!v||el.dataset.conversationTitle.includes(v)?'':'none'})}
+async function openConversationArchive(id){try{const j=await fetch('/api/conversations/'+encodeURIComponent(id)).then(r=>r.json());if(!j.ok)throw new Error(j.error||'No encontrada');const c=j.conversation||{};const msgs=c.messages||[];body.innerHTML='<div class="zarPanelHero"><div><h3>'+(c.starred?'⭐ ':'💬 ')+escHtml(c.title||'Conversación')+'</h3><p>'+escHtml(c.updated_at||c.created_at||'')+'</p></div></div><div class="card">'+(msgs.map(m=>'<div class="memory"><b>'+ (m.role==='user'?'👤 Tú':'🐺 Zar')+'</b><div style="margin-top:6px;white-space:pre-wrap;overflow-wrap:anywhere">'+escHtml(m.content||'')+'</div><div class="meta" style="margin-top:4px">'+escHtml(m.created_at||'')+'</div></div>').join('')||'<p>Sin mensajes.</p>')+'</div><div class="zarConversationActions"><button class="btn" onclick="restoreConversation(\''+encodeURIComponent(c.id||id)+'\')">↩ Abrir en Chat</button><button class="btnSmall" onclick="showConversations()">← Volver</button></div>';openPanel()}catch(e){body.innerHTML='<p>⚠️ '+escHtml(e.message||'No se pudo abrir la conversación')+'</p>';openPanel()}}
+async function restoreConversation(id){try{const j=await fetch('/api/conversations/'+encodeURIComponent(id)+'/restore',{method:'POST',headers:{'Content-Type':'application/json'}}).then(r=>r.json());if(!j.ok)throw new Error(j.error||'No se pudo restaurar');chat.innerHTML='';document.getElementById('welcome').style.display='none';(j.messages||[]).forEach(m=>{const el=document.createElement('div');el.className='msg '+(m.role==='user'?'user':'assistant');el.textContent=m.content||'';chat.appendChild(el)});closePanel();scrollChatBottom();}catch(e){alert(e.message||'No se pudo restaurar la conversación')}}
+async function renameConversation(id,button){const current=button.closest('.zarConversationItem')?.querySelector('.zarConversationTitle')?.textContent?.replace(/^⭐\s*|^💬\s*/,'')||'';const name=window.prompt('Nuevo nombre para la conversación:',current);if(name===null)return;try{const j=await fetch('/api/conversations/'+encodeURIComponent(id),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:name})}).then(r=>r.json());if(!j.ok)throw new Error(j.error||'No se pudo renombrar');showConversations()}catch(e){alert(e.message||'No se pudo renombrar')}}
+async function toggleConversationStar(id,value){try{const j=await fetch('/api/conversations/'+encodeURIComponent(id),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({starred:!!value})}).then(r=>r.json());if(!j.ok)throw new Error(j.error||'No se pudo destacar');showConversations()}catch(e){alert(e.message||'No se pudo actualizar la conversación')}}
 function showTools(){body.innerHTML='<h3>Herramientas</h3><p>Zar interpreta tu intención y elige la herramienta adecuada. Las acciones sensibles requieren confirmación.</p><div>✉️ Gmail</div><div>📅 Calendar</div><div>☁️ Google Drive</div><div>📄 Google Docs</div><div>📊 Google Sheets</div><div>📽️ Google Slides</div><div>📝 Google Forms</div><div>🧠 Memoria</div><div>▶️ YouTube</div><div>🎵 Spotify</div>';openPanel()}
 function showHelp(){body.innerHTML='<h3>Cómo funciona</h3><p>Zar interpreta lenguaje natural y usa el contexto persistente para entender referencias como «eso», «ese correo», «la reunión» o «lo de antes».</p><p>Las lecturas, búsquedas, análisis y borradores son acciones no destructivas. Los envíos y cambios externos requieren confirmación explícita.</p>';openPanel()}
 function showMobileSettings(section){body.innerHTML='<h3>Ajustes</h3><div class="card"><p>En móvil puedes controlar voz, motor de IA y Google desde este panel.</p><button class="btn" onclick="showVoice()">🎙️ Voz</button> <button class="btn" onclick="showProvider()">🤖 IA</button> <button class="btn" onclick="showGmail()">✉️ Google</button></div>';openPanel()}
@@ -1909,7 +1959,41 @@ function closeMobileDrawer(){document.getElementById('mobileDrawer')?.setAttribu
 function mobileReconnectGoogle(){closeMobileDrawer();window.location.href='/connect/google?force=1'}
 function newConversation(){chat.innerHTML='';document.getElementById('welcome').style.display='block';input.value='';userPinnedChat=false;scrollChatBottom();}
 requestAnimationFrame(updateComposerSpace);
-function openPanel(){panel.style.display='block'}
+function zarPanelGeometryKey(){return 'zar_panel_geometry_v1'}
+function applyPanelGeometry(){
+  if(!panel)return;
+  if(window.innerWidth<=720){panel.style.left='6px';panel.style.top='62px';panel.style.right='';panel.style.width='';panel.style.height='';return;}
+  let g={};try{g=JSON.parse(localStorage.getItem(zarPanelGeometryKey())||'{}')}catch(e){}
+  const rail=document.querySelector('.app')?.classList.contains('rail-collapsed')?52:250;
+  const maxW=Math.max(320,window.innerWidth-24);
+  const maxH=Math.max(220,window.innerHeight-86);
+  if(Number.isFinite(g.width))panel.style.width=Math.min(maxW,Math.max(320,g.width))+'px';
+  if(Number.isFinite(g.height))panel.style.height=Math.min(maxH,Math.max(220,g.height))+'px';
+  if(Number.isFinite(g.left))panel.style.left=Math.max(8,Math.min(window.innerWidth-(panel.offsetWidth||420)-8,g.left))+'px';
+  else {panel.style.left='';panel.style.right=rail+'px';}
+  if(Number.isFinite(g.top))panel.style.top=Math.max(62,Math.min(window.innerHeight-(panel.offsetHeight||320)-8,g.top))+'px';
+  else panel.style.top='72px';
+  if(Number.isFinite(g.left))panel.style.right='';
+}
+function savePanelGeometry(){
+  if(!panel||window.innerWidth<=720)return;
+  const r=panel.getBoundingClientRect();
+  try{localStorage.setItem(zarPanelGeometryKey(),JSON.stringify({left:Math.round(r.left),top:Math.round(r.top),width:Math.round(r.width),height:Math.round(r.height)}))}catch(e){}
+}
+function installPanelInteraction(){
+  if(!panel||panel.dataset.zarInteractive)return;
+  panel.dataset.zarInteractive='1';
+  const handle=document.createElement('div');handle.className='zarPanelDragHandle';handle.title='Arrastra para mover el panel';panel.prepend(handle);
+  let drag=null;
+  handle.addEventListener('pointerdown',e=>{
+    if(window.innerWidth<=720)return;
+    const r=panel.getBoundingClientRect();drag={x:e.clientX,y:e.clientY,left:r.left,top:r.top};handle.setPointerCapture?.(e.pointerId);e.preventDefault();
+  });
+  handle.addEventListener('pointermove',e=>{if(!drag)return;const r=panel.getBoundingClientRect();const left=Math.max(8,Math.min(window.innerWidth-r.width-8,drag.left+e.clientX-drag.x));const top=Math.max(62,Math.min(window.innerHeight-r.height-8,drag.top+e.clientY-drag.y));panel.style.left=left+'px';panel.style.top=top+'px';panel.style.right='';});
+  const end=()=>{if(drag){drag=null;savePanelGeometry()}};handle.addEventListener('pointerup',end);handle.addEventListener('pointercancel',end);
+  if('ResizeObserver' in window){const ro=new ResizeObserver(()=>{if(panel.style.display==='block')savePanelGeometry()});ro.observe(panel)}
+}
+function openPanel(){installPanelInteraction();panel.style.display='block';applyPanelGeometry();requestAnimationFrame(()=>{applyPanelGeometry();updateComposerSpace?.()})}
 // V27.53: restore the main chat send flow and attachment queue.
 let zarPendingFiles=[];
 let zarSending=false;
@@ -2070,9 +2154,9 @@ function updateActiveSkillsUI(active){
   const list=Array.isArray(active)?active:[];
   const el=document.getElementById('zarActiveSkills');
   if(!el)return;
-  if(!list.length){el.textContent='🧩 Habilidades activas: ninguna';el.classList.remove('hasSkills');return;}
+  if(!list.length){el.textContent='📖 Aprendizajes activos: ninguno';el.classList.remove('hasSkills');return;}
   const names=list.map(x=>typeof x==='string'?x:(x.name||'')).filter(Boolean);
-  el.textContent='🧩 Habilidades activas: '+names.join(' · ');
+  el.textContent='📖 Aprendizajes activos: '+names.join(' · ');
   el.classList.add('hasSkills');
 }
 window.ZARShowActiveSkills=function(active){updateActiveSkillsUI(active);};
@@ -2200,6 +2284,7 @@ function toggleRightRail(){
   requestAnimationFrame(()=>window.dispatchEvent(new Event('resize')));
 }
 window.toggleRightRail=toggleRightRail;
+window.addEventListener('resize',()=>{applyPanelGeometry();requestAnimationFrame(()=>{document.querySelectorAll('.homeActions').forEach(x=>x.style.width='100%')})},{passive:true});
 document.addEventListener('keydown',e=>{ if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='b'){e.preventDefault();toggleRightRail();} });
 // Keep the contextual rail open by default on desktop, but make its state explicit.
 document.addEventListener('DOMContentLoaded',()=>{

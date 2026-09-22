@@ -16,7 +16,7 @@
     const panel=document.createElement('div');
     panel.id='zarSkillsPanel'; panel.className='zarSkillsPanel';
     panel.innerHTML=`<div class="zarSkillsShell">
-      <div class="zarSkillsHead"><div><div class="zarSkillsEyebrow">ZAR · SISTEMA DE HABILIDADES</div><h2>🧩 Habilidades</h2><p>Procedimientos reutilizables que quedan guardados en el almacenamiento persistente de ZAR.</p></div><button class="zarSkillsClose" type="button" aria-label="Cerrar">×</button></div>
+      <div class="zarSkillsHead"><div><div class="zarSkillsEyebrow">ZAR · APRENDIZAJES</div><h2>📖 Aprendizajes</h2><p>Conocimiento aprendido y capacidades reutilizables que quedan guardadas en el almacenamiento persistente de ZAR.</p></div><button class="zarSkillsClose" type="button" aria-label="Cerrar">×</button></div>
       <div class="zarSkillHint">Puedes crear una habilidad como «Informe semanal», indicar sus pasos y las herramientas que debería usar. Después puedes decir en el chat: <b>«ZAR, ejecuta mi habilidad Informe semanal sobre esta semana»</b>.</div>
       <div class="zarSkillsToolbar"><button id="zarSkillNew" class="zarSkillPrimary">＋ Nueva habilidad</button><button id="zarLearnNew" class="zarSkillLearn">📖 Enseñar a ZAR</button><button id="zarSkillRefresh">↻ Actualizar</button><span id="zarSkillsCount"></span></div>
       <div id="zarSkillsEditor" class="zarSkillsEditor" hidden></div><div id="zarLearningBox" class="zarLearningBox" hidden></div><div id="zarLearningJobs" class="zarLearningJobs"></div>
@@ -29,6 +29,8 @@
       </div>
     </div>`;
     document.body.appendChild(panel);
+    const shell=panel.querySelector('.zarSkillsShell');
+    if(shell && !shell.querySelector('.zarSkillsDragHandle')){ const h=document.createElement('div'); h.className='zarSkillsDragHandle'; h.title='Arrastra para mover Aprendizajes'; shell.prepend(h); let drag=null; h.addEventListener('pointerdown',e=>{ if(innerWidth<=720)return; const r=shell.getBoundingClientRect(); drag={x:e.clientX,y:e.clientY,left:r.left,top:r.top}; h.setPointerCapture?.(e.pointerId); e.preventDefault(); }); h.addEventListener('pointermove',e=>{ if(!drag)return; const r=shell.getBoundingClientRect(); const left=Math.max(8,Math.min(innerWidth-r.width-8,drag.left+e.clientX-drag.x)); const top=Math.max(8,Math.min(innerHeight-r.height-8,drag.top+e.clientY-drag.y)); shell.style.position='fixed'; shell.style.left=left+'px'; shell.style.top=top+'px'; shell.style.transform='none'; }); const end=()=>{drag=null}; h.addEventListener('pointerup',end); h.addEventListener('pointercancel',end); }
     panel.querySelector('.zarSkillsClose').onclick=closeSkills;
     panel.addEventListener('click',e=>{if(e.target===panel)closeSkills()});
     panel.querySelector('#zarSkillNew').onclick=()=>showEditor(); panel.querySelector('#zarLearnNew').onclick=showLearning;
@@ -70,7 +72,7 @@
     document.getElementById('zarSkillsCount').textContent=skills.length+' guardadas';
     if(!skills.length){list.innerHTML='<div class="zarSkillEmpty">Aún no tienes habilidades. Crea la primera y ZAR podrá reutilizarla en futuras conversaciones.</div>';return;}
     list.innerHTML=skills.map(s=>`<article class="zarSkillCard">
-      <div class="zarSkillIcon">🧩</div><div><div class="zarSkillTitle">${esc(s.name)}</div><div class="zarSkillDesc">${esc(s.description||'Sin descripción')}</div><div class="zarSkillMeta"><span>${(s.steps||[]).length} pasos</span><span>${Number(s.use_count||0)} usos</span><span class="${s.enabled?'ok':'off'}">${s.enabled?'ACTIVA':'PAUSADA'}</span></div></div>
+      <div class="zarSkillIcon">📖</div><div><div class="zarSkillTitle">${esc(s.name)}</div><div class="zarSkillDesc">${esc(s.description||'Sin descripción')}</div><div class="zarSkillMeta"><span>${(s.steps||[]).length} pasos</span><span>${Number(s.use_count||0)} usos</span><span class="${s.enabled?'ok':'off'}">${s.enabled?'ACTIVA':'PAUSADA'}</span></div></div>
       <div class="zarSkillActions"><button data-act="run" data-id="${esc(s.id)}">▶ Ejecutar</button><button data-act="edit" data-id="${esc(s.id)}">Editar</button><button data-act="toggle" data-id="${esc(s.id)}">${s.enabled?'Pausar':'Activar'}</button><button data-act="del" data-id="${esc(s.id)}">Eliminar</button></div>
       <div class="zarSkillRunBox" id="run-${esc(s.id)}"><label class="zarSkillRunLabel">Trabajo concreto <span>· qué quieres que haga ZAR con esta habilidad</span></label><textarea aria-label="Trabajo concreto para la habilidad" placeholder="Ej.: prepara un informe breve sobre cómo está funcionando ZAR…"></textarea><div class="zarSkillRunActions"><span class="zarSkillRunStatus">La habilidad se ejecutará con los pasos y herramientas guardados.</span><button data-act="cancelrun" data-id="${esc(s.id)}">Cancelar</button><button class="zarSkillPrimary" data-act="confirmrun" data-id="${esc(s.id)}">▶ Ejecutar ahora</button></div><div class="zarSkillResult" hidden></div></div>
     </article>`).join('');
