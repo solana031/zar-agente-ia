@@ -94,13 +94,13 @@
     box.querySelector('#zarLearnStart').onclick=startLearning;
     loadLearningState();
   }
-  function formatDuration(sec){sec=Math.max(0,Math.round(Number(sec)||0)); if(sec<60)return sec+' s'; const m=Math.floor(sec/60),s=sec%60; return m+' min'+(s?' '+s+' s':'');}
+  function formatDuration(sec){sec=Math.max(0,Math.round(Number(sec)||0)); const d=Math.floor(sec/86400),h=Math.floor((sec%86400)/3600),m=Math.floor((sec%3600)/60),s=sec%60; const parts=[]; if(d)parts.push(d+' d'); if(h||d)parts.push(h+' h'); if(m||h||d)parts.push(m+' min'); parts.push(s+' s'); return parts.join(' ');}
   function renderLearningJob(job,status,metrics,wrap,bar,label){
     const p=Math.max(0,Math.min(100,Number(job.progress)||0));
     wrap.hidden=false; bar.style.width=p+'%'; label.textContent=p+'%';
     status.hidden=false;
     const elapsed=Number(job.elapsed_seconds)||((job.started_at?Date.now()/1000-job.started_at:0));
-    const est=Number(job.estimated_seconds)||0; const remaining=est&&elapsed<est?est-elapsed:0;
+    const est=Math.min(3600,Number(job.estimated_seconds)||0); const remaining=est&&elapsed<est?Math.min(3600,est-elapsed):0;
     status.innerHTML='🧠 <b>'+esc(job.phase||'Aprendiendo…')+'</b> · '+esc(job.message||'Procesando…')+(job.status==='paused'&&!resumePending.has(job.id)?' <button type="button" id="zarResumeLearning" class="zarInlineResume">▶ Reanudar</button>':job.status==='paused'?' <button type="button" class="zarInlineResume isPending" disabled>⏳ Reanudando…</button>':'');
     if(job.status==='paused'){const rb=document.getElementById('zarResumeLearning');if(rb)rb.onclick=()=>resumeLearning(job.id);}
     metrics.hidden=false;
@@ -128,7 +128,7 @@
       const cls=done?'done':(paused||failed)?'paused':j.status==='error'?'error':'active';
       const canResume=paused||failed;
       const resumeBtn=canResume?'<button class="zarInlineResume" data-resume="'+esc(j.id)+'" '+(pending?'disabled':'')+'>'+ (pending?'⏳ Reanudando…':(failed?'↻ Reintentar':'▶ Reanudar')) +'</button>':'';
-      return '<article class="zarLearningJobCard '+cls+'"><div class="zarLearningJobIcon">'+(done?'✓':paused?'Ⅱ':j.status==='error'?'!':'🧠')+'</div><div class="zarLearningJobMain"><div class="zarLearningJobTitle">'+esc(j.topic||'Aprendizaje')+'</div><div class="zarLearningJobPhase">'+esc(phase)+' <span>· '+esc(pending?'La sesión está arrancando de nuevo…':(j.message||''))+'</span></div><div class="zarLearningMini"><div><span style="width:'+p+'%"></span></div><b>'+p+'%</b></div><div class="zarLearningJobMeta">⏱️ '+formatDuration(j.elapsed_seconds||0)+' · 🔎 '+Number(j.source_count||0)+' fuentes · 🌐 '+Number(j.queries_done||0)+'/'+Number(j.queries_total||0)+' consultas'+(j.estimated_seconds?' · ⏳ '+(Number(j.estimated_seconds)>Number(j.elapsed_seconds||0)?formatDuration(Number(j.estimated_seconds)-Number(j.elapsed_seconds||0)):'calculando…'):'')+'</div></div><div class="zarLearningJobActions">'+resumeBtn+'<button class="zarInlineDelete" data-delete-learning="'+esc(j.id)+'" title="Eliminar aprendizaje">🗑️</button></div></article>';
+      return '<article class="zarLearningJobCard '+cls+'"><div class="zarLearningJobIcon">'+(done?'✓':paused?'Ⅱ':j.status==='error'?'!':'🧠')+'</div><div class="zarLearningJobMain"><div class="zarLearningJobTitle">'+esc(j.topic||'Aprendizaje')+'</div><div class="zarLearningJobPhase">'+esc(phase)+' <span>· '+esc(pending?'La sesión está arrancando de nuevo…':(j.message||''))+'</span></div><div class="zarLearningMini"><div><span style="width:'+p+'%"></span></div><b>'+p+'%</b></div><div class="zarLearningJobMeta">⏱️ '+formatDuration(j.elapsed_seconds||0)+' · 🔎 '+Number(j.source_count||0)+' fuentes · 🌐 '+Number(j.queries_done||0)+'/'+Number(j.queries_total||0)+' consultas'+(j.estimated_seconds?' · ⏳ '+(Math.min(3600,Number(j.estimated_seconds))>Math.min(3600,Number(j.elapsed_seconds||0))?formatDuration(Math.min(3600,Number(j.estimated_seconds))-Math.min(3600,Number(j.elapsed_seconds||0))):'calculando…'):'')+'</div></div><div class="zarLearningJobActions">'+resumeBtn+'<button class="zarInlineDelete" data-delete-learning="'+esc(j.id)+'" title="Eliminar aprendizaje">🗑️</button></div></article>';
     }).join('');
     box.querySelectorAll('[data-resume]').forEach(b=>b.onclick=()=>resumeLearning(b.dataset.resume));
     box.querySelectorAll('[data-delete-learning]').forEach(b=>b.onclick=()=>deleteLearning(b.dataset.deleteLearning));

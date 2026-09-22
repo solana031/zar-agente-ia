@@ -22,6 +22,12 @@ from .skills import create_skill
 
 DATA_DIR = Path(os.environ.get("ZAR_DATA_DIR", "/data"))
 
+# Hard wall-clock budget for an initial learning session. The objective is to
+# maximize useful knowledge, not to leave ZAR researching indefinitely.
+MAX_LEARNING_SECONDS = 3600
+SEARCH_TIMEOUT_SECONDS = 5
+SYNTH_TIMEOUT_SECONDS = 25
+
 
 def _dir():
     d = DATA_DIR / "users" / safe_slug() / "learning"
@@ -64,7 +70,14 @@ def _live_job(job):
         total = max(1, int(out.get("queries_total") or len(out.get("queries") or []) or 1))
         out["progress"] = max(5, min(99, 8 + int(idx / total * 60)))
     if out.get("estimated_seconds"):
-        out["estimated_seconds"] = min(3600, max(90, int(float(out.get("estimated_seconds") or 0))))
+        out["estimated_seconds"] = min(MAX_LEARNING_SECONDS, max(60, int(float(out.get("estimated_seconds") or 0))))
+    # Legacy sessions may have been started before the one-hour budget existed.
+    # Do not expose an absurd remaining estimate; once the budget is exceeded,
+    # the next worker pass will move to synthesis instead of continuing research.
+    if out.get("status") in ("queued", "researching", "synthesizing") and out.get("started_at"):
+        elapsed = float(out.get("elapsed_seconds") or 0)
+        if elapsed >= MAX_LEARNING_SECONDS:
+            out["estimated_seconds"] = MAX_LEARNING_SECONDS
     return out
 
 def list_jobs():
@@ -117,7 +130,7 @@ def _synth(topic, goal, references, research):
     try:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
         r = requests.post(url, params={"key": key}, json={"contents": [{"parts": [{"text": prompt}]}],
-                           "generationConfig": {"temperature": 0.15, "responseMimeType": "application/json"}}, timeout=50)
+                           "generationConfig": {"temperature": 0.15, "responseMimeType": "application/json"}}, timeout=SYNTH_TIMEOUT_SECONDS)
         r.raise_for_status(); data = r.json(); text = ""
         for c in data.get("candidates", []):
             for part in (c.get("content") or {}).get("parts", []): text += part.get("text", "")
@@ -240,8 +253,17 @@ def _search_one(q):
 
     attempts = []
     variants = _learning_query_variants(q)
+    # For professional topics, explicitly diversify the source ecosystem so a
+    # weak search result never becomes a dead end. These are legal/public
+    # resource targets, not piracy/download instructions.
+    if any(token in q.lower() for token in ("fotograf", "edición", "imagen", "diseño")):
+        variants.extend([
+            f"{q} Adobe official documentation Lightroom Photoshop Camera Raw",
+            f"{q} university course open textbook PDF legal",
+            f"{q} public library ebook photography editing professional",
+        ])
 
-    for variant in variants[:2]:
+    for variant in variants[:3]:
         res = _search_with_timeout(
             google_web_search,
             variant,
@@ -250,7 +272,7 @@ def _search_one(q):
             "editoriales, organizaciones profesionales y recursos educativos. "
             "Si existe material PDF accesible legalmente, inclúyelo. No uses "
             "copias pirateadas ni fuentes de descarga ilícita.",
-            timeout=7,
+            timeout=SEARCH_TIMEOUT_SECONDS,
         )
         attempts.append(res)
         if _usable_result(res):
@@ -267,12 +289,12 @@ def _search_one(q):
 
     # Keyless public search is the last independent route. Its implementation
     # may itself take longer than desired, so it is also bounded here.
-    for variant in variants[2:4]:
+    for variant in variants[3:6]:
         res = _search_with_timeout(
             _fallback_web_search,
             variant,
             "Busca resultados públicos legales, manuales, cursos y PDFs de acceso legítimo.",
-            timeout=7,
+            timeout=SEARCH_TIMEOUT_SECONDS,
         )
         attempts.append(res)
         if _usable_result(res):
@@ -388,8 +410,8 @@ def advance_learning(job_id):
         # every resume fail immediately with UnboundLocalError.
         elapsed_now = round(max(0, time.time() - started), 1)
         avg_per_query = elapsed_now / max(1, idx) if idx else 0
-        dynamic_estimate = int(max(90, estimate if idx == 0 else
-                                   elapsed_now + max(0, len(qs) - idx) * max(12, avg_per_query)))
+        dynamic_estimate = int(min(MAX_LEARNING_SECONDS, max(60, estimate if idx == 0 else
+                                   elapsed_now + max(0, len(qs) - idx) * max(8, avg_per_query))))
         _set_job(job_id,
                  status="researching", phase="Investigando fuentes",
                  message=f"Investigando consulta {min(idx+1, len(qs))}/{len(qs)}…",
@@ -403,11 +425,20 @@ def advance_learning(job_id):
         research = list(job.get("research") or [])
         sources = list(job.get("sources") or [])
 
+        # Never let the research phase consume more than one hour. If the
+        # budget is reached, synthesize everything already collected.
+        if elapsed_now >= MAX_LEARNING_SECONDS and idx < len(qs):
+            _set_job(job_id, status="synthesizing", progress=max(70, min(82, 8 + int(idx / max(1, len(qs)) * 60))),
+                     phase="Sintetizando conocimiento",
+                     message=f"Límite de 60 minutos alcanzado; sintetizando {len(sources)} fuentes recopiladas.",
+                     heartbeat_at=time.time(), elapsed_seconds=elapsed_now, estimated_seconds=MAX_LEARNING_SECONDS)
+            job = _load().get("jobs", {}).get(job_id) or job
+
         # Process two independent research queries concurrently. This is the
         # main speed improvement: the first pass no longer waits for seven
         # network calls one after another. Each query still has its own
         # fallback cascade and legal/public-source constraints.
-        if idx < len(qs):
+        if idx < len(qs) and elapsed_now < MAX_LEARNING_SECONDS:
             batch_indices = list(range(idx, min(idx + 2, len(qs))))
             _set_job(job_id,
                      status="researching", phase="Investigando fuentes",
@@ -442,7 +473,7 @@ def advance_learning(job_id):
                 msg += " · las vías fallidas se han sustituido por alternativas"
             elapsed_now = round(time.time() - started, 1)
             avg_per_query = elapsed_now / max(1, idx)
-            dynamic_estimate = int(min(3600, max(90, elapsed_now + max(0, len(qs) - idx) * max(8, avg_per_query))))
+            dynamic_estimate = int(min(MAX_LEARNING_SECONDS, max(60, elapsed_now + max(0, len(qs) - idx) * max(6, avg_per_query))))
             _set_job(job_id,
                      status="researching" if idx < len(qs) else "synthesizing",
                      progress=progress if idx < len(qs) else 70,
@@ -504,7 +535,7 @@ def advance_learning(job_id):
                 "topic":topic,"result":record,"learning_id":learning_id,"skill_id":skill_id,
                 "research":research,"sources":sources,"queries_done":len(qs),"queries_total":len(qs),
                 "query_index":len(qs),"source_count":len(sources),"elapsed_seconds":round(now-started,1),
-                "estimated_seconds":min(3600, max(90, int(time.time()-started))),"updated_at":time.time()
+                "estimated_seconds":min(MAX_LEARNING_SECONDS, max(60, int(time.time()-started))),"updated_at":time.time()
             }); _save(d)
             return get_job(job_id)
         return get_job(job_id)
@@ -559,14 +590,14 @@ def start_learning(topic, goal="", references=None):
     if not topic: raise ValueError("Indica qué quieres que aprenda ZAR.")
     references=[str(x).strip() for x in (references or []) if str(x).strip()][:10]
     job_id=uuid.uuid4().hex; now=time.time(); qs=_query_plan(topic,str(goal or "").strip(),references)
-    estimate=max(90, len(qs)*18+45)
+    estimate=min(MAX_LEARNING_SECONDS, max(60, len(qs)*14+30))
     _set_job(job_id,
              status="queued", progress=5, phase="En cola",
              message="Aprendizaje creado. ZAR iniciará la primera consulta al actualizar su estado.",
              topic=topic, goal=str(goal or "").strip(), references=references,
              queries=qs, query_index=0, queries_total=len(qs), queries_done=0,
              source_count=0, research=[], sources=[], created_at=now, updated_at=now,
-             started_at=now, estimated_seconds=estimate, heartbeat_at=now,
+             started_at=now, session_started_at=now, estimated_seconds=estimate, heartbeat_at=now,
              learning_id=uuid.uuid4().hex)
     _ensure_learning_worker(job_id)
     return get_job(job_id)
@@ -585,10 +616,11 @@ def resume_learning(job_id):
         resume_progress = 70
     else:
         resume_progress = max(5, 8 + int(idx / max(1, len(qs)) * 60))
+    now=time.time()
     _set_job(job_id, status="queued", progress=resume_progress, phase="Reanudando",
-             message="Aprendizaje reanudado. Continuaré desde la última consulta guardada.",
-             heartbeat_at=time.time(), cancel_requested=False, queries=qs,
-             queries_total=len(qs), query_index=idx, queries_done=idx)
+             message="Aprendizaje reanudado. Continuaré desde la última consulta guardada con un nuevo presupuesto de hasta 60 minutos.",
+             started_at=now, session_started_at=now, heartbeat_at=now, cancel_requested=False, queries=qs,
+             queries_total=len(qs), query_index=idx, queries_done=idx, estimated_seconds=min(MAX_LEARNING_SECONDS, max(60, int((len(qs)-idx)*14+30))))
     _ensure_learning_worker(job_id)
     return get_job(job_id)
 
