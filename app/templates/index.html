@@ -937,6 +937,85 @@ input:-webkit-autofill,textarea:-webkit-autofill,select:-webkit-autofill{
 @media(max-width:720px){.panel{min-width:0!important;width:calc(100vw - 12px)!important;max-width:calc(100vw - 12px)!important}.zarSkillsShell{min-width:0!important;width:94vw!important}.chatScrollControls{bottom:170px!important}.zarPanelDragHandle,.zarSkillsDragHandle{display:none}}
 </style>
 </style>
+
+<style id="zar-v30-10-23-mobile-home-clean">
+/* ZAR v30.10.23 — Mobile home is intentionally simplified.
+   Navigation lives in the hamburger menu; the desktop function dock is not shown on phones. */
+@media (max-width:720px){
+  #chatContent .welcome{
+    width:100%!important;
+    max-width:none!important;
+    margin:0!important;
+    padding:0!important;
+    background:transparent!important;
+    border:0!important;
+    box-shadow:none!important;
+  }
+  #chatContent .zarHomeDock{
+    display:block!important;
+    width:100%!important;
+    max-width:none!important;
+    margin:0!important;
+    padding:24px 16px 10px!important;
+    background:transparent!important;
+    border:0!important;
+    box-shadow:none!important;
+  }
+  #chatContent .zarDockLeft,
+  #chatContent .zarDockRight{
+    display:none!important;
+  }
+  #chatContent .zarHomeCenter{
+    display:flex!important;
+    width:100%!important;
+    min-width:0!important;
+    padding:0!important;
+    margin:0 auto!important;
+    align-items:center!important;
+    justify-content:center!important;
+  }
+  #chatContent .zarDockHint{
+    display:none!important;
+  }
+  #chatContent .zarHeroLogo{
+    width:92px!important;
+    height:92px!important;
+    margin:0 auto 8px!important;
+  }
+  #chatContent .zarWordmark{
+    font-size:30px!important;
+    letter-spacing:.42em!important;
+    padding-left:.42em!important;
+  }
+  #chatContent .zarTagline{
+    font-size:9px!important;
+    letter-spacing:.14em!important;
+    margin-top:2px!important;
+  }
+  #chatContent .quick{
+    display:grid!important;
+    grid-template-columns:repeat(3,minmax(0,1fr))!important;
+    gap:7px!important;
+    width:calc(100% - 24px)!important;
+    margin:10px auto 0!important;
+  }
+  #chatContent .quick button{
+    min-width:0!important;
+    height:42px!important;
+    padding:6px 5px!important;
+    border-radius:12px!important;
+    font-size:12px!important;
+    white-space:nowrap!important;
+  }
+  #chatContent .composerLabel{
+    text-align:center!important;
+    width:100%!important;
+    margin:8px auto 5px!important;
+    font-size:10px!important;
+  }
+}
+</style>
+
 </head>
 <body>
 <script>try{if(localStorage.getItem('zar_theme')==='light')document.body.classList.add('zar-light')}catch(e){}</script>
@@ -1003,7 +1082,7 @@ input:-webkit-autofill,textarea:-webkit-autofill,select:-webkit-autofill{
   <div class="zarHomeCenter">
     <div class="hero zarHeroLogo"><img src="/static/zar-silhouette.png" alt="Zar, asistente inteligente"></div>
     <div class="zarWordmark">Z A R</div><div class="zarTagline">TU ASISTENTE INTELIGENTE</div>
-    <div class="zarDockHint">Arrastra cualquier función para reorganizar tu escritorio</div>
+    <div class="zarDockHint" aria-hidden="true">Arrastra cualquier función para reorganizar tu escritorio</div>
   </div>
   <div class="zarDockGrid zarDockRight" data-dock-side="right" aria-label="Funciones principales derecha"></div>
 </div></div>
