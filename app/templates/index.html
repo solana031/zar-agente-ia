@@ -1201,6 +1201,92 @@ input:-webkit-autofill,textarea:-webkit-autofill,select:-webkit-autofill{
 }
 </style>
 
+
+<style id="zar-v30-10-25-mobile-composer-pro">
+/* ZAR v30.10.25 — Mobile composer redesign.
+   The input gets the full first row; controls become compact floating action buttons. */
+@media (max-width:720px){
+  #chatContent .composer{
+    padding:7px 12px calc(8px + env(safe-area-inset-bottom))!important;
+    background:linear-gradient(180deg,rgba(7,6,5,0),rgba(7,6,5,.96) 16%,#070605 48%)!important;
+  }
+  #chatContent .quick{
+    gap:6px!important;
+    width:calc(100% - 6px)!important;
+    margin:0 auto 7px!important;
+    order:0!important;
+  }
+  #chatContent .quick button{
+    height:38px!important;
+    min-height:38px!important;
+    padding:5px 8px!important;
+    border-radius:999px!important;
+    font-size:13px!important;
+    border-color:rgba(184,139,85,.52)!important;
+    background:rgba(22,16,12,.82)!important;
+    box-shadow:0 8px 20px rgba(0,0,0,.28),inset 0 1px rgba(255,240,220,.03)!important;
+  }
+  #chatContent .zarActiveSkills{
+    min-height:36px!important;
+    height:36px!important;
+    margin:0 0 7px!important;
+    padding:6px 11px!important;
+    border-radius:12px!important;
+    font-size:10px!important;
+    white-space:nowrap!important;
+    overflow:hidden!important;
+    text-overflow:ellipsis!important;
+    background:rgba(17,12,9,.88)!important;
+  }
+  #chatContent .composerMain{
+    display:grid!important;
+    grid-template-columns:repeat(4,44px)!important;
+    grid-template-rows:auto 44px!important;
+    justify-content:space-between!important;
+    align-items:center!important;
+    gap:7px!important;
+    width:100%!important;
+    padding:8px!important;
+    border-radius:20px!important;
+    box-sizing:border-box!important;
+    background:linear-gradient(145deg,rgba(27,19,14,.96),rgba(10,8,7,.98))!important;
+    box-shadow:0 16px 42px rgba(0,0,0,.55),inset 0 1px rgba(255,239,216,.04)!important;
+  }
+  #chatContent .composerMain textarea{
+    grid-column:1 / -1!important;
+    grid-row:1!important;
+    width:100%!important;
+    min-width:0!important;
+    min-height:66px!important;
+    height:66px!important;
+    max-height:96px!important;
+    resize:none!important;
+    padding:12px 13px!important;
+    box-sizing:border-box!important;
+    border-radius:14px!important;
+    font-size:16px!important;
+    line-height:1.35!important;
+    background:rgba(5,5,4,.92)!important;
+  }
+  #chatContent .composerMain button{
+    grid-row:2!important;
+    width:44px!important;
+    min-width:44px!important;
+    height:44px!important;
+    min-height:44px!important;
+    padding:0!important;
+    border-radius:14px!important;
+    font-size:21px!important;
+    box-shadow:0 8px 18px rgba(0,0,0,.30)!important;
+  }
+  #chatContent .composerMain button:last-child{
+    font-size:23px!important;
+    background:linear-gradient(145deg,#e1bb7c,#a96f36)!important;
+  }
+  #chatContent #uploadStatus,#chatContent #voiceStatus{display:none!important}
+}
+</style>
+
 </head>
 <body>
 <script>try{if(localStorage.getItem('zar_theme')==='light')document.body.classList.add('zar-light')}catch(e){}</script>
@@ -1392,6 +1478,7 @@ input:-webkit-autofill,textarea:-webkit-autofill,select:-webkit-autofill{
     <button class="mobileMenuItem" onclick="showMobileTime();closeMobileDrawer()">🕒 Reloj / Hora</button>
     <button class="mobileMenuItem" onclick="showMobileWeather();closeMobileDrawer()">☁️ Tiempo</button>
     <button class="mobileMenuItem" onclick="showMemory();closeMobileDrawer()">🧠 Memoria</button>
+    <button class="mobileMenuItem" onclick="window.ZARSkills&&window.ZARSkills.open();closeMobileDrawer()">📖 Aprendizajes</button>
     <button class="mobileMenuItem" onclick="showContacts();closeMobileDrawer()">👤 Contactos</button>
     <button class="mobileMenuItem" onclick="showMaps();closeMobileDrawer()">📍 Google Maps</button>
     <button class="mobileMenuItem" onclick="showWorkspace();closeMobileDrawer()">☁️ Workspace</button>
