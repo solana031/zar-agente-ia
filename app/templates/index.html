@@ -4279,66 +4279,80 @@ body.zar-light .zarDockGrid:empty::after{border-color:#c8b39b!important;color:#9
 })();
 </script>
 
-<style id="zar-v30-10-31-mobile-composer-button-fix">
-/* ZAR v30.10.31 · Mobile composer action row safety fix.
-   Keep all four controls (attach / voice / mute / send) fully visible above
-   the Android navigation area, with equal widths and no clipping. */
+<style id="zar-v30-10-32-mobile-composer-real-layout">
+/* ZAR v30.10.32 — Mobile composer: deterministic two-row layout.
+   The previous grid rules could let the textarea paint over the action row on
+   some Chromium/Android viewport combinations. Use a wrapped flex layout so
+   the textarea and all four buttons have independent, non-overlapping boxes. */
 @media (max-width:720px){
   #chatContent .composerMain{
     position:fixed!important;
     left:12px!important;
     right:12px!important;
-    bottom:calc(18px + env(safe-area-inset-bottom))!important;
+    bottom:calc(12px + env(safe-area-inset-bottom))!important;
     width:auto!important;
     height:142px!important;
     min-height:142px!important;
     max-height:142px!important;
-    display:grid!important;
-    grid-template-columns:repeat(4,minmax(0,1fr))!important;
-    grid-template-rows:minmax(0,1fr) 40px!important;
+    display:flex!important;
+    flex-wrap:wrap!important;
+    align-content:space-between!important;
+    align-items:stretch!important;
     gap:6px!important;
     padding:7px!important;
     box-sizing:border-box!important;
-    overflow:visible!important;
-    z-index:1300!important;
-    isolation:isolate!important;
+    overflow:hidden!important;
+    z-index:2000!important;
   }
+
   #chatContent .composerMain textarea{
-    grid-column:1 / -1!important;
-    grid-row:1!important;
+    order:1!important;
+    flex:0 0 100%!important;
     width:100%!important;
-    height:auto!important;
-    min-height:0!important;
-    max-height:none!important;
+    height:78px!important;
+    min-height:78px!important;
+    max-height:78px!important;
+    min-width:0!important;
+    margin:0!important;
     box-sizing:border-box!important;
-    align-self:stretch!important;
-    overflow-y:auto!important;
-    position:relative!important;
-    z-index:1!important;
+    position:static!important;
+    z-index:auto!important;
   }
-  #chatContent .composerMain>button{
-    grid-row:2!important;
-    width:100%!important;
+
+  #chatContent .composerMain > button{
+    order:2!important;
+    flex:1 1 0!important;
+    width:auto!important;
     min-width:0!important;
     height:40px!important;
     min-height:40px!important;
     max-height:40px!important;
-    align-self:stretch!important;
     margin:0!important;
     padding:0!important;
-    position:relative!important;
-    z-index:2!important;
-    overflow:hidden!important;
-  }
-  #chatContent .composerMain>button:last-child{
+    box-sizing:border-box!important;
+    position:static!important;
+    z-index:auto!important;
     display:grid!important;
     place-items:center!important;
+    overflow:hidden!important;
+    border-radius:13px!important;
+  }
+
+  #chatContent .composerMain > #attachBtn,
+  #chatContent .composerMain > #mic,
+  #chatContent .composerMain > #speakBtn,
+  #chatContent .composerMain > button:last-child{
+    flex-basis:0!important;
+  }
+
+  #chatContent .composerMain > button:last-child{
     visibility:visible!important;
     opacity:1!important;
     transform:none!important;
   }
-  #chatContent .quick{bottom:174px!important;}
-  #chatContent .zarActiveSkills{bottom:136px!important;}
+
+  /* Keep the fixed composer itself out of the chat's hit area while retaining
+     enough scroll room for the final message. */
   #chatContent .chatArea{padding-bottom:205px!important;}
   #chatContent .chat{padding-bottom:205px!important;}
 }

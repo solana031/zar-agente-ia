@@ -10,3 +10,5 @@ PARA INSTALAR
 2) No cambies las variables que ya funcionan.
 3) Si Zar solicita acceso a Contactos, habilita People API en Google Cloud y reautoriza Google una sola vez.
 4) Para Internet no hace falta otra API key: se utiliza la clave Gemini existente.
+
+ZAR v30.10.32 — Mobile composer layout fix: textarea and four action buttons use a deterministic wrapped-flex two-row layout to prevent overlap/clipping on Android Chromium.
