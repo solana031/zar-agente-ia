@@ -4278,3 +4278,59 @@ body.zar-light .zarDockGrid:empty::after{border-color:#c8b39b!important;color:#9
   setTimeout(syncMenuShell,80);
 })();
 </script>
+
+<style id="zar-v30-10-30-mobile-composer-position-fix">
+/* ZAR v30.10.30 · Keep composer controls fully inside the viewport.
+   The message field remains large; the four action buttons sit in a dedicated row
+   inside the composer instead of being pushed below/behind the viewport. */
+@media (max-width:720px){
+  #chatContent .composerMain{
+    position:fixed!important;
+    left:12px!important;
+    right:12px!important;
+    bottom:calc(8px + env(safe-area-inset-bottom))!important;
+    width:auto!important;
+    height:146px!important;
+    min-height:146px!important;
+    max-height:146px!important;
+    display:grid!important;
+    grid-template-columns:repeat(4,minmax(0,1fr))!important;
+    grid-template-rows:minmax(0,1fr) 44px!important;
+    gap:7px!important;
+    padding:8px!important;
+    box-sizing:border-box!important;
+    overflow:visible!important;
+    z-index:1204!important;
+  }
+  #chatContent .composerMain textarea{
+    grid-column:1 / -1!important;
+    grid-row:1!important;
+    width:100%!important;
+    height:auto!important;
+    min-height:0!important;
+    max-height:none!important;
+    box-sizing:border-box!important;
+    align-self:stretch!important;
+    overflow-y:auto!important;
+  }
+  #chatContent .composerMain>button{
+    grid-row:2!important;
+    width:100%!important;
+    min-width:0!important;
+    height:44px!important;
+    min-height:44px!important;
+    max-height:44px!important;
+    align-self:stretch!important;
+    margin:0!important;
+  }
+  #chatContent .quick{
+    bottom:177px!important;
+  }
+  #chatContent .zarActiveSkills{
+    bottom:137px!important;
+  }
+  /* Reserve exactly enough scrolling space for the fixed composer + floating chips. */
+  #chatContent .chatArea{padding-bottom:210px!important;}
+  #chatContent .chat{padding-bottom:210px!important;}
+}
+</style>
