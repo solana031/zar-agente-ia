@@ -4166,6 +4166,42 @@ body.zar-light .zarDockGrid:empty::after{border-color:#c8b39b!important;color:#9
   window.zarExportAudioProject=function(){const a=document.getElementById('audioPlayer');if(a?.src&&a.src!==''){const x=document.createElement('a');x.href=a.src;x.download=(window.zarAudioProject?.name||'zar_audio')+'.wav';x.click()}else{renderAudioBase()}};
 })();
 </script>
+
+<style id="zar-v30-10-35-mobile-studio-shell-fix">
+/* ZAR v30.10.35 — Mobile Studio must completely replace the chat surface.
+   The previous mobile chat rule (#chatContent.content) had higher specificity
+   than .app.editor-mode .content, so the home/chat layer remained visible behind Studio. */
+@media (max-width:720px){
+  html,body{overflow:hidden!important;}
+  .app.editor-mode{display:grid!important;grid-template-columns:minmax(0,1fr)!important;height:100dvh!important;overflow:hidden!important;}
+  .app.editor-mode .side,
+  .app.editor-mode .right{display:none!important;}
+  .app.editor-mode .main{grid-column:1!important;width:100%!important;min-width:0!important;height:100dvh!important;display:flex!important;overflow:hidden!important;}
+  .app.editor-mode #chatContent.content,
+  .app.editor-mode #chatContent.content *{visibility:visible;}
+  .app.editor-mode #chatContent.content{display:none!important;position:absolute!important;inset:auto!important;width:0!important;height:0!important;overflow:hidden!important;pointer-events:none!important;}
+  .app.editor-mode #chatContent .quick,
+  .app.editor-mode #chatContent .zarActiveSkills,
+  .app.editor-mode #chatContent .zarLearningActive,
+  .app.editor-mode #chatContent .composer,
+  .app.editor-mode #chatContent .composerMain{display:none!important;}
+  .app.editor-mode #mediaWorkspace{display:flex!important;visibility:visible!important;position:relative!important;z-index:20!important;width:100%!important;height:calc(100dvh - 56px)!important;min-height:0!important;max-height:none!important;overflow:hidden!important;padding:8px 8px 10px!important;background:#030303!important;}
+  .app.editor-mode #mediaWorkspace .mediaWorkspaceHead{position:relative!important;top:auto!important;z-index:30!important;flex:0 0 auto!important;background:linear-gradient(180deg,#080706 82%,rgba(8,7,6,.88) 94%,transparent)!important;padding:4px 2px 12px!important;}
+  .app.editor-mode #mediaWorkspace .mediaWorkspaceHead h1{font-size:22px!important;line-height:1.15!important;}
+  .app.editor-mode #mediaWorkspace .mediaWorkspaceHead p{font-size:10px!important;line-height:1.45!important;margin:5px 0 0!important;}
+  .app.editor-mode #mediaWorkspace .mediaHeadActions{display:none!important;}
+  .app.editor-mode #mediaWorkspace .editorWorkspaceBody{display:block!important;flex:1 1 auto!important;min-height:0!important;height:auto!important;overflow-y:auto!important;overflow-x:hidden!important;padding:8px 0 28px!important;-webkit-overflow-scrolling:touch!important;touch-action:pan-y!important;overscroll-behavior-y:contain!important;}
+  .app.editor-mode #mediaWorkspace .editorModeTabs{position:sticky!important;top:0!important;z-index:25!important;background:linear-gradient(180deg,#030303 72%,rgba(3,3,3,.88),transparent)!important;padding:0 0 9px!important;margin:0!important;}
+  .app.editor-mode #mediaWorkspace .studioLearning{margin:0 0 10px!important;}
+  .app.editor-mode #mediaWorkspace #editorSurfaceIntro{margin-top:0!important;}
+  .app.editor-mode #mediaWorkspace #editorWorkspaceBodyInner{min-height:0!important;width:100%!important;}
+  .app.editor-mode #mediaWorkspace .editorEmpty{margin:8px auto 20px!important;max-width:100%!important;padding:24px 16px!important;}
+  .app.editor-mode #mediaWorkspace .studioLaunch{grid-template-columns:1fr!important;gap:7px!important;margin:8px 0 12px!important;}
+  .app.editor-mode #mediaWorkspace .studioLaunchCard{padding:12px!important;}
+  .app.editor-mode #mediaWorkspace .editorModeTab{min-height:42px!important;padding:8px 5px!important;}
+}
+</style>
+
 </body></html>
 
 <style id="zar-v30-10-16-floating-shell">
@@ -4359,7 +4395,7 @@ body.zar-light .zarDockGrid:empty::after{border-color:#c8b39b!important;color:#9
 </style>
 
 <style id="zar-v30-10-33-mobile-floating-learning-fix">
-/* ZAR v30.10.34 — Raise the learning-status pill slightly above the composer.
+/* ZAR v30.10.33 — Keep the fourth floating control fully above the composer.
    On mobile the fourth visible control is the compact learning-status pill.
    It must never sit underneath the message field. */
 @media (max-width:720px){
@@ -4368,7 +4404,7 @@ body.zar-light .zarDockGrid:empty::after{border-color:#c8b39b!important;color:#9
     position:fixed!important;
     left:50%!important;
     right:auto!important;
-    bottom:162px!important;
+    bottom:151px!important;
     transform:translateX(-50%)!important;
     z-index:1303!important;
     width:max-content!important;
