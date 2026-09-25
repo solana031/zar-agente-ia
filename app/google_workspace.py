@@ -83,12 +83,89 @@ def sheets_create(title):
     return sh
 
 
-def sheets_write(spreadsheet_id, range_a1, values):
-    svc = sheets_service()
-    body = {'range': range_a1, 'majorDimension':'ROWS', 'values': values}
-    out = svc.spreadsheets().values().update(spreadsheetId=spreadsheet_id, range=range_a1, valueInputOption='USER_ENTERED', body=body).execute()
-    return {'ok': True, 'updated': out, 'url': f'https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit'}
+def _normalize_spreadsheet_id(spreadsheet_id):
+    """Accept a raw Sheets ID or a Google Sheets URL and return the ID."""
+    import re
+    value = str(spreadsheet_id or '').strip()
+    m = re.search(r'/spreadsheets/d/([a-zA-Z0-9_-]+)', value)
+    if m:
+        return m.group(1)
+    return value.strip().rstrip('/').split('?', 1)[0]
 
+
+def _clean_sheet_range(range_a1, default_sheet_title=None):
+    """Normalize common natural-language/URL range artifacts and qualify A1 ranges."""
+    import re
+    value = str(range_a1 or '').strip()
+    value = value.replace('%3A', ':').replace('%3a', ':')
+    value = value.rstrip('?,;').strip()
+    # If the model supplied a bare A1 range, qualify it with the first sheet.
+    if default_sheet_title and '!' not in value and re.match(r'^[A-Za-z]{1,3}\$?\d+(?::[A-Za-z]{1,3}\$?\d+)?$', value):
+        safe_title = str(default_sheet_title).replace("'", "''")
+        value = f"'{safe_title}'!{value}"
+    return value or (f"'{str(default_sheet_title).replace(chr(39), chr(39)*2)}'!A1" if default_sheet_title else 'A1')
+
+
+def _sheet_metadata(spreadsheet_id):
+    svc = sheets_service()
+    return svc.spreadsheets().get(
+        spreadsheetId=spreadsheet_id,
+        fields='spreadsheetId,spreadsheetUrl,sheets(properties(sheetId,title,index))'
+    ).execute()
+
+
+def sheets_write(spreadsheet_id, range_a1, values):
+    """Write/update an existing Google Sheet robustly.
+
+    The previous implementation passed the model's range verbatim. This made
+    edits fragile when the model returned a Sheets URL, URL-encoded colon, or a
+    bare A1 range. Resolve the spreadsheet first, normalize those forms, and
+    qualify a bare range with the first worksheet tab.
+    """
+    sid = _normalize_spreadsheet_id(spreadsheet_id)
+    if not sid:
+        raise ValueError('Falta el ID de la hoja de cálculo de Google Sheets.')
+    meta = _sheet_metadata(sid)
+    sheets = meta.get('sheets') or []
+    if not sheets:
+        raise RuntimeError('La hoja de cálculo no contiene ninguna pestaña editable.')
+    first_title = ((sheets[0].get('properties') or {}).get('title')) or 'Hoja 1'
+    rng = _clean_sheet_range(range_a1, first_title)
+
+    # Sanitize values so nested/non-JSON scalar objects from the model cannot
+    # trigger a Google API 400 during an otherwise valid edit.
+    def scalar(v):
+        if v is None or isinstance(v, (str, int, float, bool)):
+            return v
+        return str(v)
+    clean_values = [[scalar(cell) for cell in (row if isinstance(row, list) else [row])] for row in (values or [])]
+    if not clean_values:
+        raise ValueError('No hay valores que escribir en Google Sheets.')
+
+    svc = sheets_service()
+    body = {'range': rng, 'majorDimension': 'ROWS', 'values': clean_values}
+    try:
+        out = svc.spreadsheets().values().update(
+            spreadsheetId=sid,
+            range=rng,
+            valueInputOption='USER_ENTERED',
+            body=body
+        ).execute()
+    except Exception as exc:
+        # Retry once with the original caller range when qualification itself
+        # is the issue (for example a quoted sheet title already supplied).
+        original = str(range_a1 or '').strip().replace('%3A', ':').replace('%3a', ':').rstrip('?,;')
+        if original and original != rng:
+            out = svc.spreadsheets().values().update(
+                spreadsheetId=sid,
+                range=original,
+                valueInputOption='USER_ENTERED',
+                body={**body, 'range': original}
+            ).execute()
+        else:
+            raise RuntimeError(f'Google Sheets rechazó la edición en {rng}: {exc}') from exc
+    return {'ok': True, 'updated': out, 'spreadsheetId': sid, 'range': rng,
+            'url': meta.get('spreadsheetUrl') or f'https://docs.google.com/spreadsheets/d/{sid}/edit'}
 
 def sheets_read(spreadsheet_id, range_a1):
     svc = sheets_service()

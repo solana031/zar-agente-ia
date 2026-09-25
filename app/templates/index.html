@@ -1464,6 +1464,29 @@ input:-webkit-autofill,textarea:-webkit-autofill,select:-webkit-autofill{
 }
 </style>
 </style>
+
+<style id="zar-v30-10-29-mobile-final-layout">
+/* ZAR v30.10.29 · Mobile chat: real viewport scroll + truly floating compact controls. */
+@media (max-width:720px){
+  html,body{height:100dvh!important;overflow:hidden!important;}
+  #chatContent.content{position:relative!important;height:calc(100dvh - 56px)!important;min-height:0!important;overflow:hidden!important;padding:0!important;display:block!important;}
+  #chatContent .chatArea{position:absolute!important;inset:0!important;width:100%!important;height:100%!important;max-height:none!important;min-height:0!important;overflow-y:auto!important;overflow-x:hidden!important;-webkit-overflow-scrolling:touch!important;touch-action:pan-y!important;overscroll-behavior-y:auto!important;box-sizing:border-box!important;padding:0 8px 150px!important;}
+  #chatContent .chat{display:flex!important;flex-direction:column!important;width:100%!important;max-width:none!important;height:auto!important;min-height:0!important;overflow:visible!important;flex:none!important;margin:0!important;padding:0 2px 190px!important;box-sizing:border-box!important;}
+  #chatContent .welcome{position:relative!important;display:block!important;flex:0 0 auto!important;margin:8px auto 14px!important;padding:0!important;border:0!important;background:transparent!important;box-shadow:none!important;backdrop-filter:none!important;}
+  #chatContent .chat .msg{max-width:100%!important;}
+  /* No full-width strip behind the quick actions. */
+  #chatContent .composer{position:fixed!important;inset:auto 0 0 0!important;width:100%!important;height:0!important;min-height:0!important;padding:0!important;margin:0!important;background:transparent!important;border:0!important;box-shadow:none!important;backdrop-filter:none!important;pointer-events:none!important;z-index:1200!important;}
+  #chatContent .quick{position:fixed!important;left:50%!important;right:auto!important;bottom:177px!important;transform:translateX(-50%)!important;width:max-content!important;max-width:calc(100vw - 24px)!important;height:32px!important;min-height:32px!important;display:flex!important;align-items:center!important;gap:5px!important;margin:0!important;padding:0!important;background:transparent!important;border:0!important;box-shadow:none!important;backdrop-filter:none!important;pointer-events:none!important;z-index:1202!important;}
+  #chatContent .quick button{width:auto!important;min-width:0!important;height:32px!important;min-height:32px!important;max-height:32px!important;flex:0 0 auto!important;padding:4px 10px!important;border-radius:999px!important;font-size:11px!important;line-height:1!important;background:rgba(15,11,9,.78)!important;border:1px solid rgba(184,139,85,.48)!important;box-shadow:0 5px 14px rgba(0,0,0,.30)!important;backdrop-filter:blur(10px)!important;pointer-events:auto!important;}
+  #chatContent .zarActiveSkills{position:fixed!important;left:50%!important;right:auto!important;bottom:137px!important;transform:translateX(-50%)!important;width:max-content!important;max-width:calc(100vw - 36px)!important;height:28px!important;min-height:28px!important;margin:0!important;padding:4px 9px!important;border-radius:999px!important;font-size:8.5px!important;line-height:18px!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important;background:rgba(12,9,7,.76)!important;border:1px solid rgba(184,139,85,.34)!important;box-shadow:0 5px 14px rgba(0,0,0,.28)!important;backdrop-filter:blur(10px)!important;text-align:center!important;pointer-events:auto!important;z-index:1203!important;}
+  #chatContent .zarLearningActive{display:none!important;}
+  #chatContent .composerMain{position:fixed!important;left:12px!important;right:12px!important;bottom:8px!important;width:auto!important;height:66px!important;min-height:66px!important;max-height:66px!important;margin:0!important;padding:4px!important;background:rgba(9,7,6,.94)!important;border:1px solid rgba(184,139,85,.48)!important;border-radius:22px!important;box-shadow:0 12px 32px rgba(0,0,0,.48)!important;pointer-events:auto!important;z-index:1204!important;}
+  #chatContent .composerMain textarea{height:56px!important;min-height:56px!important;max-height:56px!important;font-size:13px!important;padding:12px 10px!important;border-radius:16px!important;}
+  #chatContent .composerMain>button{height:48px!important;width:46px!important;min-width:46px!important;flex:0 0 46px!important;border-radius:13px!important;font-size:17px!important;}
+  #chatContent .chatScrollControls{display:none!important;}
+  #chatContent #uploadStatus,#chatContent #voiceStatus{display:none!important;}
+}
+</style>
 </head>
 <body>
 <script>try{if(localStorage.getItem('zar_theme')==='light')document.body.classList.add('zar-light')}catch(e){}</script>
