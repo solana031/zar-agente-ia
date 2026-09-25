@@ -13,6 +13,33 @@ from .voice_audio_clean import clean_audio
 GEMINI_BASE = 'https://generativelanguage.googleapis.com'
 
 
+def _dedupe_transcript(text: str) -> str:
+    """Collapse long, high-confidence repeated transcript blocks.
+
+    This is intentionally conservative: blocks must be at least four words and
+    exactly repeat, so normal short repetitions such as "no no" are preserved.
+    """
+    words = re.sub(r"\s+", " ", str(text or "").strip()).split(" ")
+    if len(words) < 8:
+        return " ".join(words).strip()
+    for _ in range(3):
+        changed = False
+        max_n = min(24, len(words) // 2)
+        for n in range(max_n, 3, -1):
+            for i in range(0, len(words) - (2 * n) + 1):
+                a = [w.lower() for w in words[i:i+n]]
+                b = [w.lower() for w in words[i+n:i+2*n]]
+                if a == b:
+                    del words[i+n:i+2*n]
+                    changed = True
+                    break
+            if changed:
+                break
+        if not changed:
+            break
+    return " ".join(words).strip()
+
+
 def _clean_transcript(text: str) -> str:
     text = str(text or '').strip()
     text = re.sub(r'^```(?:text|txt)?\s*', '', text, flags=re.I)
@@ -268,7 +295,7 @@ def transcribe_audio(stream, mime_type: str = 'audio/webm', filename: str = 'voz
     # path for Gemini 3.5 Transcribe and returns output_text.
     try:
         text = _interactions_transcribe(key, cleaned, audio_mime, prompt)
-        return {'text': text, 'provider': 'Gemini 3.5 Transcribe · Interactions API'}
+        return {'text': _dedupe_transcript(text), 'provider': 'Gemini 3.5 Transcribe · Interactions API'}
     except Exception as exc:
         errors.append(f'Transcribe Interactions: {str(exc)[:900]}')
 
@@ -282,7 +309,7 @@ def transcribe_audio(stream, mime_type: str = 'audio/webm', filename: str = 'voz
             audio_mime,
             prompt,
         )
-        return {'text': text, 'provider': 'Gemini 3.5 Transcribe · GenerateContent'}
+        return {'text': _dedupe_transcript(text), 'provider': 'Gemini 3.5 Transcribe · GenerateContent'}
     except Exception as exc:
         errors.append(f'Transcribe GenerateContent: {str(exc)[:900]}')
 
@@ -297,7 +324,7 @@ def transcribe_audio(stream, mime_type: str = 'audio/webm', filename: str = 'voz
             audio_mime,
             prompt,
         )
-        return {'text': text, 'provider': 'Gemini multimodal fallback'}
+        return {'text': _dedupe_transcript(text), 'provider': 'Gemini multimodal fallback'}
     except Exception as exc:
         errors.append(f'Fallback: {str(exc)[:900]}')
 
