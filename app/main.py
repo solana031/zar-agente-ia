@@ -892,43 +892,67 @@ def stonks_decision_api():
             return jsonify({'ok':True,'paper':True,'decision':'DENEGADA','reason':'La señal enviada ya no coincide con la última barra cerrada.','current_signal':actual,'order_created':False})
         d=_stonks_read()
         reasons=[]
-        if d.get('revoked'): reasons.append('control revocado')
-        if d.get('paused'): reasons.append('motor pausado')
-        if d.get('mode')!='paper': reasons.append('modo distinto de Paper')
-        if not bool(clock.get('is_open')): reasons.append('mercado cerrado')
+        checks=[]
+        def add_check(code, label, passed, detail=''):
+            checks.append({'code':code,'label':label,'passed':bool(passed),'detail':detail})
+            if not passed and label:
+                reasons.append(label + (f': {detail}' if detail else ''))
+
+        # Kill-switch / operating-state checks are evaluated first and remain authoritative.
+        add_check('REVOKED','Control revocado',not bool(d.get('revoked')))
+        add_check('PAUSED','Motor pausado',not bool(d.get('paused')))
+        add_check('MODE','Modo distinto de Paper',d.get('mode')=='paper')
+        add_check('MARKET','Mercado cerrado',bool(clock.get('is_open')))
+
         account=_alpaca_paper_request('/v2/account')
         equity=float(account.get('equity') or 0); last_equity=float(account.get('last_equity') or 0)
         daily_loss=max(0.0,last_equity-equity); max_daily=float(d.get('max_daily_loss_eur',10) or 10)
-        if max_daily>0 and daily_loss>=max_daily: reasons.append(f'pérdida diaria límite alcanzada ({daily_loss:.2f} frente a {max_daily:.2f})')
+        add_check('DAILY_LOSS','Pérdida diaria límite alcanzada',not (max_daily>0 and daily_loss>=max_daily),f'{daily_loss:.2f} USD / límite {max_daily:.2f} USD')
+
         positions=_alpaca_paper_request('/v2/positions'); positions=positions if isinstance(positions,list) else []
         current=next((p for p in positions if str(p.get('symbol','')).upper()==symbol),None)
-        latest=_alpaca_market_request(f'/v2/stocks/{symbol}/trades/latest')
-        last=(latest.get('trades') or {}).get(symbol) or {}
+
+        # The single-symbol latest-trade endpoint returns {symbol, trade}; the plural endpoint returns {trades:{SYMBOL:...}}.
+        # v31.3.7 accepts both forms so a valid live price cannot be misclassified as unavailable.
+        latest=_alpaca_market_request(f'/v2/stocks/{symbol}/trades/latest', params={'feed':'iex'})
+        last=(latest.get('trade') or {}) if isinstance(latest,dict) else {}
+        if not last and isinstance(latest,dict):
+            last=(latest.get('trades') or {}).get(symbol) or {}
         price=float(last.get('p') or 0)
-        if price<=0: reasons.append('no hay último precio disponible')
+        add_check('PRICE','Precio actual no disponible',price>0)
+
         max_trade=float(d.get('max_trade_eur',25) or 25)
         max_position=float(d.get('max_position_pct',20) or 20)
         current_value=abs(float((current or {}).get('market_value') or 0))
+        current_qty=float((current or {}).get('qty') or 0)
         if requested_signal=='SELL':
-            current_qty=float((current or {}).get('qty') or 0)
-            if current_qty<=0: reasons.append('no existe posición Paper que vender')
+            add_check('POSITION','No existe posición Paper que vender',current_qty>0)
             qty=min(current_qty, max_trade/price if price>0 else 0)
         else:
             available_value=max(0.0,equity*(max_position/100.0)-current_value)
             qty=min(max_trade/price if price>0 else 0, available_value/price if price>0 else 0)
-        qty=float(f'{qty:.4f}')
+        qty=float(f'{qty:.9f}')
         order_value=qty*price
-        if qty<0.0001 or order_value<1.0: reasons.append('el tamaño resultante queda por debajo del mínimo operativo de 1 USD')
-        if order_value>max_trade+1e-9: reasons.append('supera el máximo por operación')
-        if requested_signal=='BUY' and equity>0 and current_value+order_value>equity*(max_position/100.0)+1e-9:
-            reasons.append('supera el máximo de posición configurado')
+
+        # Alpaca supports fractional equity orders. For BUY, keep our own 1 USD floor; for SELL, do not
+        # invent a notional floor that could prevent closing a small existing Paper position.
+        if requested_signal=='BUY':
+            add_check('MIN_NOTIONAL','Tamaño BUY inferior al mínimo operativo',qty>0 and order_value>=1.0,f'{order_value:.2f} USD')
+        else:
+            add_check('QTY','Cantidad SELL no operativa',qty>0,f'{qty:.9f} acciones')
+        add_check('MAX_TRADE','Supera el máximo por operación',order_value<=max_trade+1e-9,f'{order_value:.2f} USD / límite {max_trade:.2f} USD')
+        if requested_signal=='BUY':
+            add_check('MAX_POSITION','Supera el máximo de posición configurado',not (equity>0 and current_value+order_value>equity*(max_position/100.0)+1e-9),f'{current_value+order_value:.2f} USD / límite {equity*(max_position/100.0):.2f} USD')
+
         key=f'{symbol}|{strategy}|{timeframe}|{actual.get("bar_time")}|{requested_signal}'
-        if d.get('last_executed_signals',{}).get(key): reasons.append('esta señal ya fue ejecutada')
+        add_check('DUPLICATE','Esta señal ya fue ejecutada',not bool(d.get('last_executed_signals',{}).get(key)))
+
         approved=not reasons
         decision='APROBADA' if approved else 'DENEGADA'
+        primary_reason=reasons[0] if reasons else 'Todos los controles Risk han sido superados.'
         result={'ok':True,'paper':True,'decision':decision,'signal':requested_signal,'symbol':symbol,'strategy':strategy,'timeframe':timeframe,
-                'price':price,'qty':qty,'estimated_value':order_value,'reasons':reasons,'current_signal':actual,'order_created':False}
-        _stonks_audit_append('DECISIÓN',{'symbol':symbol,'signal':requested_signal,'strategy':strategy,'timeframe':timeframe,'decision':decision,'price':price,'qty':qty,'estimated_value':order_value,'reasons':reasons})
+                'price':price,'qty':qty,'estimated_value':order_value,'reasons':reasons,'primary_reason':primary_reason,'checks':checks,'current_signal':actual,'order_created':False}
+        _stonks_audit_append('DECISIÓN',{'symbol':symbol,'signal':requested_signal,'strategy':strategy,'timeframe':timeframe,'decision':decision,'price':price,'qty':qty,'estimated_value':order_value,'primary_reason':primary_reason,'reasons':reasons,'checks':checks})
         if approved and execute:
             if d.get('execution_mode')!='paper_auto' and not manual_confirmed:
                 result['decision']='APROBADA_SIN_EJECUTAR'; result['reason']='La ejecución requiere modo Paper automático o confirmación manual explícita.'
