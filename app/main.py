@@ -572,10 +572,55 @@ def _stonks_read():
 def _stonks_write(d):
     p=_stonks_file(); p.parent.mkdir(parents=True, exist_ok=True); p.write_text(json.dumps(d,ensure_ascii=False,indent=2),encoding='utf-8')
 
+def _alpaca_paper_credentials():
+    return (os.environ.get('ALPACA_PAPER_API_KEY','').strip(), os.environ.get('ALPACA_PAPER_API_SECRET','').strip())
+
+def _alpaca_paper_request(path, method='GET', params=None):
+    key, secret = _alpaca_paper_credentials()
+    if not key or not secret:
+        raise RuntimeError('Faltan ALPACA_PAPER_API_KEY y ALPACA_PAPER_API_SECRET en Railway.')
+    import requests as _requests
+    base='https://paper-api.alpaca.markets'
+    r=_requests.request(method, base+path, headers={'APCA-API-KEY-ID':key,'APCA-API-SECRET-KEY':secret,'Accept':'application/json'}, params=params, timeout=12)
+    try: data=r.json()
+    except Exception: data={'raw':r.text[:1000]}
+    if not r.ok:
+        msg=data.get('message') if isinstance(data,dict) else None
+        raise RuntimeError(f'Alpaca Paper {r.status_code}: {msg or "respuesta no válida"}')
+    return data
+
 @app.get('/api/stonks/status')
 def stonks_status_api():
     d=_stonks_read()
-    return jsonify({'ok':True, **d, 'live_configured': bool(os.environ.get('ALPACA_API_KEY') and os.environ.get('ALPACA_API_SECRET')), 'crypto_configured': bool(os.environ.get('KRAKEN_API_KEY') and os.environ.get('KRAKEN_API_SECRET'))})
+    pk,ps=_alpaca_paper_credentials()
+    return jsonify({'ok':True, **d, 'paper_configured': bool(pk and ps), 'crypto_configured': bool(os.environ.get('KRAKEN_API_KEY') and os.environ.get('KRAKEN_API_SECRET'))})
+
+@app.post('/api/stonks/alpaca/test')
+def stonks_alpaca_test_api():
+    try:
+        account=_alpaca_paper_request('/v2/account')
+        d=_stonks_read(); d['revoked']=False; d['paused']=True; d['mode']='paper'; _stonks_write(d)
+        return jsonify({'ok':True,'paper':True,'authorized':True,'account':{
+            'status':account.get('status'),'currency':account.get('currency'),'cash':account.get('cash'),
+            'buying_power':account.get('buying_power'),'equity':account.get('equity'),'portfolio_value':account.get('portfolio_value'),
+            'account_number':account.get('account_number')
+        }})
+    except Exception as exc:
+        return jsonify({'ok':False,'paper':True,'error':str(exc)}), 502
+
+@app.get('/api/stonks/alpaca/quote')
+def stonks_alpaca_quote_api():
+    symbol=(request.args.get('symbol') or 'AAPL').strip().upper()
+    if not symbol or len(symbol)>20:
+        return jsonify({'ok':False,'error':'Símbolo no válido.'}),400
+    try:
+        q=_alpaca_paper_request('/v2/stocks/quotes/latest',params={'symbols':symbol})
+        quote=(q.get('quotes') or {}).get(symbol)
+        if not quote:
+            return jsonify({'ok':False,'error':f'No hay cotización disponible para {symbol}.','data':q}),404
+        return jsonify({'ok':True,'symbol':symbol,'quote':quote})
+    except Exception as exc:
+        return jsonify({'ok':False,'error':str(exc)}),502
 
 @app.post('/api/stonks/pause')
 def stonks_pause_api():
