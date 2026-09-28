@@ -573,7 +573,13 @@ def _stonks_default():
         'engine_last_positions': [],
         'engine_last_open_orders': [],
         'engine_last_reconcile': None,
-        'engine_last_state_signature': ''
+        'engine_last_state_signature': '',
+        'position_lifecycle_enabled': False,
+        'stop_loss_pct': 1.0,
+        'take_profit_pct': 2.0,
+        'pending_entries': {},
+        'managed_positions': {},
+        'lifecycle_last_action': None
     }
 def _stonks_read():
     try:
@@ -637,7 +643,7 @@ def _stonks_reconcile_paper_state(scope_id, symbols=None, emit_audit=True):
             sym=str(p.get('symbol') or '').upper()
             if symbols and sym not in symbols: continue
             pos_rows.append({
-                'symbol':sym,'qty':str(p.get('qty') or '0'),
+                'symbol':sym,'qty':str(p.get('qty') or '0'), 'avg_entry_price':float(p.get('avg_entry_price') or 0),
                 'market_value':float(p.get('market_value') or 0),
                 'unrealized_pl':float(p.get('unrealized_pl') or 0),
                 'current_price':float(p.get('current_price') or 0)
@@ -662,6 +668,83 @@ def _stonks_reconcile_paper_state(scope_id, symbols=None, emit_audit=True):
         if emit_audit and signature!=previous:
             _stonks_audit_append('RECONCILIACIÓN PAPER',{'positions':pos_rows,'open_orders':order_rows})
         return {'positions':pos_rows,'open_orders':order_rows,'changed':signature!=previous}
+
+
+def _stonks_manage_positions(scope_id, recon):
+    """Manage only positions explicitly opened by ZAR's Paper engine.
+    Uses persisted entry metadata and percentage stop/take levels. Never touches
+    positions that were not opened by ZAR, and always honors pause/revoke.
+    """
+    d=_stonks_read()
+    if not d.get('position_lifecycle_enabled') or d.get('revoked') or d.get('paused') or d.get('mode')!='paper' or d.get('execution_mode')!='paper_auto':
+        return {'actions':[]}
+    managed=d.get('managed_positions') if isinstance(d.get('managed_positions'),dict) else {}
+    pending=d.get('pending_entries') if isinstance(d.get('pending_entries'),dict) else {}
+    actions=[]
+    positions={str(p.get('symbol') or '').upper():p for p in (recon.get('positions') or [])}
+    open_orders={str(o.get('symbol') or '').upper():o for o in (recon.get('open_orders') or [])}
+    # Promote filled ZAR BUYs into managed positions.
+    for sym, meta in list(pending.items()):
+        p=positions.get(sym)
+        if not p:
+            if sym not in open_orders:
+                pending.pop(sym,None)
+            continue
+        entry=float(p.get('avg_entry_price') or 0)
+        if entry<=0: continue
+        sl=float(meta.get('stop_loss_pct',d.get('stop_loss_pct',1.0)) or 0)
+        tp=float(meta.get('take_profit_pct',d.get('take_profit_pct',2.0)) or 0)
+        managed[sym]={**meta,'entry_price':entry,'qty':str(p.get('qty') or '0'),'stop_price':entry*(1-sl/100.0) if sl>0 else None,'take_price':entry*(1+tp/100.0) if tp>0 else None,'opened_at':meta.get('submitted_at') or datetime.now(timezone.utc).isoformat()}
+        pending.pop(sym,None)
+        _stonks_audit_append('POSICIÓN ZAR',{'symbol':sym,'action':'ABIERTA','entry_price':entry,'qty':p.get('qty'),'stop_loss_pct':sl,'take_profit_pct':tp,'stop_price':managed[sym].get('stop_price'),'take_price':managed[sym].get('take_price')})
+    # Detect positions closed since the last reconciliation.
+    for sym, meta in list(managed.items()):
+        if sym not in positions and sym not in open_orders:
+            _stonks_audit_append('POSICIÓN ZAR',{'symbol':sym,'action':'CERRADA','entry_price':meta.get('entry_price'),'reason':'posición ya no está abierta en Paper'})
+            managed.pop(sym,None)
+            continue
+        if sym in open_orders:
+            actions.append(f"{sym}: salida/orden abierta · esperando Alpaca")
+            continue
+        p=positions.get(sym) or {}
+        current=float(p.get('current_price') or 0)
+        entry=float(meta.get('entry_price') or 0)
+        stop=meta.get('stop_price'); take=meta.get('take_price')
+        reason=None
+        if current>0 and stop and current<=float(stop): reason='STOP_LOSS'
+        elif current>0 and take and current>=float(take): reason='TAKE_PROFIT'
+        if not reason: continue
+        qty=float(p.get('qty') or 0)
+        if qty<=0: continue
+        try:
+            latest=_alpaca_market_request(f'/v2/stocks/{sym}/trades/latest', params={'feed':'iex'})
+            trade=(latest.get('trade') or {}) if isinstance(latest,dict) else {}
+            price=float(trade.get('p') or current)
+            if price<=0: raise RuntimeError('precio no disponible')
+            # ZAR-created entries are capped by max_trade, so closing the full position
+            # remains within the same operational ceiling. Do not close manually-owned positions.
+            max_trade=float(d.get('max_trade_eur',25) or 25)
+            if qty*price>max_trade+1e-9:
+                actions.append(f"{sym}: salida {reason} bloqueada por máximo por operación")
+                _stonks_audit_append('SALIDA RISK',{'symbol':sym,'reason':reason,'estimated_value':qty*price,'max_trade':max_trade})
+                continue
+            body={'symbol':sym,'qty':str(float(f'{qty:.9f}')),'side':'sell','type':'market','time_in_force':'day'}
+            key,secret=_alpaca_paper_credentials()
+            rr=requests.post('https://paper-api.alpaca.markets/v2/orders',headers={'APCA-API-KEY-ID':key,'APCA-API-SECRET-KEY':secret,'Accept':'application/json','Content-Type':'application/json'},json=body,timeout=12)
+            try: order=rr.json()
+            except Exception: order={'raw':rr.text[:1000]}
+            if not rr.ok:
+                actions.append(f"{sym}: ERROR salida {reason}")
+                _stonks_audit_append('SALIDA PAPER',{'symbol':sym,'reason':reason,'decision':'RECHAZADA_POR_ALPACA','error':order.get('message') if isinstance(order,dict) else 'orden rechazada'})
+            else:
+                actions.append(f"{sym}: {reason} · salida Paper {order.get('status','enviada')}")
+                _stonks_audit_append('SALIDA PAPER',{'symbol':sym,'reason':reason,'side':'sell','qty':qty,'price':price,'order_id':order.get('id'),'status':order.get('status'),'entry_price':entry})
+        except Exception as exc:
+            actions.append(f"{sym}: ERROR salida · {exc}")
+            _stonks_audit_append('SALIDA PAPER',{'symbol':sym,'reason':reason,'decision':'ERROR','error':str(exc)})
+    d['pending_entries']=pending; d['managed_positions']=managed; d['lifecycle_last_action']=' | '.join(actions)[:2000] if actions else d.get('lifecycle_last_action')
+    _stonks_write(d)
+    return {'actions':actions,'managed_positions':managed}
 
 def _stonks_audit_append(event, details=None):
     rows=_stonks_audit_read(200)
@@ -727,6 +810,7 @@ def _stonks_engine_cycle(scope_id):
                 d=_stonks_read(); d['engine_last_run']=datetime.now(timezone.utc).isoformat(); d['engine_last_action']=action; _stonks_write(d)
                 return {'status':'idle','reason':action}
             recon=_stonks_reconcile_paper_state(scope_id, symbols[:8], emit_audit=True)
+            lifecycle=_stonks_manage_positions(scope_id, recon)
             open_symbols={str(o.get('symbol') or '').upper() for o in recon.get('open_orders',[])}
             actions=[]
             for symbol in symbols[:8]:
@@ -755,7 +839,10 @@ def _stonks_engine_cycle(scope_id):
                         actions.append(f"{symbol}: {signal.get('signal')} · {data.get('primary_reason') or data.get('reason') or data.get('decision') or 'sin acción'}")
                 except Exception as exc:
                     actions.append(f"{symbol}: ERROR · {exc}")
-            try: _stonks_reconcile_paper_state(scope_id, symbols[:8], emit_audit=True)
+            try:
+                recon2=_stonks_reconcile_paper_state(scope_id, symbols[:8], emit_audit=True)
+                lifecycle2=_stonks_manage_positions(scope_id, recon2)
+                actions.extend(lifecycle2.get('actions') or [])
             except Exception: pass
             action=' | '.join(actions)[:2000] if actions else 'Sin señales.'
             d=_stonks_read(); d['engine_last_run']=datetime.now(timezone.utc).isoformat(); d['engine_last_action']=action; _stonks_write(d)
@@ -803,7 +890,7 @@ def _stonks_engine_loop():
 def stonks_status_api():
     d=_stonks_read()
     pk,ps=_alpaca_paper_credentials()
-    return jsonify({'ok':True, **d, 'engine_owner':_stonks_engine_owner_read(), 'engine_owned_by_current_user':_stonks_engine_owner_read()==_user_scope_id(), 'audit_count':len(_stonks_audit_read(200)), 'paper_configured': bool(pk and ps), 'crypto_configured': bool(os.environ.get('KRAKEN_API_KEY') and os.environ.get('KRAKEN_API_SECRET')), 'engine_position_count':len(d.get('engine_last_positions') or []), 'engine_open_order_count':len(d.get('engine_last_open_orders') or [])})
+    return jsonify({'ok':True, **d, 'engine_owner':_stonks_engine_owner_read(), 'engine_owned_by_current_user':_stonks_engine_owner_read()==_user_scope_id(), 'audit_count':len(_stonks_audit_read(200)), 'paper_configured': bool(pk and ps), 'crypto_configured': bool(os.environ.get('KRAKEN_API_KEY') and os.environ.get('KRAKEN_API_SECRET')), 'engine_position_count':len(d.get('engine_last_positions') or []), 'engine_open_order_count':len(d.get('engine_last_open_orders') or []), 'position_lifecycle_enabled':bool(d.get('position_lifecycle_enabled')), 'stop_loss_pct':d.get('stop_loss_pct',1.0), 'take_profit_pct':d.get('take_profit_pct',2.0), 'managed_position_count':len(d.get('managed_positions') or {}), 'lifecycle_last_action':d.get('lifecycle_last_action')})
 
 @app.post('/api/stonks/alpaca/test')
 def stonks_alpaca_test_api():
@@ -1226,6 +1313,10 @@ def stonks_decision_api():
                 _stonks_audit_append('ORDEN PAPER',{'symbol':symbol,'signal':requested_signal,'decision':'RECHAZADA_POR_ALPACA','error':result['order_error']})
             else:
                 d['last_executed_signals'][key]=datetime.now(timezone.utc).isoformat()
+                if requested_signal=='BUY' and d.get('position_lifecycle_enabled') and d.get('autonomous_engine'):
+                    pe=d.get('pending_entries') if isinstance(d.get('pending_entries'),dict) else {}
+                    pe[symbol]={'order_id':order.get('id'),'strategy':strategy,'timeframe':timeframe,'submitted_at':datetime.now(timezone.utc).isoformat(),'stop_loss_pct':float(d.get('stop_loss_pct',1.0) or 0),'take_profit_pct':float(d.get('take_profit_pct',2.0) or 0)}
+                    d['pending_entries']=pe
                 d['execution_mode']='paper_auto' if d.get('execution_mode')=='paper_auto' else d.get('execution_mode','decision')
                 _stonks_write(d); result['order_created']=True; result['order']=order
                 _stonks_audit_append('ORDEN PAPER',{'symbol':symbol,'signal':requested_signal,'side':body['side'],'qty':qty,'estimated_value':order_value,'order_id':order.get('id'),'status':order.get('status')})
@@ -1547,8 +1638,14 @@ def stonks_controls_api():
     mode=str(payload.get('execution_mode',d.get('execution_mode','decision'))).strip().lower()
     if mode not in ('decision','paper_auto'): mode='decision'
     d['execution_mode']=mode
-    d['max_position_pct']=min(100,d['max_position_pct']); _stonks_write(d)
-    _stonks_audit_append('RISK',{'max_trade_eur':d['max_trade_eur'],'max_daily_loss_eur':d['max_daily_loss_eur'],'max_position_pct':d['max_position_pct'],'execution_mode':mode})
+    d['max_position_pct']=min(100,d['max_position_pct'])
+    d['position_lifecycle_enabled']=bool(payload.get('position_lifecycle_enabled',d.get('position_lifecycle_enabled',False)))
+    try: d['stop_loss_pct']=max(0.0,min(50.0,float(payload.get('stop_loss_pct',d.get('stop_loss_pct',1.0)))))
+    except Exception: d['stop_loss_pct']=1.0
+    try: d['take_profit_pct']=max(0.0,min(100.0,float(payload.get('take_profit_pct',d.get('take_profit_pct',2.0)))))
+    except Exception: d['take_profit_pct']=2.0
+    _stonks_write(d)
+    _stonks_audit_append('RISK',{'max_trade_eur':d['max_trade_eur'],'max_daily_loss_eur':d['max_daily_loss_eur'],'max_position_pct':d['max_position_pct'],'execution_mode':mode,'position_lifecycle_enabled':d['position_lifecycle_enabled'],'stop_loss_pct':d['stop_loss_pct'],'take_profit_pct':d['take_profit_pct']})
     return jsonify({'ok':True, **d})
 
 @app.post('/api/stonks/engine')
