@@ -690,6 +690,50 @@ def stonks_alpaca_quote_api():
         return jsonify({'ok':False,'error':str(exc)}),502
 
 
+@app.get('/api/stonks/alpaca/portfolio')
+def stonks_alpaca_portfolio_api():
+    """Return the current Paper account, positions and trading clock."""
+    try:
+        account=_alpaca_paper_request('/v2/account')
+        positions=_alpaca_paper_request('/v2/positions')
+        clock=_alpaca_paper_request('/v2/clock')
+        equity=float(account.get('equity') or 0)
+        last_equity=float(account.get('last_equity') or 0)
+        day_pl=equity-last_equity
+        return jsonify({'ok':True,'paper':True,
+            'account':{
+                'status':account.get('status'),'currency':account.get('currency'),
+                'cash':account.get('cash'),'equity':account.get('equity'),
+                'buying_power':account.get('buying_power'),'portfolio_value':account.get('portfolio_value'),
+                'last_equity':account.get('last_equity'),'long_market_value':account.get('long_market_value'),
+                'short_market_value':account.get('short_market_value')
+            },
+            'day_pl':day_pl,
+            'positions':positions if isinstance(positions,list) else [],
+            'market':{'is_open':bool(clock.get('is_open')),'timestamp':clock.get('timestamp'),'next_open':clock.get('next_open'),'next_close':clock.get('next_close')}
+        })
+    except Exception as exc:
+        return jsonify({'ok':False,'error':str(exc)}),502
+
+@app.get('/api/stonks/alpaca/positions')
+def stonks_alpaca_positions_api():
+    try:
+        data=_alpaca_paper_request('/v2/positions')
+        return jsonify({'ok':True,'paper':True,'positions':data if isinstance(data,list) else []})
+    except Exception as exc:
+        return jsonify({'ok':False,'error':str(exc)}),502
+
+@app.get('/api/stonks/alpaca/position/<symbol>')
+def stonks_alpaca_position_get_api(symbol):
+    symbol=str(symbol or '').strip().upper()
+    if not symbol or len(symbol)>20 or not symbol.replace('.','').replace('-','').isalnum():
+        return jsonify({'ok':False,'error':'Símbolo no válido.'}),400
+    try:
+        data=_alpaca_paper_request('/v2/positions/'+symbol)
+        return jsonify({'ok':True,'paper':True,'position':data})
+    except Exception as exc:
+        return jsonify({'ok':False,'error':str(exc)}),502
+
 @app.post('/api/stonks/alpaca/order')
 def stonks_alpaca_order_api():
     """Create a strictly Paper Alpaca order after server-side safety checks."""
@@ -749,6 +793,34 @@ def stonks_alpaca_order_api():
                     return jsonify({'ok':False,'error':f'La orden supera el límite de seguridad configurado ({max_trade:.2f}) según el último precio disponible.'}),409
             except Exception as exc:
                 return jsonify({'ok':False,'error':'No se pudo verificar el precio antes de aplicar el límite de seguridad. Usa una orden limit.'}),409
+
+        # Portfolio-level risk checks. These are Paper-only but deliberately enforced
+        # server-side so the browser cannot bypass the configured limits.
+        try:
+            account=_alpaca_paper_request('/v2/account')
+            equity=float(account.get('equity') or 0)
+            last_equity=float(account.get('last_equity') or 0)
+            daily_loss=max(0.0,last_equity-equity)
+            max_daily=float(d.get('max_daily_loss_eur',10) or 10)
+            if max_daily > 0 and daily_loss >= max_daily:
+                return jsonify({'ok':False,'error':f'El límite de pérdida diaria está alcanzado: {daily_loss:.2f} USD frente a un máximo configurado de {max_daily:.2f}.'}),409
+            positions=_alpaca_paper_request('/v2/positions')
+            if not isinstance(positions,list): positions=[]
+            current=next((p for p in positions if str(p.get('symbol','')).upper()==symbol),None)
+            if side=='sell':
+                current_qty=float((current or {}).get('qty') or 0)
+                if current_qty <= 0:
+                    return jsonify({'ok':False,'error':'ZAR Stonks no permite vender una posición inexistente en este bloque Paper.'}),409
+                if qty > current_qty + 1e-9:
+                    return jsonify({'ok':False,'error':f'La cantidad a vender ({qty:g}) supera la posición Paper disponible ({current_qty:g}).'}),409
+            elif order_type in ('limit','market'):
+                current_value=abs(float((current or {}).get('market_value') or 0))
+                order_value=estimated if order_type=='limit' else market_estimated
+                max_position=float(d.get('max_position_pct',20) or 20)
+                if equity > 0 and max_position > 0 and (current_value + order_value) > equity*(max_position/100.0):
+                    return jsonify({'ok':False,'error':f'La posición de {symbol} superaría el máximo configurado del {max_position:.0f}% de la cartera.'}),409
+        except Exception as exc:
+            return jsonify({'ok':False,'error':'No se pudieron verificar los límites de cartera antes de enviar la orden. '+str(exc)}),409
 
         body={'symbol':symbol,'qty':str(qty),'side':side,'type':order_type,'time_in_force':tif}
         if order_type == 'limit': body['limit_price']=str(limit_price)
