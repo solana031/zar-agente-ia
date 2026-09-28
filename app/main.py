@@ -690,6 +690,151 @@ def stonks_alpaca_quote_api():
         return jsonify({'ok':False,'error':str(exc)}),502
 
 
+
+
+def _stonks_sma(values, period):
+    out=[None]*len(values)
+    if period <= 0:
+        return out
+    total=0.0
+    for i,v in enumerate(values):
+        total += float(v)
+        if i >= period:
+            total -= float(values[i-period])
+        if i >= period-1:
+            out[i]=total/period
+    return out
+
+
+def _stonks_atr(bars, period=14):
+    trs=[]
+    prev=None
+    for b in bars:
+        h=float(b.get('h') or 0); l=float(b.get('l') or 0); c=float(b.get('c') or 0)
+        tr=max(h-l, abs(h-prev) if prev is not None else 0, abs(l-prev) if prev is not None else 0)
+        trs.append(tr); prev=c
+    return _stonks_sma(trs, period)
+
+
+def _stonks_rsi(closes, period=14):
+    out=[None]*len(closes)
+    if len(closes) <= period:
+        return out
+    gains=[0.0]*len(closes); losses=[0.0]*len(closes)
+    for i in range(1,len(closes)):
+        d=float(closes[i])-float(closes[i-1])
+        gains[i]=max(d,0.0); losses[i]=max(-d,0.0)
+    avg_gain=sum(gains[1:period+1])/period
+    avg_loss=sum(losses[1:period+1])/period
+    out[period]=100.0 if avg_loss == 0 else 100-(100/(1+(avg_gain/avg_loss)))
+    for i in range(period+1,len(closes)):
+        avg_gain=((avg_gain*(period-1))+gains[i])/period
+        avg_loss=((avg_loss*(period-1))+losses[i])/period
+        out[i]=100.0 if avg_loss == 0 else 100-(100/(1+(avg_gain/avg_loss)))
+    return out
+
+
+def _stonks_max_drawdown(equity_curve):
+    peak=None; max_dd=0.0
+    for value in equity_curve:
+        value=float(value)
+        peak=value if peak is None else max(peak,value)
+        if peak:
+            max_dd=min(max_dd,(value-peak)/peak)
+    return max_dd
+
+
+@app.post('/api/stonks/backtest')
+def stonks_backtest_api():
+    """Run a deterministic, server-side historical backtest. Never creates broker orders."""
+    try:
+        payload=request.get_json(silent=True) or {}
+        symbol=str(payload.get('symbol') or 'AAPL').strip().upper()
+        strategy=str(payload.get('strategy') or 'trend').strip().lower()
+        try: days=int(payload.get('days') or 365)
+        except Exception: days=365
+        try: capital=float(payload.get('capital') or 10000)
+        except Exception: capital=10000
+        try: risk_pct=float(payload.get('risk_pct') or 1)
+        except Exception: risk_pct=1
+        try: slippage_pct=float(payload.get('slippage_pct') or 0.05)
+        except Exception: slippage_pct=0.05
+        feed=str(payload.get('feed') or 'iex').strip().lower()
+        if not symbol or len(symbol)>20 or not symbol.replace('.','').replace('-','').isalnum():
+            return jsonify({'ok':False,'error':'Símbolo no válido.'}),400
+        if strategy not in ('trend','mean_reversion'):
+            return jsonify({'ok':False,'error':'Estrategia no válida.'}),400
+        days=max(30,min(days,2000)); capital=max(100.0,min(capital,100000000.0)); risk_pct=max(0.1,min(risk_pct,10.0)); slippage_pct=max(0,min(slippage_pct,2.0))
+        if feed not in ('iex','sip'):
+            feed='iex'
+        from datetime import timedelta
+        end=datetime.now(timezone.utc)
+        start=end-timedelta(days=days)
+        params={'timeframe':'1Day','start':start.strftime('%Y-%m-%dT%H:%M:%SZ'),'end':end.strftime('%Y-%m-%dT%H:%M:%SZ'),'limit':10000,'feed':feed,'sort':'asc'}
+        data=_alpaca_market_request('/v2/stocks/'+symbol+'/bars',params=params)
+        bars=data.get('bars') if isinstance(data,dict) else []
+        bars=[b for b in (bars or []) if all(k in b for k in ('o','h','l','c'))]
+        if len(bars)<60:
+            return jsonify({'ok':False,'error':f'Alpaca no ha devuelto suficientes barras diarias para {symbol} ({len(bars)}).'}),422
+        closes=[float(b['c']) for b in bars]
+        sma20=_stonks_sma(closes,20); sma50=_stonks_sma(closes,50); atr=_stonks_atr(bars,14); rsi=_stonks_rsi(closes,14)
+        cash=capital; shares=0.0; entry_price=None; trades=[]; equity_curve=[]; wins=[]; realized=0.0
+        pending=None
+        slip=slippage_pct/100.0
+        def exec_price(raw, side):
+            raw=float(raw)
+            return raw*(1+slip) if side=='buy' else raw*(1-slip)
+        for i,b in enumerate(bars):
+            o=float(b['o']); c=float(b['c'])
+            # Execute the previous close's signal on today's open, avoiding look-ahead.
+            if pending:
+                side=pending; px=exec_price(o,side)
+                if side=='buy' and shares==0 and cash>0 and atr[i] and atr[i]>0:
+                    risk_cash=cash*(risk_pct/100.0); stop_dist=2*float(atr[i]); qty=min(cash/px, risk_cash/stop_dist if stop_dist else 0)
+                    if qty>0:
+                        cash-=qty*px; shares=qty; entry_price=px
+                        trades.append({'date':b.get('t'),'side':'BUY','price':round(px,4),'qty':round(qty,6),'pnl':None})
+                elif side=='sell' and shares>0:
+                    proceeds=shares*px; pnl=(px-(entry_price or px))*shares; cash+=proceeds; realized+=pnl; wins.append(pnl>0)
+                    trades.append({'date':b.get('t'),'side':'SELL','price':round(px,4),'qty':round(shares,6),'pnl':round(pnl,2)})
+                    shares=0.0; entry_price=None
+                pending=None
+            # Mark to close.
+            equity=cash+shares*c
+            equity_curve.append(equity)
+            # Create signal for next bar.
+            if i+1 < len(bars):
+                if strategy=='trend' and sma20[i] is not None and sma50[i] is not None:
+                    if shares==0 and sma20[i] > sma50[i]: pending='buy'
+                    elif shares>0 and sma20[i] < sma50[i]: pending='sell'
+                elif strategy=='mean_reversion' and rsi[i] is not None:
+                    if shares==0 and rsi[i] < 30: pending='buy'
+                    elif shares>0 and rsi[i] > 70: pending='sell'
+        # Close any open position at final close for comparable results.
+        if shares>0:
+            px=exec_price(closes[-1],'sell'); proceeds=shares*px; pnl=(px-(entry_price or px))*shares; cash+=proceeds; realized+=pnl; wins.append(pnl>0)
+            trades.append({'date':bars[-1].get('t'),'side':'SELL','price':round(px,4),'qty':round(shares,6),'pnl':round(pnl,2),'forced_exit':True})
+            shares=0.0
+            equity_curve[-1]=cash
+        final_equity=cash
+        ret=(final_equity/capital-1)*100
+        max_dd=_stonks_max_drawdown(equity_curve)*100
+        sell_trades=[t for t in trades if t.get('side')=='SELL' and t.get('pnl') is not None]
+        gross_profit=sum(max(0,float(t['pnl'])) for t in sell_trades)
+        gross_loss=sum(abs(min(0,float(t['pnl']))) for t in sell_trades)
+        pf=(gross_profit/gross_loss) if gross_loss else (None if gross_profit==0 else float('inf'))
+        result={
+            'ok':True,'paper':True,'orders_created':False,'symbol':symbol,'strategy':strategy,'feed':feed,
+            'period':{'start':bars[0].get('t'),'end':bars[-1].get('t'),'bars':len(bars)},
+            'parameters':{'capital':capital,'risk_pct':risk_pct,'slippage_pct':slippage_pct,'days':days},
+            'metrics':{'initial_equity':round(capital,2),'final_equity':round(final_equity,2),'return_pct':round(ret,2),'max_drawdown_pct':round(max_dd,2),'trades':len(sell_trades),'win_rate_pct':round((sum(wins)/len(wins)*100),2) if wins else 0,'profit_factor':round(pf,3) if isinstance(pf,float) and pf!=float('inf') else ('∞' if pf==float('inf') else None)},
+            'trades':trades[-100:],
+            'equity_curve': [{'date':bars[i].get('t'),'equity':round(equity_curve[i],2)} for i in range(0,len(equity_curve),max(1,len(equity_curve)//120))]
+        }
+        return jsonify(result)
+    except Exception as exc:
+        return jsonify({'ok':False,'error':str(exc)}),502
+
 @app.get('/api/stonks/alpaca/portfolio')
 def stonks_alpaca_portfolio_api():
     """Return the current Paper account, positions and trading clock."""
