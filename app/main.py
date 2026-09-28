@@ -552,6 +552,59 @@ def home():
         return _google_login_page(status)
     return render_template("index.html")
 
+
+# --- ZAR Stonks control plane (broker-agnostic, paper-first) ---
+_STONKS_DIR = Path(os.environ.get('ZAR_DATA_DIR', '/data')) / 'stonks'
+_STONKS_DIR.mkdir(parents=True, exist_ok=True)
+def _stonks_file():
+    return _STONKS_DIR / f"{_user_scope_id()}.json"
+def _stonks_default():
+    return {'paused': True, 'revoked': True, 'mode': 'paper', 'max_trade_eur': 25, 'max_daily_loss_eur': 10, 'max_position_pct': 20}
+def _stonks_read():
+    try:
+        p=_stonks_file()
+        if p.exists():
+            d=json.loads(p.read_text(encoding='utf-8'))
+            base=_stonks_default(); base.update(d); return base
+    except Exception:
+        pass
+    return _stonks_default()
+def _stonks_write(d):
+    p=_stonks_file(); p.parent.mkdir(parents=True, exist_ok=True); p.write_text(json.dumps(d,ensure_ascii=False,indent=2),encoding='utf-8')
+
+@app.get('/api/stonks/status')
+def stonks_status_api():
+    d=_stonks_read()
+    return jsonify({'ok':True, **d, 'live_configured': bool(os.environ.get('ALPACA_API_KEY') and os.environ.get('ALPACA_API_SECRET')), 'crypto_configured': bool(os.environ.get('KRAKEN_API_KEY') and os.environ.get('KRAKEN_API_SECRET'))})
+
+@app.post('/api/stonks/pause')
+def stonks_pause_api():
+    d=_stonks_read(); d['paused']=True; _stonks_write(d); return jsonify({'ok':True,'paused':True})
+
+@app.post('/api/stonks/resume')
+def stonks_resume_api():
+    d=_stonks_read()
+    if d.get('revoked'):
+        return jsonify({'ok':False,'error':'El control está revocado; requiere reautorización.'}), 409
+    d['paused']=False
+    d['mode']='paper'
+    _stonks_write(d)
+    return jsonify({'ok':True,'paused':False,'revoked':False,'mode':'paper'})
+
+@app.post('/api/stonks/revoke')
+def stonks_revoke_api():
+    d=_stonks_read(); d['paused']=True; d['revoked']=True; d['mode']='paper'; _stonks_write(d); return jsonify({'ok':True,'paused':True,'revoked':True})
+
+@app.post('/api/stonks/controls')
+def stonks_controls_api():
+    payload=request.get_json(silent=True) or {}; d=_stonks_read()
+    for key, default in [('max_trade_eur',25),('max_daily_loss_eur',10),('max_position_pct',20)]:
+        try: val=float(payload.get(key, d.get(key,default)))
+        except Exception: val=default
+        d[key]=max(0,val)
+    d['max_position_pct']=min(100,d['max_position_pct']); _stonks_write(d)
+    return jsonify({'ok':True, **d})
+
 @app.get("/api/maps/search")
 def maps_search_endpoint():
     try:
