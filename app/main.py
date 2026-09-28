@@ -866,6 +866,88 @@ def stonks_signals_api():
     except Exception as exc:
         return jsonify({'ok':False,'error':str(exc)}),502
 
+@app.post('/api/stonks/test-cycle')
+def stonks_test_cycle_api():
+    """Run one explicit, server-side Paper test order through the Risk gates.
+    This is a synthetic test and is never treated as a market signal.
+    """
+    try:
+        payload=request.get_json(silent=True) or {}
+        if not bool(payload.get('confirm')):
+            return jsonify({'ok':False,'error':'La prueba Paper requiere confirmación explícita.'}),400
+        symbol=str(payload.get('symbol') or 'AAPL').strip().upper()
+        if not symbol or len(symbol)>20 or not symbol.replace('.','').replace('-','').isalnum():
+            return jsonify({'ok':False,'error':'Símbolo no válido.'}),400
+        d=_stonks_read()
+        if d.get('revoked'):
+            return jsonify({'ok':True,'paper':True,'order_created':False,'decision':'DENEGADA','primary_reason':'Control revocado.'})
+        if d.get('paused'):
+            return jsonify({'ok':True,'paper':True,'order_created':False,'decision':'DENEGADA','primary_reason':'Motor pausado.'})
+        if d.get('mode')!='paper':
+            return jsonify({'ok':True,'paper':True,'order_created':False,'decision':'DENEGADA','primary_reason':'El modo operativo no es Paper.'})
+        if d.get('execution_mode')!='paper_auto':
+            return jsonify({'ok':True,'paper':True,'order_created':False,'decision':'DENEGADA','primary_reason':'Activa Paper automático · con Risk antes de ejecutar la prueba.'})
+        clock=_alpaca_paper_request('/v2/clock')
+        if not bool(clock.get('is_open')):
+            reason='Mercado cerrado.'
+            _stonks_audit_append('TEST_PAPER',{'symbol':symbol,'decision':'DENEGADA','primary_reason':reason})
+            return jsonify({'ok':True,'paper':True,'order_created':False,'decision':'DENEGADA','primary_reason':reason})
+
+        account=_alpaca_paper_request('/v2/account')
+        equity=float(account.get('equity') or 0)
+        last_equity=float(account.get('last_equity') or 0)
+        daily_loss=max(0.0,last_equity-equity)
+        max_daily=float(d.get('max_daily_loss_eur',10) or 10)
+        if max_daily>0 and daily_loss>=max_daily:
+            reason=f'Pérdida diaria límite alcanzada: {daily_loss:.2f} USD / límite {max_daily:.2f} USD.'
+            _stonks_audit_append('TEST_PAPER',{'symbol':symbol,'decision':'DENEGADA','primary_reason':reason})
+            return jsonify({'ok':True,'paper':True,'order_created':False,'decision':'DENEGADA','primary_reason':reason})
+
+        latest=_alpaca_market_request(f'/v2/stocks/{symbol}/trades/latest', params={'feed':'iex'})
+        last=(latest.get('trade') or {}) if isinstance(latest,dict) else {}
+        if not last and isinstance(latest,dict):
+            last=(latest.get('trades') or {}).get(symbol) or {}
+        price=float(last.get('p') or 0)
+        if price<=0:
+            reason='Precio actual no disponible.'
+            _stonks_audit_append('TEST_PAPER',{'symbol':symbol,'decision':'DENEGADA','primary_reason':reason})
+            return jsonify({'ok':True,'paper':True,'order_created':False,'decision':'DENEGADA','primary_reason':reason})
+
+        positions=_alpaca_paper_request('/v2/positions')
+        positions=positions if isinstance(positions,list) else []
+        current=next((p for p in positions if str(p.get('symbol','')).upper()==symbol),None)
+        current_value=abs(float((current or {}).get('market_value') or 0))
+        max_trade=float(d.get('max_trade_eur',25) or 25)
+        max_position=float(d.get('max_position_pct',20) or 20)
+        position_cap=max(0.0,equity*(max_position/100.0)-current_value)
+        test_value=min(1.01,max_trade,position_cap)
+        if test_value<1.0:
+            reason=f'No hay margen suficiente para la prueba mínima de 1,00 USD: disponible {test_value:.2f} USD.'
+            _stonks_audit_append('TEST_PAPER',{'symbol':symbol,'decision':'DENEGADA','primary_reason':reason})
+            return jsonify({'ok':True,'paper':True,'order_created':False,'decision':'DENEGADA','primary_reason':reason})
+        import math
+        qty=math.ceil((test_value/price)*1_000_000_000)/1_000_000_000
+        qty=float(f'{qty:.9f}')
+        order_value=qty*price
+        if order_value>max_trade+1e-9 or current_value+order_value>equity*(max_position/100.0)+1e-9:
+            reason='La prueba supera uno de los límites Risk configurados.'
+            _stonks_audit_append('TEST_PAPER',{'symbol':symbol,'decision':'DENEGADA','primary_reason':reason,'qty':qty,'estimated_value':order_value})
+            return jsonify({'ok':True,'paper':True,'order_created':False,'decision':'DENEGADA','primary_reason':reason})
+
+        body={'symbol':symbol,'qty':str(qty),'side':'buy','type':'market','time_in_force':'day'}
+        key_api,secret_api=_alpaca_paper_credentials()
+        rr=requests.post('https://paper-api.alpaca.markets/v2/orders',headers={'APCA-API-KEY-ID':key_api,'APCA-API-SECRET-KEY':secret_api,'Accept':'application/json','Content-Type':'application/json'},json=body,timeout=12)
+        try: order=rr.json()
+        except Exception: order={'raw':rr.text[:1000]}
+        if not rr.ok:
+            error=order.get('message') if isinstance(order,dict) else 'orden rechazada'
+            _stonks_audit_append('TEST_PAPER',{'symbol':symbol,'decision':'RECHAZADA_POR_ALPACA','error':error,'qty':qty,'estimated_value':order_value})
+            return jsonify({'ok':False,'paper':True,'order_created':False,'error':error}),502
+        _stonks_audit_append('TEST_PAPER',{'symbol':symbol,'decision':'ORDEN_ENVIADA','side':'buy','qty':qty,'estimated_value':order_value,'order_id':order.get('id'),'status':order.get('status')})
+        return jsonify({'ok':True,'paper':True,'order_created':True,'test':True,'symbol':symbol,'qty':qty,'estimated_value':order_value,'order':order})
+    except Exception as exc:
+        return jsonify({'ok':False,'paper':True,'error':str(exc)}),502
+
 @app.get('/api/stonks/audit')
 def stonks_audit_api():
     return jsonify({'ok':True,'paper':True,'audit':list(reversed(_stonks_audit_read(100)))})
