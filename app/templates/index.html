@@ -2142,7 +2142,7 @@ function showStonks(){
           <button data-zstab="risk" onclick="zsTab('risk',this)">🛡️ Configuración Risk</button>
         </nav>
         <div class="zsSideCard"><small>Capital bot</small><div class="zsMoney" id="zsCapital">—</div><div class="zsSideMeta"><span>Asignado</span><span>—</span></div></div>
-        <div class="zsInfo" style="margin-top:8px">v31.3.9 · Decision + Risk + Paper. Live no conectado.</div>
+        <div class="zsInfo" style="margin-top:8px">v31.3.10 · Decision + Risk + Paper. Live no conectado.</div>
       </aside>
       <main class="zsMain">
         <section id="zsTab-dashboard" class="zsTabPanel active">
@@ -2186,7 +2186,7 @@ function showStonks(){
         <section id="zsTab-backtesting" class="zsTabPanel"><div class="zsTabTitle"><div><h2>Backtesting</h2><p>Simulación reproducible con datos históricos de Alpaca. No crea, modifica ni cancela órdenes.</p></div></div><div class="zsCard" style="margin-top:9px"><div class="zsControls"><div class="zsField"><label>SÍMBOLO</label><input id="zsBtSymbol" value="AAPL" maxlength="20"></div><div class="zsField"><label>ESTRATEGIA</label><select id="zsBtStrategy"><option value="trend">ZAR Trend · SMA 20/50</option><option value="mean_reversion">ZAR Mean Reversion · RSI 14</option></select></div><div class="zsField"><label>CAPITAL INICIAL (USD)</label><input id="zsBtCapital" type="number" value="10000" min="100"></div><div class="zsField"><label>PERIODO (DÍAS)</label><input id="zsBtDays" type="number" value="365" min="30" max="2000"></div><div class="zsField"><label>RIESGO POR OPERACIÓN (%)</label><input id="zsBtRisk" type="number" value="1" min="0.1" max="10" step="0.1"></div><div class="zsField"><label>SLIPPAGE (%)</label><input id="zsBtSlippage" type="number" value="0.05" min="0" max="2" step="0.01"></div></div><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px"><button class="zsBtn gold" onclick="zsRunBacktest()">▶ Ejecutar Backtest</button><span class="zsBadge paper">DATOS HISTÓRICOS</span><span class="meta">Feed IEX · sin órdenes</span></div><div id="zsBtResult" class="zsInfo" style="margin-top:9px">Configura los parámetros y ejecuta el primer backtest.</div></div><div class="zsCard" style="margin-top:9px"><div class="zsCardLabel">OPERACIONES SIMULADAS</div><div style="overflow:auto;margin-top:7px"><table class="zsTable"><thead><tr><th>Fecha</th><th>Lado</th><th>Precio</th><th>Cantidad</th><th>P/L</th></tr></thead><tbody id="zsBtTradesBody"><tr><td colspan="5">Todavía no hay operaciones simuladas.</td></tr></tbody></table></div></div></section>
         <section id="zsTab-risk" class="zsTabPanel"><div class="zsTabTitle"><div><h2>Configuración Risk</h2><p>Estos límites se guardan en el estado de ZAR Stonks y se comprueban en servidor antes de cualquier ejecución Paper.</p></div></div><div class="zsCard" style="margin-top:9px"><div class="zsControls"><div class="zsField"><label>Máximo por operación (USD)</label><input id="stonksMaxTrade" type="number" min="0" step="1" value="25"></div><div class="zsField"><label>Pérdida diaria máxima (USD)</label><input id="stonksMaxDaily" type="number" min="0" step="1" value="10"></div><div class="zsField"><label>Máximo % de cartera / posición</label><input id="stonksMaxPos" type="number" min="1" max="100" step="1" value="20"></div><div class="zsField"><label>MODO DE EJECUCIÓN</label><select id="stonksExecutionMode"><option value="decision">Evaluar señales · sin órdenes</option><option value="paper_auto">Paper automático · con Risk</option></select></div></div><button class="zsBtn gold" style="margin-top:9px" onclick="saveStonksControls()">Guardar límites y modo</button><button class="zsBtn danger" style="margin-top:9px;margin-left:6px" onclick="zsCancelAllPaperOrders()">✕ Cancelar todas las órdenes Paper</button></div><div id="zsRiskStatus" class="zsRiskLine" style="margin-top:9px"><span><span id="zsRiskDot" class="zsRiskDot"></span> <span id="zsRiskText">Comprobando límites…</span></span><span id="zsRiskDetail" class="meta">—</span></div><div id="zsAuditBox" class="zsInfo" style="margin-top:9px">Cargando registro de auditoría…</div><div class="zsInfo" style="margin-top:9px"><b>Kill switch:</b> PAUSAR y REVOCAR tienen prioridad. <b>Paper automático</b> solo puede enviar órdenes a Alpaca Paper; Live no está conectado. Las claves permanecen en servidor.</div></section>
       </main>
-      <aside class="zsRight"><div class="zsRightHead"><span>🤖 Registro IA en vivo</span><span class="zsDot"></span></div><div class="zsLogs" id="zsLogs"><div class="zsLog"><div class="zsLogTop"><b>INICIALIZACIÓN</b><span class="zsLogTime" data-live-time="1">—</span></div><div>Dashboard ZAR Stonks v31.3.9 cargado con Decision + Risk + Paper.</div></div><div class="zsLog"><div class="zsLogTop"><b>CONTROL</b><span class="zsLogTime" data-live-time="1">—</span></div><div>El motor permanece pausado hasta completar la configuración.</div></div></div><div class="zsQuick"><div class="zsQuickTitle">Acciones rápidas</div><div class="zsQuickGrid"><button onclick="zsQuick('buy')">↑ Compra demo</button><button onclick="zsQuick('sell')">↓ Venta demo</button></div></div></aside>
+      <aside class="zsRight"><div class="zsRightHead"><span>🤖 Registro IA en vivo</span><span class="zsDot"></span></div><div class="zsLogs" id="zsLogs"><div class="zsLog"><div class="zsLogTop"><b>INICIALIZACIÓN</b><span class="zsLogTime" data-live-time="1">—</span></div><div>Dashboard ZAR Stonks v31.3.10 cargado con Decision + Risk + Paper.</div></div><div class="zsLog"><div class="zsLogTop"><b>CONTROL</b><span class="zsLogTime" data-live-time="1">—</span></div><div>El motor permanece pausado hasta completar la configuración.</div></div></div><div class="zsQuick"><div class="zsQuickTitle">Acciones rápidas</div><div class="zsQuickGrid"><button onclick="zsQuick('buy')">↑ Compra demo</button><button onclick="zsQuick('sell')">↓ Venta demo</button></div></div></aside>
     </div>
     <div class="zsChatDock" id="zsChatDock"><div class="zsChatDockHead"><span>💬 Chat con ZAR Stonks</span><button class="zsChatToggle" onclick="zsToggleChat()">Abrir chat</button></div><div class="zsChatHistory" id="zsChatHistory"><div class="zsChatMsg"><b>ZAR:</b> Chat preparado. El motor de señales funciona en modo análisis-only; Stonks sigue sin ejecución automática.</div></div></div><footer class="zsBottom"><div class="zsChips"><button class="zsChip" onclick="zsQuickPrompt('Analiza el estado del mercado')">📊 Mercado</button><button class="zsChip" onclick="zsQuickPrompt('Audita el riesgo de la cartera')">🛡️ Riesgo</button></div><input id="zsChatInput" placeholder="Escribe una instrucción o pregunta a ZAR Stonks…"><button class="zsBtn" onclick="zsVoice()">🎙️</button><button class="zsBtn gold" onclick="zsChatSend()">➤</button></footer>
     <div id="zsConfirmModal" class="zsConfirmModal" aria-hidden="true">
@@ -2314,6 +2314,7 @@ function zsOrderTypeChanged(){const t=document.getElementById('zsOrderType')?.va
 let zsConfirmResolver=null;
 function zsOpenConfirm(details,title='Confirmar operación',sub='ZAR Stonks está a punto de enviar una orden al entorno Paper.',primaryLabel='Confirmar y enviar',cancelLabel='Cancelar',variant='primary',icon='⚡',warning='Esta orden se enviará a Alpaca Paper. No utiliza dinero real, pero sí crea una orden dentro de la cuenta simulada.'){const modal=document.getElementById('zsConfirmModal');if(!modal)return Promise.resolve(false);const d=document.getElementById('zsConfirmDetails'),t=document.getElementById('zsConfirmTitle'),s=document.getElementById('zsConfirmSub'),w=document.getElementById('zsConfirmWarning'),i=document.getElementById('zsConfirmIcon'),p=document.getElementById('zsConfirmPrimaryBtn'),c=document.getElementById('zsConfirmCancelBtn');if(d)d.textContent=details||'';if(t)t.textContent=title;if(s)s.textContent=sub;if(w)w.textContent=warning||'';if(i)i.textContent=icon||'⚡';if(p){p.textContent=primaryLabel||'Confirmar';p.classList.toggle('danger',variant==='danger');p.classList.toggle('primary',variant!=='danger')}if(c)c.textContent=cancelLabel||'Cancelar';modal.classList.add('open');modal.setAttribute('aria-hidden','false');return new Promise(resolve=>{zsConfirmResolver=resolve;setTimeout(()=>document.getElementById('zsConfirmPrimaryBtn')?.focus(),0)})}
 function zsResolveConfirm(value){const modal=document.getElementById('zsConfirmModal');if(modal){modal.classList.remove('open');modal.setAttribute('aria-hidden','true')}const r=zsConfirmResolver;zsConfirmResolver=null;if(r)r(!!value)}
+async function zsOpenNotice(details,title='Información de ZAR',sub='ZAR ha procesado la solicitud.',primaryLabel='Entendido',icon='ℹ️',warning=''){const cancel=document.getElementById('zsConfirmCancelBtn');const prev=cancel?cancel.style.display:'';if(cancel)cancel.style.display='none';try{return await zsOpenConfirm(details,title,sub,primaryLabel,'', 'primary',icon,warning)}finally{if(cancel)cancel.style.display=prev}}
 async function zsSendPaperOrder(){
   const symbol=(document.getElementById('zsOrderSymbol')?.value||'AAPL').trim().toUpperCase();
   const side=document.getElementById('zsOrderSide')?.value||'buy';
@@ -2354,18 +2355,29 @@ async function zsTestPaperCycle(){
   try{
     const r=await fetch('/api/stonks/test-cycle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({symbol,confirm:true})});
     const j=await r.json();
-    if(!r.ok||!j.ok)throw new Error(j.error||'No se pudo ejecutar la prueba Paper.');
+    if(!r.ok||!j.ok){
+      const msg=j.error||'No se pudo ejecutar la prueba Paper.';
+      zsAddLog('ERROR TEST PAPER',msg);
+      await zsOpenNotice(msg,'No se pudo completar la prueba Paper','ZAR no ha enviado ninguna orden. Revisa el estado del motor y la configuración Risk.','Entendido','⚠️','No se ha enviado ninguna orden a Alpaca Paper.');
+      return;
+    }
     if(j.order_created){
       const o=j.order||{};
       zsAddLog('TEST PAPER',`${o.side||'buy'} ${o.qty||j.qty||'—'} ${o.symbol||symbol} · ${o.status||'enviada'} · ID ${o.id||'—'}`);
       zsLoadOrders();zsLoadPortfolio();zsLoadAudit();
       const box=document.getElementById('zsSignalMeta');if(box)box.innerHTML='<span class="zsBadge on">TEST PAPER ENVIADO</span><span class="meta">ID: '+escHtml(o.id||'—')+' · '+escHtml(o.status||'—')+'</span>';
     }else{
-      zsAddLog('TEST PAPER',j.decision||'Prueba denegada · '+(j.primary_reason||j.reason||''));
+      const reason=j.primary_reason||j.reason||'La prueba fue denegada por Risk.';
+      zsAddLog('TEST PAPER',`DENEGADA · ${reason}`);
       zsLoadAudit();
-      throw new Error(j.primary_reason||j.reason||'La prueba fue denegada por Risk.');
+      const icon=/revocad/i.test(reason)?'⛔':/pausad/i.test(reason)?'⏸️':/cerrad/i.test(reason)?'🕒':'🛡️';
+      await zsOpenNotice(reason,'Prueba Paper bloqueada','ZAR ha detenido la prueba antes de enviar cualquier orden.','Entendido',icon,'No se ha enviado ninguna orden a Alpaca Paper. El bloqueo de seguridad se mantiene.');
     }
-  }catch(e){zsAddLog('ERROR TEST PAPER',e.message||'No se pudo ejecutar la prueba.');alert(e.message||'No se pudo ejecutar la prueba Paper.')}
+  }catch(e){
+    const msg=e.message||'No se pudo ejecutar la prueba Paper.';
+    zsAddLog('ERROR TEST PAPER',msg);
+    await zsOpenNotice(msg,'Error en la prueba Paper','ZAR no ha podido completar la prueba.','Entendido','⚠️','No se ha enviado ninguna orden si el error ocurrió antes del envío.');
+  }
 }
 function zsAddLog(title,desc){const c=document.getElementById('zsLogs');if(!c)return;const d=document.createElement('div');d.className='zsLog';d.innerHTML='<div class="zsLogTop"><b>'+escHtml(title)+'</b><span>'+escHtml(zsNowExact())+'</span></div><div>'+escHtml(desc)+'</div>';c.prepend(d)}
 function zsQuick(type){zsAddLog(type==='buy'?'DEMO COMPRA':'DEMO VENTA','Acción simulada; no se envió ninguna orden real.');alert('Acción de demostración: no se ha enviado ninguna orden real.')}
