@@ -729,6 +729,10 @@ def stonks_alpaca_order_api():
         # we use the same numeric ceiling in USD so we never exceed it because of FX assumptions.
         max_trade=float(d.get('max_trade_eur',25) or 25)
         estimated=qty*(limit_price or 0)
+        # Alpaca Paper en este endpoint exige un valor mínimo de orden de 1 USD.
+        # Validamos aquí para mostrar un error claro en ZAR y no enviar una petición que Alpaca rechazará.
+        if order_type == 'limit' and estimated < 1.0:
+            return jsonify({'ok':False,'error':f'Alpaca exige un valor mínimo de 1,00 USD por orden. El valor calculado es {estimated:.2f} USD. Aumenta la cantidad o el precio límite.'}),409
         if order_type == 'limit' and estimated > max_trade:
             return jsonify({'ok':False,'error':f'La orden supera el límite de seguridad configurado ({max_trade:.2f}).'}),409
         if order_type == 'market':
@@ -738,7 +742,10 @@ def stonks_alpaca_order_api():
                 px=float(last.get('p') or 0)
                 if not px:
                     return jsonify({'ok':False,'error':'No hay un último precio disponible para verificar el límite de seguridad. Usa una orden limit.'}),409
-                if qty*px > max_trade:
+                market_estimated=qty*px
+                if market_estimated < 1.0:
+                    return jsonify({'ok':False,'error':f'Alpaca exige un valor mínimo de 1,00 USD por orden. El valor estimado es {market_estimated:.2f} USD. Aumenta la cantidad.'}),409
+                if market_estimated > max_trade:
                     return jsonify({'ok':False,'error':f'La orden supera el límite de seguridad configurado ({max_trade:.2f}) según el último precio disponible.'}),409
             except Exception as exc:
                 return jsonify({'ok':False,'error':'No se pudo verificar el precio antes de aplicar el límite de seguridad. Usa una orden limit.'}),409
