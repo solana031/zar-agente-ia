@@ -625,14 +625,67 @@ def stonks_alpaca_test_api():
 @app.get('/api/stonks/alpaca/quote')
 def stonks_alpaca_quote_api():
     symbol=(request.args.get('symbol') or 'AAPL').strip().upper()
-    if not symbol or len(symbol)>20:
+    if not symbol or len(symbol)>20 or not symbol.replace('.','').replace('-','').isalnum():
         return jsonify({'ok':False,'error':'Símbolo no válido.'}),400
     try:
-        q=_alpaca_market_request(f'/v2/stocks/{symbol}/quotes/latest')
-        quote=(q.get('quotes') or {}).get(symbol)
+        # The trading clock is deliberately queried from the Paper trading API.
+        # This lets the UI distinguish a closed market from an authentication or
+        # market-data problem instead of presenting every empty quote as an error.
+        clock=_alpaca_paper_request('/v2/clock')
+        is_open=bool(clock.get('is_open'))
+
+        quote=None
+        trade=None
+        snapshot=None
+        quote_error=None
+        trade_error=None
+        snapshot_error=None
+
+        try:
+            q=_alpaca_market_request(f'/v2/stocks/{symbol}/quotes/latest')
+            quote=(q.get('quotes') or {}).get(symbol)
+        except Exception as exc:
+            quote_error=str(exc)
+
+        # Outside regular hours the latest quote can be empty depending on the
+        # entitled feed. Fall back to latest trade and then snapshot so ZAR can
+        # still show the most recent available market information.
         if not quote:
-            return jsonify({'ok':False,'error':f'No hay cotización disponible para {symbol}.','data':q}),404
-        return jsonify({'ok':True,'symbol':symbol,'quote':quote})
+            try:
+                t=_alpaca_market_request(f'/v2/stocks/{symbol}/trades/latest')
+                trade=(t.get('trades') or {}).get(symbol)
+            except Exception as exc:
+                trade_error=str(exc)
+
+        if not quote and not trade:
+            try:
+                snapshot=_alpaca_market_request(f'/v2/stocks/{symbol}/snapshot')
+            except Exception as exc:
+                snapshot_error=str(exc)
+
+        latest_trade=trade or (snapshot or {}).get('latestTrade')
+        latest_quote=quote or (snapshot or {}).get('latestQuote')
+        daily_bar=(snapshot or {}).get('dailyBar')
+
+        return jsonify({
+            'ok':True,
+            'symbol':symbol,
+            'market':{
+                'is_open':is_open,
+                'timestamp':clock.get('timestamp'),
+                'next_open':clock.get('next_open'),
+                'next_close':clock.get('next_close'),
+            },
+            'quote':latest_quote,
+            'trade':latest_trade,
+            'daily_bar':daily_bar,
+            'source':'quote' if quote else ('trade' if trade else ('snapshot' if snapshot else None)),
+            'diagnostics':{
+                'quote_error':quote_error,
+                'trade_error':trade_error,
+                'snapshot_error':snapshot_error,
+            }
+        })
     except Exception as exc:
         return jsonify({'ok':False,'error':str(exc)}),502
 
