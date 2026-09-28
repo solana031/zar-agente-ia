@@ -1352,6 +1352,13 @@ def stonks_resume_api():
 def stonks_revoke_api():
     d=_stonks_read(); d['paused']=True; d['revoked']=True; d['mode']='paper'; _stonks_write(d); return jsonify({'ok':True,'paused':True,'revoked':True})
 
+@app.post('/api/stonks/restore')
+def stonks_restore_api():
+    # Restore only removes the revocation lock; the motor remains paused until the user explicitly resumes it.
+    d=_stonks_read(); d['revoked']=False; d['paused']=True; d['mode']='paper'; _stonks_write(d)
+    _stonks_audit_append('RESTAURACIÓN', {'message':'Control operativo restaurado; el motor permanece pausado hasta Reanudar.'})
+    return jsonify({'ok':True,'paused':True,'revoked':False,'mode':'paper'})
+
 @app.post('/api/stonks/controls')
 def stonks_controls_api():
     payload=request.get_json(silent=True) or {}; d=_stonks_read()
