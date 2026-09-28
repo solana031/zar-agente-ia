@@ -569,7 +569,11 @@ def _stonks_default():
         'engine_timeframe': '1Min',
         'engine_last_run': None,
         'engine_last_action': None,
-        'last_executed_signals': {}
+        'last_executed_signals': {},
+        'engine_last_positions': [],
+        'engine_last_open_orders': [],
+        'engine_last_reconcile': None,
+        'engine_last_state_signature': ''
     }
 def _stonks_read():
     try:
@@ -616,6 +620,48 @@ def _stonks_engine_owner_write(scope_id):
     elif p.exists():
         try: p.unlink()
         except Exception: pass
+
+def _stonks_reconcile_paper_state(scope_id, symbols=None, emit_audit=True):
+    """Reconcile Paper positions/open orders and persist a compact engine snapshot.
+    This is observational only: it never creates or cancels orders.
+    """
+    with app.test_request_context('/api/stonks/engine/reconcile', method='GET'):
+        session['zar_user_id']=scope_id
+        symbols=[str(x).upper() for x in (symbols or []) if str(x).strip()]
+        positions=_alpaca_paper_request('/v2/positions')
+        positions=positions if isinstance(positions,list) else []
+        orders=_alpaca_paper_request('/v2/orders', params={'status':'open','limit':100,'nested':'false'})
+        orders=orders if isinstance(orders,list) else []
+        pos_rows=[]
+        for p in positions:
+            sym=str(p.get('symbol') or '').upper()
+            if symbols and sym not in symbols: continue
+            pos_rows.append({
+                'symbol':sym,'qty':str(p.get('qty') or '0'),
+                'market_value':float(p.get('market_value') or 0),
+                'unrealized_pl':float(p.get('unrealized_pl') or 0),
+                'current_price':float(p.get('current_price') or 0)
+            })
+        order_rows=[]
+        for o in orders:
+            sym=str(o.get('symbol') or '').upper()
+            if symbols and sym not in symbols: continue
+            order_rows.append({
+                'id':str(o.get('id') or ''),'symbol':sym,'side':str(o.get('side') or ''),
+                'qty':str(o.get('qty') or ''),'status':str(o.get('status') or ''),
+                'submitted_at':o.get('submitted_at')
+            })
+        pos_rows.sort(key=lambda x:x['symbol']); order_rows.sort(key=lambda x:x['id'])
+        signature=json.dumps({'positions':pos_rows,'orders':order_rows},sort_keys=True,ensure_ascii=False)
+        d=_stonks_read(); previous=str(d.get('engine_last_state_signature') or '')
+        d['engine_last_positions']=pos_rows
+        d['engine_last_open_orders']=order_rows
+        d['engine_last_reconcile']=datetime.now(timezone.utc).isoformat()
+        d['engine_last_state_signature']=signature
+        _stonks_write(d)
+        if emit_audit and signature!=previous:
+            _stonks_audit_append('RECONCILIACIÓN PAPER',{'positions':pos_rows,'open_orders':order_rows})
+        return {'positions':pos_rows,'open_orders':order_rows,'changed':signature!=previous}
 
 def _stonks_audit_append(event, details=None):
     rows=_stonks_audit_read(200)
@@ -675,11 +721,18 @@ def _stonks_engine_cycle(scope_id):
         try:
             clock=_alpaca_paper_request('/v2/clock')
             if not bool(clock.get('is_open')):
+                try: _stonks_reconcile_paper_state(scope_id, symbols[:8], emit_audit=False)
+                except Exception: pass
                 action='Mercado cerrado · sin órdenes.'
                 d=_stonks_read(); d['engine_last_run']=datetime.now(timezone.utc).isoformat(); d['engine_last_action']=action; _stonks_write(d)
                 return {'status':'idle','reason':action}
+            recon=_stonks_reconcile_paper_state(scope_id, symbols[:8], emit_audit=True)
+            open_symbols={str(o.get('symbol') or '').upper() for o in recon.get('open_orders',[])}
             actions=[]
             for symbol in symbols[:8]:
+                if symbol in open_symbols:
+                    actions.append(f"{symbol}: ORDEN ABIERTA · esperando confirmación de Alpaca")
+                    continue
                 try:
                     signal, _ = _stonks_current_signal(symbol,strategy,timeframe,'iex')
                     if signal.get('signal') not in ('BUY','SELL'):
@@ -702,6 +755,8 @@ def _stonks_engine_cycle(scope_id):
                         actions.append(f"{symbol}: {signal.get('signal')} · {data.get('primary_reason') or data.get('reason') or data.get('decision') or 'sin acción'}")
                 except Exception as exc:
                     actions.append(f"{symbol}: ERROR · {exc}")
+            try: _stonks_reconcile_paper_state(scope_id, symbols[:8], emit_audit=True)
+            except Exception: pass
             action=' | '.join(actions)[:2000] if actions else 'Sin señales.'
             d=_stonks_read(); d['engine_last_run']=datetime.now(timezone.utc).isoformat(); d['engine_last_action']=action; _stonks_write(d)
             return {'status':'ok','action':action}
@@ -748,7 +803,7 @@ def _stonks_engine_loop():
 def stonks_status_api():
     d=_stonks_read()
     pk,ps=_alpaca_paper_credentials()
-    return jsonify({'ok':True, **d, 'engine_owner':_stonks_engine_owner_read(), 'engine_owned_by_current_user':_stonks_engine_owner_read()==_user_scope_id(), 'audit_count':len(_stonks_audit_read(200)), 'paper_configured': bool(pk and ps), 'crypto_configured': bool(os.environ.get('KRAKEN_API_KEY') and os.environ.get('KRAKEN_API_SECRET'))})
+    return jsonify({'ok':True, **d, 'engine_owner':_stonks_engine_owner_read(), 'engine_owned_by_current_user':_stonks_engine_owner_read()==_user_scope_id(), 'audit_count':len(_stonks_audit_read(200)), 'paper_configured': bool(pk and ps), 'crypto_configured': bool(os.environ.get('KRAKEN_API_KEY') and os.environ.get('KRAKEN_API_SECRET')), 'engine_position_count':len(d.get('engine_last_positions') or []), 'engine_open_order_count':len(d.get('engine_last_open_orders') or [])})
 
 @app.post('/api/stonks/alpaca/test')
 def stonks_alpaca_test_api():
@@ -1136,6 +1191,16 @@ def stonks_decision_api():
         add_check('MAX_TRADE','Supera el máximo por operación',order_value<=max_trade+1e-9,f'{order_value:.2f} USD / límite {max_trade:.2f} USD')
         if requested_signal=='BUY':
             add_check('MAX_POSITION','Supera el máximo de posición configurado',not (equity>0 and current_value+order_value>equity*(max_position/100.0)+1e-9),f'{current_value+order_value:.2f} USD / límite {equity*(max_position/100.0):.2f} USD')
+
+        try:
+            open_orders=_alpaca_paper_request('/v2/orders', params={'status':'open','limit':100,'nested':'false'})
+            open_orders=open_orders if isinstance(open_orders,list) else []
+            same_symbol=[o for o in open_orders if str(o.get('symbol') or '').upper()==symbol]
+        except Exception as exc:
+            same_symbol=[]
+            add_check('OPEN_ORDER','No se pudo comprobar órdenes abiertas',False,str(exc))
+        else:
+            add_check('OPEN_ORDER','Ya existe una orden Paper abierta para este símbolo',not bool(same_symbol),f'{len(same_symbol)} orden(es) abierta(s)')
 
         key=f'{symbol}|{strategy}|{timeframe}|{actual.get("bar_time")}|{requested_signal}'
         add_check('DUPLICATE','Esta señal ya fue ejecutada',not bool(d.get('last_executed_signals',{}).get(key)))
