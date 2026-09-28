@@ -559,7 +559,12 @@ _STONKS_DIR.mkdir(parents=True, exist_ok=True)
 def _stonks_file():
     return _STONKS_DIR / f"{_user_scope_id()}.json"
 def _stonks_default():
-    return {'paused': True, 'revoked': True, 'mode': 'paper', 'max_trade_eur': 25, 'max_daily_loss_eur': 10, 'max_position_pct': 20}
+    return {
+        'paused': True, 'revoked': True, 'mode': 'paper',
+        'max_trade_eur': 25, 'max_daily_loss_eur': 10, 'max_position_pct': 20,
+        'execution_mode': 'decision',
+        'last_executed_signals': {}
+    }
 def _stonks_read():
     try:
         p=_stonks_file()
@@ -571,6 +576,31 @@ def _stonks_read():
     return _stonks_default()
 def _stonks_write(d):
     p=_stonks_file(); p.parent.mkdir(parents=True, exist_ok=True); p.write_text(json.dumps(d,ensure_ascii=False,indent=2),encoding='utf-8')
+
+def _stonks_audit_file():
+    return _STONKS_DIR / f"{_user_scope_id()}_audit.json"
+
+def _stonks_audit_read(limit=100):
+    try:
+        p=_stonks_audit_file()
+        if p.exists():
+            data=json.loads(p.read_text(encoding='utf-8'))
+            return data[-limit:] if isinstance(data,list) else []
+    except Exception:
+        pass
+    return []
+
+def _stonks_audit_append(event, details=None):
+    rows=_stonks_audit_read(200)
+    rows.append({
+        'id':uuid.uuid4().hex,
+        'timestamp':datetime.now(timezone.utc).isoformat(),
+        'event':str(event or 'EVENT'),
+        'details':details if isinstance(details,dict) else {'message':str(details or '')}
+    })
+    rows=rows[-200:]
+    p=_stonks_audit_file(); p.parent.mkdir(parents=True, exist_ok=True); p.write_text(json.dumps(rows,ensure_ascii=False,indent=2),encoding='utf-8')
+    return rows[-1]
 
 def _alpaca_paper_credentials():
     return (os.environ.get('ALPACA_PAPER_API_KEY','').strip(), os.environ.get('ALPACA_PAPER_API_SECRET','').strip())
@@ -607,7 +637,7 @@ def _alpaca_market_request(path, method='GET', params=None):
 def stonks_status_api():
     d=_stonks_read()
     pk,ps=_alpaca_paper_credentials()
-    return jsonify({'ok':True, **d, 'paper_configured': bool(pk and ps), 'crypto_configured': bool(os.environ.get('KRAKEN_API_KEY') and os.environ.get('KRAKEN_API_SECRET'))})
+    return jsonify({'ok':True, **d, 'audit_count':len(_stonks_audit_read(200)), 'paper_configured': bool(pk and ps), 'crypto_configured': bool(os.environ.get('KRAKEN_API_KEY') and os.environ.get('KRAKEN_API_SECRET'))})
 
 @app.post('/api/stonks/alpaca/test')
 def stonks_alpaca_test_api():
@@ -745,108 +775,174 @@ def _stonks_max_drawdown(equity_curve):
 
 
 
+def _stonks_current_signal(symbol, strategy='trend', timeframe='1Min', feed='iex'):
+    symbol=str(symbol or 'AAPL').strip().upper()
+    timeframe=str(timeframe or '1Min').strip()
+    strategy=str(strategy or 'trend').strip().lower()
+    feed=str(feed or 'iex').strip().lower()
+    if timeframe not in ('1Min','5Min','15Min'):
+        timeframe='1Min'
+    if strategy not in ('trend','mean_reversion'):
+        strategy='trend'
+    if feed not in ('iex','sip'):
+        feed='iex'
+    clock=_alpaca_paper_request('/v2/clock')
+    end=datetime.now(timezone.utc)
+    from datetime import timedelta
+    start=end-timedelta(hours=8 if timeframe=='1Min' else 24)
+    params={
+        'symbols':symbol,'timeframe':timeframe,
+        'start':start.strftime('%Y-%m-%dT%H:%M:%SZ'),
+        'end':end.strftime('%Y-%m-%dT%H:%M:%SZ'),'limit':1000,
+        'feed':feed,'sort':'asc'
+    }
+    data=_alpaca_market_request('/v2/stocks/bars',params=params)
+    raw=(data.get('bars') or {}).get(symbol) if isinstance(data,dict) else []
+    raw=raw if isinstance(raw,list) else []
+    current_minute=end.replace(second=0,microsecond=0)
+    bars=[]
+    for b in raw:
+        try:
+            ts=datetime.fromisoformat(str(b.get('t','')).replace('Z','+00:00'))
+            if ts >= current_minute: continue
+            if all(k in b for k in ('o','h','l','c')): bars.append(b)
+        except Exception:
+            continue
+    bars=bars[-120:]
+    closes=[float(b['c']) for b in bars]
+    item={'symbol':symbol,'timeframe':timeframe,'strategy':strategy,'signal':'HOLD','signal_label':'ESPERAR',
+          'reason':'Sin cruce nuevo confirmado en la última barra cerrada.','price':closes[-1] if closes else None,
+          'bar_time':bars[-1].get('t') if bars else None,'bars':len(bars),'indicators':{}}
+    if len(bars)<55:
+        item['signal_label']='SIN DATOS'; item['reason']=f'Se necesitan al menos 55 barras cerradas; disponibles: {len(bars)}.'
+    elif strategy=='trend':
+        sma20=_stonks_sma(closes,20); sma50=_stonks_sma(closes,50)
+        p20,p50=sma20[-2],sma50[-2]; c20,c50=sma20[-1],sma50[-1]
+        item['indicators']={'sma20':round(c20,4),'sma50':round(c50,4)}
+        if p20 is not None and p50 is not None and p20 <= p50 and c20 > c50:
+            item['signal']='BUY'; item['signal_label']='COMPRA'; item['reason']=f'SMA20 ({c20:.2f}) cruzó al alza SMA50 ({c50:.2f}) en la última barra cerrada.'
+        elif p20 is not None and p50 is not None and p20 >= p50 and c20 < c50:
+            item['signal']='SELL'; item['signal_label']='VENTA'; item['reason']=f'SMA20 ({c20:.2f}) cruzó a la baja SMA50 ({c50:.2f}) en la última barra cerrada.'
+        else:
+            relation='por encima' if c20>c50 else ('por debajo' if c20<c50 else 'igual a')
+            item['reason']=f'SMA20 ({c20:.2f}) está {relation} de SMA50 ({c50:.2f}); no hay cruce nuevo.'
+    else:
+        rsi=_stonks_rsi(closes,14); pr,cr=rsi[-2],rsi[-1]
+        item['indicators']={'rsi14':round(cr,2)}
+        if pr is not None and pr >= 30 and cr < 30:
+            item['signal']='BUY'; item['signal_label']='COMPRA'; item['reason']=f'RSI14 cayó por debajo de 30 ({cr:.2f}) en la última barra cerrada.'
+        elif pr is not None and pr <= 70 and cr > 70:
+            item['signal']='SELL'; item['signal_label']='VENTA'; item['reason']=f'RSI14 superó 70 ({cr:.2f}) en la última barra cerrada.'
+        else:
+            zone='sobreventa' if cr<30 else ('sobrecompra' if cr>70 else 'zona neutral')
+            item['reason']=f'RSI14 = {cr:.2f} ({zone}); no hay cruce nuevo.'
+    return item, clock
+
 @app.get('/api/stonks/signals')
 def stonks_signals_api():
-    """Calculate near-real-time Paper market signals from completed Alpaca bars.
-
-    This endpoint is analysis-only: it never creates, modifies or cancels broker orders.
-    Signals are based on the latest completed bar to avoid using an unfinished minute.
-    """
+    """Calculate near-real-time signals from completed Alpaca bars. Analysis only."""
     try:
         raw_symbols=str(request.args.get('symbols') or 'AAPL')
         symbols=[]
         for raw in raw_symbols.split(','):
             symbol=raw.strip().upper()
-            if symbol and symbol not in symbols:
-                symbols.append(symbol)
-        if not symbols:
-            symbols=['AAPL']
-        if len(symbols)>8:
-            return jsonify({'ok':False,'error':'Máximo 8 símbolos por análisis.'}),400
+            if symbol and symbol not in symbols: symbols.append(symbol)
+        if not symbols: symbols=['AAPL']
+        if len(symbols)>8: return jsonify({'ok':False,'error':'Máximo 8 símbolos por análisis.'}),400
         for symbol in symbols:
             if len(symbol)>20 or not symbol.replace('.','').replace('-','').isalnum():
                 return jsonify({'ok':False,'error':f'Símbolo no válido: {symbol}.'}),400
-        timeframe=str(request.args.get('timeframe') or '1Min').strip()
-        if timeframe not in ('1Min','5Min','15Min'):
-            timeframe='1Min'
-        strategy=str(request.args.get('strategy') or 'trend').strip().lower()
-        if strategy not in ('trend','mean_reversion'):
-            return jsonify({'ok':False,'error':'Estrategia no válida.'}),400
-        feed=str(request.args.get('feed') or 'iex').strip().lower()
-        if feed not in ('iex','sip'):
-            feed='iex'
-
-        clock=_alpaca_paper_request('/v2/clock')
-        end=datetime.now(timezone.utc)
-        # Ask for a small recent window. We discard a bar whose timestamp belongs
-        # to the current minute so an unfinished candle cannot create a signal.
-        from datetime import timedelta
-        start=end-timedelta(hours=8 if timeframe=='1Min' else 24)
-        params={
-            'symbols':','.join(symbols),
-            'timeframe':timeframe,
-            'start':start.strftime('%Y-%m-%dT%H:%M:%SZ'),
-            'end':end.strftime('%Y-%m-%dT%H:%M:%SZ'),
-            'limit':1000,
-            'feed':feed,
-            'sort':'asc'
-        }
-        data=_alpaca_market_request('/v2/stocks/bars',params=params)
-        bars_by_symbol=data.get('bars') if isinstance(data,dict) else {}
-        bars_by_symbol=bars_by_symbol if isinstance(bars_by_symbol,dict) else {}
-        current_minute=end.replace(second=0,microsecond=0)
-
-        results=[]
+        timeframe=request.args.get('timeframe','1Min')
+        strategy=request.args.get('strategy','trend')
+        feed=request.args.get('feed','iex')
+        results=[]; clock=None
         for symbol in symbols:
-            raw=bars_by_symbol.get(symbol) or []
-            bars=[]
-            for b in raw:
-                try:
-                    ts=datetime.fromisoformat(str(b.get('t','')).replace('Z','+00:00'))
-                    if ts >= current_minute:
-                        continue
-                    if all(k in b for k in ('o','h','l','c')):
-                        bars.append(b)
-                except Exception:
-                    continue
-            bars=bars[-120:]
-            closes=[float(b['c']) for b in bars]
-            item={'symbol':symbol,'timeframe':timeframe,'strategy':strategy,'signal':'HOLD','signal_label':'ESPERAR','reason':'Sin cruce nuevo confirmado en la última barra cerrada.','price':closes[-1] if closes else None,'bar_time':bars[-1].get('t') if bars else None,'bars':len(bars),'indicators':{}}
-            if len(bars)<55:
-                item['signal_label']='SIN DATOS'
-                item['reason']=f'Se necesitan al menos 55 barras cerradas; disponibles: {len(bars)}.'
-                results.append(item); continue
-            if strategy=='trend':
-                sma20=_stonks_sma(closes,20); sma50=_stonks_sma(closes,50)
-                p20,p50=sma20[-2],sma50[-2]; c20,c50=sma20[-1],sma50[-1]
-                item['indicators']={'sma20':round(c20,4),'sma50':round(c50,4)}
-                if p20 is not None and p50 is not None and p20 <= p50 and c20 > c50:
-                    item['signal']='BUY'; item['signal_label']='COMPRA'; item['reason']=f'SMA20 ({c20:.2f}) cruzó al alza SMA50 ({c50:.2f}) en la última barra cerrada.'
-                elif p20 is not None and p50 is not None and p20 >= p50 and c20 < c50:
-                    item['signal']='SELL'; item['signal_label']='VENTA'; item['reason']=f'SMA20 ({c20:.2f}) cruzó a la baja SMA50 ({c50:.2f}) en la última barra cerrada.'
-                else:
-                    relation='por encima' if c20>c50 else ('por debajo' if c20<c50 else 'igual a')
-                    item['reason']=f'SMA20 ({c20:.2f}) está {relation} de SMA50 ({c50:.2f}); no hay cruce nuevo.'
-            else:
-                rsi=_stonks_rsi(closes,14)
-                pr,cr=rsi[-2],rsi[-1]
-                item['indicators']={'rsi14':round(cr,2)}
-                if pr is not None and pr >= 30 and cr < 30:
-                    item['signal']='BUY'; item['signal_label']='COMPRA'; item['reason']=f'RSI14 cayó por debajo de 30 ({cr:.2f}) en la última barra cerrada.'
-                elif pr is not None and pr <= 70 and cr > 70:
-                    item['signal']='SELL'; item['signal_label']='VENTA'; item['reason']=f'RSI14 superó 70 ({cr:.2f}) en la última barra cerrada.'
-                else:
-                    zone='sobreventa' if cr<30 else ('sobrecompra' if cr>70 else 'zona neutral')
-                    item['reason']=f'RSI14 = {cr:.2f} ({zone}); no hay cruce nuevo.'
+            item,clock=_stonks_current_signal(symbol,strategy,timeframe,feed)
             results.append(item)
-
-        return jsonify({
-            'ok':True,'analysis_only':True,'orders_created':False,
-            'paper':True,'strategy':strategy,'timeframe':timeframe,'feed':feed,
+        return jsonify({'ok':True,'analysis_only':True,'orders_created':False,'paper':True,
+            'strategy':str(strategy),'timeframe':str(timeframe),'feed':str(feed),
             'market':{'is_open':bool(clock.get('is_open')),'timestamp':clock.get('timestamp'),'next_open':clock.get('next_open'),'next_close':clock.get('next_close')},
-            'generated_at':datetime.now(timezone.utc).isoformat(),
-            'signals':results
-        })
+            'generated_at':datetime.now(timezone.utc).isoformat(),'signals':results})
+    except Exception as exc:
+        return jsonify({'ok':False,'error':str(exc)}),502
+
+@app.get('/api/stonks/audit')
+def stonks_audit_api():
+    return jsonify({'ok':True,'paper':True,'audit':list(reversed(_stonks_audit_read(100)))})
+
+@app.post('/api/stonks/decision')
+def stonks_decision_api():
+    """Evaluate one current signal against ZAR Risk and optionally execute Paper.
+    Live trading is intentionally impossible in this endpoint."""
+    try:
+        payload=request.get_json(silent=True) or {}
+        symbol=str(payload.get('symbol') or '').strip().upper()
+        strategy=str(payload.get('strategy') or 'trend').strip().lower()
+        timeframe=str(payload.get('timeframe') or '1Min').strip()
+        requested_signal=str(payload.get('signal') or '').strip().upper()
+        execute=bool(payload.get('execute'))
+        if not symbol or len(symbol)>20 or not symbol.replace('.','').replace('-','').isalnum():
+            return jsonify({'ok':False,'error':'Símbolo no válido.'}),400
+        if requested_signal not in ('BUY','SELL'):
+            return jsonify({'ok':True,'paper':True,'decision':'NO_ACTION','reason':'La señal actual no requiere una operación.','order_created':False})
+        actual,clock=_stonks_current_signal(symbol,strategy,timeframe,'iex')
+        if actual.get('signal') != requested_signal:
+            _stonks_audit_append('DECISIÓN',{'symbol':symbol,'requested_signal':requested_signal,'actual_signal':actual.get('signal'),'decision':'DENEGADA','reason':'La señal enviada ya no coincide con la última barra cerrada.'})
+            return jsonify({'ok':True,'paper':True,'decision':'DENEGADA','reason':'La señal enviada ya no coincide con la última barra cerrada.','current_signal':actual,'order_created':False})
+        d=_stonks_read()
+        reasons=[]
+        if d.get('revoked'): reasons.append('control revocado')
+        if d.get('paused'): reasons.append('motor pausado')
+        if d.get('mode')!='paper': reasons.append('modo distinto de Paper')
+        if not bool(clock.get('is_open')): reasons.append('mercado cerrado')
+        account=_alpaca_paper_request('/v2/account')
+        equity=float(account.get('equity') or 0); last_equity=float(account.get('last_equity') or 0)
+        daily_loss=max(0.0,last_equity-equity); max_daily=float(d.get('max_daily_loss_eur',10) or 10)
+        if max_daily>0 and daily_loss>=max_daily: reasons.append(f'pérdida diaria límite alcanzada ({daily_loss:.2f} frente a {max_daily:.2f})')
+        positions=_alpaca_paper_request('/v2/positions'); positions=positions if isinstance(positions,list) else []
+        current=next((p for p in positions if str(p.get('symbol','')).upper()==symbol),None)
+        latest=_alpaca_market_request(f'/v2/stocks/{symbol}/trades/latest')
+        last=(latest.get('trades') or {}).get(symbol) or {}
+        price=float(last.get('p') or 0)
+        if price<=0: reasons.append('no hay último precio disponible')
+        max_trade=float(d.get('max_trade_eur',25) or 25)
+        max_position=float(d.get('max_position_pct',20) or 20)
+        current_value=abs(float((current or {}).get('market_value') or 0))
+        if requested_signal=='SELL':
+            current_qty=float((current or {}).get('qty') or 0)
+            if current_qty<=0: reasons.append('no existe posición Paper que vender')
+            qty=min(current_qty, max_trade/price if price>0 else 0)
+        else:
+            available_value=max(0.0,equity*(max_position/100.0)-current_value)
+            qty=min(max_trade/price if price>0 else 0, available_value/price if price>0 else 0)
+        qty=float(f'{qty:.4f}')
+        order_value=qty*price
+        if qty<0.0001 or order_value<1.0: reasons.append('el tamaño resultante queda por debajo del mínimo operativo de 1 USD')
+        if order_value>max_trade+1e-9: reasons.append('supera el máximo por operación')
+        if requested_signal=='BUY' and equity>0 and current_value+order_value>equity*(max_position/100.0)+1e-9:
+            reasons.append('supera el máximo de posición configurado')
+        key=f'{symbol}|{strategy}|{timeframe}|{actual.get("bar_time")}|{requested_signal}'
+        if d.get('last_executed_signals',{}).get(key): reasons.append('esta señal ya fue ejecutada')
+        approved=not reasons
+        decision='APROBADA' if approved else 'DENEGADA'
+        result={'ok':True,'paper':True,'decision':decision,'signal':requested_signal,'symbol':symbol,'strategy':strategy,'timeframe':timeframe,
+                'price':price,'qty':qty,'estimated_value':order_value,'reasons':reasons,'current_signal':actual,'order_created':False}
+        _stonks_audit_append('DECISIÓN',{'symbol':symbol,'signal':requested_signal,'strategy':strategy,'timeframe':timeframe,'decision':decision,'price':price,'qty':qty,'estimated_value':order_value,'reasons':reasons})
+        if approved and execute:
+            body={'symbol':symbol,'qty':str(qty),'side':'buy' if requested_signal=='BUY' else 'sell','type':'market','time_in_force':'day'}
+            key_api,secret_api=_alpaca_paper_credentials()
+            rr=requests.post('https://paper-api.alpaca.markets/v2/orders',headers={'APCA-API-KEY-ID':key_api,'APCA-API-SECRET-KEY':secret_api,'Accept':'application/json','Content-Type':'application/json'},json=body,timeout=12)
+            try: order=rr.json()
+            except Exception: order={'raw':rr.text[:1000]}
+            if not rr.ok:
+                result['decision']='ERROR_PAPER'; result['order_error']=order.get('message') if isinstance(order,dict) else 'orden rechazada'
+                _stonks_audit_append('ORDEN PAPER',{'symbol':symbol,'signal':requested_signal,'decision':'RECHAZADA_POR_ALPACA','error':result['order_error']})
+            else:
+                d['last_executed_signals'][key]=datetime.now(timezone.utc).isoformat()
+                d['execution_mode']='paper_auto' if d.get('execution_mode')=='paper_auto' else d.get('execution_mode','decision')
+                _stonks_write(d); result['order_created']=True; result['order']=order
+                _stonks_audit_append('ORDEN PAPER',{'symbol':symbol,'signal':requested_signal,'side':body['side'],'qty':qty,'estimated_value':order_value,'order_id':order.get('id'),'status':order.get('status')})
+        return jsonify(result)
     except Exception as exc:
         return jsonify({'ok':False,'error':str(exc)}),502
 
@@ -1141,7 +1237,11 @@ def stonks_controls_api():
         try: val=float(payload.get(key, d.get(key,default)))
         except Exception: val=default
         d[key]=max(0,val)
+    mode=str(payload.get('execution_mode',d.get('execution_mode','decision'))).strip().lower()
+    if mode not in ('decision','paper_auto'): mode='decision'
+    d['execution_mode']=mode
     d['max_position_pct']=min(100,d['max_position_pct']); _stonks_write(d)
+    _stonks_audit_append('RISK',{'max_trade_eur':d['max_trade_eur'],'max_daily_loss_eur':d['max_daily_loss_eur'],'max_position_pct':d['max_position_pct'],'execution_mode':mode})
     return jsonify({'ok':True, **d})
 
 @app.get("/api/maps/search")
