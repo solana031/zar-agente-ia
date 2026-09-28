@@ -1502,31 +1502,90 @@ input:-webkit-autofill,textarea:-webkit-autofill,select:-webkit-autofill{
 @media(max-width:720px){.zarStonksPanel{border-radius:0;min-height:100%;}.zsTop{position:sticky;top:0;z-index:5}.zsStatus{display:none}.zsWorkspace{display:block;min-height:0}.zsSide{display:none}.zsMain{padding:9px}.zsCards{grid-template-columns:repeat(2,minmax(0,1fr))}.zsCardValue{font-size:15px}.zsChatDock{position:sticky;bottom:0;z-index:6}.zsChatHistory{max-height:35vh}.zsBottom{position:sticky;bottom:0;z-index:5;flex-wrap:wrap}.zsChips{display:none}.zsBottom input{order:1;flex-basis:100%}.zsBottom .zsBtn{order:2}.zsControls{grid-template-columns:1fr}.zsTopActions .zsBtn span{display:none}.zsTabTitle p{display:none}}
 </style>
 <style id="zar-stonks-v31-2-4-bottom-composer">
-/* v31.2.4 — Stonks uses the maximum workspace; composer is anchored to the absolute bottom. */
+/* v31.2.7 — Stonks uses the maximum workspace; composer is anchored to the absolute bottom. */
 .zarStonksPanel{position:relative!important;min-height:0!important;height:100%!important;}
-.zarStonksPanel>.zsWorkspace{min-height:0!important;height:auto!important;flex:1 1 0!important;padding-bottom:58px!important;box-sizing:border-box!important;overflow:hidden!important;}
+.zarStonksPanel>.zsWorkspace{min-height:0!important;height:100%!important;flex:1 1 auto!important;padding-bottom:58px!important;box-sizing:border-box!important;}
 .zarStonksPanel>.zsChatDock{position:absolute!important;left:0!important;right:0!important;bottom:58px!important;z-index:30!important;margin:0!important;}
 .zarStonksPanel>.zsBottom{position:absolute!important;left:0!important;right:0!important;bottom:0!important;height:58px!important;min-height:58px!important;box-sizing:border-box!important;z-index:40!important;padding:8px 12px!important;margin:0!important;}
-.zarStonksPanel>.zsWorkspace .zsMain{min-height:0!important;overflow:auto!important;}
 .zarStonksPanel>.zsBottom input{font-size:12px!important;padding:10px 12px!important;}
 .zarStonksPanel>.zsBottom .zsBtn{font-size:10px!important;padding:8px 11px!important;}
 .zarStonksPanel>.zsBottom .zsChip{font-size:8px!important;padding:7px 9px!important;}
 .zarStonksPanel>.zsChatDock.open{bottom:58px!important;}
 .zarStonksPanel>.zsChatDock.open .zsChatHistory{max-height:170px!important;}
 @media(max-width:720px){
-  .zarStonksPanel>.zsWorkspace{height:auto!important;flex:1 1 0!important;padding-bottom:64px!important;overflow:hidden!important;}
+  .zarStonksPanel>.zsWorkspace{padding-bottom:64px!important;}
   .zarStonksPanel>.zsBottom{height:64px!important;min-height:64px!important;bottom:0!important;padding:7px 8px!important;flex-wrap:nowrap!important;}
   .zarStonksPanel>.zsBottom .zsChips{display:none!important;}
   .zarStonksPanel>.zsBottom input{font-size:12px!important;}
   .zarStonksPanel>.zsChatDock{bottom:64px!important;}
 }
-
-/* v31.2.5 — prevent the Stonks flex workspace from extending below the fixed composer. */
-.zsFloatingWindow>.zarStonksPanel{display:flex!important;flex-direction:column!important;overflow:hidden!important;}
-.zsFloatingWindow>.zarStonksPanel>.zsTop{flex:0 0 auto!important;}
-.zsFloatingWindow>.zarStonksPanel>.zsWorkspace{flex:1 1 0!important;height:auto!important;min-height:0!important;}
-.zsFloatingWindow>.zarStonksPanel>.zsChatDock,.zsFloatingWindow>.zarStonksPanel>.zsBottom{flex-shrink:0!important;}
-@media(max-width:720px){.zsFloatingWindow>.zarStonksPanel>.zsWorkspace{flex:1 1 0!important;height:auto!important;min-height:0!important;}}
+</style>
+<style id="zar-stonks-v31-2-7-layout-hard-fix">
+/* v31.2.7: Stonks uses a real vertical flex layout. Nothing overlays the dashboard. */
+.panel.zsFloatingWindow{
+  display:flex!important;
+  flex-direction:column!important;
+  overflow:hidden!important;
+  padding:0!important;
+  box-sizing:border-box!important;
+}
+.panel.zsFloatingWindow>#panelBody{
+  display:flex!important;
+  flex:1 1 auto!important;
+  min-height:0!important;
+  height:auto!important;
+  padding:0!important;
+  overflow:hidden!important;
+}
+.panel.zsFloatingWindow .zarStonksPanel{
+  position:relative!important;
+  display:flex!important;
+  flex-direction:column!important;
+  flex:1 1 auto!important;
+  min-height:0!important;
+  height:auto!important;
+  width:100%!important;
+  overflow:hidden!important;
+}
+.panel.zsFloatingWindow .zsWorkspace{
+  flex:1 1 auto!important;
+  min-height:0!important;
+  height:auto!important;
+  padding-bottom:0!important;
+  overflow:hidden!important;
+}
+.panel.zsFloatingWindow .zsMain{
+  min-height:0!important;
+  overflow:auto!important;
+}
+.panel.zsFloatingWindow .zsRight{min-height:0!important;overflow:hidden!important}
+.panel.zsFloatingWindow .zsChatDock{
+  position:static!important;
+  left:auto!important;right:auto!important;bottom:auto!important;
+  flex:0 0 auto!important;
+  width:100%!important;
+  z-index:2!important;
+  margin:0!important;
+}
+.panel.zsFloatingWindow .zsChatHistory{max-height:170px!important;overflow:auto!important}
+.panel.zsFloatingWindow .zsBottom{
+  position:static!important;
+  left:auto!important;right:auto!important;bottom:auto!important;
+  flex:0 0 66px!important;
+  width:100%!important;
+  height:66px!important;
+  min-height:66px!important;
+  max-height:66px!important;
+  box-sizing:border-box!important;
+  z-index:3!important;
+  margin:0!important;
+}
+@media(max-width:720px){
+  .panel.zsFloatingWindow{left:6px!important;right:6px!important;top:62px!important;width:calc(100vw - 12px)!important;max-width:none!important;height:calc(100dvh - 70px)!important;max-height:calc(100dvh - 70px)!important;}
+  .panel.zsFloatingWindow>#panelBody{min-height:0!important}
+  .panel.zsFloatingWindow .zsWorkspace{overflow:auto!important}
+  .panel.zsFloatingWindow .zsBottom{flex-basis:64px!important;height:64px!important;min-height:64px!important;max-height:64px!important}
+}
 </style>
 </head>
 <body>
@@ -2057,6 +2116,7 @@ async function delMem(id){await fetch('/api/memory/'+encodeURIComponent(id),{met
 function showStonks(){
   const bodyEl=typeof body!=='undefined'?body:document.getElementById('panelBody');
   if(!bodyEl)return;
+  bodyEl.classList.add('stonks-host');
   bodyEl.innerHTML=`<div class="zarStonksPanel" id="zarStonksApp">
     <header class="zsTop">
       <div class="zsBrand"><div class="zsLogo"><img src="/static/zar-silhouette.png" alt="ZAR"></div><div><div class="zsTitle">ZAR STONKS</div><div class="zsSub">AI · CRYPTO · STOCK TRADING BOT</div></div></div>
@@ -2075,7 +2135,7 @@ function showStonks(){
           <button data-zstab="risk" onclick="zsTab('risk',this)">🛡️ Configuración Risk</button>
         </nav>
         <div class="zsSideCard"><small>Capital bot</small><div class="zsMoney" id="zsCapital">—</div><div class="zsSideMeta"><span>Asignado</span><span>—</span></div></div>
-        <div class="zsInfo" style="margin-top:8px">v31.2.6 · Paper-first. Mercado, cotizaciones y última operación; no ejecuta operaciones reales.</div>
+        <div class="zsInfo" style="margin-top:8px">v31.2.7 · Paper-first. Mercado, cotizaciones y última operación; no ejecuta operaciones reales.</div>
       </aside>
       <main class="zsMain">
         <section id="zsTab-dashboard" class="zsTabPanel active">
@@ -2101,7 +2161,7 @@ function showStonks(){
         <section id="zsTab-backtesting" class="zsTabPanel"><div class="zsTabTitle"><div><h2>Backtesting</h2><p>Zona de prueba antes de conectar capital real.</p></div></div><div class="zsCard" style="margin-top:9px"><div class="zsControls"><div class="zsField"><label>Capital inicial (€)</label><input id="zsBtCapital" type="number" value="1000" min="1"></div><div class="zsField"><label>Periodo</label><input id="zsBtDays" type="number" value="365" min="1"></div><div class="zsField"><label>Riesgo por operación (%)</label><input id="zsBtRisk" type="number" value="1" min="0.1" max="100" step="0.1"></div></div><button class="zsBtn gold" style="margin-top:9px" onclick="zsBacktestDemo()">▶ Ejecutar simulación local</button><div id="zsBtResult" class="zsInfo" style="margin-top:9px">Todavía no se ha ejecutado ningún backtest.</div></div></section>
         <section id="zsTab-risk" class="zsTabPanel"><div class="zsTabTitle"><div><h2>Configuración Risk</h2><p>Estos límites se guardan en el estado de ZAR Stonks y se usarán como barrera antes de cualquier ejecución.</p></div></div><div class="zsCard" style="margin-top:9px"><div class="zsControls"><div class="zsField"><label>Máximo por operación (€)</label><input id="stonksMaxTrade" type="number" min="0" step="1" value="25"></div><div class="zsField"><label>Pérdida diaria máxima (€)</label><input id="stonksMaxDaily" type="number" min="0" step="1" value="10"></div><div class="zsField"><label>Máximo % de cartera / posición</label><input id="stonksMaxPos" type="number" min="1" max="100" step="1" value="20"></div></div><button class="zsBtn gold" style="margin-top:9px" onclick="saveStonksControls()">Guardar límites</button></div><div class="zsInfo" style="margin-top:9px">Kill switch: PAUSAR y REVOCAR tienen prioridad sobre cualquier estrategia. En v31 todavía no existe un ejecutor de órdenes reales.</div></section>
       </main>
-      <aside class="zsRight"><div class="zsRightHead"><span>🤖 Registro IA en vivo</span><span class="zsDot"></span></div><div class="zsLogs" id="zsLogs"><div class="zsLog"><div class="zsLogTop"><b>INICIALIZACIÓN</b><span>Ahora</span></div><div>Dashboard ZAR Stonks v31.2.6 cargado en modo seguro.</div></div><div class="zsLog"><div class="zsLogTop"><b>CONTROL</b><span>Ahora</span></div><div>El motor permanece pausado hasta completar la configuración.</div></div></div><div class="zsQuick"><div class="zsQuickTitle">Acciones rápidas</div><div class="zsQuickGrid"><button onclick="zsQuick('buy')">↑ Compra demo</button><button onclick="zsQuick('sell')">↓ Venta demo</button></div></div></aside>
+      <aside class="zsRight"><div class="zsRightHead"><span>🤖 Registro IA en vivo</span><span class="zsDot"></span></div><div class="zsLogs" id="zsLogs"><div class="zsLog"><div class="zsLogTop"><b>INICIALIZACIÓN</b><span>Ahora</span></div><div>Dashboard ZAR Stonks v31.2.7 cargado en modo seguro.</div></div><div class="zsLog"><div class="zsLogTop"><b>CONTROL</b><span>Ahora</span></div><div>El motor permanece pausado hasta completar la configuración.</div></div></div><div class="zsQuick"><div class="zsQuickTitle">Acciones rápidas</div><div class="zsQuickGrid"><button onclick="zsQuick('buy')">↑ Compra demo</button><button onclick="zsQuick('sell')">↓ Venta demo</button></div></div></aside>
     </div>
     <div class="zsChatDock" id="zsChatDock"><div class="zsChatDockHead"><span>💬 Chat con ZAR Stonks</span><button class="zsChatToggle" onclick="zsToggleChat()">Abrir chat</button></div><div class="zsChatHistory" id="zsChatHistory"><div class="zsChatMsg"><b>ZAR:</b> Chat preparado. El motor Stonks sigue en modo seguro.</div></div></div><footer class="zsBottom"><div class="zsChips"><button class="zsChip" onclick="zsQuickPrompt('Analiza el estado del mercado')">📊 Mercado</button><button class="zsChip" onclick="zsQuickPrompt('Audita el riesgo de la cartera')">🛡️ Riesgo</button></div><input id="zsChatInput" placeholder="Escribe una instrucción o pregunta a ZAR Stonks…"><button class="zsBtn" onclick="zsVoice()">🎙️</button><button class="zsBtn gold" onclick="zsChatSend()">➤</button></footer>
   </div>`;
@@ -2155,6 +2215,7 @@ function zsToggleMaximize(){
 }
 function closeStonksWindow(){
   if(panel)panel.classList.remove('zsWindowFullscreen','zsFloatingWindow');
+  document.getElementById('panelBody')?.classList.remove('stonks-host');
   closePanel();
 }
 window.addEventListener('resize',()=>{
@@ -4626,52 +4687,5 @@ body.zar-light .zarDockManagerCard{background:#fffaf4;color:#4a3828;border-color
     pointer-events:auto!important;
   }
   #chatContent .composerMain{z-index:1204!important;}
-}
-</style>
-<style id="zar-stonks-v31-2-6-bottom-dock-fix">
-/* v31.2.6 — Stonks is a four-row shell: header / workspace / chat / composer.
-   The chat and composer stay at the bottom without overlaying the dashboard. */
-.zsFloatingWindow>.zarStonksPanel{
-  display:grid!important;
-  grid-template-rows:auto minmax(0,1fr) auto auto!important;
-  height:100%!important;
-  min-height:0!important;
-  overflow:hidden!important;
-  position:relative!important;
-}
-.zsFloatingWindow>.zarStonksPanel>.zsTop{grid-row:1;min-height:62px;flex:none!important;position:relative!important;}
-.zsFloatingWindow>.zarStonksPanel>.zsWorkspace{
-  grid-row:2;
-  min-height:0!important;
-  height:auto!important;
-  flex:none!important;
-  padding-bottom:0!important;
-  overflow:hidden!important;
-}
-.zsFloatingWindow>.zarStonksPanel>.zsChatDock{
-  grid-row:3;
-  position:relative!important;
-  left:auto!important;right:auto!important;bottom:auto!important;
-  width:auto!important;
-  z-index:30!important;
-  margin:0!important;
-  flex:none!important;
-}
-.zsFloatingWindow>.zarStonksPanel>.zsBottom{
-  grid-row:4;
-  position:relative!important;
-  left:auto!important;right:auto!important;bottom:auto!important;
-  width:auto!important;height:auto!important;min-height:58px!important;
-  z-index:40!important;
-  margin:0!important;
-  flex:none!important;
-}
-.zsFloatingWindow>.zarStonksPanel>.zsChatDock.open .zsChatHistory{max-height:170px!important;overflow:auto!important;}
-.zsFloatingWindow>.zarStonksPanel>.zsWorkspace .zsMain{min-height:0!important;overflow:auto!important;}
-@media(max-width:720px){
-  .zsFloatingWindow>.zarStonksPanel{grid-template-rows:auto minmax(0,1fr) auto auto!important;}
-  .zsFloatingWindow>.zarStonksPanel>.zsWorkspace{padding-bottom:0!important;}
-  .zsFloatingWindow>.zarStonksPanel>.zsChatDock{position:relative!important;bottom:auto!important;}
-  .zsFloatingWindow>.zarStonksPanel>.zsBottom{position:relative!important;bottom:auto!important;min-height:64px!important;}
 }
 </style>
