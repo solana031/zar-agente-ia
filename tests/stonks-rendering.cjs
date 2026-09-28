@@ -13,14 +13,14 @@ for (const file of fs.readdirSync('app/static').filter(f => f.endsWith('.js'))) 
   new vm.Script(fs.readFileSync(`app/static/${file}`, 'utf8'), {filename: file});
 }
 for (const file of ['VERSION', 'VERSION.txt', 'app/VERSION.txt']) {
-  assert.equal(fs.readFileSync(file, 'utf8').trim(), '31.3.19');
+  assert.equal(fs.readFileSync(file, 'utf8').trim(), '31.3.20');
 }
 console.log(`PASS: ${scripts} inline scripts, static JavaScript and three version files`);
 (async () => {
   const browser = await chromium.launch({headless: true,
     ...(process.env.ZAR_TEST_BROWSER ? {executablePath: process.env.ZAR_TEST_BROWSER} : {})});
   try {
-    for (const viewport of [{width: 1920, height: 1080}, {width: 1440, height: 900}]) {
+    for (const viewport of [{width: 1920, height: 1080}, {width: 1440, height: 900}, {width: 390, height: 844}]) {
       const page = await browser.newPage({viewport});
       const errors = [], requests = [];
       page.on('pageerror', error => errors.push(error.message));
@@ -33,6 +33,7 @@ console.log(`PASS: ${scripts} inline scripts, static JavaScript and three versio
           ok: true, paused: true, revoked: false, mode: 'paper', execution_mode: 'decision',
           autonomous_engine: true, paper_configured: true, position_lifecycle_enabled: true,
           stop_loss_pct: 1.5, take_profit_pct: 3, managed_position_count: 2,
+          managed_positions: {AAPL: {symbol:'AAPL', client_order_id:'zar-e-test', direction:'LONG', qty:'2', entry_price:100, current_price:101, market_value:202, unrealized_pl:2, unrealized_pl_pct:1, stop_price:98.5, take_price:103, distance_sl_pct:2.4752, distance_tp_pct:1.9802, opened_at:'2026-09-28T10:00:00Z', strategy:'trend', origin:'motor autónomo', status:'PROTEGIDA'}},
           signals: [], positions: [], orders: [], audit: []
         })});
       });
@@ -67,6 +68,19 @@ console.log(`PASS: ${scripts} inline scripts, static JavaScript and three versio
         assert.ok(result.footer.bottom <= result.root.bottom + 1);
       }
       await checkLayout();
+      if(viewport.width<720){
+        // Existing 460px window minimum exceeds narrow phones (already in 31.3.17).
+        // Validate the new table's containment and DOM here, not pointer reachability.
+        await page.evaluate(()=>zsTab('risk',null));
+        await checkLayout();
+        assert.equal(await page.locator('#zsManagedPositionsBody td').count(),15);
+        assert.equal(await page.locator('#zsManagedPositionsBody').evaluate(e=>getComputedStyle(e.closest('.zsPortfolioTableWrap')).overflowX),'auto');
+        await page.evaluate(()=>zsToggleChat());
+        await checkLayout();
+        assert.deepEqual(errors,[]);
+        console.log('PASS: 390x844 table/DOM/chat layout; existing narrow-phone pointer limitation remains');
+        await page.close();continue;
+      }
       await page.locator('.zsChatToggle').click();
       await checkLayout();
       assert.equal(await page.locator('#zsChatHistory').isVisible(), true);
@@ -74,6 +88,20 @@ console.log(`PASS: ${scripts} inline scripts, static JavaScript and three versio
       assert.equal(await page.locator('#zsChatHistory').isVisible(), false);
       await page.evaluate(() => zsTab('risk', document.querySelector('[data-zstab="risk"]')));
       await checkLayout();
+      assert.equal(await page.locator('#zsManagedPositionsBody tr').count(), 1);
+      assert.match(await page.locator('#zsManagedPositionsBody').textContent(), /AAPL.*LONG.*PROTEGIDA/);
+      const stable = await page.evaluate(async () => {
+        const row=document.querySelector('#zsManagedPositionsBody tr');
+        await zsRefreshStatus();
+        return row===document.querySelector('#zsManagedPositionsBody tr');
+      });
+      assert.equal(stable,true,'Sync must update cells without replacing rows or reloading');
+      for(const status of ['ABIERTA','CERRANDO_SL','CERRANDO_TP','CERRADA','ERROR']){
+        await page.evaluate(status=>zsRenderManagedPositions({AAPL:{symbol:'AAPL',direction:'SHORT',client_order_id:'zar-e-test',status,strategy:'<script>bad</script>'}}),status);
+        assert.match(await page.locator('#zsManagedPositionsBody').textContent(),new RegExp(status));
+        assert.equal(await page.locator('#zsManagedPositionsBody script').count(),0);
+      }
+      await page.evaluate(()=>zsRefreshStatus());
       assert.equal(await page.locator('#stonksStopLoss').inputValue(), '1.5');
       assert.equal(await page.locator('#stonksTakeProfit').inputValue(), '3');
       assert.equal(await page.locator('#stonksLifecycleEnabled').inputValue(), '1');
