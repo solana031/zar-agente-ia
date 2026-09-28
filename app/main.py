@@ -881,6 +881,7 @@ def stonks_decision_api():
         timeframe=str(payload.get('timeframe') or '1Min').strip()
         requested_signal=str(payload.get('signal') or '').strip().upper()
         execute=bool(payload.get('execute'))
+        manual_confirmed=bool(payload.get('manual_confirmed'))
         if not symbol or len(symbol)>20 or not symbol.replace('.','').replace('-','').isalnum():
             return jsonify({'ok':False,'error':'Símbolo no válido.'}),400
         if requested_signal not in ('BUY','SELL'):
@@ -929,6 +930,10 @@ def stonks_decision_api():
                 'price':price,'qty':qty,'estimated_value':order_value,'reasons':reasons,'current_signal':actual,'order_created':False}
         _stonks_audit_append('DECISIÓN',{'symbol':symbol,'signal':requested_signal,'strategy':strategy,'timeframe':timeframe,'decision':decision,'price':price,'qty':qty,'estimated_value':order_value,'reasons':reasons})
         if approved and execute:
+            if d.get('execution_mode')!='paper_auto' and not manual_confirmed:
+                result['decision']='APROBADA_SIN_EJECUTAR'; result['reason']='La ejecución requiere modo Paper automático o confirmación manual explícita.'
+                _stonks_audit_append('DECISIÓN',{'symbol':symbol,'signal':requested_signal,'strategy':strategy,'timeframe':timeframe,'decision':'APROBADA_SIN_EJECUTAR','reason':'Falta confirmación manual explícita y Paper automático no está activo.'})
+                return jsonify(result)
             body={'symbol':symbol,'qty':str(qty),'side':'buy' if requested_signal=='BUY' else 'sell','type':'market','time_in_force':'day'}
             key_api,secret_api=_alpaca_paper_credentials()
             rr=requests.post('https://paper-api.alpaca.markets/v2/orders',headers={'APCA-API-KEY-ID':key_api,'APCA-API-SECRET-KEY':secret_api,'Accept':'application/json','Content-Type':'application/json'},json=body,timeout=12)
