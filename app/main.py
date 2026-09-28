@@ -589,6 +589,20 @@ def _alpaca_paper_request(path, method='GET', params=None):
         raise RuntimeError(f'Alpaca Paper {r.status_code}: {msg or "respuesta no válida"}')
     return data
 
+def _alpaca_market_request(path, method='GET', params=None):
+    key, secret = _alpaca_paper_credentials()
+    if not key or not secret:
+        raise RuntimeError('Faltan ALPACA_PAPER_API_KEY y ALPACA_PAPER_API_SECRET en Railway.')
+    import requests as _requests
+    base='https://data.alpaca.markets'
+    r=_requests.request(method, base+path, headers={'APCA-API-KEY-ID':key,'APCA-API-SECRET-KEY':secret,'Accept':'application/json'}, params=params, timeout=12)
+    try: data=r.json()
+    except Exception: data={'raw':r.text[:1000]}
+    if not r.ok:
+        msg=data.get('message') if isinstance(data,dict) else None
+        raise RuntimeError(f'Alpaca Market Data {r.status_code}: {msg or "respuesta no válida"}')
+    return data
+
 @app.get('/api/stonks/status')
 def stonks_status_api():
     d=_stonks_read()
@@ -614,7 +628,7 @@ def stonks_alpaca_quote_api():
     if not symbol or len(symbol)>20:
         return jsonify({'ok':False,'error':'Símbolo no válido.'}),400
     try:
-        q=_alpaca_paper_request('/v2/stocks/quotes/latest',params={'symbols':symbol})
+        q=_alpaca_market_request(f'/v2/stocks/{symbol}/quotes/latest')
         quote=(q.get('quotes') or {}).get(symbol)
         if not quote:
             return jsonify({'ok':False,'error':f'No hay cotización disponible para {symbol}.','data':q}),404
