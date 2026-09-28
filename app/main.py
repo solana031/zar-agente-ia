@@ -689,6 +689,103 @@ def stonks_alpaca_quote_api():
     except Exception as exc:
         return jsonify({'ok':False,'error':str(exc)}),502
 
+
+@app.post('/api/stonks/alpaca/order')
+def stonks_alpaca_order_api():
+    """Create a strictly Paper Alpaca order after server-side safety checks."""
+    try:
+        d=_stonks_read()
+        if d.get('revoked'):
+            return jsonify({'ok':False,'error':'El control operativo está revocado. Reautoriza antes de operar.'}),409
+        if d.get('paused'):
+            return jsonify({'ok':False,'error':'El motor está pausado. Pulsa Reanudar para habilitar órdenes Paper.'}),409
+        if d.get('mode') != 'paper':
+            return jsonify({'ok':False,'error':'ZAR Stonks solo permite órdenes Paper en esta versión.'}),409
+        payload=request.get_json(silent=True) or {}
+        symbol=(str(payload.get('symbol') or 'AAPL').strip().upper())
+        side=str(payload.get('side') or 'buy').strip().lower()
+        order_type=str(payload.get('type') or 'limit').strip().lower()
+        tif=str(payload.get('time_in_force') or 'day').strip().lower()
+        try: qty=float(payload.get('qty'))
+        except Exception: qty=0
+        try: limit_price=float(payload.get('limit_price')) if payload.get('limit_price') not in (None,'') else None
+        except Exception: limit_price=None
+        if not symbol or len(symbol)>20 or not symbol.replace('.','').replace('-','').isalnum():
+            return jsonify({'ok':False,'error':'Símbolo no válido.'}),400
+        if side not in ('buy','sell'):
+            return jsonify({'ok':False,'error':'El lado debe ser buy o sell.'}),400
+        if order_type not in ('market','limit'):
+            return jsonify({'ok':False,'error':'Solo se permiten órdenes market o limit en este primer bloque.'}),400
+        if tif not in ('day','gtc'):
+            return jsonify({'ok':False,'error':'Time in force no válido. Usa day o gtc.'}),400
+        if qty <= 0 or qty > 10000:
+            return jsonify({'ok':False,'error':'Cantidad no válida.'}),400
+        if order_type == 'limit' and (limit_price is None or limit_price <= 0):
+            return jsonify({'ok':False,'error':'Una orden limit necesita un precio límite positivo.'}),400
+        if order_type == 'market' and tif != 'day':
+            return jsonify({'ok':False,'error':'Las órdenes market de este panel usan time in force day.'}),400
+
+        # Conservative server-side cap. The existing control is denominated in EUR;
+        # we use the same numeric ceiling in USD so we never exceed it because of FX assumptions.
+        max_trade=float(d.get('max_trade_eur',25) or 25)
+        estimated=qty*(limit_price or 0)
+        if order_type == 'limit' and estimated > max_trade:
+            return jsonify({'ok':False,'error':f'La orden supera el límite de seguridad configurado ({max_trade:.2f}).'}),409
+        if order_type == 'market':
+            try:
+                t=_alpaca_market_request(f'/v2/stocks/{symbol}/trades/latest')
+                last=(t.get('trades') or {}).get(symbol) or {}
+                px=float(last.get('p') or 0)
+                if not px:
+                    return jsonify({'ok':False,'error':'No hay un último precio disponible para verificar el límite de seguridad. Usa una orden limit.'}),409
+                if qty*px > max_trade:
+                    return jsonify({'ok':False,'error':f'La orden supera el límite de seguridad configurado ({max_trade:.2f}) según el último precio disponible.'}),409
+            except Exception as exc:
+                return jsonify({'ok':False,'error':'No se pudo verificar el precio antes de aplicar el límite de seguridad. Usa una orden limit.'}),409
+
+        body={'symbol':symbol,'qty':str(qty),'side':side,'type':order_type,'time_in_force':tif}
+        if order_type == 'limit': body['limit_price']=str(limit_price)
+        # Submit through the Paper trading endpoint using JSON; credentials stay server-side.
+        # Re-use the same credentials and Paper base URL, without ever exposing them to the client.
+        key, secret=_alpaca_paper_credentials()
+        import requests as _requests
+        rr=_requests.post('https://paper-api.alpaca.markets/v2/orders', headers={'APCA-API-KEY-ID':key,'APCA-API-SECRET-KEY':secret,'Accept':'application/json','Content-Type':'application/json'}, json=body, timeout=12)
+        try: data=rr.json()
+        except Exception: data={'raw':rr.text[:1000]}
+        if not rr.ok:
+            msg=data.get('message') if isinstance(data,dict) else None
+            return jsonify({'ok':False,'error':f'Alpaca Paper {rr.status_code}: {msg or "orden rechazada"}'}),502
+        return jsonify({'ok':True,'paper':True,'order':data})
+    except Exception as exc:
+        return jsonify({'ok':False,'error':str(exc)}),502
+
+@app.get('/api/stonks/alpaca/orders')
+def stonks_alpaca_orders_api():
+    try:
+        status=request.args.get('status','all')
+        if status not in ('open','closed','all'): status='all'
+        data=_alpaca_paper_request('/v2/orders', params={'status':status,'limit':100,'direction':'desc','nested':'true'})
+        return jsonify({'ok':True,'paper':True,'orders':data if isinstance(data,list) else []})
+    except Exception as exc:
+        return jsonify({'ok':False,'error':str(exc)}),502
+
+@app.get('/api/stonks/alpaca/order/<order_id>')
+def stonks_alpaca_order_get_api(order_id):
+    try:
+        data=_alpaca_paper_request('/v2/orders/'+str(order_id))
+        return jsonify({'ok':True,'paper':True,'order':data})
+    except Exception as exc:
+        return jsonify({'ok':False,'error':str(exc)}),502
+
+@app.delete('/api/stonks/alpaca/order/<order_id>')
+def stonks_alpaca_order_cancel_api(order_id):
+    try:
+        # Cancellation remains available even when the engine is paused/revoked: emergency control must work.
+        data=_alpaca_paper_request('/v2/orders/'+str(order_id), method='DELETE')
+        return jsonify({'ok':True,'paper':True,'cancelled':True,'response':data})
+    except Exception as exc:
+        return jsonify({'ok':False,'error':str(exc)}),502
+
 @app.post('/api/stonks/pause')
 def stonks_pause_api():
     d=_stonks_read(); d['paused']=True; _stonks_write(d); return jsonify({'ok':True,'paused':True})
