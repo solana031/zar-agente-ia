@@ -563,6 +563,12 @@ def _stonks_default():
         'paused': True, 'revoked': True, 'mode': 'paper',
         'max_trade_eur': 25, 'max_daily_loss_eur': 10, 'max_position_pct': 20,
         'execution_mode': 'decision',
+        'autonomous_engine': False,
+        'engine_symbols': ['AAPL'],
+        'engine_strategy': 'trend',
+        'engine_timeframe': '1Min',
+        'engine_last_run': None,
+        'engine_last_action': None,
         'last_executed_signals': {}
     }
 def _stonks_read():
@@ -589,6 +595,27 @@ def _stonks_audit_read(limit=100):
     except Exception:
         pass
     return []
+
+def _stonks_engine_owner_file():
+    return _STONKS_DIR / 'engine_owner.json'
+
+def _stonks_engine_owner_read():
+    try:
+        p=_stonks_engine_owner_file()
+        if p.exists():
+            d=json.loads(p.read_text(encoding='utf-8'))
+            return str(d.get('scope_id') or '')
+    except Exception:
+        pass
+    return ''
+
+def _stonks_engine_owner_write(scope_id):
+    p=_stonks_engine_owner_file(); p.parent.mkdir(parents=True, exist_ok=True)
+    if scope_id:
+        p.write_text(json.dumps({'scope_id':str(scope_id),'updated_at':datetime.now(timezone.utc).isoformat()},ensure_ascii=False,indent=2),encoding='utf-8')
+    elif p.exists():
+        try: p.unlink()
+        except Exception: pass
 
 def _stonks_audit_append(event, details=None):
     rows=_stonks_audit_read(200)
@@ -633,11 +660,95 @@ def _alpaca_market_request(path, method='GET', params=None):
         raise RuntimeError(f'Alpaca Market Data {r.status_code}: {msg or "respuesta no válida"}')
     return data
 
+def _stonks_engine_cycle(scope_id):
+    """Run one autonomous Paper cycle for the single authorized Stonks owner.
+    This executes only when the persisted state explicitly enables the server engine.
+    """
+    with app.test_request_context('/api/stonks/engine/cycle', method='POST'):
+        session['zar_user_id']=scope_id
+        d=_stonks_read()
+        if not d.get('autonomous_engine') or d.get('revoked') or d.get('paused') or d.get('execution_mode')!='paper_auto' or d.get('mode')!='paper':
+            return {'status':'idle','reason':'Motor autónomo desactivado, pausado, revocado o fuera de Paper.'}
+        symbols=d.get('engine_symbols') or ['AAPL']
+        strategy=d.get('engine_strategy') or 'trend'
+        timeframe=d.get('engine_timeframe') or '1Min'
+        try:
+            clock=_alpaca_paper_request('/v2/clock')
+            if not bool(clock.get('is_open')):
+                action='Mercado cerrado · sin órdenes.'
+                d=_stonks_read(); d['engine_last_run']=datetime.now(timezone.utc).isoformat(); d['engine_last_action']=action; _stonks_write(d)
+                return {'status':'idle','reason':action}
+            actions=[]
+            for symbol in symbols[:8]:
+                try:
+                    signal, _ = _stonks_current_signal(symbol,strategy,timeframe,'iex')
+                    if signal.get('signal') not in ('BUY','SELL'):
+                        actions.append(f"{symbol}: ESPERAR")
+                        continue
+                    # Reuse the hardened Decision + Risk route so the autonomous path
+                    # has exactly the same server-side gates as manual/GUI execution.
+                    with app.test_request_context('/api/stonks/decision', method='POST', json={
+                        'symbol':symbol,'strategy':strategy,'timeframe':timeframe,
+                        'signal':signal.get('signal'),'execute':True,'manual_confirmed':False
+                    }):
+                        session['zar_user_id']=scope_id
+                        result=stonks_decision_api()
+                    payload=result[0] if isinstance(result,tuple) else result
+                    data=payload.get_json() if hasattr(payload,'get_json') else {}
+                    if data.get('order_created'):
+                        order=data.get('order') or {}
+                        actions.append(f"{symbol}: {signal.get('signal')} · ORDEN {order.get('status','enviada')} · {order.get('id','—')}")
+                    else:
+                        actions.append(f"{symbol}: {signal.get('signal')} · {data.get('primary_reason') or data.get('reason') or data.get('decision') or 'sin acción'}")
+                except Exception as exc:
+                    actions.append(f"{symbol}: ERROR · {exc}")
+            action=' | '.join(actions)[:2000] if actions else 'Sin señales.'
+            d=_stonks_read(); d['engine_last_run']=datetime.now(timezone.utc).isoformat(); d['engine_last_action']=action; _stonks_write(d)
+            return {'status':'ok','action':action}
+        except Exception as exc:
+            d=_stonks_read(); d['engine_last_run']=datetime.now(timezone.utc).isoformat(); d['engine_last_action']=f'ERROR · {exc}'; _stonks_write(d)
+            _stonks_audit_append('MOTOR AUTÓNOMO',{'decision':'ERROR','error':str(exc)})
+            return {'status':'error','reason':str(exc)}
+
+def _stonks_engine_loop():
+    """Single-process-safe Paper worker. A filesystem flock prevents duplicate Gunicorn workers."""
+    try:
+        import fcntl
+    except Exception:
+        return
+    lock_path=_STONKS_DIR / 'engine.lock'
+    lock_path.parent.mkdir(parents=True,exist_ok=True)
+    fh=None
+    try:
+        fh=open(lock_path,'a+')
+        fcntl.flock(fh,fcntl.LOCK_EX|fcntl.LOCK_NB)
+    except Exception:
+        try:
+            if fh: fh.close()
+        except Exception: pass
+        return
+    while True:
+        try:
+            owner=_stonks_engine_owner_read()
+            if owner:
+                _stonks_engine_cycle(owner)
+        except Exception:
+            pass
+        # The autonomous worker is intentionally persistent and independent of the
+        # Stonks browser window.  Five seconds gives the engine continuous
+        # near-real-time supervision without turning it into a tight CPU loop.
+        # It can be tuned from Railway with ZAR_STONKS_ENGINE_INTERVAL.
+        try:
+            interval=max(2.0,float(os.environ.get('ZAR_STONKS_ENGINE_INTERVAL','5')))
+        except Exception:
+            interval=5.0
+        time.sleep(interval)
+
 @app.get('/api/stonks/status')
 def stonks_status_api():
     d=_stonks_read()
     pk,ps=_alpaca_paper_credentials()
-    return jsonify({'ok':True, **d, 'audit_count':len(_stonks_audit_read(200)), 'paper_configured': bool(pk and ps), 'crypto_configured': bool(os.environ.get('KRAKEN_API_KEY') and os.environ.get('KRAKEN_API_SECRET'))})
+    return jsonify({'ok':True, **d, 'engine_owner':_stonks_engine_owner_read(), 'engine_owned_by_current_user':_stonks_engine_owner_read()==_user_scope_id(), 'audit_count':len(_stonks_audit_read(200)), 'paper_configured': bool(pk and ps), 'crypto_configured': bool(os.environ.get('KRAKEN_API_KEY') and os.environ.get('KRAKEN_API_SECRET'))})
 
 @app.post('/api/stonks/alpaca/test')
 def stonks_alpaca_test_api():
@@ -1350,7 +1461,9 @@ def stonks_resume_api():
 
 @app.post('/api/stonks/revoke')
 def stonks_revoke_api():
-    d=_stonks_read(); d['paused']=True; d['revoked']=True; d['mode']='paper'; _stonks_write(d); return jsonify({'ok':True,'paused':True,'revoked':True})
+    d=_stonks_read(); d['paused']=True; d['revoked']=True; d['mode']='paper'; d['autonomous_engine']=False; _stonks_write(d)
+    if _stonks_engine_owner_read()==_user_scope_id(): _stonks_engine_owner_write('')
+    return jsonify({'ok':True,'paused':True,'revoked':True,'autonomous_engine':False})
 
 @app.post('/api/stonks/restore')
 def stonks_restore_api():
@@ -1372,6 +1485,49 @@ def stonks_controls_api():
     d['max_position_pct']=min(100,d['max_position_pct']); _stonks_write(d)
     _stonks_audit_append('RISK',{'max_trade_eur':d['max_trade_eur'],'max_daily_loss_eur':d['max_daily_loss_eur'],'max_position_pct':d['max_position_pct'],'execution_mode':mode})
     return jsonify({'ok':True, **d})
+
+@app.post('/api/stonks/engine')
+def stonks_engine_api():
+    payload=request.get_json(silent=True) or {}
+    d=_stonks_read()
+    enabled=bool(payload.get('enabled'))
+    if enabled:
+        owner=_stonks_engine_owner_read()
+        me=_user_scope_id()
+        if owner and owner!=me:
+            return jsonify({'ok':False,'error':'El motor autónomo Paper ya está vinculado a otro espacio de ZAR. Desactívalo primero desde ese espacio.'}),409
+        symbols=[]
+        for raw in str(payload.get('symbols') or ','.join(d.get('engine_symbols') or ['AAPL'])).split(','):
+            sym=raw.strip().upper()
+            if sym and sym not in symbols: symbols.append(sym)
+        if not symbols: symbols=['AAPL']
+        if len(symbols)>8: return jsonify({'ok':False,'error':'Máximo 8 símbolos para el motor autónomo.'}),400
+        for sym in symbols:
+            if len(sym)>20 or not sym.replace('.','').replace('-','').isalnum():
+                return jsonify({'ok':False,'error':f'Símbolo no válido: {sym}.'}),400
+        strategy=str(payload.get('strategy') or d.get('engine_strategy') or 'trend').strip().lower()
+        timeframe=str(payload.get('timeframe') or d.get('engine_timeframe') or '1Min').strip()
+        if strategy not in ('trend','mean_reversion'): strategy='trend'
+        if timeframe not in ('1Min','5Min','15Min'): timeframe='1Min'
+        if d.get('revoked'):
+            return jsonify({'ok':False,'error':'Primero restaura el control de ZAR Stonks; después podrás activar el motor autónomo.'}),409
+        if d.get('mode')!='paper':
+            return jsonify({'ok':False,'error':'El motor autónomo solo funciona en modo Paper.'}),409
+        d['execution_mode']='paper_auto'
+        d['autonomous_engine']=True
+        d['engine_symbols']=symbols
+        d['engine_strategy']=strategy
+        d['engine_timeframe']=timeframe
+        d['engine_last_action']='Motor autónomo Paper activado; pendiente del siguiente ciclo.'
+        _stonks_write(d); _stonks_engine_owner_write(me)
+        _stonks_audit_append('MOTOR AUTÓNOMO',{'decision':'ACTIVADO','symbols':symbols,'strategy':strategy,'timeframe':timeframe,'paused':bool(d.get('paused'))})
+        return jsonify({'ok':True,**d,'engine_owner':me})
+    d['autonomous_engine']=False
+    d['engine_last_action']='Motor autónomo Paper desactivado por el usuario.'
+    _stonks_write(d)
+    if _stonks_engine_owner_read()==_user_scope_id(): _stonks_engine_owner_write('')
+    _stonks_audit_append('MOTOR AUTÓNOMO',{'decision':'DESACTIVADO'})
+    return jsonify({'ok':True,**d,'engine_owner':_stonks_engine_owner_read()})
 
 @app.get("/api/maps/search")
 def maps_search_endpoint():
@@ -3631,6 +3787,9 @@ def api_models():
     except ImportError:
         from model_router import catalog
     return jsonify({"ok": True, "models": catalog()})
+
+_stonks_engine_thread=threading.Thread(target=_stonks_engine_loop, name='zar-stonks-paper-engine', daemon=True)
+_stonks_engine_thread.start()
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT','8765')), debug=False)
