@@ -744,6 +744,112 @@ def _stonks_max_drawdown(equity_curve):
     return max_dd
 
 
+
+@app.get('/api/stonks/signals')
+def stonks_signals_api():
+    """Calculate near-real-time Paper market signals from completed Alpaca bars.
+
+    This endpoint is analysis-only: it never creates, modifies or cancels broker orders.
+    Signals are based on the latest completed bar to avoid using an unfinished minute.
+    """
+    try:
+        raw_symbols=str(request.args.get('symbols') or 'AAPL')
+        symbols=[]
+        for raw in raw_symbols.split(','):
+            symbol=raw.strip().upper()
+            if symbol and symbol not in symbols:
+                symbols.append(symbol)
+        if not symbols:
+            symbols=['AAPL']
+        if len(symbols)>8:
+            return jsonify({'ok':False,'error':'Máximo 8 símbolos por análisis.'}),400
+        for symbol in symbols:
+            if len(symbol)>20 or not symbol.replace('.','').replace('-','').isalnum():
+                return jsonify({'ok':False,'error':f'Símbolo no válido: {symbol}.'}),400
+        timeframe=str(request.args.get('timeframe') or '1Min').strip()
+        if timeframe not in ('1Min','5Min','15Min'):
+            timeframe='1Min'
+        strategy=str(request.args.get('strategy') or 'trend').strip().lower()
+        if strategy not in ('trend','mean_reversion'):
+            return jsonify({'ok':False,'error':'Estrategia no válida.'}),400
+        feed=str(request.args.get('feed') or 'iex').strip().lower()
+        if feed not in ('iex','sip'):
+            feed='iex'
+
+        clock=_alpaca_paper_request('/v2/clock')
+        end=datetime.now(timezone.utc)
+        # Ask for a small recent window. We discard a bar whose timestamp belongs
+        # to the current minute so an unfinished candle cannot create a signal.
+        from datetime import timedelta
+        start=end-timedelta(hours=8 if timeframe=='1Min' else 24)
+        params={
+            'symbols':','.join(symbols),
+            'timeframe':timeframe,
+            'start':start.strftime('%Y-%m-%dT%H:%M:%SZ'),
+            'end':end.strftime('%Y-%m-%dT%H:%M:%SZ'),
+            'limit':1000,
+            'feed':feed,
+            'sort':'asc'
+        }
+        data=_alpaca_market_request('/v2/stocks/bars',params=params)
+        bars_by_symbol=data.get('bars') if isinstance(data,dict) else {}
+        bars_by_symbol=bars_by_symbol if isinstance(bars_by_symbol,dict) else {}
+        current_minute=end.replace(second=0,microsecond=0)
+
+        results=[]
+        for symbol in symbols:
+            raw=bars_by_symbol.get(symbol) or []
+            bars=[]
+            for b in raw:
+                try:
+                    ts=datetime.fromisoformat(str(b.get('t','')).replace('Z','+00:00'))
+                    if ts >= current_minute:
+                        continue
+                    if all(k in b for k in ('o','h','l','c')):
+                        bars.append(b)
+                except Exception:
+                    continue
+            bars=bars[-120:]
+            closes=[float(b['c']) for b in bars]
+            item={'symbol':symbol,'timeframe':timeframe,'strategy':strategy,'signal':'HOLD','signal_label':'ESPERAR','reason':'Sin cruce nuevo confirmado en la última barra cerrada.','price':closes[-1] if closes else None,'bar_time':bars[-1].get('t') if bars else None,'bars':len(bars),'indicators':{}}
+            if len(bars)<55:
+                item['signal_label']='SIN DATOS'
+                item['reason']=f'Se necesitan al menos 55 barras cerradas; disponibles: {len(bars)}.'
+                results.append(item); continue
+            if strategy=='trend':
+                sma20=_stonks_sma(closes,20); sma50=_stonks_sma(closes,50)
+                p20,p50=sma20[-2],sma50[-2]; c20,c50=sma20[-1],sma50[-1]
+                item['indicators']={'sma20':round(c20,4),'sma50':round(c50,4)}
+                if p20 is not None and p50 is not None and p20 <= p50 and c20 > c50:
+                    item['signal']='BUY'; item['signal_label']='COMPRA'; item['reason']=f'SMA20 ({c20:.2f}) cruzó al alza SMA50 ({c50:.2f}) en la última barra cerrada.'
+                elif p20 is not None and p50 is not None and p20 >= p50 and c20 < c50:
+                    item['signal']='SELL'; item['signal_label']='VENTA'; item['reason']=f'SMA20 ({c20:.2f}) cruzó a la baja SMA50 ({c50:.2f}) en la última barra cerrada.'
+                else:
+                    relation='por encima' if c20>c50 else ('por debajo' if c20<c50 else 'igual a')
+                    item['reason']=f'SMA20 ({c20:.2f}) está {relation} de SMA50 ({c50:.2f}); no hay cruce nuevo.'
+            else:
+                rsi=_stonks_rsi(closes,14)
+                pr,cr=rsi[-2],rsi[-1]
+                item['indicators']={'rsi14':round(cr,2)}
+                if pr is not None and pr >= 30 and cr < 30:
+                    item['signal']='BUY'; item['signal_label']='COMPRA'; item['reason']=f'RSI14 cayó por debajo de 30 ({cr:.2f}) en la última barra cerrada.'
+                elif pr is not None and pr <= 70 and cr > 70:
+                    item['signal']='SELL'; item['signal_label']='VENTA'; item['reason']=f'RSI14 superó 70 ({cr:.2f}) en la última barra cerrada.'
+                else:
+                    zone='sobreventa' if cr<30 else ('sobrecompra' if cr>70 else 'zona neutral')
+                    item['reason']=f'RSI14 = {cr:.2f} ({zone}); no hay cruce nuevo.'
+            results.append(item)
+
+        return jsonify({
+            'ok':True,'analysis_only':True,'orders_created':False,
+            'paper':True,'strategy':strategy,'timeframe':timeframe,'feed':feed,
+            'market':{'is_open':bool(clock.get('is_open')),'timestamp':clock.get('timestamp'),'next_open':clock.get('next_open'),'next_close':clock.get('next_close')},
+            'generated_at':datetime.now(timezone.utc).isoformat(),
+            'signals':results
+        })
+    except Exception as exc:
+        return jsonify({'ok':False,'error':str(exc)}),502
+
 @app.post('/api/stonks/backtest')
 def stonks_backtest_api():
     """Run a deterministic, server-side historical backtest. Never creates broker orders."""
