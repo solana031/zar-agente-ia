@@ -946,6 +946,17 @@ def stonks_decision_api():
     except Exception as exc:
         return jsonify({'ok':False,'error':str(exc)}),502
 
+@app.delete('/api/stonks/alpaca/orders')
+def stonks_alpaca_cancel_all_orders_api():
+    """Emergency cancellation of all open orders in Alpaca Paper only."""
+    try:
+        data=_alpaca_paper_request('/v2/orders', method='DELETE')
+        _stonks_audit_append('CANCELACIÓN GLOBAL', {'paper':True, 'result':data if isinstance(data,(list,dict)) else str(data)})
+        return jsonify({'ok':True,'paper':True,'canceled':data})
+    except Exception as exc:
+        _stonks_audit_append('CANCELACIÓN GLOBAL', {'paper':True, 'error':str(exc)})
+        return jsonify({'ok':False,'paper':True,'error':str(exc)}),502
+
 @app.post('/api/stonks/backtest')
 def stonks_backtest_api():
     """Run a deterministic, server-side historical backtest. Never creates broker orders."""
