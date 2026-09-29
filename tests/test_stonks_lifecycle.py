@@ -252,6 +252,7 @@ class LifecycleTests(unittest.TestCase):
         def broker(path, **kwargs):
             if path=='/v2/positions':return self.positions
             if path=='/v2/clock':return self.clock
+            if path=='/v2/account':return self.account
             if path=='/v2/orders':return list(self.orders.values()) if kwargs['params']['status']=='all' else []
             raise AssertionError(path)
         self.api['_alpaca_paper_request']=Mock(side_effect=broker)

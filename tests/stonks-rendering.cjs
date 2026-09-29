@@ -13,7 +13,7 @@ for (const file of fs.readdirSync('app/static').filter(f => f.endsWith('.js'))) 
   new vm.Script(fs.readFileSync(`app/static/${file}`, 'utf8'), {filename: file});
 }
 for (const file of ['VERSION', 'VERSION.txt', 'app/VERSION.txt']) {
-  assert.equal(fs.readFileSync(file, 'utf8').trim(), '31.3.20');
+  assert.equal(fs.readFileSync(file, 'utf8').trim(), '31.3.21');
 }
 console.log(`PASS: ${scripts} inline scripts, static JavaScript and three version files`);
 (async () => {
@@ -23,21 +23,32 @@ console.log(`PASS: ${scripts} inline scripts, static JavaScript and three versio
     for (const viewport of [{width: 1920, height: 1080}, {width: 1440, height: 900}, {width: 390, height: 844}]) {
       const page = await browser.newPage({viewport});
       const errors = [], requests = [];
+      let controlledReady=false, testSnapshot={active:false,status:'SIN_PRUEBA',steps:[],can_close:false};
       page.on('pageerror', error => errors.push(error.message));
       await page.route('**/*', route => {
         const request = route.request(), url = new URL(request.url());
         requests.push({path: url.pathname, method: request.method(), body: request.postData()});
         if (url.pathname === '/') return route.fulfill({contentType: 'text/html', body: html});
+        if(url.pathname==='/api/stonks/lifecycle-test/start'){
+          testSnapshot={id:'zar-e-ui-test',symbol:'AAPL',active:true,status:'ESPERANDO_FILL',can_close:false,steps:[{event:'TEST_LIFECYCLE_STARTED'},{event:'TEST_ENTRY_REQUESTED'}]};
+          return route.fulfill({status:202,contentType:'application/json',body:JSON.stringify({ok:true,paper:true,lifecycle_test:testSnapshot})});
+        }
+        if(url.pathname==='/api/stonks/lifecycle-test/close'){
+          testSnapshot={...testSnapshot,status:'ESPERANDO_CIERRE',can_close:false,steps:[...testSnapshot.steps,{event:'TEST_CLOSE_REQUESTED'}]};
+          return route.fulfill({status:202,contentType:'application/json',body:JSON.stringify({ok:true,paper:true,lifecycle_test:testSnapshot})});
+        }
+
         if (url.pathname === '/static/skills.js') return route.fulfill({contentType: 'application/javascript', body: fs.readFileSync('app/static/skills.js', 'utf8')});
         return route.fulfill({contentType: 'application/json', body: JSON.stringify({
-          ok: true, paused: true, revoked: false, mode: 'paper', execution_mode: 'decision',
+          ok: true, paused: !controlledReady, revoked: false, mode: 'paper', execution_mode: controlledReady?'paper_auto':'decision',
+          paper_connected:controlledReady,engine_owned_by_current_user:true,lifecycle_test:testSnapshot,
           autonomous_engine: true, paper_configured: true, position_lifecycle_enabled: true,
           stop_loss_pct: 1.5, take_profit_pct: 3, managed_position_count: 2,
           managed_positions: {AAPL: {symbol:'AAPL', client_order_id:'zar-e-test', direction:'LONG', qty:'2', entry_price:100, current_price:101, market_value:202, unrealized_pl:2, unrealized_pl_pct:1, stop_price:98.5, take_price:103, distance_sl_pct:2.4752, distance_tp_pct:1.9802, opened_at:'2026-09-28T10:00:00Z', strategy:'trend', origin:'motor autónomo', status:'PROTEGIDA'}},
           signals: [], positions: [], orders: [], audit: []
         })});
       });
-      await page.goto('http://zar.test/');
+      await page.goto('https://zar.test/');
       await page.evaluate(() => showStonks());
       await page.waitForTimeout(800);
       async function checkLayout() {
@@ -113,6 +124,40 @@ console.log(`PASS: ${scripts} inline scripts, static JavaScript and three versio
       assert.equal(saved.position_lifecycle_enabled, true);
       assert.equal(saved.stop_loss_pct, 1.5);
       assert.equal(saved.take_profit_pct, 3);
+      // Controlled Paper test UI uses server snapshots and explicit confirmation.
+      assert.equal(await page.locator('#zsLifecycleTestStart').isDisabled(),true);
+      controlledReady=true;
+      await page.evaluate(()=>zsRefreshStatus());
+      assert.equal(await page.locator('#zsLifecycleTestStart').isEnabled(),true);
+      for(const flag of [{paper_connected:false},{engine_owned_by_current_user:false},{autonomous_engine:false},{mode:'live'},{position_lifecycle_enabled:false},{paused:true},{revoked:true}]){
+        await page.evaluate(flag=>zsRenderLifecycleTest({...zsLifecycleTestState,...flag}),flag);
+        assert.equal(await page.locator('#zsLifecycleTestStart').isDisabled(),true);
+        await page.evaluate(()=>zsRefreshStatus());
+      }
+      await page.locator('#zsLifecycleTestStart').click();
+      assert.equal(await page.locator('#zsLifecycleTestStart').isDisabled(),true);
+      await page.locator('#zsConfirmPrimaryBtn').click();
+      await page.waitForFunction(()=>document.getElementById('zsLifecycleTestState').textContent.includes('ESPERANDO_FILL'));
+      assert.equal(await page.locator('#zsLifecycleTestClose').isDisabled(),true);
+      const starts=requests.filter(r=>r.path==='/api/stonks/lifecycle-test/start');
+      assert.equal(starts.length,1);
+      const startPayload=JSON.parse(starts[0].body);
+      assert.equal(startPayload.confirm,true);
+      assert.match(startPayload.request_id,/^[0-9a-f-]{36}$/);
+      testSnapshot={...testSnapshot,status:'POSICION_DETECTADA',can_close:true,steps:[...testSnapshot.steps,{event:'TEST_POSITION_DETECTED'}]};
+      await page.evaluate(()=>zsRefreshStatus());
+      assert.equal(await page.locator('#zsLifecycleTestClose').isEnabled(),true);
+      await page.locator('#zsLifecycleTestClose').click();
+      await page.locator('#zsConfirmPrimaryBtn').click();
+      await page.waitForFunction(()=>document.getElementById('zsLifecycleTestState').textContent.includes('ESPERANDO_CIERRE'));
+      const closes=requests.filter(r=>r.path==='/api/stonks/lifecycle-test/close');
+      assert.equal(closes.length,1);
+      assert.equal(JSON.parse(closes[0].body).id,'zar-e-ui-test');
+      testSnapshot={...testSnapshot,active:false,status:'OK',steps:[...testSnapshot.steps,{event:'TEST_POSITION_CLOSED'},{event:'TEST_LIFECYCLE_OK'}]};
+      await page.evaluate(()=>zsRefreshStatus());
+      assert.equal(await page.locator('#zsLifecycleTestSteps li').count(),6);
+      assert.equal(await page.locator('#zsLifecycleTestSteps li').evaluateAll(rows=>rows.every(r=>r.textContent.startsWith('✓'))),true);
+      await checkLayout();
       await page.locator('.zsCloseBtn').click();
       assert.equal(await page.locator('#panel').isVisible(), false);
       assert.equal(await page.evaluate(() => zsLiveSyncTimer), null);

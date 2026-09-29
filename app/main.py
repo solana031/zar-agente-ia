@@ -631,6 +631,7 @@ def _stonks_default():
         'take_profit_pct': 2.0,
         'pending_entries': {},
         'position_ledger': {},
+        'paper_connected': False,
         'managed_positions': {},
         'lifecycle_last_action': None
     }
@@ -707,6 +708,11 @@ def _stonks_order_history(after):
 
 def _stonks_reconcile_paper_state(scope_id, symbols=None, emit_audit=True):
     # Never filter ownership by the current watchlist: removed symbols still need protection.
+    try:
+        account = _alpaca_paper_request('/v2/account')
+    except Exception:
+        account = {}  # Connection UI fails closed; observational position reconciliation can continue.
+    if not isinstance(account, dict): account = {}
     positions = _alpaca_paper_request('/v2/positions')
     orders = _alpaca_paper_request('/v2/orders', params={'status':'open','limit':500,'nested':'false'})
     if not isinstance(positions, list) or not isinstance(orders, list) or len(orders) >= 500:
@@ -714,6 +720,7 @@ def _stonks_reconcile_paper_state(scope_id, symbols=None, emit_audit=True):
     d = _stonks_read()
     active = stonks_lifecycle.active_records(d)
     history = _stonks_order_history(stonks_lifecycle.history_start(active)) if active else []
+    d['paper_connected'] = account.get('status') == 'ACTIVE' and not (account.get('trading_blocked') or account.get('account_blocked'))
     d['engine_last_positions'] = positions
     d['engine_last_open_orders'] = orders
     d['engine_last_reconcile'] = datetime.now(timezone.utc).isoformat()
@@ -849,6 +856,8 @@ def _stonks_engine_cycle(scope_id):
                         # Preserve strategy SELL exits for owned LONGs, through the same
                         # durable close/Risk state machine (also when SL/TP is disabled).
                         record = records[symbol]
+                        if record.get('purpose')=='TEST_LIFECYCLE':
+                            continue
                         if signal.get('signal') == 'SELL' and record['side'] == 'buy':
                             latest = _stonks_read()
                             owned = latest['position_ledger'][record['client_order_id']]
@@ -886,7 +895,9 @@ def _stonks_engine_cycle(scope_id):
             d=_stonks_read(); d['engine_last_run']=datetime.now(timezone.utc).isoformat(); d['engine_last_action']=action; _stonks_write(d)
             return {'status':'ok','action':action}
         except Exception as exc:
-            d=_stonks_read(); d['engine_last_run']=datetime.now(timezone.utc).isoformat(); d['engine_last_action']='ERROR · reconciliación Paper no disponible; sin órdenes'; _stonks_write(d)
+            d=_stonks_read(); d['paper_connected']=False; d['engine_last_run']=datetime.now(timezone.utc).isoformat(); d['engine_last_action']='ERROR · reconciliación Paper no disponible; sin órdenes'; _stonks_write(d)
+            for record in stonks_lifecycle.active_records(d):
+                stonks_lifecycle.test_event(record, 'TEST_LIFECYCLE_ERROR', _stonks_audit_append, 'Alpaca no disponible; conservando intención y ownership')
             for row in d.get('managed_positions', {}).values():
                 if row.get('status') != 'CERRADA':
                     row.update(status='ERROR', reason='Snapshot Paper no disponible; conservando último estado')
@@ -932,7 +943,7 @@ def _stonks_engine_loop():
 def stonks_status_api():
     d=_stonks_read()
     pk,ps=_alpaca_paper_credentials()
-    return jsonify({'ok':True, **d, 'engine_owner':_stonks_engine_owner_read(), 'engine_owned_by_current_user':_stonks_engine_owner_read()==_user_scope_id(), 'audit_count':len(_stonks_audit_read(200)), 'paper_configured': bool(pk and ps), 'crypto_configured': bool(os.environ.get('KRAKEN_API_KEY') and os.environ.get('KRAKEN_API_SECRET')), 'engine_position_count':len(d.get('engine_last_positions') or []), 'engine_open_order_count':len(d.get('engine_last_open_orders') or []), 'position_lifecycle_enabled':bool(d.get('position_lifecycle_enabled')), 'stop_loss_pct':d.get('stop_loss_pct',1.0), 'take_profit_pct':d.get('take_profit_pct',2.0), 'managed_position_count':sum(r.get('status')!='CERRADA' for r in (d.get('managed_positions') or {}).values()), 'lifecycle_last_action':d.get('lifecycle_last_action')})
+    return jsonify({'ok':True, **d, 'lifecycle_test':stonks_lifecycle.test_view(d), 'engine_owner':_stonks_engine_owner_read(), 'engine_owned_by_current_user':_stonks_engine_owner_read()==_user_scope_id(), 'audit_count':len(_stonks_audit_read(200)), 'paper_configured': bool(pk and ps), 'crypto_configured': bool(os.environ.get('KRAKEN_API_KEY') and os.environ.get('KRAKEN_API_SECRET')), 'engine_position_count':len(d.get('engine_last_positions') or []), 'engine_open_order_count':len(d.get('engine_last_open_orders') or []), 'position_lifecycle_enabled':bool(d.get('position_lifecycle_enabled')), 'stop_loss_pct':d.get('stop_loss_pct',1.0), 'take_profit_pct':d.get('take_profit_pct',2.0), 'managed_position_count':sum(r.get('status')!='CERRADA' for r in (d.get('managed_positions') or {}).values()), 'lifecycle_last_action':d.get('lifecycle_last_action')})
 
 @app.post('/api/stonks/alpaca/test')
 @_stonks_serialized
@@ -1251,7 +1262,7 @@ def stonks_audit_api():
 
 @app.post('/api/stonks/decision')
 @_stonks_serialized
-def stonks_decision_api(engine=False):
+def stonks_decision_api(engine=False, lifecycle_test=False):
     """Evaluate one current signal against ZAR Risk and optionally execute Paper.
     Live trading is intentionally impossible in this endpoint."""
     try:
@@ -1266,7 +1277,16 @@ def stonks_decision_api(engine=False):
             return jsonify({'ok':False,'error':'Símbolo no válido.'}),400
         if requested_signal not in ('BUY','SELL'):
             return jsonify({'ok':True,'paper':True,'decision':'NO_ACTION','reason':'La señal actual no requiere una operación.','order_created':False})
-        actual,clock=_stonks_current_signal(symbol,strategy,timeframe,'iex')
+        if lifecycle_test:
+            # Internal-only synthetic decision source; every production Risk check below still applies.
+            engine = True
+            strategy = 'TEST_LIFECYCLE'
+            requested_signal = 'BUY'
+            execute = True
+            actual = {'signal':'BUY', 'bar_time':'TEST:'+str(payload.get('request_id'))}
+            clock = _alpaca_paper_request('/v2/clock')
+        else:
+            actual,clock=_stonks_current_signal(symbol,strategy,timeframe,'iex')
         if actual.get('signal') != requested_signal:
             _stonks_audit_append('DECISIÓN',{'symbol':symbol,'requested_signal':requested_signal,'actual_signal':actual.get('signal'),'decision':'DENEGADA','reason':'La señal enviada ya no coincide con la última barra cerrada.'})
             return jsonify({'ok':True,'paper':True,'decision':'DENEGADA','reason':'La señal enviada ya no coincide con la última barra cerrada.','current_signal':actual,'order_created':False})
@@ -1283,9 +1303,25 @@ def stonks_decision_api(engine=False):
         add_check('PAUSED','Motor pausado',not bool(d.get('paused')))
         add_check('MODE','Modo distinto de Paper',d.get('mode')=='paper')
         add_check('MARKET','Mercado cerrado',bool(clock.get('is_open')))
+        if lifecycle_test:
+            add_check('LIFECYCLE', 'Gestión de posición desactivada', bool(d.get('position_lifecycle_enabled')))
+            add_check('AUTO', 'Modo Paper automático requerido', d.get('execution_mode')=='paper_auto')
+            add_check('SINGLE_TEST', 'Ya existe una prueba activa', not any(r.get('purpose')=='TEST_LIFECYCLE' for r in stonks_lifecycle.active_records(d)))
+
 
         account=_alpaca_paper_request('/v2/account')
         equity=float(account.get('equity') or 0); last_equity=float(account.get('last_equity') or 0)
+        if lifecycle_test:
+            equity = float(stonks_lifecycle.number(account.get('equity')))
+            last_equity = float(stonks_lifecycle.number(account.get('last_equity')))
+            for field in ['max_trade_eur','max_position_pct','max_daily_loss_eur']:
+                stonks_lifecycle.number(d[field])
+            add_check('EQUITY', 'Capital Paper no válido para una prueba', equity>0)
+            add_check('CONNECTED', 'Alpaca Paper no está disponible para operar', account.get('status')=='ACTIVE' and not (account.get('trading_blocked') or account.get('account_blocked')))
+            add_check('BUYING_POWER', 'Saldo Paper insuficiente para 1 USD', float(account.get('buying_power') or 0)>=1)
+            asset = _alpaca_paper_request('/v2/assets/'+symbol)
+            add_check('FRACTIONABLE', 'Activo no compatible con prueba mínima Paper', asset.get('status')=='active' and asset.get('tradable') is True and asset.get('fractionable') is True and asset.get('class')=='us_equity')
+
         daily_loss=max(0.0,last_equity-equity); max_daily=float(d.get('max_daily_loss_eur',10))
         add_check('DAILY_LOSS','Pérdida diaria límite alcanzada',not (daily_loss>=max_daily),f'{daily_loss:.2f} USD / límite {max_daily:.2f} USD')
 
@@ -1321,6 +1357,11 @@ def stonks_decision_api(engine=False):
             qty=min(max_trade/price if price>0 else 0, available_value/price if price>0 else 0)
         qty=float(f'{qty:.9f}')
         order_value=qty*price
+        if lifecycle_test:
+            # Fixed minimal dollar notional avoids quote movement/rounding changing the entry size.
+            qty = float(f'{1.0/price:.9f}') if price>0 else 0
+            order_value = 1.0
+
 
         # Alpaca supports fractional equity orders. For BUY, keep our own 1 USD floor; for SELL, do not
         # invent a notional floor that could prevent closing a small existing Paper position.
@@ -1360,11 +1401,20 @@ def stonks_decision_api(engine=False):
             body={'symbol':symbol,'qty':str(qty),'side':'buy' if requested_signal=='BUY' else 'sell','type':'market','time_in_force':'day'}
             if engine:
                 intent = stonks_lifecycle.entry_intent(d, symbol, body['side'], qty, strategy, timeframe)
+                if lifecycle_test:
+                    body.pop('qty')
+                    body['notional'] = '1.00'
+                    intent.update(purpose='TEST_LIFECYCLE', origin='TEST_LIFECYCLE', test_request_id=payload['request_id'], notional_requested='1.00')
+                    _stonks_write(d)
+                    stonks_lifecycle.test_event(intent, 'TEST_LIFECYCLE_STARTED', _stonks_audit_append, 'Prueba Paper confirmada; intención persistida', str(qty), price)
+
                 body['client_order_id'] = intent['client_order_id']
                 d['last_executed_signals'][key] = datetime.now(timezone.utc).isoformat()
                 _stonks_write(d)  # ownership + dedup intent durable BEFORE network
                 order = _stonks_submit_paper_order(body)
                 intent['order_id'] = order['id']
+                if lifecycle_test:
+                    stonks_lifecycle.test_event(intent, 'TEST_ENTRY_REQUESTED', _stonks_audit_append, 'Entrada Paper enviada; esperando fill', str(qty), price)
                 _stonks_write(d)
                 result.update(order_created=True, order=order)
                 _stonks_audit_append('ORDEN PAPER', {'symbol':symbol, 'qty':qty, 'price':price,
@@ -1385,6 +1435,85 @@ def stonks_decision_api(engine=False):
         return jsonify(result)
     except Exception as exc:
         return jsonify({'ok':False,'error':str(exc)}),502
+
+def _stonks_test_gate(d):
+    reason = stonks_lifecycle.blocked(d, {'is_open':True})
+    if reason:
+        return reason
+    if _stonks_engine_owner_read()!=_user_scope_id():
+        return 'La prueba requiere el propietario del motor servidor'
+    return ''
+
+
+@app.post('/api/stonks/lifecycle-test/start')
+@_stonks_serialized
+def stonks_lifecycle_test_start_api():
+    payload = request.get_json(silent=True) or {}
+    if payload.get('confirm') is not True:
+        return jsonify({'ok':False,'error':'Confirma expresamente la prueba Paper de 1 USD'}),400
+    try:
+        request_id = str(uuid.UUID(str(payload.get('request_id') or '')))
+    except ValueError:
+        return jsonify({'ok':False,'error':'Identificador de solicitud no válido'}),400
+    d = _stonks_read()
+    previous = next((r for r in d['position_ledger'].values() if r.get('test_request_id')==request_id and r.get('purpose')=='TEST_LIFECYCLE'), None)
+    if previous:
+        return jsonify({'ok':True,'paper':True,'replayed':True,'lifecycle_test':stonks_lifecycle.test_view(d)})
+    reason = _stonks_test_gate(d)
+    if reason or any(r.get('purpose')=='TEST_LIFECYCLE' for r in stonks_lifecycle.active_records(d)):
+        return jsonify({'ok':False,'error':reason or 'Ya existe una prueba Paper activa'}),409
+    me = _user_scope_id()
+    with app.test_request_context('/api/stonks/decision', method='POST', json={
+            'symbol':payload.get('symbol') or (d.get('engine_symbols') or ['AAPL'])[0],
+            'request_id':request_id, 'signal':'BUY', 'execute':True}):
+        session['zar_user_id']=me
+        response = stonks_decision_api(engine=True, lifecycle_test=True)
+    response = response[0] if isinstance(response,tuple) else response
+    result = response.get_json()
+    d = _stonks_read()
+    record = next((r for r in d['position_ledger'].values() if r.get('test_request_id')==request_id),None)
+    if not result.get('order_created'):
+        reason = result.get('primary_reason') or 'Entrada Paper no confirmada; se reconciliará sin duplicar'
+        if record:
+            stonks_lifecycle.test_event(record, 'TEST_LIFECYCLE_ERROR', _stonks_audit_append, reason)
+            _stonks_write(d)
+        else:
+            _stonks_audit_append('TEST_LIFECYCLE_ERROR', {'reason':reason,'purpose':'TEST_LIFECYCLE'})
+        return jsonify({'ok':False,'paper':True,'error':reason,'lifecycle_test':stonks_lifecycle.test_view(d)}),409
+    return jsonify({'ok':True,'paper':True,'lifecycle_test':stonks_lifecycle.test_view(d)}),202
+
+
+@app.post('/api/stonks/lifecycle-test/close')
+@_stonks_serialized
+def stonks_lifecycle_test_close_api():
+    payload = request.get_json(silent=True) or {}
+    d = _stonks_read()
+    record = d['position_ledger'].get(str(payload.get('id') or ''))
+    if payload.get('confirm') is not True or not record or record.get('purpose')!='TEST_LIFECYCLE':
+        return jsonify({'ok':False,'error':'Solo se permite cerrar una prueba TEST_LIFECYCLE confirmada'}),400
+    if record.get('closed'):
+        return jsonify({'ok':True,'paper':True,'lifecycle_test':stonks_lifecycle.test_view(d)})
+    reason = _stonks_test_gate(d)
+    if reason:
+        return jsonify({'ok':False,'error':reason}),409
+    row = d['managed_positions'].get(record['symbol'], {})
+    if row.get('client_order_id')!=record['client_order_id'] or not row.get('opened_at') or record.get('ownership_conflict') or row.get('status')=='ERROR':
+        return jsonify({'ok':False,'error':'La posición de prueba todavía no tiene ownership confirmado o requiere revisión'}),409
+    try:
+        account = _alpaca_paper_request('/v2/account')
+        if account.get('status')!='ACTIVE' or account.get('trading_blocked') or account.get('account_blocked'):
+            raise RuntimeError('Paper no disponible')
+    except Exception:
+        stonks_lifecycle.test_event(record, 'TEST_LIFECYCLE_ERROR', _stonks_audit_append, 'No se pudo verificar la conexión Alpaca Paper')
+        _stonks_write(d)
+        return jsonify({'ok':False,'error':'No se pudo verificar la conexión Alpaca Paper','lifecycle_test':stonks_lifecycle.test_view(d)}),409
+    # Durable request only: the worker reconciles quantity/ownership and applies all exit Risk checks.
+    if not record.get('trigger'):
+        record['trigger'] = 'TEST'
+        record['test_close_requested_at'] = datetime.now(timezone.utc).isoformat()
+        _stonks_write(d)
+    return jsonify({'ok':True,'paper':True,'lifecycle_test':stonks_lifecycle.test_view(d)}),202
+
 
 @app.delete('/api/stonks/alpaca/orders')
 @_stonks_serialized

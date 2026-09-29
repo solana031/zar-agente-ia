@@ -48,6 +48,52 @@ def active_records(state):
     return [r for r in state.get('position_ledger', {}).values() if not r.get('closed')]
 
 
+def test_event(record, name, audit, reason='', qty=None, price=None):
+    """Persist test milestones inside the production ledger, without a second state store."""
+    if record.get('purpose') != 'TEST_LIFECYCLE':
+        return
+    events = record.setdefault('test_events', [])
+    if name == 'TEST_LIFECYCLE_ERROR':
+        record['test_error'] = reason
+        if record.get('test_last_error_logged') == reason:
+            return
+        record['test_last_error_logged'] = reason
+    elif any(e['event'] == name for e in events):
+        return
+    events.append({'event':name, 'timestamp':now(), 'reason':reason})
+    milestones = [e for e in events if e['event']!='TEST_LIFECYCLE_ERROR']
+    errors = [e for e in events if e['event']=='TEST_LIFECYCLE_ERROR'][-10:]
+    record['test_events'] = sorted(milestones + errors, key=lambda e:e['timestamp'])
+    audit(name, {'symbol':record['symbol'], 'client_order_id':record['client_order_id'],
+                 'qty':qty, 'price':price, 'reason':reason, 'purpose':'TEST_LIFECYCLE'})
+
+
+def test_view(state):
+    records = [r for r in state.get('position_ledger', {}).values() if r.get('purpose')=='TEST_LIFECYCLE']
+    if not records:
+        return {'active':False, 'status':'SIN_PRUEBA', 'steps':[], 'can_close':False}
+    active = [r for r in records if not r.get('closed')]
+    record = max(active or records, key=lambda r:r['submitted_at'])
+    row = state.get('managed_positions', {}).get(record['symbol'], {})
+    if row.get('client_order_id') != record['client_order_id']:
+        row = {}
+    status = 'ESPERANDO_FILL'
+    if record.get('closed'):
+        status = 'OK' if any(e['event']=='TEST_LIFECYCLE_OK' for e in record.get('test_events', [])) else 'ERROR'
+    elif record.get('test_error'):
+        status = 'ERROR'
+    elif row.get('opened_at'):
+        status = 'CIERRE_SOLICITADO' if record.get('trigger') else 'POSICION_DETECTADA'
+        if record.get('exits'):
+            status = 'ESPERANDO_CIERRE'
+    return {'id':record['client_order_id'], 'purpose':'TEST_LIFECYCLE', 'symbol':record['symbol'],
+            'active':not record.get('closed'), 'status':status, 'steps':record.get('test_events', []),
+            'error':record.get('test_error'), 'position':row,
+            'can_close':bool(row.get('opened_at') and not record.get('closed')
+                             and not record.get('trigger') and not record.get('ownership_conflict')
+                             and row.get('status')!='ERROR')}
+
+
 def blocked(state, clock):
     if state.get('revoked'):
         return 'Revocado: SL/TP suspendido; reconciliación activa'
@@ -81,6 +127,7 @@ def manage(state, positions, orders, lookup, submit, save, audit, account, clock
     def error(row, reason):
         if row.get('status') != 'ERROR' or row.get('reason') != reason:
             event('POSITION_ERROR', row, reason)
+        test_event(record, 'TEST_LIFECYCLE_ERROR', audit, reason, row.get('qty'), row.get('current_price'))
         row.update(status='ERROR', reason=reason, updated_at=now())
         actions.append(row['symbol'] + ': ' + reason)
 
@@ -99,10 +146,13 @@ def manage(state, positions, orders, lookup, submit, save, audit, account, clock
                 continue
             if entry.get('symbol') != symbol or entry.get('side') != record['side']:
                 raise ValueError('Identidad de entrada no coincide')
+            record.pop('test_error', None)
+            test_event(record, 'TEST_ENTRY_REQUESTED', audit, 'Orden confirmada por Alpaca', entry.get('qty'), entry.get('filled_avg_price'))
             filled = number(entry.get('filled_qty') or 0)
             if filled == 0:
                 record['status'] = entry.get('status')
                 if entry.get('status') in TERMINAL:
+                    test_event(record, 'TEST_LIFECYCLE_ERROR', audit, 'Entrada terminada sin fill: '+str(entry.get('status')))
                     record['closed'] = True
                     if managed.get(symbol, {}).get('client_order_id') == cid:
                         managed.pop(symbol, None)
@@ -113,6 +163,8 @@ def manage(state, positions, orders, lookup, submit, save, audit, account, clock
                 if order and (order.get('symbol') != symbol or order.get('side') == record['side']):
                     raise ValueError('Identidad de salida no coincide')
                 exit_orders.append((intent, order))
+                if order:
+                    test_event(record, 'TEST_CLOSE_REQUESTED', audit, intent['trigger'], intent['qty'], order.get('filled_avg_price'))
             exited = sum((number(o.get('filled_qty') or 0) for _, o in exit_orders if o), Decimal(0))
             remaining = filled - exited
             position = by_symbol.get(symbol)
@@ -132,6 +184,8 @@ def manage(state, positions, orders, lookup, submit, save, audit, account, clock
                 if row.get('status') != 'CERRADA':
                     row.update(status='CERRADA', qty='0', market_value=0, unrealized_pl=0, unrealized_pl_pct=0, reason='Cierre confirmado en Alpaca Paper', closed_at=now())
                     event('POSITION_CLOSED', row, row['reason'])
+                test_event(record, 'TEST_POSITION_CLOSED', audit, row['reason'], str(filled), row.get('current_price'))
+                test_event(record, 'TEST_LIFECYCLE_OK', audit, 'Entrada, ownership y cierre reconciliados en Paper')
                 record['closed'] = True
                 managed[symbol] = row
                 continue
@@ -165,12 +219,14 @@ def manage(state, positions, orders, lookup, submit, save, audit, account, clock
             managed[symbol] = row
             if detected:
                 event('POSITION_DETECTED', row, 'Posición y fills reales reconciliados')
+            test_event(record, 'TEST_POSITION_DETECTED', audit, 'Fill y posición propios verificados', row['qty'], row['entry_price'])
             reason = blocked({**state, 'position_lifecycle_enabled':True} if record.get('trigger')=='SIGNAL' else state, clock)
             pending = [(i, o) for i, o in exit_orders if not o or o.get('status') not in TERMINAL]
             if pending:
                 intent, order = pending[0]
                 row.update(status='CERRANDO_' + intent['trigger'], reason=reason or 'Esperando ejecución y reconciliación')
                 if order:
+                    test_event(record, 'TEST_CLOSE_REQUESTED', audit, intent['trigger'], intent['qty'], row['current_price'])
                     continue
                 # Missing after an ambiguous POST: only the SAME durable intent can be retried.
                 if reason:
@@ -235,6 +291,7 @@ def manage(state, positions, orders, lookup, submit, save, audit, account, clock
                             'client_order_id': intent['client_order_id']})
             intent['order_id'] = order.get('id')
             event('CLOSE_REQUESTED', {**row, 'qty':intent['qty'], 'client_order_id':intent['client_order_id']}, intent['trigger'])
+            test_event(record, 'TEST_CLOSE_REQUESTED', audit, intent['trigger'], intent['qty'], row['current_price'])
             actions.append(symbol + ': ' + row['status'])
         except Exception:
             # Never persist broker response bodies/credentials or erase pending intents.
