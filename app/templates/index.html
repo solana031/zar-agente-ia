@@ -5216,11 +5216,69 @@ body.zar-light .zarDockManagerCard{background:#fffaf4;color:#4a3828;border-color
 }
 </style>
 
-<script id="zar-orchestration-global-js-v31-3-40">
+<style id="zar-v31-3-41-orchestration-map-window">
+/* Final orchestration map window overrides. This intentionally comes after
+   the legacy v31.3.32 block so old 430px/560px height rules cannot win. */
+.orchestrationWorkspace .zoPanel{overflow:visible!important;height:auto!important;min-height:0!important}
+.orchestrationWorkspace .zoSceneWrap{
+  position:relative!important;
+  width:min(100%,1480px)!important;
+  height:clamp(640px,72vh,920px)!important;
+  min-width:760px!important;
+  min-height:520px!important;
+  max-width:none!important;
+  max-height:none!important;
+  margin:14px auto 28px!important;
+  overflow:hidden!important;
+  resize:both!important;
+  box-sizing:border-box!important;
+  border:1px solid rgba(101,151,231,.36)!important;
+  border-radius:20px!important;
+  background:linear-gradient(180deg,#07111f 0%,#06111f 54%,#040912 100%)!important;
+  box-shadow:0 20px 46px rgba(0,0,0,.34),0 0 0 1px rgba(255,255,255,.015),inset 0 0 100px rgba(34,92,184,.08)!important;
+  z-index:6;
+}
+.orchestrationWorkspace .zoSceneWrap:after{
+  content:'';position:absolute;right:4px;bottom:4px;width:22px;height:22px;z-index:12;pointer-events:none;opacity:.82;
+  background:linear-gradient(135deg,transparent 0 42%,rgba(116,175,255,.26) 43% 50%,transparent 51% 60%,rgba(213,169,92,.46) 61% 69%,transparent 70%);
+  filter:drop-shadow(0 0 5px rgba(82,151,255,.18));
+}
+.orchestrationWorkspace .zoToolbar{
+  min-height:62px!important;
+  cursor:default;
+  user-select:none;
+  background:linear-gradient(180deg,rgba(13,24,42,.97),rgba(7,14,25,.93))!important;
+  border-bottom:1px solid rgba(91,136,205,.24)!important;
+}
+.orchestrationWorkspace .zoToolbar .hint{
+  cursor:move;
+  flex:1 1 auto;
+  min-width:260px;
+  padding:8px 10px;
+  border-radius:12px;
+  border:1px solid rgba(91,136,205,.12);
+  background:linear-gradient(90deg,rgba(27,53,91,.16),rgba(7,15,27,.04));
+}
+.orchestrationWorkspace .zoToolbar .hint:before{
+  content:'⠿  Mover ventana  ·  ';
+  color:#7fb3ff;
+  font-weight:800;
+  letter-spacing:.04em;
+}
+.orchestrationWorkspace .zoSceneWrap.window-dragging{box-shadow:0 24px 58px rgba(0,0,0,.42),0 0 0 1px rgba(111,166,255,.18),0 0 34px rgba(55,122,231,.14)!important}
+.orchestrationWorkspace .zoViewport{top:62px!important}
+@media(max-width:900px){
+  .orchestrationWorkspace .zoSceneWrap{width:100%!important;min-width:0!important;height:68dvh!important;min-height:500px!important;resize:vertical!important;left:0!important;top:0!important}
+  .orchestrationWorkspace .zoToolbar .hint:before{content:'Mapa interactivo · '}
+}
+</style>
+
+<script id="zar-orchestration-global-js-v31-3-41">
 (function(){
   let zoReplayTimer=null;
   let zoScale=1;
   let zoPanBound=false;
+  let zoWindowBound=false;
   const ZO_BASE_W=1880;
   const ZO_BASE_H=980;
   const ZO_MIN=0.62;
@@ -5296,7 +5354,7 @@ body.zar-light .zarDockManagerCard{background:#fffaf4;color:#4a3828;border-color
     return icons[id]||'<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="7"></circle><path d="M12 9v6"></path><path d="M9 12h6"></path></svg>';
   }
   function orchestrationMarkup(){
-    return `<div class="controlWorkspaceHeader"><div><span class="eyebrow">ZAR · ARQUITECTURA VIVA</span><h1>🧬 Orquestación de Subagentes</h1><p>Esquema espacial tipo HUD/Jarvis con actividad, comunicaciones visibles, dominios separados y zoom para inspeccionar la coordinación entre agentes.</p></div><button class="workspaceBack" onclick="exitSubagentOrchestration()">← Volver a Zar</button></div><div class="zoPanel workspaceCard"><div class="zoHead"><div><span class="eyebrow">CENTRO DE OBSERVABILIDAD</span><h2>Mapa vivo de coordinación</h2><p>Aquí ves cómo se reparten el trabajo los subagentes, qué información comparten y qué actividad reciente están ejecutando.</p></div><div class="zoActions"><button class="zoBtn" onclick="zoRefresh()">↻ Actualizar</button><button class="zoBtn" onclick="zoReplay()">▶ Reproducir ciclo</button></div></div><div id="zoStats" class="zoStats"><div class="zoStat"><small>Estado</small><b>Cargando…</b></div><div class="zoStat"><small>Router</small><b>—</b></div><div class="zoStat"><small>Stonks</small><b>—</b></div><div class="zoStat"><small>Eventos</small><b>—</b></div></div><div class="zoSceneWrap"><div class="zoToolbar"><div class="hint">Usa la rueda del ratón para hacer zoom sobre el punto del cursor, o arrastra el mapa para moverte lateral o verticalmente. El mapa separa ZAR general y ZAR Stonks para que no se superpongan.</div><div class="zoZoomControls"><button class="zoBtn" onclick="zoZoomOut()">－</button><div class="zoZoomRangeWrap"><input id="zoZoomRange" class="zoZoomRange" type="range" min="62" max="190" step="2" value="100" aria-label="Zoom de orquestación"><div id="zoZoomBadge" class="zoZoomBadge">100%</div></div><button class="zoBtn" onclick="zoZoomIn()">＋</button><button class="zoBtn" onclick="zoZoomReset()">Reset</button></div></div><div id="zoViewport" class="zoViewport"><div id="zoScaler" class="zoScaler"><div id="zoScene" class="zoScene"><div class="zoGrid3d"></div><div class="zoClusterHalo" id="zoHaloGeneral"></div><div class="zoClusterHalo finance" id="zoHaloFinance"></div><div class="zoClusterLabel" id="zoLabelGeneral">CORE / AGENTES GENERALES</div><div class="zoClusterLabel finance" id="zoLabelFinance">FINANCE / STONKS</div><svg id="zoEdges" class="zoEdges" preserveAspectRatio="none"></svg><div id="zoEdgeLabels" class="zoEdgeLabels"></div><div id="zoNodes" class="zoNodes"><div style="padding:18px;color:#a7b8ce;font-size:12px">Cargando diagrama de orquestación…</div></div><div class="zoLegend"><span><i class="g"></i>ZAR general</span><span><i class="f"></i>Finanzas / Stonks</span><span><i class="a"></i>Actividad reciente</span></div></div></div></div></div><div class="zoTimeline"><div class="zoTimelineHead"><b>DIMENSIÓN TEMPORAL · COMUNICACIONES RECIENTES</b><span id="zoTraceMeta" class="meta">Cargando…</span></div><div id="zoTrace" class="zoTrace"><div class="meta">Preparando trazas…</div></div></div></div>`;
+    return `<div class="controlWorkspaceHeader"><div><span class="eyebrow">ZAR · ARQUITECTURA VIVA</span><h1>🧬 Orquestación de Subagentes</h1><p>Esquema espacial tipo HUD/Jarvis con actividad, comunicaciones visibles, dominios separados y zoom para inspeccionar la coordinación entre agentes.</p></div><button class="workspaceBack" onclick="exitSubagentOrchestration()">← Volver a Zar</button></div><div class="zoPanel workspaceCard"><div class="zoHead"><div><span class="eyebrow">CENTRO DE OBSERVABILIDAD</span><h2>Mapa vivo de coordinación</h2><p>Aquí ves cómo se reparten el trabajo los subagentes, qué información comparten y qué actividad reciente están ejecutando.</p></div><div class="zoActions"><button class="zoBtn" onclick="zoRefresh()">↻ Actualizar</button><button class="zoBtn" onclick="zoReplay()">▶ Reproducir ciclo</button></div></div><div id="zoStats" class="zoStats"><div class="zoStat"><small>Estado</small><b>Cargando…</b></div><div class="zoStat"><small>Router</small><b>—</b></div><div class="zoStat"><small>Stonks</small><b>—</b></div><div class="zoStat"><small>Eventos</small><b>—</b></div></div><div class="zoSceneWrap"><div class="zoToolbar"><div class="hint">Arrastra esta barra para mover la ventana; redimensiónala desde la esquina inferior derecha. Dentro del mapa: rueda = zoom y click + arrastrar = desplazamiento.</div><div class="zoZoomControls"><button class="zoBtn" onclick="zoZoomOut()">－</button><div class="zoZoomRangeWrap"><input id="zoZoomRange" class="zoZoomRange" type="range" min="62" max="190" step="2" value="100" aria-label="Zoom de orquestación"><div id="zoZoomBadge" class="zoZoomBadge">100%</div></div><button class="zoBtn" onclick="zoZoomIn()">＋</button><button class="zoBtn" onclick="zoZoomReset()">Reset</button></div></div><div id="zoViewport" class="zoViewport"><div id="zoScaler" class="zoScaler"><div id="zoScene" class="zoScene"><div class="zoGrid3d"></div><div class="zoClusterHalo" id="zoHaloGeneral"></div><div class="zoClusterHalo finance" id="zoHaloFinance"></div><div class="zoClusterLabel" id="zoLabelGeneral">CORE / AGENTES GENERALES</div><div class="zoClusterLabel finance" id="zoLabelFinance">FINANCE / STONKS</div><svg id="zoEdges" class="zoEdges" preserveAspectRatio="none"></svg><div id="zoEdgeLabels" class="zoEdgeLabels"></div><div id="zoNodes" class="zoNodes"><div style="padding:18px;color:#a7b8ce;font-size:12px">Cargando diagrama de orquestación…</div></div><div class="zoLegend"><span><i class="g"></i>ZAR general</span><span><i class="f"></i>Finanzas / Stonks</span><span><i class="a"></i>Actividad reciente</span></div></div></div></div></div><div class="zoTimeline"><div class="zoTimelineHead"><b>DIMENSIÓN TEMPORAL · COMUNICACIONES RECIENTES</b><span id="zoTraceMeta" class="meta">Cargando…</span></div><div id="zoTrace" class="zoTrace"><div class="meta">Preparando trazas…</div></div></div></div>`;
   }
   function leaveOtherWorkspaces(){
     closePanel?.();
@@ -5357,6 +5415,64 @@ body.zar-light .zarDockManagerCard{background:#fffaf4;color:#4a3828;border-color
       zoPanBound=true;
     }
   }
+
+function restoreMapWindowState(){
+  const wrap=document.querySelector('.orchestrationWorkspace .zoSceneWrap');
+  if(!wrap) return;
+  try{
+    const raw=localStorage.getItem('zarOrchestrationMapWindowV1');
+    if(!raw) return;
+    const s=JSON.parse(raw);
+    if(Number(s.width)>=760) wrap.style.width=Math.min(Number(s.width), Math.max(760, window.innerWidth-260))+'px';
+    if(Number(s.height)>=520) wrap.style.height=Math.min(Number(s.height), Math.max(520, window.innerHeight-100))+'px';
+    if(Number.isFinite(Number(s.left))) wrap.style.left=Number(s.left)+'px';
+    if(Number.isFinite(Number(s.top))) wrap.style.top=Number(s.top)+'px';
+  }catch(_e){}
+}
+function saveMapWindowState(){
+  const wrap=document.querySelector('.orchestrationWorkspace .zoSceneWrap');
+  if(!wrap) return;
+  try{
+    const r=wrap.getBoundingClientRect();
+    localStorage.setItem('zarOrchestrationMapWindowV1',JSON.stringify({width:r.width,height:r.height,left:parseFloat(wrap.style.left)||0,top:parseFloat(wrap.style.top)||0}));
+  }catch(_e){}
+}
+function bindMapWindowMoveResize(){
+  const wrap=document.querySelector('.orchestrationWorkspace .zoSceneWrap');
+  const handle=wrap?.querySelector('.zoToolbar .hint');
+  if(!wrap || !handle) return;
+  restoreMapWindowState();
+  if(!zoWindowBound){
+    let drag=null;
+    handle.addEventListener('pointerdown',function(ev){
+      if(ev.button!==0) return;
+      const st=getComputedStyle(wrap);
+      drag={id:ev.pointerId,x:ev.clientX,y:ev.clientY,left:parseFloat(st.left)||0,top:parseFloat(st.top)||0};
+      wrap.classList.add('window-dragging');
+      try{handle.setPointerCapture(ev.pointerId)}catch(_e){}
+      ev.preventDefault();
+    });
+    handle.addEventListener('pointermove',function(ev){
+      if(!drag || drag.id!==ev.pointerId) return;
+      const maxX=Math.max(0,(window.innerWidth-wrap.offsetWidth)-220);
+      const nextLeft=Math.max(-Math.max(0,wrap.offsetWidth-360),Math.min(maxX,drag.left+(ev.clientX-drag.x)));
+      const nextTop=Math.max(-120,Math.min(Math.max(240,window.innerHeight-220),drag.top+(ev.clientY-drag.y)));
+      wrap.style.left=nextLeft+'px';
+      wrap.style.top=nextTop+'px';
+    });
+    const stop=function(ev){
+      if(!drag) return;
+      try{handle.releasePointerCapture(drag.id)}catch(_e){}
+      drag=null; wrap.classList.remove('window-dragging'); saveMapWindowState();
+    };
+    handle.addEventListener('pointerup',stop);
+    handle.addEventListener('pointercancel',stop);
+    const ro=new ResizeObserver(()=>saveMapWindowState());
+    ro.observe(wrap);
+    zoWindowBound=true;
+  }
+}
+
   window.showSubagentOrchestration=function(){
     const ws=ensureWorkspace();
     if(!ws) return;
@@ -5373,6 +5489,7 @@ body.zar-light .zarDockManagerCard{background:#fffaf4;color:#4a3828;border-color
     zoScale=1;
     window.zoUpdateZoom();
     bindZoomAndPan();
+    bindMapWindowMoveResize();
     setTimeout(()=>window.zoRefresh(), 30);
   };
   window.zoUpdateZoom=function(){
