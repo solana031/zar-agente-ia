@@ -5168,7 +5168,16 @@ body.zar-light .zarDockManagerCard{background:#fffaf4;color:#4a3828;border-color
 
 
 
-<script id="zar-orchestration-global-js-v31-3-35">
+
+<style id="zar-v31-3-36-orchestration-workspace-css">
+.orchestrationWorkspace[hidden]{display:none!important}
+.orchestrationWorkspace .workspaceCard{padding:0!important;background:transparent!important;border:0!important;box-shadow:none!important}
+.orchestrationWorkspaceInner{padding:0 2px 8px}
+.app.orchestration-mode #chatContent{display:none!important}
+.app.orchestration-mode #topTitle{letter-spacing:.01em}
+</style>
+
+<script id="zar-orchestration-global-js-v31-3-36">
 (function(){
   let zoReplayTimer=null;
   let zoScale=1;
@@ -5224,20 +5233,52 @@ body.zar-light .zarDockManagerCard{background:#fffaf4;color:#4a3828;border-color
     const cx=mx+nx*bend, cy=my+ny*bend;
     return {d:`M ${a.x} ${a.y} Q ${cx} ${cy} ${b.x} ${b.y}`, mx:mx+nx*(bend*.72), my:my+ny*(bend*.72)};
   }
-  function getBodyEl(){
-    return document.getElementById('editorWorkspaceBodyInner') || document.getElementById('panelBody') || document.querySelector('.editorWorkspaceBodyInner');
+  function ensureWorkspace(){
+    let ws=document.getElementById('orchestrationWorkspace');
+    if(ws) return ws;
+    const main=document.querySelector('.main');
+    const chat=document.getElementById('chatContent');
+    if(!main || !chat) return null;
+    ws=document.createElement('section');
+    ws.id='orchestrationWorkspace';
+    ws.className='controlWorkspace orchestrationWorkspace';
+    ws.hidden=true;
+    ws.innerHTML='<div id="orchestrationWorkspaceInner" class="orchestrationWorkspaceInner"></div>';
+    main.insertBefore(ws, chat);
+    return ws;
   }
   function orchestrationMarkup(){
-    return `<div class="zoPanel"><div class="zoHead"><div><span class="eyebrow">ZAR · ARQUITECTURA VIVA</span><h2>🧬 Orquestación de Subagentes</h2><p>Vista tipo HUD inspirada en Jarvis: agentes separados por dominios, enlaces visibles, intercambio de información y control de zoom para inspección fina.</p></div><div class="zoActions"><button class="zoBtn" onclick="zoRefresh()">↻ Actualizar</button><button class="zoBtn" onclick="zoReplay()">▶ Reproducir ciclo</button><button class="zoBtn" onclick="closePanel()">× Cerrar</button></div></div><div id="zoStats" class="zoStats"><div class="zoStat"><small>Estado</small><b>Cargando…</b></div><div class="zoStat"><small>Router</small><b>—</b></div><div class="zoStat"><small>Stonks</small><b>—</b></div><div class="zoStat"><small>Eventos</small><b>—</b></div></div><div class="zoSceneWrap"><div class="zoToolbar"><div class="hint">Zoom y paneo: usa los botones o la rueda del ratón para acercarte a agentes y enlaces.</div><div class="zoZoomControls"><button class="zoBtn" onclick="zoZoomOut()">－</button><div id="zoZoomBadge" class="zoZoomBadge">100%</div><button class="zoBtn" onclick="zoZoomIn()">＋</button><button class="zoBtn" onclick="zoZoomReset()">Reset</button></div></div><div id="zoViewport" class="zoViewport"><div id="zoScaler" class="zoScaler"><div id="zoScene" class="zoScene"><div class="zoGrid3d"></div><div class="zoClusterHalo" id="zoHaloGeneral"></div><div class="zoClusterHalo finance" id="zoHaloFinance"></div><div class="zoClusterLabel" id="zoLabelGeneral">CORE / AGENTES GENERALES</div><div class="zoClusterLabel finance" id="zoLabelFinance">FINANCE / STONKS</div><svg id="zoEdges" class="zoEdges" preserveAspectRatio="none"></svg><div id="zoEdgeLabels" class="zoEdgeLabels"></div><div id="zoNodes" class="zoNodes"><div style="padding:18px;color:#a7b8ce;font-size:12px">Cargando diagrama de orquestación…</div></div><div class="zoLegend"><span><i class="g"></i>ZAR general</span><span><i class="f"></i>Finanzas / Stonks</span><span><i class="a"></i>Actividad reciente</span></div></div></div></div></div><div class="zoTimeline"><div class="zoTimelineHead"><b>DIMENSIÓN TEMPORAL · COMUNICACIONES RECIENTES</b><span id="zoTraceMeta" class="meta">Cargando…</span></div><div id="zoTrace" class="zoTrace"><div class="meta">Preparando trazas…</div></div></div></div>`;
+    return `<div class="controlWorkspaceHeader"><div><span class="eyebrow">ZAR · ARQUITECTURA VIVA</span><h1>🧬 Orquestación de Subagentes</h1><p>Esquema espacial tipo HUD/Jarvis con actividad, comunicaciones visibles, dominios separados y zoom para inspeccionar la coordinación entre agentes.</p></div><button class="workspaceBack" onclick="exitSubagentOrchestration()">← Volver a Zar</button></div><div class="zoPanel workspaceCard"><div class="zoHead"><div><span class="eyebrow">CENTRO DE OBSERVABILIDAD</span><h2>Mapa vivo de coordinación</h2><p>Aquí ves cómo se reparten el trabajo los subagentes, qué información comparten y qué actividad reciente están ejecutando.</p></div><div class="zoActions"><button class="zoBtn" onclick="zoRefresh()">↻ Actualizar</button><button class="zoBtn" onclick="zoReplay()">▶ Reproducir ciclo</button></div></div><div id="zoStats" class="zoStats"><div class="zoStat"><small>Estado</small><b>Cargando…</b></div><div class="zoStat"><small>Router</small><b>—</b></div><div class="zoStat"><small>Stonks</small><b>—</b></div><div class="zoStat"><small>Eventos</small><b>—</b></div></div><div class="zoSceneWrap"><div class="zoToolbar"><div class="hint">Usa zoom para acercarte a nodos y enlaces. El mapa separa ZAR general y ZAR Stonks para que no se superpongan.</div><div class="zoZoomControls"><button class="zoBtn" onclick="zoZoomOut()">－</button><div id="zoZoomBadge" class="zoZoomBadge">100%</div><button class="zoBtn" onclick="zoZoomIn()">＋</button><button class="zoBtn" onclick="zoZoomReset()">Reset</button></div></div><div id="zoViewport" class="zoViewport"><div id="zoScaler" class="zoScaler"><div id="zoScene" class="zoScene"><div class="zoGrid3d"></div><div class="zoClusterHalo" id="zoHaloGeneral"></div><div class="zoClusterHalo finance" id="zoHaloFinance"></div><div class="zoClusterLabel" id="zoLabelGeneral">CORE / AGENTES GENERALES</div><div class="zoClusterLabel finance" id="zoLabelFinance">FINANCE / STONKS</div><svg id="zoEdges" class="zoEdges" preserveAspectRatio="none"></svg><div id="zoEdgeLabels" class="zoEdgeLabels"></div><div id="zoNodes" class="zoNodes"><div style="padding:18px;color:#a7b8ce;font-size:12px">Cargando diagrama de orquestación…</div></div><div class="zoLegend"><span><i class="g"></i>ZAR general</span><span><i class="f"></i>Finanzas / Stonks</span><span><i class="a"></i>Actividad reciente</span></div></div></div></div></div><div class="zoTimeline"><div class="zoTimelineHead"><b>DIMENSIÓN TEMPORAL · COMUNICACIONES RECIENTES</b><span id="zoTraceMeta" class="meta">Cargando…</span></div><div id="zoTrace" class="zoTrace"><div class="meta">Preparando trazas…</div></div></div></div>`;
   }
+  function leaveOtherWorkspaces(){
+    closePanel?.();
+    document.querySelector('.app')?.classList.remove('editor-mode');
+    document.querySelector('.app')?.classList.remove('control-mode');
+    document.querySelector('.app')?.classList.remove('orchestration-mode');
+    document.getElementById('mediaWorkspace')?.setAttribute('hidden','');
+    document.getElementById('controlWorkspace')?.setAttribute('hidden','');
+    document.getElementById('orchestrationWorkspace')?.setAttribute('hidden','');
+    document.querySelector('.editorNavBtn')?.classList.remove('active');
+    document.querySelector('.controlNavBtn')?.classList.remove('active');
+    document.querySelector('.orchestrationNavBtn')?.classList.remove('active');
+  }
+  window.exitSubagentOrchestration=function(){
+    document.querySelector('.app')?.classList.remove('orchestration-mode');
+    document.getElementById('orchestrationWorkspace')?.setAttribute('hidden','');
+    document.querySelector('.orchestrationNavBtn')?.classList.remove('active');
+    state?.();
+  };
   window.showSubagentOrchestration=function(){
-    if(typeof ensurePanelMode==='function')ensurePanelMode('orchestration');
-    if(typeof openPanel==='function')openPanel();
-    const titleEl=document.getElementById('editorWorkspaceTitle'); if(titleEl) titleEl.textContent='Orquestación de Subagentes';
-    const bodyEl=getBodyEl();
-    if(!bodyEl){ return; }
-    bodyEl.classList.remove('stonks-host');
-    bodyEl.innerHTML=orchestrationMarkup();
+    const ws=ensureWorkspace();
+    if(!ws) return;
+    leaveOtherWorkspaces();
+    document.querySelector('.app')?.classList.add('orchestration-mode');
+    ws.removeAttribute('hidden');
+    document.querySelector('.orchestrationNavBtn')?.classList.add('active');
+    const top=document.getElementById('topTitle'); if(top) top.textContent='Zar · Orquestación de Subagentes';
+    const inner=document.getElementById('orchestrationWorkspaceInner');
+    if(!inner) return;
+    inner.innerHTML=orchestrationMarkup();
     const vp=document.getElementById('zoViewport');
     if(vp && !vp.dataset.bound){
       vp.addEventListener('wheel',function(ev){ if(ev.ctrlKey || ev.metaKey || ev.shiftKey){ev.preventDefault(); if(ev.deltaY<0) window.zoZoomIn(); else window.zoZoomOut(); } },{passive:false});
@@ -5245,7 +5286,7 @@ body.zar-light .zarDockManagerCard{background:#fffaf4;color:#4a3828;border-color
     }
     zoScale=1;
     window.zoUpdateZoom();
-    setTimeout(()=>window.zoRefresh(), 20);
+    setTimeout(()=>window.zoRefresh(), 30);
   };
   window.zoUpdateZoom=function(){
     const scaler=document.getElementById('zoScaler'), scene=document.getElementById('zoScene'), badge=document.getElementById('zoZoomBadge');
@@ -5278,11 +5319,11 @@ body.zar-light .zarDockManagerCard{background:#fffaf4;color:#4a3828;border-color
     const pos={};
     const general=agents.filter(a=>a.id!=='zar_supervisor' && a.id!=='stonks_supervisor' && a.domain!=='finance');
     const finance=agents.filter(a=>a.id!=='stonks_supervisor' && a.domain==='finance');
-    const c1={x:w*0.30,y:h*0.43}, c2={x:w*0.73,y:h*0.43};
+    const c1={x:w*0.28,y:h*0.43}, c2={x:w*0.74,y:h*0.43};
     pos.zar_supervisor={x:c1.x,y:c1.y};
     pos.stonks_supervisor={x:c2.x,y:c2.y};
-    Object.assign(pos, polarPlace(general,c1.x,c1.y,215,158,215,-35));
-    Object.assign(pos, polarPlace(finance,c2.x,c2.y,215,158,215,-35));
+    Object.assign(pos, polarPlace(general,c1.x,c1.y,230,170,215,-35));
+    Object.assign(pos, polarPlace(finance,c2.x,c2.y,230,170,215,-35));
     return {pos,c1,c2};
   };
   window.zoRender=function(j){
@@ -5294,10 +5335,10 @@ body.zar-light .zarDockManagerCard{background:#fffaf4;color:#4a3828;border-color
     const layout=window.zoLayout(agents,ZO_BASE_W,ZO_BASE_H), pos=layout.pos;
     stats.innerHTML=`<div class="zoStat"><small>Subagentes registrados</small><b>${agents.length}</b></div><div class="zoStat"><small>Router local</small><b>${j.router_token_cost||0} tokens</b></div><div class="zoStat"><small>Stonks</small><b>Phase ${j.stonks_phase||'—'} · Paper</b></div><div class="zoStat"><small>Actividad reciente</small><b>${j.active_count||0} eventos</b></div>`;
     const halo1=document.getElementById('zoHaloGeneral'), halo2=document.getElementById('zoHaloFinance'), label1=document.getElementById('zoLabelGeneral'), label2=document.getElementById('zoLabelFinance');
-    if(halo1) Object.assign(halo1.style,{left:(layout.c1.x-300)+'px', top:(layout.c1.y-220)+'px', width:'600px', height:'440px'});
-    if(halo2) Object.assign(halo2.style,{left:(layout.c2.x-300)+'px', top:(layout.c2.y-220)+'px', width:'600px', height:'440px'});
-    if(label1) Object.assign(label1.style,{left:(layout.c1.x-272)+'px', top:(layout.c1.y-208)+'px'});
-    if(label2) Object.assign(label2.style,{left:(layout.c2.x-272)+'px', top:(layout.c2.y-208)+'px'});
+    if(halo1) Object.assign(halo1.style,{left:(layout.c1.x-320)+'px', top:(layout.c1.y-235)+'px', width:'640px', height:'470px'});
+    if(halo2) Object.assign(halo2.style,{left:(layout.c2.x-320)+'px', top:(layout.c2.y-235)+'px', width:'640px', height:'470px'});
+    if(label1) Object.assign(label1.style,{left:(layout.c1.x-292)+'px', top:(layout.c1.y-222)+'px'});
+    if(label2) Object.assign(label2.style,{left:(layout.c2.x-292)+'px', top:(layout.c2.y-222)+'px'});
     const latest=(j.stonks_trace||[]).slice(-1)[0]; const activeId=latest?('stonks_'+latest.agent):'';
     host.innerHTML=agents.map(a=>{ const p=pos[a.id]||{x:ZO_BASE_W/2,y:ZO_BASE_H/2}; const finance=a.domain==='finance'; const domainLabel=finance?'finance':(a.domain||'general'); return `<div class="zoNode ${finance?'finance':''} ${a.id===activeId?'active':''}" data-agent="${esc(a.id)}" style="left:${p.x}px;top:${p.y}px"><div class="top"><span class="ico">${esc(a.icon||'◇')}</span><div><b>${esc(a.name)}</b><small>${esc(shortText(a.role||'',64))}</small></div></div><div class="zoMeta"><span class="zoStatus">${esc(a.status||'ready')}</span><span class="zoDomain">${esc(domainLabel)}</span></div></div>`; }).join('');
     const counts={};
@@ -5322,9 +5363,10 @@ body.zar-light .zarDockManagerCard{background:#fffaf4;color:#4a3828;border-color
     const step=()=>{ const item=tr[i]; window.zoHighlight('stonks_'+item.agent); if(meta)meta.textContent=`Paso ${i+1}/${tr.length} · ${item.agent}`; i++; if(i>=tr.length){ clearInterval(zoReplayTimer); zoReplayTimer=null; setTimeout(()=>{ if(meta)meta.textContent=tr.length+' eventos'; },1100); } };
     step(); zoReplayTimer=setInterval(step,950);
   };
-  window.addEventListener('resize',()=>{ if(document.querySelector('.zoPanel')&&window.__zoState){ window.zoRender(window.__zoState); } });
+  window.addEventListener('resize',()=>{ if(document.getElementById('orchestrationWorkspace') && !document.getElementById('orchestrationWorkspace').hidden && window.__zoState){ window.zoRender(window.__zoState); } });
 })();
 </script>
+
 
 
 <link rel="stylesheet" href="/static/ui-polish.css?v=31.3.30">
