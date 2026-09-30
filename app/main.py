@@ -13,7 +13,7 @@ import html as html_lib
 import uuid
 from functools import wraps
 from contextlib import contextmanager
-from . import stonks_lifecycle
+from . import stonks_lifecycle, stonks_preflight
 from datetime import datetime, timezone
 from .user_scope import set_current_user, get_current_user, anonymous_id, user_id_for_email
 from pathlib import Path
@@ -1398,6 +1398,10 @@ def stonks_decision_api(engine=False, lifecycle_test=False):
                 result['decision']='APROBADA_SIN_EJECUTAR'; result['reason']='La ejecución requiere modo Paper automático o confirmación manual explícita.'
                 _stonks_audit_append('DECISIÓN',{'symbol':symbol,'signal':requested_signal,'strategy':strategy,'timeframe':timeframe,'decision':'APROBADA_SIN_EJECUTAR','reason':'Falta confirmación manual explícita y Paper automático no está activo.'})
                 return jsonify(result)
+            if lifecycle_test:
+                preflight = _stonks_lifecycle_preflight(symbol)
+                if preflight['status']!='READY':
+                    return jsonify({'ok':False,'order_created':False,'primary_reason':'Pre-flight Paper no READY','preflight':preflight}),409
             body={'symbol':symbol,'qty':str(qty),'side':'buy' if requested_signal=='BUY' else 'sell','type':'market','time_in_force':'day'}
             if engine:
                 intent = stonks_lifecycle.entry_intent(d, symbol, body['side'], qty, strategy, timeframe)
@@ -1435,6 +1439,32 @@ def stonks_decision_api(engine=False, lifecycle_test=False):
         return jsonify(result)
     except Exception as exc:
         return jsonify({'ok':False,'error':str(exc)}),502
+
+def _stonks_lifecycle_preflight(symbol):
+    symbol = str(symbol or '').strip().upper()
+    d = _stonks_read()
+    key, secret = _alpaca_paper_credentials()
+    snapshots = {}
+    if key and secret:
+        paths = {'account':'/v2/account', 'clock':'/v2/clock', 'positions':'/v2/positions', 'orders':'/v2/orders'}
+        if stonks_preflight.valid_symbol(symbol):
+            paths['asset'] = '/v2/assets/'+symbol
+        for name, path in paths.items():
+            try:
+                value = _alpaca_paper_request(path, **({'params':{'status':'open','limit':500,'nested':'false'}} if name=='orders' else {}))
+                if isinstance(value, list if name in ('positions','orders') else dict):
+                    snapshots[name] = value
+            except Exception:
+                pass  # No broker bodies/secrets in the response; absent evidence is UNVERIFIED.
+    return stonks_preflight.evaluate(d, symbol, snapshots, bool(key and secret),
+                                     _stonks_engine_owner_read()==_user_scope_id())
+
+
+@app.get('/api/stonks/lifecycle-test/preflight')
+@_stonks_serialized
+def stonks_lifecycle_test_preflight_api():
+    return jsonify({'ok':True, 'paper':True, 'preflight':_stonks_lifecycle_preflight(request.args.get('symbol','AAPL'))})
+
 
 def _stonks_test_gate(d):
     reason = stonks_lifecycle.blocked(d, {'is_open':True})
@@ -1924,7 +1954,9 @@ def state():
             "api_base_url": cfg["api"]["base_url"],
             "local_model": cfg["local"]["model"],
             "local_base_url": cfg["local"]["base_url"],
-            "has_api_key": bool(cfg["api"]["api_key"])
+            "has_api_key": bool(cfg["api"]["api_key"]),
+            "has_openai_key": bool((cfg.get("openai") or {}).get("api_key")),
+            "openai_models": {k:v for k,v in (cfg.get("openai") or {}).items() if k.endswith("_model")},
         },
         "memories": memories(),
         "history": history()[-100:],
@@ -2312,6 +2344,14 @@ def api_gmail_message(message_id):
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 500
 
+@app.get("/api/ai/router")
+def ai_router_status():
+    try:
+        from .smart_router import catalog as smart_catalog
+    except ImportError:
+        from smart_router import catalog as smart_catalog
+    return jsonify({"ok": True, **smart_catalog(load())})
+
 @app.get("/api/ollama")
 def ollama_status():
     cfg = load()
@@ -2407,12 +2447,14 @@ def online_status():
 def update_config():
     data = request.get_json(silent=True) or {}
     cfg = load()
-    if data.get("provider") in ("api","local"):
+    if data.get("provider") in ("auto","api","local","openrouter"):
         cfg["provider"] = data["provider"]
     if isinstance(data.get("api"), dict):
         cfg["api"].update({k:v for k,v in data["api"].items() if k in ("base_url","api_key","model")})
     if isinstance(data.get("local"), dict):
         cfg["local"].update({k:v for k,v in data["local"].items() if k in ("base_url","model")})
+    if isinstance(data.get("openai"), dict):
+        cfg.setdefault("openai", {}).update({k:v for k,v in data["openai"].items() if k in ("base_url","api_key","economy_model","strong_model","max_model")})
     save(cfg)
     return jsonify({"ok":True})
 

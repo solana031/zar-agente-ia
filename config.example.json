@@ -1,5 +1,5 @@
 {
-  "provider": "gemini",
+  "provider": "auto",
   "api": {
     "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
     "api_key": "",
@@ -16,5 +16,12 @@
   },
   "maps": {
     "api_key": ""
+  },
+  "openai": {
+    "base_url": "https://api.openai.com/v1",
+    "api_key": "",
+    "economy_model": "gpt-5.6-luna",
+    "strong_model": "gpt-5.6-terra",
+    "max_model": "gpt-5.6-sol"
   }
 }

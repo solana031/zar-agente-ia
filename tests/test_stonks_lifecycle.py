@@ -25,12 +25,17 @@ lifecycle = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(lifecycle)
 
 
+spec_pf = importlib.util.spec_from_file_location('preflight', ROOT / 'app/stonks_preflight.py')
+preflight = importlib.util.module_from_spec(spec_pf)
+spec_pf.loader.exec_module(preflight)
+
+
 def control_plane(directory):
     app = Flask('lifecycle-test')
     app.secret_key = 'test-only'
     ns = dict(app=app, Path=Path, os=os, json=json, threading=threading, wraps=wraps,
               contextmanager=contextmanager, uuid=uuid, datetime=datetime, timezone=timezone,
-              stonks_lifecycle=lifecycle, session=session, request=request, jsonify=jsonify,
+              stonks_lifecycle=lifecycle, stonks_preflight=preflight, session=session, request=request, jsonify=jsonify,
               _STONKS_DIR=Path(directory), _STONKS_LOCK=threading.RLock(),
               _STONKS_LOCK_DEPTH=threading.local(), requests=Mock())
     tree = ast.parse((ROOT / 'app/main.py').read_text(encoding='utf-8-sig'))

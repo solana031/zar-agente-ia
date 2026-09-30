@@ -12,7 +12,9 @@ class ControlledLifecycleTests(unittest.TestCase):
 
     def setUp(self):
         baseline.LifecycleTests.setUp(self)
-        self.account.update(status='ACTIVE', buying_power='10000')
+        self.account.update(status='ACTIVE', buying_power='10000',trading_blocked=False,account_blocked=False)
+        self.state['engine_last_run']=baseline.lifecycle.now()
+        self.api['_alpaca_paper_credentials']=lambda:('mock-key','mock-secret')
         self.asset = {'status':'active','tradable':True,'fractionable':True,'class':'us_equity'}
         baseline.LifecycleTests.configure_worker(self, signal='HOLD')
         broker = self.api['_alpaca_paper_request'].side_effect

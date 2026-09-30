@@ -4,6 +4,7 @@ import json
 import requests
 try:
     from .model_router import model_for
+    from .smart_router import choose_brain, remember_decision
     from .memory import memories, history, conversation
     from .knowledge import context_for as memory_context_for, file_context_for
     from .config import load
@@ -12,6 +13,7 @@ try:
     from .hybrid import parse_reminder, calendar_query_days, is_reminder_request, gmail_intent, gmail_direct_intent, gmail_is_complex_request, gmail_compound_intent, workspace_intent, contacts_intent, media_intent
 except ImportError:
     from model_router import model_for
+    from smart_router import choose_brain, remember_decision
     from memory import memories, history, conversation
     from knowledge import context_for as memory_context_for, file_context_for
     from config import load
@@ -171,7 +173,55 @@ def _api_profile(cfg, provider=None):
 
 RETRYABLE_API_CODES = {429, 500, 502, 503, 504}
 
-def _api_profiles(cfg):
+def _api_profiles(cfg, route=None):
+    # Smart Router can request a specific provider/model while preserving the
+    # legacy manual API/OpenRouter modes.
+    if route is not None:
+        profiles = []
+        gemini = cfg.get('api') or {}
+        openai = cfg.get('openai') or {}
+        gbase = gemini.get('base_url', '').rstrip('/')
+        gkey = gemini.get('api_key', '').strip()
+        obase = openai.get('base_url', 'https://api.openai.com/v1').rstrip('/')
+        okey = openai.get('api_key', '').strip()
+        tier = getattr(route, 'tier', 'balanced')
+        requested_provider = getattr(route, 'provider', 'gemini')
+        requested_model = getattr(route, 'model', '')
+        economy_gemini = (os.environ.get('ZAR_GEMINI_ECONOMY_MODEL') or 'gemini-3.5-flash-lite').strip()
+        balanced_gemini = (os.environ.get('ZAR_GEMINI_BALANCED_MODEL') or 'gemini-3.8-flash').strip()
+        luna = (openai.get('economy_model') or 'gpt-5.6-luna').strip()
+        terra = (openai.get('strong_model') or 'gpt-5.6-terra').strip()
+        sol = (openai.get('max_model') or 'gpt-5.6-sol').strip()
+
+        def add(base, key, model, label):
+            if base and key and model and not any(x[:3] == (base, key, model) for x in profiles):
+                profiles.append((base, key, model, label))
+
+        if requested_provider == 'openai':
+            add(obase, okey, requested_model, 'OpenAI Smart Router')
+        else:
+            add(gbase, gkey, requested_model, 'Gemini Smart Router')
+
+        # Cost/quality-aware fallback ladders. A provider outage must not strand ZAR.
+        if tier == 'economy':
+            add(obase, okey, luna, 'OpenAI fallback · Luna')
+            add(gbase, gkey, balanced_gemini, 'Gemini fallback · 3.8 Flash')
+        elif tier == 'balanced':
+            add(obase, okey, luna, 'OpenAI fallback · Luna')
+            add(obase, okey, terra, 'OpenAI fallback · Terra')
+        elif tier == 'strong':
+            add(gbase, gkey, balanced_gemini, 'Gemini fallback · 3.8 Flash')
+            add(obase, okey, luna, 'OpenAI fallback · Luna')
+        elif tier == 'max':
+            add(obase, okey, terra, 'OpenAI fallback · Terra')
+            add(gbase, gkey, balanced_gemini, 'Gemini fallback · 3.8 Flash')
+        else:
+            add(gbase, gkey, economy_gemini, 'Gemini fallback · Flash-Lite')
+            add(obase, okey, luna, 'OpenAI fallback · Luna')
+        if not profiles:
+            raise RuntimeError('Smart Router no encuentra Gemini/OpenAI configurados.')
+        return profiles
+
     primary = cfg.get('provider', 'api')
     profiles = []
     if primary == 'openrouter':
@@ -275,9 +325,9 @@ def _web_preflight(message):
     # The model receives this as trusted application context, not as a fake tool call.
     return result
 
-def api_agent(message, cfg):
+def api_agent(message, cfg, route=None):
     _set_tool_user_message(message)
-    profiles = _api_profiles(cfg)
+    profiles = _api_profiles(cfg, route=route)
     messages=[{'role':'system','content':_system_prompt(message)},{'role':'user','content':message}]
     web_preflight = _web_preflight(message)
     if web_preflight is not None:
@@ -311,6 +361,8 @@ def api_agent(message, cfg):
             raise
         choice=(data.get('choices') or [{}])[0]; msg=choice.get('message') or {}; calls=msg.get('tool_calls') or []
         if not calls:
+            if route is not None:
+                remember_decision(route, 'openai' if 'api.openai.com' in base else 'gemini', model)
             return msg.get('content') or 'La API no devolvió texto.'
         messages.append(msg)
         for call in calls:
@@ -555,6 +607,26 @@ def api_text(prompt, cfg):
 
 
 
+def smart_agent(message, cfg):
+    """Zero-token automatic routing across local Ollama, Gemini and OpenAI."""
+    route = choose_brain(message, cfg)
+    if route.provider == 'local':
+        try:
+            answer = local_agent(message, cfg)
+            remember_decision(route, 'local', (cfg.get('local') or {}).get('model', route.model))
+            return answer
+        except Exception:
+            # A sleeping PC/Ollama must not break the cloud assistant.
+            fallback = choose_brain(message + " herramienta contexto", {**cfg, 'local': {**(cfg.get('local') or {}), 'base_url': 'http://127.0.0.1:1'}})
+            if fallback.provider == 'local':
+                try:
+                    from .smart_router import BrainRoute
+                except ImportError:
+                    from smart_router import BrainRoute
+                fallback = BrainRoute('economy', 'gemini', os.environ.get('ZAR_GEMINI_ECONOMY_MODEL', 'gemini-3.5-flash-lite'), 'Fallback online: Ollama no disponible')
+            return api_agent(message, cfg, route=fallback)
+    return api_agent(message, cfg, route=route)
+
 def semantic_respond(message):
     """Ruta semántica pura: el modelo interpreta intención y usa herramientas.
 
@@ -563,6 +635,8 @@ def semantic_respond(message):
     """
     cfg = load()
     provider = cfg.get("provider")
+    if provider == "auto":
+        return smart_agent(message, cfg)
     if provider == "api":
         return api_agent(message, cfg)
     if provider == "local":
@@ -635,6 +709,7 @@ def respond(message):
 
     cfg = load()
     provider = cfg.get("provider")
+    if provider == "auto": return smart_agent(message, cfg)
     if provider == "api": return api_agent(message, cfg)
     if provider == "local": return local_agent(message, cfg)
     if provider == "openrouter": return api_agent(message, {**cfg, "provider": "openrouter"})
