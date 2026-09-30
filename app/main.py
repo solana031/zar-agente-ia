@@ -13,7 +13,7 @@ import html as html_lib
 import uuid
 from functools import wraps
 from contextlib import contextmanager
-from . import stonks_lifecycle, stonks_preflight, stonks_agents, stonks_news, subagent_orchestrator
+from . import stonks_lifecycle, stonks_preflight, stonks_agents, stonks_news, subagent_orchestrator, stonks_backtest
 from datetime import datetime, timezone
 from .user_scope import set_current_user, get_current_user, anonymous_id, user_id_for_email
 from pathlib import Path
@@ -1647,7 +1647,7 @@ def stonks_alpaca_cancel_all_orders_api():
 
 @app.post('/api/stonks/backtest')
 def stonks_backtest_api():
-    """Run a deterministic, server-side historical backtest. Never creates broker orders."""
+    """Deterministic historical validation. Never creates, modifies or cancels broker orders."""
     try:
         payload=request.get_json(silent=True) or {}
         symbol=str(payload.get('symbol') or 'AAPL').strip().upper()
@@ -1666,72 +1666,24 @@ def stonks_backtest_api():
         if strategy not in ('trend','mean_reversion'):
             return jsonify({'ok':False,'error':'Estrategia no válida.'}),400
         days=max(30,min(days,2000)); capital=max(100.0,min(capital,100000000.0)); risk_pct=max(0.1,min(risk_pct,10.0)); slippage_pct=max(0,min(slippage_pct,2.0))
-        if feed not in ('iex','sip'):
-            feed='iex'
+        if feed not in ('iex','sip'): feed='iex'
         from datetime import timedelta
-        end=datetime.now(timezone.utc)
-        start=end-timedelta(days=days)
+        end=datetime.now(timezone.utc); start=end-timedelta(days=days)
         params={'timeframe':'1Day','start':start.strftime('%Y-%m-%dT%H:%M:%SZ'),'end':end.strftime('%Y-%m-%dT%H:%M:%SZ'),'limit':10000,'feed':feed,'sort':'asc'}
         data=_alpaca_market_request('/v2/stocks/'+symbol+'/bars',params=params)
         bars=data.get('bars') if isinstance(data,dict) else []
         bars=[b for b in (bars or []) if all(k in b for k in ('o','h','l','c'))]
         if len(bars)<60:
             return jsonify({'ok':False,'error':f'Alpaca no ha devuelto suficientes barras diarias para {symbol} ({len(bars)}).'}),422
-        closes=[float(b['c']) for b in bars]
-        sma20=_stonks_sma(closes,20); sma50=_stonks_sma(closes,50); atr=_stonks_atr(bars,14); rsi=_stonks_rsi(closes,14)
-        cash=capital; shares=0.0; entry_price=None; trades=[]; equity_curve=[]; wins=[]; realized=0.0
-        pending=None
-        slip=slippage_pct/100.0
-        def exec_price(raw, side):
-            raw=float(raw)
-            return raw*(1+slip) if side=='buy' else raw*(1-slip)
-        for i,b in enumerate(bars):
-            o=float(b['o']); c=float(b['c'])
-            # Execute the previous close's signal on today's open, avoiding look-ahead.
-            if pending:
-                side=pending; px=exec_price(o,side)
-                if side=='buy' and shares==0 and cash>0 and atr[i] and atr[i]>0:
-                    risk_cash=cash*(risk_pct/100.0); stop_dist=2*float(atr[i]); qty=min(cash/px, risk_cash/stop_dist if stop_dist else 0)
-                    if qty>0:
-                        cash-=qty*px; shares=qty; entry_price=px
-                        trades.append({'date':b.get('t'),'side':'BUY','price':round(px,4),'qty':round(qty,6),'pnl':None})
-                elif side=='sell' and shares>0:
-                    proceeds=shares*px; pnl=(px-(entry_price or px))*shares; cash+=proceeds; realized+=pnl; wins.append(pnl>0)
-                    trades.append({'date':b.get('t'),'side':'SELL','price':round(px,4),'qty':round(shares,6),'pnl':round(pnl,2)})
-                    shares=0.0; entry_price=None
-                pending=None
-            # Mark to close.
-            equity=cash+shares*c
-            equity_curve.append(equity)
-            # Create signal for next bar.
-            if i+1 < len(bars):
-                if strategy=='trend' and sma20[i] is not None and sma50[i] is not None:
-                    if shares==0 and sma20[i] > sma50[i]: pending='buy'
-                    elif shares>0 and sma20[i] < sma50[i]: pending='sell'
-                elif strategy=='mean_reversion' and rsi[i] is not None:
-                    if shares==0 and rsi[i] < 30: pending='buy'
-                    elif shares>0 and rsi[i] > 70: pending='sell'
-        # Close any open position at final close for comparable results.
-        if shares>0:
-            px=exec_price(closes[-1],'sell'); proceeds=shares*px; pnl=(px-(entry_price or px))*shares; cash+=proceeds; realized+=pnl; wins.append(pnl>0)
-            trades.append({'date':bars[-1].get('t'),'side':'SELL','price':round(px,4),'qty':round(shares,6),'pnl':round(pnl,2),'forced_exit':True})
-            shares=0.0
-            equity_curve[-1]=cash
-        final_equity=cash
-        ret=(final_equity/capital-1)*100
-        max_dd=_stonks_max_drawdown(equity_curve)*100
-        sell_trades=[t for t in trades if t.get('side')=='SELL' and t.get('pnl') is not None]
-        gross_profit=sum(max(0,float(t['pnl'])) for t in sell_trades)
-        gross_loss=sum(abs(min(0,float(t['pnl']))) for t in sell_trades)
-        pf=(gross_profit/gross_loss) if gross_loss else (None if gross_profit==0 else float('inf'))
-        result={
+        result=stonks_backtest.run_backtest(bars,strategy,capital,risk_pct,slippage_pct)
+        curve=result.pop('equity_curve')
+        result.update({
             'ok':True,'paper':True,'orders_created':False,'symbol':symbol,'strategy':strategy,'feed':feed,
             'period':{'start':bars[0].get('t'),'end':bars[-1].get('t'),'bars':len(bars)},
             'parameters':{'capital':capital,'risk_pct':risk_pct,'slippage_pct':slippage_pct,'days':days},
-            'metrics':{'initial_equity':round(capital,2),'final_equity':round(final_equity,2),'return_pct':round(ret,2),'max_drawdown_pct':round(max_dd,2),'trades':len(sell_trades),'win_rate_pct':round((sum(wins)/len(wins)*100),2) if wins else 0,'profit_factor':round(pf,3) if isinstance(pf,float) and pf!=float('inf') else ('∞' if pf==float('inf') else None)},
-            'trades':trades[-100:],
-            'equity_curve': [{'date':bars[i].get('t'),'equity':round(equity_curve[i],2)} for i in range(0,len(equity_curve),max(1,len(equity_curve)//120))]
-        }
+            'trades':result.get('trades',[])[-150:],
+            'equity_curve':[{'date':bars[i].get('t'),'equity':round(curve[i],2)} for i in range(0,len(curve),max(1,len(curve)//160))]
+        })
         return jsonify(result)
     except Exception as exc:
         return jsonify({'ok':False,'error':str(exc)}),502
