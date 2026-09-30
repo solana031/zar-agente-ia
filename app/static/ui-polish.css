@@ -1,0 +1,112 @@
+/* ZAR 31.3.23. Scoped presentation fixes; Stonks keeps its 31.3.22 layout. */
+.app:not(.editor-mode):not(.control-mode) #editorBackBtn{display:none!important}
+.zarDockGrid{display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:8px!important;min-width:0}
+.zarDockItem{display:flex!important;flex-direction:column!important;align-items:center!important;justify-content:center!important;gap:5px!important;min-width:0!important;min-height:80px!important;padding:8px 5px!important;border:1px solid #65472e!important;border-radius:13px!important;background:linear-gradient(145deg,#21170f,#100c09)!important;color:#eee5dc!important;cursor:pointer;text-align:center!important;position:relative}
+.zarDockItem b,.zarDockItem small{grid-column:auto!important;white-space:normal!important;overflow:visible!important;text-overflow:clip!important;overflow-wrap:anywhere;font-size:11px!important;line-height:1.3!important}
+.zarDockItem small{font-size:9px!important;color:#b5a391!important}
+.zarDockItem .dockIcon{font-size:19px!important}.zarDockItem .dockGrip{position:absolute;top:3px;right:3px}
+.zarDockItem:hover{border-color:#d8ad70!important;box-shadow:0 3px 12px #0005}
+.zarDockEmpty{min-height:80px}
+.zarHomeDock{gap:12px!important}
+:is(#chatContent,#mobileDrawer,#panelBody,.zarOverlayCard,.zarDockManagerCard,#mediaWorkspace,#controlWorkspace,.zarSkillsShell) :is(button,input,select,textarea):focus-visible{outline:2px solid #d8ad70;outline-offset:2px}
+:is(#chatContent,#mobileDrawer,.zarOverlayCard,.zarDockManagerCard,#mediaWorkspace,#controlWorkspace,.zarSkillsShell) button:disabled{opacity:.5;cursor:not-allowed}
+#panel:not(.zsFloatingWindow){max-width:calc(100vw - 24px)!important;max-height:calc(var(--zar-visible-height,100dvh) - 86px)!important;overflow:auto!important;z-index:2600!important}
+#panel:not(.zsFloatingWindow)>button{position:sticky;top:0;float:right;z-index:3;min-width:40px;min-height:40px;background:#1b130d!important;border:1px solid #765132!important;border-radius:10px;color:#efd5af!important}
+#panel:not(.zsFloatingWindow) #panelBody{min-width:0;overflow-wrap:anywhere}
+body.zar-panel-open #chatContent .composer{visibility:hidden!important;pointer-events:none!important}
+.zarOverlayCard,.zarDockManagerCard{max-height:calc(var(--zar-visible-height,100dvh) - 24px)!important;overflow:auto;overscroll-behavior:contain}
+.zarDockManagerHead{position:sticky;top:0;background:#17110d;z-index:2}
+.zarOverlayClose,.zarSkillsClose{flex:0 0 40px;min-height:40px}
+.studioActionDrawer[hidden],.zarActiveSkills[hidden],.zarDockManager[hidden]{display:none!important}
+#mediaWorkspace :is(.editorWorkspaceBody,.editorWorkspaceBodyInner,.vcTwo,.vcCol,.studioStagePro2,.zarImageProBody,.zarAudioWorkspace){min-width:0;max-width:100%}
+#mediaWorkspace :is(video,canvas,img){max-width:100%}
+.zarSkillsShell{max-width:100%!important;max-height:calc(var(--zar-visible-height,100dvh) - 24px)!important;overflow:auto!important}
+.zarSkillsHead{position:sticky;top:0;background:#17110d;z-index:2}
+body.zar-light :is(.zarDockItem,.zarDockEmpty,.zarDockManagerSlot,.zarSkillsShell,.zarSkillCard,.zarSkillsList,.zarSkillsToolbar,.zarSkillsHead,.zarDockManagerHead){background:#fff9f1!important;color:#39281c!important;border-color:#b69a7b!important}
+body.zar-light :is(.zarDockItem b,.zarDockItem small,.zarDockManagerHead h2,.zarSkillsHead h2,.zarSkillTitle,.zarSkillDesc,.zarSkillHint,.zarSkillEmpty){color:#594330!important}
+body.zar-light #panel:not(.zsFloatingWindow){background:#fff9f1!important;color:#39281c!important}
+body.zar-light #panel:not(.zsFloatingWindow) :is(.card,.zarMemoryCard,.zarTaskGroup,.zarFileExplorerEnhanced){background:#fffaf4!important;color:#39281c!important}
+body.zar-light #panel:not(.zsFloatingWindow) :is(p,small,.meta,.vcHint2){color:#68513d!important}
+@media(min-width:1101px){
+  .zarHomeDock{grid-template-columns:minmax(0,1fr) minmax(120px,160px) minmax(0,1fr)!important}
+  #chatContent .chatArea{overflow-y:auto!important;padding-bottom:210px!important}
+}
+@media(max-width:1100px){
+  .app:not(.editor-mode):not(.control-mode){grid-template-columns:minmax(0,1fr)!important}
+  .app>.side{display:none!important}
+  .app>.main{grid-column:1!important;min-width:0!important;width:100%!important}
+  #mobileDrawer{position:fixed!important;inset:calc(var(--zar-visible-top,0px) + 8px) 8px auto!important;width:auto!important;max-width:480px!important;max-height:calc(var(--zar-visible-height,100dvh) - 16px)!important;overflow-y:auto!important;overflow-x:hidden!important;box-sizing:border-box;padding:12px!important}
+  #mobileDrawer[hidden]{display:none!important}
+  #mobileDrawer .mobileDrawerHeader{position:sticky;top:-12px;z-index:2;background:#120e0b;padding:12px 0}
+  #mobileDrawer button{min-height:44px;white-space:normal!important;overflow-wrap:anywhere}
+  #mobileOverlay{position:fixed;inset:0!important;background:#0009;z-index:2147483640!important}
+  #mobileOverlay[hidden]{display:none!important}
+  .top{padding:6px 10px!important;gap:6px}.topLeft{min-width:0}.topActions{gap:4px}
+  #topTitle{font-size:12px}.top .pill{display:none!important}
+  #chatContent .zarHomeDock{display:flex!important;flex-direction:column!important;gap:10px!important}
+  #chatContent .zarHomeCenter{order:-1;display:flex;flex-direction:column;align-items:center}
+  #chatContent .zarDockGrid{display:grid!important;width:100%!important}
+  #chatContent .zarDockEmpty{display:none}
+  #chatContent .welcome{height:auto!important;max-height:none!important;width:100%!important}
+  #chatContent .chatArea{overflow-y:auto!important;padding-bottom:260px!important}
+  #chatContent .zarHeroLogo{width:90px!important;height:90px!important;min-height:0!important}
+  #chatContent .zarWordmark{font-size:24px!important;margin:5px!important}
+  #chatContent .zarTagline{font-size:8px!important}
+  #panel:not(.zsFloatingWindow){inset:calc(var(--zar-visible-top,0px) + 8px) 8px auto!important;width:calc(100% - 16px)!important;min-width:0!important;max-width:calc(100% - 16px)!important;max-height:calc(var(--zar-visible-height,100dvh) - 16px)!important;resize:none!important;box-sizing:border-box!important;padding:10px!important}
+  #panel:not(.zsFloatingWindow)>.zarPanelDragHandle{display:none!important}
+  .zarOverlayCard{top:calc(var(--zar-visible-top,0px) + 8px)!important;transform:translateX(-50%)!important;width:calc(100% - 16px)!important}
+  .zarDockManagerCard{width:calc(100vw - 16px)!important}
+  .zarDockManagerSlots{grid-template-columns:minmax(0,1fr)}
+  .zarSkillsPanel{padding:8px!important}.zarSkillsShell{min-width:0!important;width:100%!important;resize:none!important}
+  .zarSkillsToolbar,.zarSkillEditorActions{flex-wrap:wrap}
+  #mediaWorkspace{width:100%!important;height:calc(var(--zar-visible-height,100dvh) - 58px)!important;min-width:0!important}
+  .app.editor-mode #mediaWorkspace .mediaHeadActions{display:flex!important;gap:5px;flex-wrap:wrap;margin-top:8px}
+  #mediaWorkspace .mediaWorkspaceHead{flex:0 0 auto!important;max-height:35dvh;overflow:auto!important}
+  #mediaWorkspace .editorWorkspaceBody{min-height:0!important;overflow:auto!important}
+  #mediaWorkspace :is(.zarImageProBody,.zarAudioWorkspace,.zarAudioTop,.vcTwo){grid-template-columns:minmax(0,1fr)!important}
+  #mediaWorkspace :is(.zarAudioTimeline,.vcTimeline,.studioTimeline,.zarAudioBottom){max-width:100%;overflow-x:auto}
+  #mediaWorkspace .zarImageCanvasFrame{min-height:240px}
+  #mediaWorkspace :is(.btnSmall,.editorModeTab),#panel:not(.zsFloatingWindow) :is(button,.btnSmall),.zarOverlayCard button{min-height:40px}
+  #panel:not(.zsFloatingWindow) :is(input,select,textarea),.zarOverlayCard :is(input,select,textarea){max-width:100%;box-sizing:border-box;font-size:16px}
+}
+@media(max-width:720px){
+  .top #editorBackBtn{max-width:160px;white-space:normal}
+  #chatContent .composerMain{bottom:calc(8px + var(--zar-keyboard-offset,0px) + env(safe-area-inset-bottom))!important;height:138px!important;min-height:138px!important;max-height:138px!important}
+  #chatContent .composerMain textarea{height:66px!important;min-height:66px!important;max-height:66px!important;font-size:16px!important}
+  #chatContent .composerMain>button{height:44px!important;min-height:44px!important;max-height:44px!important}
+  #chatContent .quick{bottom:calc(188px + var(--zar-keyboard-offset,0px) + env(safe-area-inset-bottom))!important;height:40px!important;min-height:40px!important}
+  #chatContent .quick button{height:40px!important;min-height:40px!important}
+  #chatContent .zarActiveSkills{bottom:calc(151px + var(--zar-keyboard-offset,0px) + env(safe-area-inset-bottom))!important;min-height:30px!important;max-height:30px!important}
+  body.zar-keyboard-open #chatContent .zarActiveSkills{display:none!important}
+  body.zar-keyboard-open #chatContent .quick{bottom:calc(151px + var(--zar-keyboard-offset,0px))!important}
+  .zarSettingsGrid,.zarSkillGrid{grid-template-columns:minmax(0,1fr)!important}
+  .zarSettingsRow{flex-wrap:wrap;gap:6px}
+}
+@media(max-width:1100px){
+  .app.editor-mode,.app.control-mode{grid-template-columns:minmax(0,1fr)!important}
+}
+@media(max-width:1100px){
+  .topActions{display:flex!important;align-items:center}
+  .topIconBtn{display:inline-flex!important;align-items:center;justify-content:center;width:36px;height:40px;flex:0 0 36px}
+  .topLeft{gap:6px}.top #topTitle{display:block!important;overflow-wrap:anywhere}
+}
+@media(max-width:1100px){
+  .app{min-height:0!important;height:var(--zar-visible-height,100dvh)!important}
+  .main{min-height:0!important}
+}
+@media(min-width:721px) and (max-width:1100px){
+  #chatContent .composer{position:fixed!important;left:8px!important;right:8px!important;bottom:calc(8px + var(--zar-keyboard-offset,0px))!important;width:auto!important;height:auto!important;min-height:0!important;max-height:none!important;box-sizing:border-box}
+}
+/* Light theme needs matching surfaces as well as matching text colors. */
+body.zar-light #chatContent .composerMain{background:#fffaf3!important;border-color:#b69a7b!important}
+body.zar-light #chatContent .composerMain textarea{background:#fffaf3!important;color:#39281c!important;border-color:#c9b397!important}
+body.zar-light #chatContent .composerMain textarea::placeholder{color:#725b45!important}
+body.zar-light #chatContent .quick button,body.zar-light #chatContent .zarActiveSkills,body.zar-light .zarDockManageBtn{background:#fff9f1!important;color:#49331f!important;border-color:#a88966!important}
+body.zar-light #mobileDrawer,body.zar-light #mobileDrawer .mobileDrawerHeader{background:#fff9f1!important;color:#39281c!important}
+body.zar-light #mobileDrawer button{background:#f5ebdf!important;color:#49331f!important;border-color:#b69a7b!important}
+body.zar-light .zarOverlayCard :is(input,select,textarea),body.zar-light .zarDockManagerSlot select{background:#fffdf9!important;color:#39281c!important;border-color:#b69a7b!important}
+@media(max-width:720px){.app.editor-mode .top #topTitle,.app.control-mode .top #topTitle{display:none!important}}
+@media(max-width:1100px){#mobileDrawer{z-index:2147483641!important}}
+@media(min-width:1101px){
+  #chatContent .composer{height:auto!important;min-height:0!important;max-height:none!important;bottom:8px!important;padding:6px 16px!important;box-sizing:border-box!important}
+}

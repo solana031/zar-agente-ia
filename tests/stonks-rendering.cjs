@@ -13,7 +13,7 @@ for (const file of fs.readdirSync('app/static').filter(f => f.endsWith('.js'))) 
   new vm.Script(fs.readFileSync(`app/static/${file}`, 'utf8'), {filename: file});
 }
 for (const file of ['VERSION', 'VERSION.txt', 'app/VERSION.txt']) {
-  assert.equal(fs.readFileSync(file, 'utf8').trim(), '31.3.22');
+  assert.equal(fs.readFileSync(file, 'utf8').trim(), '31.3.23');
 }
 console.log(`PASS: ${scripts} inline scripts, static JavaScript and three version files`);
 (async () => {
@@ -39,6 +39,7 @@ console.log(`PASS: ${scripts} inline scripts, static JavaScript and three versio
         }
 
         if (url.pathname === '/static/zar-silhouette.png') return route.fulfill({contentType:'image/png',body:fs.readFileSync('app/static/zar-silhouette.png')});
+        if (['/static/ui-polish.css','/static/ui-polish.js'].includes(url.pathname)) return route.fulfill({contentType:url.pathname.endsWith('.css')?'text/css':'application/javascript',body:fs.readFileSync('app'+url.pathname)});
         if (url.pathname === '/static/skills.js') return route.fulfill({contentType: 'application/javascript', body: fs.readFileSync('app/static/skills.js', 'utf8')});
         return route.fulfill({contentType: 'application/json', body: JSON.stringify({
           ok: true, paused: !controlledReady, revoked: false, mode: 'paper', execution_mode: controlledReady?'paper_auto':'decision',
