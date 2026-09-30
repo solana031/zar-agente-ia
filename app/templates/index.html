@@ -5216,7 +5216,7 @@ body.zar-light .zarDockManagerCard{background:#fffaf4;color:#4a3828;border-color
 }
 </style>
 
-<script id="zar-orchestration-global-js-v31-3-39">
+<script id="zar-orchestration-global-js-v31-3-40">
 (function(){
   let zoReplayTimer=null;
   let zoScale=1;
@@ -5296,7 +5296,7 @@ body.zar-light .zarDockManagerCard{background:#fffaf4;color:#4a3828;border-color
     return icons[id]||'<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="7"></circle><path d="M12 9v6"></path><path d="M9 12h6"></path></svg>';
   }
   function orchestrationMarkup(){
-    return `<div class="controlWorkspaceHeader"><div><span class="eyebrow">ZAR · ARQUITECTURA VIVA</span><h1>🧬 Orquestación de Subagentes</h1><p>Esquema espacial tipo HUD/Jarvis con actividad, comunicaciones visibles, dominios separados y zoom para inspeccionar la coordinación entre agentes.</p></div><button class="workspaceBack" onclick="exitSubagentOrchestration()">← Volver a Zar</button></div><div class="zoPanel workspaceCard"><div class="zoHead"><div><span class="eyebrow">CENTRO DE OBSERVABILIDAD</span><h2>Mapa vivo de coordinación</h2><p>Aquí ves cómo se reparten el trabajo los subagentes, qué información comparten y qué actividad reciente están ejecutando.</p></div><div class="zoActions"><button class="zoBtn" onclick="zoRefresh()">↻ Actualizar</button><button class="zoBtn" onclick="zoReplay()">▶ Reproducir ciclo</button></div></div><div id="zoStats" class="zoStats"><div class="zoStat"><small>Estado</small><b>Cargando…</b></div><div class="zoStat"><small>Router</small><b>—</b></div><div class="zoStat"><small>Stonks</small><b>—</b></div><div class="zoStat"><small>Eventos</small><b>—</b></div></div><div class="zoSceneWrap"><div class="zoToolbar"><div class="hint">Usa el control de zoom y arrastra el mapa para moverte lateral o verticalmente. El mapa separa ZAR general y ZAR Stonks para que no se superpongan.</div><div class="zoZoomControls"><button class="zoBtn" onclick="zoZoomOut()">－</button><div class="zoZoomRangeWrap"><input id="zoZoomRange" class="zoZoomRange" type="range" min="62" max="190" step="2" value="100" aria-label="Zoom de orquestación"><div id="zoZoomBadge" class="zoZoomBadge">100%</div></div><button class="zoBtn" onclick="zoZoomIn()">＋</button><button class="zoBtn" onclick="zoZoomReset()">Reset</button></div></div><div id="zoViewport" class="zoViewport"><div id="zoScaler" class="zoScaler"><div id="zoScene" class="zoScene"><div class="zoGrid3d"></div><div class="zoClusterHalo" id="zoHaloGeneral"></div><div class="zoClusterHalo finance" id="zoHaloFinance"></div><div class="zoClusterLabel" id="zoLabelGeneral">CORE / AGENTES GENERALES</div><div class="zoClusterLabel finance" id="zoLabelFinance">FINANCE / STONKS</div><svg id="zoEdges" class="zoEdges" preserveAspectRatio="none"></svg><div id="zoEdgeLabels" class="zoEdgeLabels"></div><div id="zoNodes" class="zoNodes"><div style="padding:18px;color:#a7b8ce;font-size:12px">Cargando diagrama de orquestación…</div></div><div class="zoLegend"><span><i class="g"></i>ZAR general</span><span><i class="f"></i>Finanzas / Stonks</span><span><i class="a"></i>Actividad reciente</span></div></div></div></div></div><div class="zoTimeline"><div class="zoTimelineHead"><b>DIMENSIÓN TEMPORAL · COMUNICACIONES RECIENTES</b><span id="zoTraceMeta" class="meta">Cargando…</span></div><div id="zoTrace" class="zoTrace"><div class="meta">Preparando trazas…</div></div></div></div>`;
+    return `<div class="controlWorkspaceHeader"><div><span class="eyebrow">ZAR · ARQUITECTURA VIVA</span><h1>🧬 Orquestación de Subagentes</h1><p>Esquema espacial tipo HUD/Jarvis con actividad, comunicaciones visibles, dominios separados y zoom para inspeccionar la coordinación entre agentes.</p></div><button class="workspaceBack" onclick="exitSubagentOrchestration()">← Volver a Zar</button></div><div class="zoPanel workspaceCard"><div class="zoHead"><div><span class="eyebrow">CENTRO DE OBSERVABILIDAD</span><h2>Mapa vivo de coordinación</h2><p>Aquí ves cómo se reparten el trabajo los subagentes, qué información comparten y qué actividad reciente están ejecutando.</p></div><div class="zoActions"><button class="zoBtn" onclick="zoRefresh()">↻ Actualizar</button><button class="zoBtn" onclick="zoReplay()">▶ Reproducir ciclo</button></div></div><div id="zoStats" class="zoStats"><div class="zoStat"><small>Estado</small><b>Cargando…</b></div><div class="zoStat"><small>Router</small><b>—</b></div><div class="zoStat"><small>Stonks</small><b>—</b></div><div class="zoStat"><small>Eventos</small><b>—</b></div></div><div class="zoSceneWrap"><div class="zoToolbar"><div class="hint">Usa la rueda del ratón para hacer zoom sobre el punto del cursor, o arrastra el mapa para moverte lateral o verticalmente. El mapa separa ZAR general y ZAR Stonks para que no se superpongan.</div><div class="zoZoomControls"><button class="zoBtn" onclick="zoZoomOut()">－</button><div class="zoZoomRangeWrap"><input id="zoZoomRange" class="zoZoomRange" type="range" min="62" max="190" step="2" value="100" aria-label="Zoom de orquestación"><div id="zoZoomBadge" class="zoZoomBadge">100%</div></div><button class="zoBtn" onclick="zoZoomIn()">＋</button><button class="zoBtn" onclick="zoZoomReset()">Reset</button></div></div><div id="zoViewport" class="zoViewport"><div id="zoScaler" class="zoScaler"><div id="zoScene" class="zoScene"><div class="zoGrid3d"></div><div class="zoClusterHalo" id="zoHaloGeneral"></div><div class="zoClusterHalo finance" id="zoHaloFinance"></div><div class="zoClusterLabel" id="zoLabelGeneral">CORE / AGENTES GENERALES</div><div class="zoClusterLabel finance" id="zoLabelFinance">FINANCE / STONKS</div><svg id="zoEdges" class="zoEdges" preserveAspectRatio="none"></svg><div id="zoEdgeLabels" class="zoEdgeLabels"></div><div id="zoNodes" class="zoNodes"><div style="padding:18px;color:#a7b8ce;font-size:12px">Cargando diagrama de orquestación…</div></div><div class="zoLegend"><span><i class="g"></i>ZAR general</span><span><i class="f"></i>Finanzas / Stonks</span><span><i class="a"></i>Actividad reciente</span></div></div></div></div></div><div class="zoTimeline"><div class="zoTimelineHead"><b>DIMENSIÓN TEMPORAL · COMUNICACIONES RECIENTES</b><span id="zoTraceMeta" class="meta">Cargando…</span></div><div id="zoTrace" class="zoTrace"><div class="meta">Preparando trazas…</div></div></div></div>`;
   }
   function leaveOtherWorkspaces(){
     closePanel?.();
@@ -5326,7 +5326,15 @@ body.zar-light .zarDockManagerCard{background:#fffaf4;color:#4a3828;border-color
       range.dataset.bound='1';
     }
     if(vp && !vp.dataset.bound){
-      vp.addEventListener('wheel',function(ev){ if(ev.ctrlKey || ev.metaKey || ev.shiftKey){ev.preventDefault(); if(ev.deltaY<0) window.zoZoomIn(); else window.zoZoomOut(); } },{passive:false});
+      vp.addEventListener('wheel',function(ev){
+        ev.preventDefault();
+        const rect=vp.getBoundingClientRect();
+        const px=Math.max(0,Math.min(vp.clientWidth,ev.clientX-rect.left));
+        const py=Math.max(0,Math.min(vp.clientHeight,ev.clientY-rect.top));
+        const step=Math.max(0.04,Math.min(0.12,Math.abs(ev.deltaY)*0.0018));
+        const next=ev.deltaY<0 ? zoScale+step : zoScale-step;
+        window.zoSetZoomAtPoint(next,px,py);
+      },{passive:false});
       vp.dataset.bound='1';
     }
     if(vp && !zoPanBound){
@@ -5395,6 +5403,18 @@ body.zar-light .zarDockManagerCard{background:#fffaf4;color:#4a3828;border-color
       vp.scrollLeft=Math.max(0,cx*ratio - vp.clientWidth/2);
       vp.scrollTop=Math.max(0,cy*ratio - vp.clientHeight/2);
     }
+  };
+  window.zoSetZoomAtPoint=function(nextScale,viewportX,viewportY){
+    nextScale=Math.min(ZO_MAX,Math.max(ZO_MIN,+(nextScale||1).toFixed(2)));
+    const vp=document.getElementById('zoViewport');
+    if(!vp){ zoScale=nextScale; return window.zoUpdateZoom(); }
+    const prev=zoScale||1;
+    const worldX=(vp.scrollLeft + viewportX)/prev;
+    const worldY=(vp.scrollTop + viewportY)/prev;
+    zoScale=nextScale;
+    window.zoUpdateZoom();
+    vp.scrollLeft=Math.max(0,worldX*zoScale-viewportX);
+    vp.scrollTop=Math.max(0,worldY*zoScale-viewportY);
   };
   window.zoZoomIn=function(){ window.zoSetZoom(zoScale+0.12,true); };
   window.zoZoomOut=function(){ window.zoSetZoom(zoScale-0.12,true); };
