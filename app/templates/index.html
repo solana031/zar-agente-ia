@@ -1645,6 +1645,10 @@ input:-webkit-autofill,textarea:-webkit-autofill,select:-webkit-autofill{
       <button class="workspaceTool" onclick="showHelp()"><span class="big">❓</span><strong>Cómo funciona</strong><small>Ayuda, contexto y confirmaciones de seguridad.</small></button>
     </div>
   </section>
+
+  <section id="orchestrationWorkspace" class="orchestrationWorkspace" aria-label="Orquestación de Subagentes" hidden>
+    <div id="orchestrationWorkspaceInner" class="orchestrationWorkspaceInner"></div>
+  </section>
   <section id="mediaWorkspace" class="mediaWorkspace" aria-label="Editor multimedia" hidden>
     <div class="mediaWorkspaceHead"><div><span class="eyebrow">Zar Studio</span><h1>🎬 Studio multimedia</h1><p>Un espacio de trabajo negro y limpio para editar vídeo, fotografía y audio. Puedes usar controles visuales o hablar con Zar.</p></div><div class="mediaHeadActions"><button class="btnSmall" onclick="showStoredFilesForEditor()">📁 Archivos</button><button class="btnSmall" onclick="newVideoProjectFromEditor()">＋ Nuevo proyecto</button><button class="btnSmall" onclick="showStudioCalendar()">📅 Calendario</button><button class="btnSmall" onclick="showStudioTime()">🕒 Hora</button><button class="btnSmall" onclick="showStudioWeather()">☁️ Tiempo</button><input id="studioImageInput" type="file" accept="image/*" hidden onchange="loadImageIntoStudio(this.files[0])"></div><div id="studioContextPopup" class="studioActionDrawer" hidden></div></div>
     <div class="editorWorkspaceBody">
@@ -2913,7 +2917,7 @@ let imageEditorRecognition=null,imageEditorListening=false;function toggleImageE
 function mobileOpenEditor(){closeMobileDrawer();enterMediaEditor('')}
 function mobileOpenEditorImage(){closeMobileDrawer();enterMediaEditor('');setTimeout(()=>setEditorSurface('image'),120)}
 function showEditorLauncher(){const intro=document.getElementById('editorSurfaceIntro'),inner=document.getElementById('editorWorkspaceBodyInner');if(!intro||!inner)return;intro.style.display='grid';inner.innerHTML='<div class="editorEmpty"><div class="editorEmptyIcon">🎞️</div><h2>Nuevo proyecto</h2><p>Empieza desde cero o elige el formato que necesites. El área de edición permanece negra y separada del chat.</p><button class="btn editorPrimary" onclick="startVideoCreator(\'\')">🎬 Crear vídeo</button></div>';const tabs=document.querySelectorAll('.editorModeTab');tabs.forEach(x=>x.classList.remove('active'));tabs[0]?.classList.add('active')}
-function enterMediaEditor(pid){closePanel();document.querySelector('.app')?.classList.remove('control-mode');document.getElementById('controlWorkspace')?.setAttribute('hidden','');document.querySelector('.controlNavBtn')?.classList.remove('active');document.querySelector('.app')?.classList.add('editor-mode');document.getElementById('mediaWorkspace')?.removeAttribute('hidden');document.querySelector('.editorNavBtn')?.classList.add('active');if(pid){requestAnimationFrame(()=>startVideoCreator(pid))}else{requestAnimationFrame(showEditorLauncher)}}
+function enterMediaEditor(pid){document.querySelector('.app')?.classList.remove('orchestration-mode');document.getElementById('orchestrationWorkspace')?.setAttribute('hidden','');document.querySelector('.orchestrationNavBtn')?.classList.remove('active');closePanel();document.querySelector('.app')?.classList.remove('control-mode');document.getElementById('controlWorkspace')?.setAttribute('hidden','');document.querySelector('.controlNavBtn')?.classList.remove('active');document.querySelector('.app')?.classList.add('editor-mode');document.getElementById('mediaWorkspace')?.removeAttribute('hidden');document.querySelector('.editorNavBtn')?.classList.add('active');if(pid){requestAnimationFrame(()=>startVideoCreator(pid))}else{requestAnimationFrame(showEditorLauncher)}}
 function exitMediaEditor(){document.querySelector('.app')?.classList.remove('editor-mode');document.getElementById('mediaWorkspace')?.setAttribute('hidden','');document.querySelector('.editorNavBtn')?.classList.remove('active');state();}
 function healthServiceLabel(s){return s.status==='operational'?'API operativa':s.status==='error'?'Error de API':s.status==='connected'?'Conectado':s.status==='reauth'?'Requiere autorización':'No conectado'}
 function healthStateText(j){if(!j.google.connected)return['🔴 Google desconectado','Conecta Google para activar los servicios.','Desconectado'];if(j.google.missing_scopes?.length)return['🟡 Google requiere autorización','Hay permisos pendientes. Reautoriza Google para activar todo.','Requiere atención'];return['🟢 ZAR conectado','Google y sus servicios autorizados están disponibles.','Todo operativo']}
@@ -2965,7 +2969,7 @@ async function runLiveCheckInPanel(){
   }catch(e){if(label)label.textContent='🔴 '+(e.message||'No se pudo verificar')}
 }
 
-function enterControlCenter(){closePanel();document.querySelector('.app')?.classList.remove('editor-mode');document.getElementById('mediaWorkspace')?.setAttribute('hidden','');document.querySelector('.editorNavBtn')?.classList.remove('active');document.querySelector('.app')?.classList.add('control-mode');document.getElementById('controlWorkspace')?.removeAttribute('hidden');document.querySelector('.controlNavBtn')?.classList.add('active');loadControlHealth();}
+function enterControlCenter(){document.querySelector('.app')?.classList.remove('orchestration-mode');document.getElementById('orchestrationWorkspace')?.setAttribute('hidden','');document.querySelector('.orchestrationNavBtn')?.classList.remove('active');closePanel();document.querySelector('.app')?.classList.remove('editor-mode');document.getElementById('mediaWorkspace')?.setAttribute('hidden','');document.querySelector('.editorNavBtn')?.classList.remove('active');document.querySelector('.app')?.classList.add('control-mode');document.getElementById('controlWorkspace')?.removeAttribute('hidden');document.querySelector('.controlNavBtn')?.classList.add('active');loadControlHealth();}
 function exitControlCenter(){document.querySelector('.app')?.classList.remove('control-mode');document.getElementById('controlWorkspace')?.setAttribute('hidden','');document.querySelector('.controlNavBtn')?.classList.remove('active');state();}
 function showStoredFilesForEditor(){showFiles()}
 function newVideoProjectFromEditor(){startVideoCreator('',true)}
@@ -3222,7 +3226,7 @@ function installPanelInteraction(){
   const end=()=>{if(drag){drag=null;savePanelGeometry()}};handle.addEventListener('pointerup',end);handle.addEventListener('pointercancel',end);
   if('ResizeObserver' in window){const ro=new ResizeObserver(()=>{if(panel.style.display==='block')savePanelGeometry()});ro.observe(panel)}
 }
-function openPanel(){document.body.classList.add('zar-panel-open');installPanelInteraction();panel.style.display='block';applyPanelGeometry();requestAnimationFrame(()=>{applyPanelGeometry();updateComposerSpace?.()})}
+function openPanel(){document.querySelector('.app')?.classList.remove('orchestration-mode');document.getElementById('orchestrationWorkspace')?.setAttribute('hidden','');document.querySelector('.orchestrationNavBtn')?.classList.remove('active');document.body.classList.add('zar-panel-open');installPanelInteraction();panel.style.display='block';applyPanelGeometry();requestAnimationFrame(()=>{applyPanelGeometry();updateComposerSpace?.()})}
 // V27.53: restore the main chat send flow and attachment queue.
 let zarPendingFiles=[];
 let zarSending=false;
@@ -5169,15 +5173,27 @@ body.zar-light .zarDockManagerCard{background:#fffaf4;color:#4a3828;border-color
 
 
 
-<style id="zar-v31-3-36-orchestration-workspace-css">
+<style id="zar-v31-3-37-orchestration-workspace-final-css">
+.orchestrationWorkspace{display:none;flex-direction:column;min-height:0;height:calc(100dvh - 58px);overflow:auto;padding:16px 22px 28px;background:radial-gradient(circle at 50% 0%,rgba(53,100,190,.08),transparent 42%),#05070b}
 .orchestrationWorkspace[hidden]{display:none!important}
-.orchestrationWorkspace .workspaceCard{padding:0!important;background:transparent!important;border:0!important;box-shadow:none!important}
-.orchestrationWorkspaceInner{padding:0 2px 8px}
+.orchestrationWorkspaceInner{width:100%;max-width:1600px;margin:0 auto;padding:0 2px 12px;box-sizing:border-box}
+.app.orchestration-mode{grid-template-columns:210px minmax(0,1fr)!important}
+.app.orchestration-mode .right{display:none!important}
 .app.orchestration-mode #chatContent{display:none!important}
-.app.orchestration-mode #topTitle{letter-spacing:.01em}
+.app.orchestration-mode #mediaWorkspace{display:none!important}
+.app.orchestration-mode #controlWorkspace{display:none!important}
+.app.orchestration-mode #orchestrationWorkspace{display:flex!important;visibility:visible!important;position:relative!important;z-index:20!important}
+.app.orchestration-mode .orchestrationNavBtn{border-color:#76a8ff!important;box-shadow:inset 3px 0 0 #76a8ff,0 0 20px rgba(79,139,238,.14)!important}
+.app.orchestration-mode #topTitle{display:block!important;color:#dce9ff!important}
+@media(max-width:900px){
+  .orchestrationWorkspace{height:calc(100dvh - 56px);padding:10px 8px 80px}
+  .app.orchestration-mode{grid-template-columns:minmax(0,1fr)!important}
+  .app.orchestration-mode .side{display:none!important}
+  .app.orchestration-mode .main{width:100%!important;min-width:0!important}
+}
 </style>
 
-<script id="zar-orchestration-global-js-v31-3-36">
+<script id="zar-orchestration-global-js-v31-3-37">
 (function(){
   let zoReplayTimer=null;
   let zoScale=1;
@@ -5234,18 +5250,7 @@ body.zar-light .zarDockManagerCard{background:#fffaf4;color:#4a3828;border-color
     return {d:`M ${a.x} ${a.y} Q ${cx} ${cy} ${b.x} ${b.y}`, mx:mx+nx*(bend*.72), my:my+ny*(bend*.72)};
   }
   function ensureWorkspace(){
-    let ws=document.getElementById('orchestrationWorkspace');
-    if(ws) return ws;
-    const main=document.querySelector('.main');
-    const chat=document.getElementById('chatContent');
-    if(!main || !chat) return null;
-    ws=document.createElement('section');
-    ws.id='orchestrationWorkspace';
-    ws.className='controlWorkspace orchestrationWorkspace';
-    ws.hidden=true;
-    ws.innerHTML='<div id="orchestrationWorkspaceInner" class="orchestrationWorkspaceInner"></div>';
-    main.insertBefore(ws, chat);
-    return ws;
+    return document.getElementById('orchestrationWorkspace');
   }
   function orchestrationMarkup(){
     return `<div class="controlWorkspaceHeader"><div><span class="eyebrow">ZAR · ARQUITECTURA VIVA</span><h1>🧬 Orquestación de Subagentes</h1><p>Esquema espacial tipo HUD/Jarvis con actividad, comunicaciones visibles, dominios separados y zoom para inspeccionar la coordinación entre agentes.</p></div><button class="workspaceBack" onclick="exitSubagentOrchestration()">← Volver a Zar</button></div><div class="zoPanel workspaceCard"><div class="zoHead"><div><span class="eyebrow">CENTRO DE OBSERVABILIDAD</span><h2>Mapa vivo de coordinación</h2><p>Aquí ves cómo se reparten el trabajo los subagentes, qué información comparten y qué actividad reciente están ejecutando.</p></div><div class="zoActions"><button class="zoBtn" onclick="zoRefresh()">↻ Actualizar</button><button class="zoBtn" onclick="zoReplay()">▶ Reproducir ciclo</button></div></div><div id="zoStats" class="zoStats"><div class="zoStat"><small>Estado</small><b>Cargando…</b></div><div class="zoStat"><small>Router</small><b>—</b></div><div class="zoStat"><small>Stonks</small><b>—</b></div><div class="zoStat"><small>Eventos</small><b>—</b></div></div><div class="zoSceneWrap"><div class="zoToolbar"><div class="hint">Usa zoom para acercarte a nodos y enlaces. El mapa separa ZAR general y ZAR Stonks para que no se superpongan.</div><div class="zoZoomControls"><button class="zoBtn" onclick="zoZoomOut()">－</button><div id="zoZoomBadge" class="zoZoomBadge">100%</div><button class="zoBtn" onclick="zoZoomIn()">＋</button><button class="zoBtn" onclick="zoZoomReset()">Reset</button></div></div><div id="zoViewport" class="zoViewport"><div id="zoScaler" class="zoScaler"><div id="zoScene" class="zoScene"><div class="zoGrid3d"></div><div class="zoClusterHalo" id="zoHaloGeneral"></div><div class="zoClusterHalo finance" id="zoHaloFinance"></div><div class="zoClusterLabel" id="zoLabelGeneral">CORE / AGENTES GENERALES</div><div class="zoClusterLabel finance" id="zoLabelFinance">FINANCE / STONKS</div><svg id="zoEdges" class="zoEdges" preserveAspectRatio="none"></svg><div id="zoEdgeLabels" class="zoEdgeLabels"></div><div id="zoNodes" class="zoNodes"><div style="padding:18px;color:#a7b8ce;font-size:12px">Cargando diagrama de orquestación…</div></div><div class="zoLegend"><span><i class="g"></i>ZAR general</span><span><i class="f"></i>Finanzas / Stonks</span><span><i class="a"></i>Actividad reciente</span></div></div></div></div></div><div class="zoTimeline"><div class="zoTimelineHead"><b>DIMENSIÓN TEMPORAL · COMUNICACIONES RECIENTES</b><span id="zoTraceMeta" class="meta">Cargando…</span></div><div id="zoTrace" class="zoTrace"><div class="meta">Preparando trazas…</div></div></div></div>`;
@@ -5266,6 +5271,7 @@ body.zar-light .zarDockManagerCard{background:#fffaf4;color:#4a3828;border-color
     document.querySelector('.app')?.classList.remove('orchestration-mode');
     document.getElementById('orchestrationWorkspace')?.setAttribute('hidden','');
     document.querySelector('.orchestrationNavBtn')?.classList.remove('active');
+    const top=document.getElementById('topTitle'); if(top) top.textContent='Zar · Agente personal';
     state?.();
   };
   window.showSubagentOrchestration=function(){
@@ -5273,7 +5279,9 @@ body.zar-light .zarDockManagerCard{background:#fffaf4;color:#4a3828;border-color
     if(!ws) return;
     leaveOtherWorkspaces();
     document.querySelector('.app')?.classList.add('orchestration-mode');
+    ws.hidden=false;
     ws.removeAttribute('hidden');
+    ws.style.removeProperty('display');
     document.querySelector('.orchestrationNavBtn')?.classList.add('active');
     const top=document.getElementById('topTitle'); if(top) top.textContent='Zar · Orquestación de Subagentes';
     const inner=document.getElementById('orchestrationWorkspaceInner');
