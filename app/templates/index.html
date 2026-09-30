@@ -4797,6 +4797,176 @@ body.zar-light .zarDockManagerCard{background:#fffaf4;color:#4a3828;border-color
 }
 </style>
 
+
+<style id="zar-v31-3-33-orchestration-layout-fix">
+/* ZAR v31.3.33 — Orquestación legible: sin superposición, con enlaces visibles y datos compartidos */
+.zoPanel{height:100%;min-height:680px;background:radial-gradient(circle at 50% 10%,rgba(84,132,224,.12),transparent 32%),linear-gradient(180deg,#0c0b0b,#080808);color:#eee;overflow:auto;padding:18px}
+.zoHead{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:12px}
+.zoHead h2{margin:0;font:700 22px Georgia,serif;color:#e6d3b5}
+.zoHead p{margin:5px 0 0;color:#8f8a84;font-size:9px;max-width:780px;line-height:1.55}
+.zoActions{display:flex;gap:6px;flex-wrap:wrap}
+.zoBtn{border:1px solid #3b4d6a;background:#111722;color:#cddcff;border-radius:9px;padding:7px 10px;font-size:8px;font-weight:800;cursor:pointer}
+.zoBtn:hover{border-color:#78a4ef;background:#17243a}
+.zoStats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-bottom:10px}
+.zoStat{border:1px solid #252d3b;border-radius:12px;padding:9px;background:linear-gradient(145deg,#12151a,#0c0e12)}
+.zoStat small{display:block;color:#6f7783;text-transform:uppercase;letter-spacing:.08em;font-size:6px}
+.zoStat b{display:block;margin-top:4px;color:#e7c98f;font-size:11px}
+.zoSceneWrap{position:relative;height:560px;border:1px solid #273244;border-radius:18px;overflow:hidden;background:radial-gradient(circle at 50% 50%,rgba(78,119,198,.12),transparent 34%),linear-gradient(180deg,#0e1118,#090a0d);box-shadow:inset 0 0 80px rgba(0,0,0,.35)}
+.zoScene{position:absolute;inset:0;perspective:1100px;transform-style:preserve-3d}
+.zoGrid3d{position:absolute;left:50%;top:63%;width:760px;height:300px;transform:translate(-50%,-50%) rotateX(72deg) translateZ(-80px);border:1px solid rgba(94,131,194,.18);background-image:linear-gradient(rgba(99,131,184,.08) 1px,transparent 1px),linear-gradient(90deg,rgba(99,131,184,.08) 1px,transparent 1px);background-size:34px 34px;border-radius:40px;box-shadow:0 0 90px rgba(64,105,188,.12)}
+.zoEdges{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.zoEdges path{fill:none;stroke:rgba(106,142,209,.40);stroke-width:1.5;opacity:.92;filter:drop-shadow(0 0 4px rgba(72,110,184,.16))}
+.zoEdges path.finance{stroke:rgba(186,145,76,.48)}
+.zoEdges path.active{stroke:#89b4ff;stroke-width:2.6;filter:drop-shadow(0 0 8px rgba(111,157,245,.55))}
+.zoEdgeLabels{position:absolute;inset:0;pointer-events:none;z-index:3}
+.zoEdgeLabel{position:absolute;transform:translate(-50%,-50%);max-width:165px;padding:4px 7px;border-radius:10px;border:1px solid rgba(45,60,83,.88);background:rgba(9,13,20,.84);backdrop-filter:blur(7px);box-shadow:0 8px 18px rgba(0,0,0,.22);text-align:center}
+.zoEdgeLabel b{display:block;font-size:6.3px;line-height:1.15;color:#cfe0ff;font-weight:800;letter-spacing:.02em}
+.zoEdgeLabel small{display:block;margin-top:2px;font-size:5.8px;line-height:1.25;color:#8f9bb0}
+.zoEdgeLabel.finance{border-color:rgba(111,80,31,.95);background:rgba(21,16,11,.88)}
+.zoEdgeLabel.finance b{color:#efcf8f}
+.zoEdgeLabel.active{border-color:#7eabf8;background:rgba(11,18,29,.96);box-shadow:0 0 0 1px rgba(127,170,247,.25),0 0 20px rgba(86,133,221,.25)}
+.zoNodes{position:absolute;inset:0;z-index:4}
+.zoNode{position:absolute;width:168px;min-height:82px;transform:translate(-50%,-50%);border:1px solid #33445f;border-radius:16px;background:linear-gradient(145deg,rgba(21,27,38,.96),rgba(10,13,19,.96));box-shadow:0 14px 34px rgba(0,0,0,.34),inset 0 1px rgba(255,255,255,.03);padding:9px 10px;transition:.25s ease;z-index:4}
+.zoNode:hover{transform:translate(-50%,-50%) scale(1.03);border-color:#7aa5ef;z-index:10}
+.zoNode.active{border-color:#8ab2ff;box-shadow:0 0 0 1px rgba(111,158,244,.2),0 0 24px rgba(86,133,221,.22),0 16px 38px rgba(0,0,0,.38)}
+.zoNode.active:after{content:'';position:absolute;inset:-5px;border:1px solid rgba(127,170,247,.28);border-radius:19px;animation:zoPulse 1.5s infinite}
+.zoNode.finance{border-color:#69522b;background:linear-gradient(145deg,rgba(34,27,17,.96),rgba(12,11,9,.96))}
+.zoNode .top{display:flex;align-items:center;gap:8px}
+.zoNode .ico{display:grid;place-items:center;width:24px;height:24px;border-radius:8px;background:#172135;border:1px solid #39517a;color:#dbe8ff;flex:0 0 24px}
+.zoNode.finance .ico{background:#21190f;border-color:#6a4e26;color:#f0cf87}
+.zoNode b{font-size:8px;color:#e7edf7;line-height:1.15}
+.zoNode small{display:block;margin-top:6px;color:#7e8794;font-size:6.5px;line-height:1.32}
+.zoNode .zoMeta{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:6px}
+.zoStatus{display:inline-flex;border-radius:999px;border:1px solid #35523f;color:#78c990;padding:1px 5px;font-size:5.8px;text-transform:uppercase}
+.zoNode .zoDomain{font-size:5.8px;color:#71819b;text-transform:uppercase;letter-spacing:.08em}
+.zoTimeline{margin-top:10px;border:1px solid #242d3b;border-radius:14px;background:#0d1015;padding:10px}
+.zoTimelineHead{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.zoTimelineHead b{font-size:8px;color:#ddc18e}
+.zoTrace{display:grid;gap:5px;margin-top:7px;max-height:190px;overflow:auto}
+.zoTraceRow{display:grid;grid-template-columns:100px 70px minmax(0,1fr);gap:7px;padding:7px 6px;border-bottom:1px solid #1e2632;font-size:7px;color:#8f99a8}
+.zoTraceRow b{color:#d8bd8c}
+.zoTraceRow .state{color:#88b3ff}
+.zoLegend{position:absolute;right:10px;bottom:10px;padding:7px 8px;border:1px solid #283548;border-radius:10px;background:rgba(9,12,17,.84);font-size:6px;color:#8791a0;z-index:8}
+.zoLegend span{display:block;margin:2px 0}.zoLegend i{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:4px}.zoLegend .g{background:#76a8ff}.zoLegend .f{background:#c39b52}.zoLegend .a{background:#78c990}@keyframes zoPulse{0%{opacity:.9;transform:scale(1)}70%{opacity:0;transform:scale(1.08)}100%{opacity:0}}
+@media(max-width:1120px){.zoSceneWrap{height:620px}.zoGrid3d{width:640px;height:280px}.zoNode{width:154px}.zoEdgeLabel{max-width:140px}}
+@media(max-width:760px){.zoPanel{padding:10px}.zoHead{display:block}.zoActions{margin-top:8px}.zoStats{grid-template-columns:repeat(2,minmax(0,1fr))}.zoSceneWrap{height:760px}.zoGrid3d{width:520px;height:380px;top:58%}.zoNode{width:138px;min-height:74px;padding:8px}.zoTimeline{margin-bottom:80px}.zoTraceRow{grid-template-columns:86px 58px minmax(0,1fr)}}
+</style>
+<script id="zar-v31-3-33-orchestration-layout-fix-js">
+(function(){
+  let replayTimer=null;
+  const EDGE_COPY={
+    'zar_supervisor|workspace':{label:'órdenes / agenda',detail:'Tareas, correo, calendario y documentos'},
+    'zar_supervisor|memory':{label:'contexto activo',detail:'Recuperación de memoria y estado persistente'},
+    'zar_supervisor|research':{label:'búsqueda web',detail:'Investigación pública y síntesis'},
+    'zar_supervisor|files':{label:'archivos / metadatos',detail:'Biblioteca, búsqueda y recuperación'},
+    'zar_supervisor|studio':{label:'multimedia',detail:'Vídeo, audio, imagen y proyectos'},
+    'zar_supervisor|voice':{label:'voz / transcripción',detail:'Entrada y salida hablada'},
+    'zar_supervisor|stonks_supervisor':{label:'router → stonks',detail:'Enrutado financiero y supervisión general'},
+    'research|memory':{label:'fuentes ↔ memoria',detail:'Persistencia de hallazgos y contexto'},
+    'files|memory':{label:'archivos ↔ memoria',detail:'Indexado y recuperación contextual'},
+    'stonks_supervisor|stonks_market_data':{label:'precio / reloj',detail:'Market snapshot y reconciliación Paper'},
+    'stonks_supervisor|stonks_analysis':{label:'señal / métricas',detail:'Tendencia, régimen, volatilidad y fuerza'},
+    'stonks_supervisor|stonks_news_sentiment':{label:'noticias / rrss',detail:'Titulares y sentimiento público cacheado'},
+    'stonks_supervisor|stonks_risk':{label:'gates / límites',detail:'Motor, límites y permisos Paper'},
+    'stonks_supervisor|stonks_paper_execution':{label:'decisión endurecida',detail:'Ruta de ejecución Paper-only'},
+    'stonks_supervisor|stonks_position_manager':{label:'ownership / SLTP',detail:'Lifecycle, gestión y reconciliación'}
+  };
+  function shortText(t,n){t=String(t||'');return t.length>n?(t.slice(0,n-1)+'…'):t}
+  function esc(v){return (window.zoEsc?window.zoEsc(v):String(v==null?'':v).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])))}
+  function gridPlace(items,left,top,width,cols,rowGap,colGap){
+    const pos={};
+    if(!items.length)return pos;
+    const colWidth=cols>1?width/(cols-1):0;
+    items.forEach((a,i)=>{
+      const col=i%cols,row=Math.floor(i/cols);
+      pos[a.id]={x:left+col*colWidth,y:top+row*rowGap};
+    });
+    return pos;
+  }
+  window.showSubagentOrchestration=function(){
+    if(typeof ensurePanelMode==='function')ensurePanelMode('orchestration');
+    const titleEl=document.getElementById('editorWorkspaceTitle');if(titleEl)titleEl.textContent='Orquestación de Subagentes';
+    const bodyEl=document.getElementById('editorWorkspaceBodyInner');if(!bodyEl)return;
+    bodyEl.innerHTML=`<div class="zoPanel"><div class="zoHead"><div><span class="eyebrow">ZAR · ARQUITECTURA VIVA</span><h2>🧬 Orquestación de Subagentes</h2><p>Centro global de observabilidad. Visualiza los especialistas de ZAR sin superposición, sus uniones y la información que comparten. La dimensión temporal inferior muestra el flujo reciente de actividad.</p></div><div class="zoActions"><button class="zoBtn" onclick="zoRefresh()">↻ Actualizar</button><button class="zoBtn" onclick="zoReplay()">▶ Reproducir ciclo</button><button class="zoBtn" onclick="closePanel()">× Cerrar</button></div></div><div id="zoStats" class="zoStats"></div><div class="zoSceneWrap"><div class="zoScene"><div class="zoGrid3d"></div><svg id="zoEdges" class="zoEdges" preserveAspectRatio="none"></svg><div id="zoEdgeLabels" class="zoEdgeLabels"></div><div id="zoNodes" class="zoNodes"></div><div class="zoLegend"><span><i class="g"></i>ZAR general</span><span><i class="f"></i>Finanzas / Stonks</span><span><i class="a"></i>Actividad reciente</span></div></div></div><div class="zoTimeline"><div class="zoTimelineHead"><b>DIMENSIÓN TEMPORAL · COMUNICACIONES RECIENTES</b><span id="zoTraceMeta" class="meta">Cargando…</span></div><div id="zoTrace" class="zoTrace"></div></div></div>`;
+    if(typeof openPanel==='function')openPanel();
+    window.zoRefresh();
+  };
+  window.zoRefresh=async function(){
+    try{
+      const j=await fetch('/api/subagents/state?_='+Date.now(),{cache:'no-store'}).then(r=>r.json());
+      if(!j.ok)throw new Error(j.error||'No disponible');
+      window.__zoState=j;
+      window.zoRender(j);
+    }catch(e){
+      const n=document.getElementById('zoNodes');if(n)n.innerHTML='<div class="meta" style="padding:20px">⚠ '+esc(e.message)+'</div>';
+    }
+  };
+  window.zoLayout=function(agents,w,h){
+    const pos={};
+    const general=agents.filter(a=>a.domain!=='finance' && a.id!=='zar_supervisor');
+    const finance=agents.filter(a=>a.domain==='finance' && a.id!=='stonks_supervisor');
+    const narrow=w<900;
+    pos.zar_supervisor={x:narrow?w/2:w*0.28,y:112};
+    pos.stonks_supervisor={x:narrow?w/2:w*0.72,y:narrow?270:112};
+    const generalCols=narrow?2:2;
+    const financeCols=narrow?2:3;
+    const generalTop=narrow?420:250;
+    const financeTop=narrow?600:250;
+    const generalGrid=gridPlace(general,narrow?w*0.22:150,generalTop,narrow?w*0.56:230,generalCols,110,20);
+    const financeGrid=gridPlace(finance,narrow?w*0.22:Math.max(w-430,570),financeTop,narrow?w*0.56:330,financeCols,110,18);
+    Object.assign(pos,generalGrid,financeGrid);
+    return pos;
+  };
+  function edgeMeta(from,to,state){
+    const key=from+'|'+to;
+    const rev=to+'|'+from;
+    const base=EDGE_COPY[key]||EDGE_COPY[rev]||{label:'flujo interno',detail:''};
+    let detail=base.detail||'';
+    let status='';
+    if((to||'').startsWith('stonks_')){
+      const trace=[...((state&&state.stonks_trace)||[])].reverse().find(t=>'stonks_'+t.agent===to);
+      if(trace){status=trace.status||'';detail=trace.detail||detail;}
+    }
+    return {label:base.label||'flujo',detail:shortText(detail,72),status};
+  }
+  function curvePath(a,b){
+    const mx=(a.x+b.x)/2,my=(a.y+b.y)/2;const dx=b.x-a.x,dy=b.y-a.y;const len=Math.max(Math.hypot(dx,dy),1);const nx=-dy/len,ny=dx/len;const bend=Math.min(48,Math.max(12,len*.08));const cx=mx+nx*bend,cy=my+ny*bend;return {d:`M ${a.x} ${a.y} Q ${cx} ${cy} ${b.x} ${b.y}`,mx:mx+nx*(bend*.72),my:my+ny*(bend*.72)};
+  }
+  window.zoRender=function(j){
+    const scene=document.querySelector('.zoSceneWrap'),host=document.getElementById('zoNodes'),svg=document.getElementById('zoEdges'),labels=document.getElementById('zoEdgeLabels');
+    if(!scene||!host||!svg||!labels)return;
+    const w=scene.clientWidth||1080,h=scene.clientHeight||560,agents=j.agents||[],pos=window.zoLayout(agents,w,h);window.__zoPos=pos;
+    document.getElementById('zoStats').innerHTML=`<div class="zoStat"><small>Subagentes registrados</small><b>${agents.length}</b></div><div class="zoStat"><small>Router</small><b>${j.router_token_cost||0} tokens</b></div><div class="zoStat"><small>Stonks</small><b>Phase ${j.stonks_phase||'—'} · Paper</b></div><div class="zoStat"><small>Actividad reciente</small><b>${j.active_count||0} eventos</b></div>`;
+    const latest=(j.stonks_trace||[]).slice(-1)[0];const activeId=latest?('stonks_'+latest.agent):'';
+    host.innerHTML=agents.map(a=>{const p=pos[a.id]||{x:w/2,y:h/2};const cls=a.domain==='finance'?'finance':'';const domainLabel=a.domain==='finance'?'finance':(a.domain||'general');return `<div class="zoNode ${cls} ${a.id===activeId?'active':''}" data-agent="${esc(a.id)}" style="left:${p.x}px;top:${p.y}px"><div class="top"><span class="ico">${esc(a.icon||'◇')}</span><b>${esc(a.name)}</b></div><small>${esc(a.role||'')}</small><div class="zoMeta"><span class="zoStatus">${esc(a.status||'ready')}</span><span class="zoDomain">${esc(domainLabel)}</span></div></div>`}).join('');
+    const edges=(j.edges||[]).map((e,i)=>{const from=e[0],to=e[1],a=pos[from],b=pos[to];if(!a||!b)return null;const meta=edgeMeta(from,to,j);const path=curvePath(a,b);const finance=/^stonks_/.test(from)||/^stonks_/.test(to);const edgeId=`${from}|${to}`;return {from,to,finance,edgeId,...meta,...path}}).filter(Boolean);
+    svg.setAttribute('viewBox',`0 0 ${w} ${h}`);
+    svg.innerHTML=`<defs><marker id="zoArrowHead" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#6f9df5"></path></marker></defs>`+edges.map(e=>`<path class="${e.finance?'finance ':''}${e.to===activeId||e.from===activeId?'active':''}" data-edge="${esc(e.edgeId)}" data-from="${esc(e.from)}" data-to="${esc(e.to)}" d="${e.d}" marker-end="url(#zoArrowHead)"></path>`).join('');
+    labels.innerHTML=edges.map(e=>`<div class="zoEdgeLabel ${e.finance?'finance ':''}${e.to===activeId||e.from===activeId?'active':''}" data-edge-label="${esc(e.edgeId)}" data-from="${esc(e.from)}" data-to="${esc(e.to)}" style="left:${e.mx}px;top:${e.my}px"><b>${esc(e.label)}</b><small>${esc(e.detail||'flujo activo')}</small></div>`).join('');
+    const tr=(j.stonks_trace||[]).slice(-18).reverse();
+    document.getElementById('zoTraceMeta').textContent=tr.length+' eventos';
+    document.getElementById('zoTrace').innerHTML=tr.length?tr.map(x=>`<div class="zoTraceRow" data-trace-agent="stonks_${esc(x.agent)}"><b>${esc(x.agent)}</b><span class="state">${esc(x.status)}</span><span>${esc(x.detail||'')}</span></div>`).join(''):'<div class="meta">Todavía no hay comunicaciones registradas.</div>';
+  };
+  window.zoHighlight=function(agentId){
+    document.querySelectorAll('.zoNode').forEach(n=>n.classList.toggle('active',n.dataset.agent===agentId));
+    document.querySelectorAll('.zoEdges path').forEach(p=>{const on=(p.dataset.from===agentId||p.dataset.to===agentId);p.classList.toggle('active',on)});
+    document.querySelectorAll('.zoEdgeLabel').forEach(l=>{const on=(l.dataset.from===agentId||l.dataset.to===agentId);l.classList.toggle('active',on)});
+    document.querySelectorAll('.zoTraceRow').forEach(r=>r.style.background=(r.dataset.traceAgent===agentId?'rgba(57,81,124,.14)':''));
+  };
+  window.zoReplay=function(){
+    if(replayTimer){clearInterval(replayTimer);replayTimer=null}
+    const tr=(window.__zoState?.stonks_trace||[]).slice(-18);
+    if(!tr.length)return;
+    let i=0;
+    const meta=document.getElementById('zoTraceMeta');
+    const step=()=>{const item=tr[i];window.zoHighlight('stonks_'+item.agent);if(meta)meta.textContent=`Paso ${i+1}/${tr.length} · ${item.agent}`;i++;if(i>=tr.length){clearInterval(replayTimer);replayTimer=null;setTimeout(()=>{if(meta)meta.textContent=tr.length+' eventos';},1000)}};
+    step();
+    replayTimer=setInterval(step,900);
+  };
+  window.addEventListener('resize',()=>{if(document.querySelector('.zoPanel')&&window.__zoState)window.zoRender(window.__zoState)});
+})();
+</script>
+
 </body></html>
 
 <style id="zar-v30-10-16-floating-shell">
