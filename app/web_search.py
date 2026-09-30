@@ -243,6 +243,20 @@ def _brave_search(query, limit=8):
         return {"ok":False, "live":False, "error":f"Brave Search: {exc}"}
 
 
+def public_search_results(query, limit=8):
+    """Return structured public web results without invoking an LLM.
+
+    Brave is preferred when configured; otherwise the keyless public fallback is used.
+    """
+    q=(query or "").strip()
+    if not q:
+        return {"ok":False,"live":False,"error":"Falta consulta","results":[]}
+    brave=_brave_search(q, limit) if "_brave_search" in globals() else None
+    if brave and brave.get("ok"):
+        return brave
+    return _public_search(q, limit)
+
+
 def _fallback_web_search(query, instructions=""):
     brave=_brave_search(query, 8)
     result=brave if brave and brave.get("ok") else _public_search(query, 8)

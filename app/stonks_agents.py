@@ -100,6 +100,24 @@ class AnalysisAgent:
         }).as_dict()
 
 
+class NewsSentimentAgent:
+    name = "news_sentiment"
+
+    def context(self, symbol, news_fn):
+        data = news_fn(symbol)
+        status = "ok" if data.get("ok") else "idle"
+        detail = f"{symbol}: sentimiento público {data.get('sentiment','neutral')} · {len(data.get('items') or [])} fuentes"
+        return data, AgentResult(self.name, status, detail, {
+            "symbol": symbol,
+            "sentiment": data.get("sentiment"),
+            "sentiment_score": data.get("sentiment_score"),
+            "source_count": len(data.get("items") or []),
+            "public_only": True,
+            "order_authority": False,
+            "cached": bool(data.get("cached")),
+        }).as_dict()
+
+
 class RiskAgent:
     name = "risk"
 
@@ -162,13 +180,14 @@ class StonksSupervisor:
         self.market = MarketDataAgent()
         self.positions = PositionManagerAgent()
         self.analysis = AnalysisAgent()
+        self.news = NewsSentimentAgent()
         self.risk = RiskAgent()
         self.execution = PaperExecutionAgent()
 
     def describe(self):
         return {
             "architecture": "deterministic_multi_agent",
-            "phase": 3,
+            "phase": 4,
             "token_cost_router": 0,
             "paper_only": True,
             "execution_authority": "Decision + Risk server route",
@@ -176,6 +195,7 @@ class StonksSupervisor:
                 {"id":"supervisor","role":"Coordina el ciclo y consolida trazas"},
                 {"id":"market_data","role":"Reconcilia Paper y reloj de mercado"},
                 {"id":"analysis","role":"Combina señal, momentum, volatilidad y régimen"},
+                {"id":"news_sentiment","role":"Busca noticias y RRSS públicas; aporta sentimiento sin autoridad de orden"},
                 {"id":"risk","role":"Pre-check local; Decision/Risk servidor es autoridad final"},
                 {"id":"paper_execution","role":"Ejecuta únicamente por la ruta Paper endurecida"},
                 {"id":"position_manager","role":"Gestiona lifecycle, ownership, SL/TP y reconciliación"},

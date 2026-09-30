@@ -13,7 +13,7 @@ import html as html_lib
 import uuid
 from functools import wraps
 from contextlib import contextmanager
-from . import stonks_lifecycle, stonks_preflight, stonks_agents
+from . import stonks_lifecycle, stonks_preflight, stonks_agents, stonks_news, subagent_orchestrator
 from datetime import datetime, timezone
 from .user_scope import set_current_user, get_current_user, anonymous_id, user_id_for_email
 from pathlib import Path
@@ -833,6 +833,15 @@ def _stonks_engine_cycle(scope_id):
             recon, clock, market_trace = stonks_agents.SUPERVISOR.market.snapshot(
                 scope_id, _stonks_reconcile_paper_state, lambda: _alpaca_paper_request('/v2/clock'))
             agent_trace.append(market_trace)
+            # Public-news context is cached and observational only. It never creates orders.
+            news_by_symbol = {}
+            for _sym in symbols[:8]:
+                try:
+                    news_ctx, news_trace = stonks_agents.SUPERVISOR.news.context(_sym, stonks_news.get_context)
+                    news_by_symbol[_sym] = news_ctx
+                    agent_trace.append(news_trace)
+                except Exception as _news_exc:
+                    agent_trace.append({'agent':'news_sentiment','status':'idle','detail':f'{_sym}: noticias no disponibles', 'data':{'error':str(_news_exc)[:240]}, 'timestamp':datetime.now(timezone.utc).isoformat()})
             lifecycle, position_trace = stonks_agents.SUPERVISOR.positions.run(
                 scope_id, recon, clock, _stonks_manage_positions)
             agent_trace.append(position_trace)
@@ -968,6 +977,41 @@ def stonks_status_api():
 def stonks_agents_api():
     d=_stonks_read()
     return jsonify({'ok':True,'paper':True, **stonks_agents.describe(), 'last_trace':d.get('agent_last_trace') or []})
+
+@app.get('/api/stonks/news')
+def stonks_news_api():
+    symbol=re.sub(r'[^A-Za-z0-9.\-]', '', request.args.get('symbol','AAPL').upper())[:16]
+    force=request.args.get('force','0') in ('1','true','yes')
+    data=stonks_news.get_context(symbol, force=force)
+    return jsonify(data)
+
+@app.get('/api/subagents/state')
+def subagents_state_api():
+    base=subagent_orchestrator.describe_general_agents()
+    d=_stonks_read()
+    st=stonks_agents.describe()
+    # Attach Stonks specialists to the global graph without moving their UI into Stonks.
+    financial=[]
+    for a in st.get('agents') or []:
+        aid='stonks_'+str(a.get('id'))
+        financial.append({
+            'id':aid,'name':str(a.get('id','agent')).replace('_',' ').title(),
+            'icon':'↗' if a.get('id')=='supervisor' else '◇',
+            'domain':'finance','role':a.get('role',''),'status':'ready'
+        })
+    seen={a['id'] for a in base['agents']}
+    for a in financial:
+        if a['id'] not in seen: base['agents'].append(a)
+    for a in financial:
+        if a['id']!='stonks_supervisor': base['edges'].append(['stonks_supervisor',a['id']])
+    base.update({
+        'ok':True,
+        'stonks_trace':d.get('agent_last_trace') or [],
+        'stonks_phase':st.get('phase'),
+        'stonks_paper_only':True,
+        'active_count':len([x for x in (d.get('agent_last_trace') or [])[-10:] if x.get('status') not in ('idle','no_action')]),
+    })
+    return jsonify(base)
 
 @app.post('/api/stonks/alpaca/test')
 @_stonks_serialized
