@@ -4803,7 +4803,7 @@ body.zar-light .zarDockManagerCard{background:#fffaf4;color:#4a3828;border-color
 
 
 
-<style id="zar-v31-3-38-orchestration-jarvis-style">
+<style id="zar-v31-3-39-orchestration-semantic-zoom-style">
 .zoPanel{padding:12px 14px 14px;color:#dfeaff;background:radial-gradient(circle at 50% 0%,rgba(40,80,160,.12),transparent 44%),linear-gradient(180deg,#070a12,#090d16 48%,#070a12);border:1px solid rgba(84,122,188,.28);border-radius:20px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.02),0 28px 60px rgba(0,0,0,.28)}
 .zoHead{display:flex;justify-content:space-between;gap:14px;align-items:flex-start}
 .zoHead h2{margin:4px 0 6px;font-size:21px;line-height:1.1;color:#eef6ff;text-shadow:0 0 16px rgba(120,190,255,.12)}
@@ -4828,11 +4828,11 @@ body.zar-light .zarDockManagerCard{background:#fffaf4;color:#4a3828;border-color
 .zoZoomRange::-moz-range-thumb{width:18px;height:18px;border:none;border-radius:50%;background:radial-gradient(circle at 35% 35%,#ffffff,#9fd2ff 55%,#4f95f4 100%);box-shadow:0 0 0 3px rgba(62,119,220,.14),0 0 16px rgba(82,151,255,.4)}
 .zoZoomRange:focus{outline:none}
 .zoZoomBadge{min-width:64px;text-align:center;padding:6px 9px;border-radius:999px;border:1px solid rgba(89,129,194,.32);background:rgba(11,18,30,.8);font-size:11px;color:#d5e8ff}
-.zoViewport{position:absolute;left:0;right:0;top:58px;bottom:0;overflow:auto;padding:18px;cursor:grab;user-select:none;scrollbar-color:rgba(173,126,72,.9) rgba(5,9,16,.4);scroll-behavior:auto}
+.zoViewport{position:absolute;left:0;right:0;top:58px;bottom:0;overflow:auto;padding:18px;cursor:grab;user-select:none;scrollbar-color:rgba(173,126,72,.9) rgba(5,9,16,.4);scroll-behavior:auto;background:radial-gradient(circle at 25% 30%,rgba(38,94,182,.16),transparent 33%),radial-gradient(circle at 78% 34%,rgba(91,77,38,.12),transparent 34%),linear-gradient(rgba(55,103,177,.055) 1px,transparent 1px) 0 0/52px 52px,linear-gradient(90deg,rgba(55,103,177,.045) 1px,transparent 1px) 0 0/52px 52px,linear-gradient(180deg,#050a13 0%,#06101d 48%,#040810 100%);background-attachment:local}
 .zoViewport.dragging{cursor:grabbing}
 .zoViewport::-webkit-scrollbar{height:12px;width:12px}.zoViewport::-webkit-scrollbar-thumb{background:linear-gradient(180deg,rgba(148,106,61,.94),rgba(92,64,35,.94));border-radius:999px;border:2px solid rgba(6,10,17,.85)}.zoViewport::-webkit-scrollbar-track{background:rgba(5,8,14,.65)}
 .zoScaler{position:relative;transform-origin:top left}
-.zoScene{position:relative;border-radius:24px;background:radial-gradient(circle at 50% 36%,rgba(64,123,231,.08),transparent 35%),linear-gradient(180deg,rgba(5,9,18,.92),rgba(4,7,15,.98));border:1px solid rgba(74,107,158,.22);overflow:hidden;box-shadow:inset 0 0 80px rgba(31,76,160,.06)}
+.zoScene{position:relative;border-radius:24px;background:radial-gradient(circle at 28% 42%,rgba(50,113,221,.10),transparent 38%),radial-gradient(circle at 74% 42%,rgba(197,158,74,.055),transparent 36%);border:0;overflow:visible;box-shadow:none;--zo-detail:1}
 .zoGrid3d{position:absolute;inset:0;background:
   linear-gradient(rgba(67,108,170,.08) 1px,transparent 1px) 0 0/100% 52px,
   linear-gradient(90deg,rgba(67,108,170,.07) 1px,transparent 1px) 0 0/52px 100%,
@@ -4870,6 +4870,18 @@ body.zar-light .zarDockManagerCard{background:#fffaf4;color:#4a3828;border-color
 .zoNode.finance .zoStatus{border-color:rgba(214,174,92,.2)}
 .zoDomain{font-size:7px;color:#76aaff;text-transform:uppercase;letter-spacing:.14em}
 .zoNode.finance .zoDomain{color:#dfc289}
+.zoScene.zoom-mid .zoNode{width:162px;min-height:86px;padding:8px 10px 10px}
+.zoScene.zoom-mid .zoNode .ico{width:28px;height:28px;border-radius:10px}.zoScene.zoom-mid .zoNode .ico svg{width:16px;height:16px}
+.zoScene.zoom-mid .zoNode b{font-size:9.6px}.zoScene.zoom-mid .zoNode small{font-size:7px;min-height:18px}.zoScene.zoom-mid .zoStatus,.zoScene.zoom-mid .zoDomain{font-size:6.3px}
+.zoScene.zoom-mid .zoEdgeLabel{font-size:7px;min-width:72px;max-width:128px;padding:4px 6px}.zoScene.zoom-mid .zoEdgeLabel b{font-size:7.2px}.zoScene.zoom-mid .zoEdgeLabel small{font-size:6px}
+.zoScene.zoom-low .zoNode{width:146px;min-height:72px;padding:7px 9px 8px;border-radius:15px}
+.zoScene.zoom-low .zoNode .ico{width:24px;height:24px;border-radius:9px}.zoScene.zoom-low .zoNode .ico svg{width:14px;height:14px}
+.zoScene.zoom-low .zoNode b{font-size:8px;line-height:1.12}.zoScene.zoom-low .zoNode small{font-size:6px;line-height:1.2;min-height:14px;max-height:16px;overflow:hidden}.zoScene.zoom-low .zoMeta{margin-top:5px}
+.zoScene.zoom-low .zoStatus,.zoScene.zoom-low .zoDomain{font-size:5.4px;padding:1px 5px;letter-spacing:.08em}
+.zoScene.zoom-low .zoEdgeLabel{font-size:5.8px;min-width:56px;max-width:92px;padding:3px 4px;border-radius:7px;background:rgba(7,12,22,.74)}.zoScene.zoom-low .zoEdgeLabel b{font-size:6px;margin:0}.zoScene.zoom-low .zoEdgeLabel small{display:none}
+.zoScene.zoom-low .zoClusterLabel{font-size:7px;padding:5px 7px;letter-spacing:.09em}
+.zoScene.zoom-low .zoEdges path{stroke-width:1.65}.zoScene.zoom-low .zoEdges path.active{stroke-width:2.1}
+
 .zoTimeline{margin-top:10px;border:1px solid rgba(76,109,159,.22);border-radius:16px;background:linear-gradient(180deg,rgba(9,14,24,.94),rgba(8,12,21,.98));padding:10px}
 .zoTimelineHead{display:flex;align-items:center;justify-content:space-between;gap:10px}
 .zoTimelineHead b{font-size:9px;color:#d8e9ff;letter-spacing:.12em}.zoTimelineHead .meta{font-size:9px;color:#7890b1}
@@ -5204,13 +5216,13 @@ body.zar-light .zarDockManagerCard{background:#fffaf4;color:#4a3828;border-color
 }
 </style>
 
-<script id="zar-orchestration-global-js-v31-3-38">
+<script id="zar-orchestration-global-js-v31-3-39">
 (function(){
   let zoReplayTimer=null;
   let zoScale=1;
   let zoPanBound=false;
-  const ZO_BASE_W=1540;
-  const ZO_BASE_H=820;
+  const ZO_BASE_W=1880;
+  const ZO_BASE_H=980;
   const ZO_MIN=0.62;
   const ZO_MAX=1.9;
   const EDGE_COPY={
@@ -5364,6 +5376,8 @@ body.zar-light .zarDockManagerCard{background:#fffaf4;color:#4a3828;border-color
     scene.style.height=ZO_BASE_H+'px';
     scene.style.transform='scale('+zoScale+')';
     scene.style.transformOrigin='top left';
+    scene.classList.toggle('zoom-mid', zoScale < 0.92 && zoScale >= 0.76);
+    scene.classList.toggle('zoom-low', zoScale < 0.76);
     if(badge) badge.textContent=Math.round(zoScale*100)+'%';
     if(range) range.value=String(Math.round(zoScale*100));
   };
@@ -5402,11 +5416,11 @@ body.zar-light .zarDockManagerCard{background:#fffaf4;color:#4a3828;border-color
     const pos={};
     const general=agents.filter(a=>a.id!=='zar_supervisor' && a.id!=='stonks_supervisor' && a.domain!=='finance');
     const finance=agents.filter(a=>a.id!=='stonks_supervisor' && a.domain==='finance');
-    const c1={x:w*0.28,y:h*0.43}, c2={x:w*0.74,y:h*0.43};
+    const c1={x:w*0.28,y:h*0.44}, c2={x:w*0.74,y:h*0.44};
     pos.zar_supervisor={x:c1.x,y:c1.y};
     pos.stonks_supervisor={x:c2.x,y:c2.y};
-    Object.assign(pos, polarPlace(general,c1.x,c1.y,230,170,215,-35));
-    Object.assign(pos, polarPlace(finance,c2.x,c2.y,230,170,215,-35));
+    Object.assign(pos, polarPlace(general,c1.x,c1.y,305,225,218,-38));
+    Object.assign(pos, polarPlace(finance,c2.x,c2.y,305,225,218,-38));
     return {pos,c1,c2};
   };
   window.zoRender=function(j){
@@ -5418,10 +5432,10 @@ body.zar-light .zarDockManagerCard{background:#fffaf4;color:#4a3828;border-color
     const layout=window.zoLayout(agents,ZO_BASE_W,ZO_BASE_H), pos=layout.pos;
     stats.innerHTML=`<div class="zoStat"><small>Subagentes registrados</small><b>${agents.length}</b></div><div class="zoStat"><small>Router local</small><b>${j.router_token_cost||0} tokens</b></div><div class="zoStat"><small>Stonks</small><b>Phase ${j.stonks_phase||'—'} · Paper</b></div><div class="zoStat"><small>Actividad reciente</small><b>${j.active_count||0} eventos</b></div>`;
     const halo1=document.getElementById('zoHaloGeneral'), halo2=document.getElementById('zoHaloFinance'), label1=document.getElementById('zoLabelGeneral'), label2=document.getElementById('zoLabelFinance');
-    if(halo1) Object.assign(halo1.style,{left:(layout.c1.x-320)+'px', top:(layout.c1.y-235)+'px', width:'640px', height:'470px'});
-    if(halo2) Object.assign(halo2.style,{left:(layout.c2.x-320)+'px', top:(layout.c2.y-235)+'px', width:'640px', height:'470px'});
-    if(label1) Object.assign(label1.style,{left:(layout.c1.x-292)+'px', top:(layout.c1.y-222)+'px'});
-    if(label2) Object.assign(label2.style,{left:(layout.c2.x-292)+'px', top:(layout.c2.y-222)+'px'});
+    if(halo1) Object.assign(halo1.style,{left:(layout.c1.x-390)+'px', top:(layout.c1.y-285)+'px', width:'780px', height:'570px'});
+    if(halo2) Object.assign(halo2.style,{left:(layout.c2.x-390)+'px', top:(layout.c2.y-285)+'px', width:'780px', height:'570px'});
+    if(label1) Object.assign(label1.style,{left:(layout.c1.x-355)+'px', top:(layout.c1.y-272)+'px'});
+    if(label2) Object.assign(label2.style,{left:(layout.c2.x-355)+'px', top:(layout.c2.y-272)+'px'});
     const latest=(j.stonks_trace||[]).slice(-1)[0]; const activeId=latest?('stonks_'+latest.agent):'';
     host.innerHTML=agents.map(a=>{ const p=pos[a.id]||{x:ZO_BASE_W/2,y:ZO_BASE_H/2}; const finance=a.domain==='finance'; const domainLabel=finance?'finance':(a.domain||'general'); return `<div class="zoNode ${finance?'finance':''} ${a.id===activeId?'active':''}" data-agent="${esc(a.id)}" style="left:${p.x}px;top:${p.y}px"><div class="top"><span class="ico">${iconSvg(a.id)}</span><div><b>${esc(a.name)}</b><small>${esc(shortText(a.role||'',64))}</small></div></div><div class="zoMeta"><span class="zoStatus">${esc(a.status||'ready')}</span><span class="zoDomain">${esc(domainLabel)}</span></div></div>`; }).join('');
     const counts={};
