@@ -56,30 +56,47 @@ class AnalysisAgent:
     name = "analysis"
 
     @staticmethod
-    def _strength(signal):
+    def _metrics(signal):
         indicators = signal.get("indicators") or {}
+        price = signal.get("price")
         fast = indicators.get("sma20")
         slow = indicators.get("sma50")
+        rsi = indicators.get("rsi14")
+        atr_pct = indicators.get("atr_pct")
         try:
-            fast = float(fast)
-            slow = float(slow)
-            gap_pct = abs(fast - slow) / max(abs(slow), 1e-9) * 100.0
+            fast_f, slow_f = float(fast), float(slow)
+            gap_pct = abs(fast_f - slow_f) / max(abs(slow_f), 1e-9) * 100.0
         except (TypeError, ValueError):
             gap_pct = 0.0
-        # Technical signal strength, not a probability or forecast.
-        strength = min(100.0, round(gap_pct * 25.0, 1))
-        return strength, round(gap_pct, 4)
+        try: rsi_f = float(rsi)
+        except (TypeError, ValueError): rsi_f = None
+        try: atr_f = float(atr_pct)
+        except (TypeError, ValueError): atr_f = None
+        # Descriptive technical intensity only; never a probability or forecast.
+        trend_component = min(45.0, gap_pct * 18.0)
+        rsi_component = 0.0 if rsi_f is None else min(25.0, abs(rsi_f - 50.0) / 20.0 * 25.0)
+        vol_component = 0.0 if atr_f is None else min(30.0, atr_f * 12.0)
+        strength = round(min(100.0, trend_component + rsi_component + vol_component), 1)
+        return {
+            "signal_strength": strength,
+            "sma_gap_pct": round(gap_pct, 4),
+            "rsi14": rsi_f,
+            "atr_pct": atr_f,
+            "regime": indicators.get("regime") or "unknown",
+            "price": price,
+        }
 
     def signal(self, symbol, strategy, timeframe, signal_fn):
         signal, _clock = signal_fn(symbol, strategy, timeframe, "iex")
-        strength, gap_pct = self._strength(signal)
-        return signal, AgentResult(self.name, "ok", f"{symbol}: {signal.get('signal_label') or signal.get('signal')}", {
+        metrics = self._metrics(signal)
+        regime = metrics.get("regime") or "unknown"
+        detail = f"{symbol}: {signal.get('signal_label') or signal.get('signal')} · régimen {regime}"
+        return signal, AgentResult(self.name, "ok", detail, {
             "symbol": symbol,
             "signal": signal.get("signal"),
             "reason": signal.get("reason"),
             "indicators": signal.get("indicators") or {},
-            "signal_strength": strength,
-            "sma_gap_pct": gap_pct,
+            **metrics,
         }).as_dict()
 
 
@@ -114,7 +131,11 @@ class RiskAgent:
         }
         return not reasons, AgentResult(self.name, status,
             "; ".join(reasons) if reasons else "Pre-check local superado; Decision/Risk servidor mantiene la autoridad final",
-            {"reasons": reasons, "gates": gates}).as_dict()
+            {"reasons": reasons, "gates": gates, "limits": {
+                "max_trade_usd": state.get("max_trade_eur"),
+                "max_daily_loss_usd": state.get("max_daily_loss_eur"),
+                "max_position_pct": state.get("max_position_pct"),
+            }}).as_dict()
 
 
 class PaperExecutionAgent:
@@ -147,14 +168,14 @@ class StonksSupervisor:
     def describe(self):
         return {
             "architecture": "deterministic_multi_agent",
-            "phase": 2,
+            "phase": 3,
             "token_cost_router": 0,
             "paper_only": True,
             "execution_authority": "Decision + Risk server route",
             "agents": [
                 {"id":"supervisor","role":"Coordina el ciclo y consolida trazas"},
                 {"id":"market_data","role":"Reconcilia Paper y reloj de mercado"},
-                {"id":"analysis","role":"Calcula señales técnicas"},
+                {"id":"analysis","role":"Combina señal, momentum, volatilidad y régimen"},
                 {"id":"risk","role":"Pre-check local; Decision/Risk servidor es autoridad final"},
                 {"id":"paper_execution","role":"Ejecuta únicamente por la ruta Paper endurecida"},
                 {"id":"position_manager","role":"Gestiona lifecycle, ownership, SL/TP y reconciliación"},

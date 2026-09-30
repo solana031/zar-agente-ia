@@ -1149,7 +1149,21 @@ def _stonks_current_signal(symbol, strategy='trend', timeframe='1Min', feed='iex
     elif strategy=='trend':
         sma20=_stonks_sma(closes,20); sma50=_stonks_sma(closes,50)
         p20,p50=sma20[-2],sma50[-2]; c20,c50=sma20[-1],sma50[-1]
-        item['indicators']={'sma20':round(c20,4),'sma50':round(c50,4)}
+        rsi=_stonks_rsi(closes,14); atr=_stonks_atr(bars,14)
+        cr=rsi[-1] if rsi else None; ca=atr[-1] if atr else None
+        atr_pct=(float(ca)/max(abs(closes[-1]),1e-9)*100.0) if ca is not None else None
+        gap_pct=abs(c20-c50)/max(abs(c50),1e-9)*100.0
+        if atr_pct is not None and atr_pct >= 1.5:
+            regime='alta_volatilidad'
+        elif gap_pct >= 0.35:
+            regime='tendencia_alcista' if c20>c50 else 'tendencia_bajista'
+        else:
+            regime='lateral'
+        item['indicators']={'sma20':round(c20,4),'sma50':round(c50,4),
+            'rsi14':round(cr,2) if cr is not None else None,
+            'atr14':round(ca,4) if ca is not None else None,
+            'atr_pct':round(atr_pct,3) if atr_pct is not None else None,
+            'regime':regime}
         if p20 is not None and p50 is not None and p20 <= p50 and c20 > c50:
             item['signal']='BUY'; item['signal_label']='COMPRA'; item['reason']=f'SMA20 ({c20:.2f}) cruzó al alza SMA50 ({c50:.2f}) en la última barra cerrada.'
         elif p20 is not None and p50 is not None and p20 >= p50 and c20 < c50:
@@ -1159,7 +1173,13 @@ def _stonks_current_signal(symbol, strategy='trend', timeframe='1Min', feed='iex
             item['reason']=f'SMA20 ({c20:.2f}) está {relation} de SMA50 ({c50:.2f}); no hay cruce nuevo.'
     else:
         rsi=_stonks_rsi(closes,14); pr,cr=rsi[-2],rsi[-1]
-        item['indicators']={'rsi14':round(cr,2)}
+        atr=_stonks_atr(bars,14); ca=atr[-1] if atr else None
+        atr_pct=(float(ca)/max(abs(closes[-1]),1e-9)*100.0) if ca is not None else None
+        regime='alta_volatilidad' if atr_pct is not None and atr_pct >= 1.5 else ('sobreventa' if cr<30 else ('sobrecompra' if cr>70 else 'lateral'))
+        item['indicators']={'rsi14':round(cr,2),
+            'atr14':round(ca,4) if ca is not None else None,
+            'atr_pct':round(atr_pct,3) if atr_pct is not None else None,
+            'regime':regime}
         if pr is not None and pr >= 30 and cr < 30:
             item['signal']='BUY'; item['signal_label']='COMPRA'; item['reason']=f'RSI14 cayó por debajo de 30 ({cr:.2f}) en la última barra cerrada.'
         elif pr is not None and pr <= 70 and cr > 70:
