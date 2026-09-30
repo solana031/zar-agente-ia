@@ -77,7 +77,7 @@ jobs:
             "*.sqlite" \
             "*.db"; do
 
-            if grep -Fqx "$pattern" .gitignore; then
+            if tr -d '\r' < .gitignore | grep -Fqx "$pattern"; then
               echo "OK: $pattern"
             else
               echo "ERROR: falta protección para $pattern"
