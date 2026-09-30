@@ -4867,122 +4867,6 @@ body.zar-light .zarDockManagerCard{background:#fffaf4;color:#4a3828;border-color
 @media(max-width:760px){.zoPanel{padding:10px}.zoHead{display:block}.zoActions{margin-top:8px}.zoStats{grid-template-columns:repeat(2,minmax(0,1fr))}.zoSceneWrap{height:780px}.zoViewport{padding:12px}.zoTimeline{margin-bottom:80px}.zoTraceRow{grid-template-columns:90px 60px minmax(0,1fr)}.zoToolbar{display:block}.zoZoomControls{margin-top:8px}}
 </style>
 
-<script id="zar-v31-3-33-orchestration-layout-fix-js">
-(function(){
-  let replayTimer=null;
-  const EDGE_COPY={
-    'zar_supervisor|workspace':{label:'órdenes / agenda',detail:'Tareas, correo, calendario y documentos'},
-    'zar_supervisor|memory':{label:'contexto activo',detail:'Recuperación de memoria y estado persistente'},
-    'zar_supervisor|research':{label:'búsqueda web',detail:'Investigación pública y síntesis'},
-    'zar_supervisor|files':{label:'archivos / metadatos',detail:'Biblioteca, búsqueda y recuperación'},
-    'zar_supervisor|studio':{label:'multimedia',detail:'Vídeo, audio, imagen y proyectos'},
-    'zar_supervisor|voice':{label:'voz / transcripción',detail:'Entrada y salida hablada'},
-    'zar_supervisor|stonks_supervisor':{label:'router → stonks',detail:'Enrutado financiero y supervisión general'},
-    'research|memory':{label:'fuentes ↔ memoria',detail:'Persistencia de hallazgos y contexto'},
-    'files|memory':{label:'archivos ↔ memoria',detail:'Indexado y recuperación contextual'},
-    'stonks_supervisor|stonks_market_data':{label:'precio / reloj',detail:'Market snapshot y reconciliación Paper'},
-    'stonks_supervisor|stonks_analysis':{label:'señal / métricas',detail:'Tendencia, régimen, volatilidad y fuerza'},
-    'stonks_supervisor|stonks_news_sentiment':{label:'noticias / rrss',detail:'Titulares y sentimiento público cacheado'},
-    'stonks_supervisor|stonks_risk':{label:'gates / límites',detail:'Motor, límites y permisos Paper'},
-    'stonks_supervisor|stonks_paper_execution':{label:'decisión endurecida',detail:'Ruta de ejecución Paper-only'},
-    'stonks_supervisor|stonks_position_manager':{label:'ownership / SLTP',detail:'Lifecycle, gestión y reconciliación'}
-  };
-  function shortText(t,n){t=String(t||'');return t.length>n?(t.slice(0,n-1)+'…'):t}
-  function esc(v){return (window.zoEsc?window.zoEsc(v):String(v==null?'':v).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])))}
-  function gridPlace(items,left,top,width,cols,rowGap,colGap){
-    const pos={};
-    if(!items.length)return pos;
-    const colWidth=cols>1?width/(cols-1):0;
-    items.forEach((a,i)=>{
-      const col=i%cols,row=Math.floor(i/cols);
-      pos[a.id]={x:left+col*colWidth,y:top+row*rowGap};
-    });
-    return pos;
-  }
-  window.showSubagentOrchestration=function(){
-    if(typeof ensurePanelMode==='function')ensurePanelMode('orchestration');
-    const titleEl=document.getElementById('editorWorkspaceTitle');if(titleEl)titleEl.textContent='Orquestación de Subagentes';
-    const bodyEl=document.getElementById('editorWorkspaceBodyInner');if(!bodyEl)return;
-    bodyEl.innerHTML=`<div class="zoPanel"><div class="zoHead"><div><span class="eyebrow">ZAR · ARQUITECTURA VIVA</span><h2>🧬 Orquestación de Subagentes</h2><p>Centro global de observabilidad. Visualiza los especialistas de ZAR sin superposición, sus uniones y la información que comparten. La dimensión temporal inferior muestra el flujo reciente de actividad.</p></div><div class="zoActions"><button class="zoBtn" onclick="zoRefresh()">↻ Actualizar</button><button class="zoBtn" onclick="zoReplay()">▶ Reproducir ciclo</button><button class="zoBtn" onclick="closePanel()">× Cerrar</button></div></div><div id="zoStats" class="zoStats"></div><div class="zoSceneWrap"><div class="zoScene"><div class="zoGrid3d"></div><svg id="zoEdges" class="zoEdges" preserveAspectRatio="none"></svg><div id="zoEdgeLabels" class="zoEdgeLabels"></div><div id="zoNodes" class="zoNodes"></div><div class="zoLegend"><span><i class="g"></i>ZAR general</span><span><i class="f"></i>Finanzas / Stonks</span><span><i class="a"></i>Actividad reciente</span></div></div></div><div class="zoTimeline"><div class="zoTimelineHead"><b>DIMENSIÓN TEMPORAL · COMUNICACIONES RECIENTES</b><span id="zoTraceMeta" class="meta">Cargando…</span></div><div id="zoTrace" class="zoTrace"></div></div></div>`;
-    if(typeof openPanel==='function')openPanel();
-    window.zoRefresh();
-  };
-  window.zoRefresh=async function(){
-    try{
-      const j=await fetch('/api/subagents/state?_='+Date.now(),{cache:'no-store'}).then(r=>r.json());
-      if(!j.ok)throw new Error(j.error||'No disponible');
-      window.__zoState=j;
-      window.zoRender(j);
-    }catch(e){
-      const n=document.getElementById('zoNodes');if(n)n.innerHTML='<div class="meta" style="padding:20px">⚠ '+esc(e.message)+'</div>';
-    }
-  };
-  window.zoLayout=function(agents,w,h){
-    const pos={};
-    const general=agents.filter(a=>a.domain!=='finance' && a.id!=='zar_supervisor');
-    const finance=agents.filter(a=>a.domain==='finance' && a.id!=='stonks_supervisor');
-    const narrow=w<900;
-    pos.zar_supervisor={x:narrow?w/2:w*0.28,y:112};
-    pos.stonks_supervisor={x:narrow?w/2:w*0.72,y:narrow?270:112};
-    const generalCols=narrow?2:2;
-    const financeCols=narrow?2:3;
-    const generalTop=narrow?420:250;
-    const financeTop=narrow?600:250;
-    const generalGrid=gridPlace(general,narrow?w*0.22:150,generalTop,narrow?w*0.56:230,generalCols,110,20);
-    const financeGrid=gridPlace(finance,narrow?w*0.22:Math.max(w-430,570),financeTop,narrow?w*0.56:330,financeCols,110,18);
-    Object.assign(pos,generalGrid,financeGrid);
-    return pos;
-  };
-  function edgeMeta(from,to,state){
-    const key=from+'|'+to;
-    const rev=to+'|'+from;
-    const base=EDGE_COPY[key]||EDGE_COPY[rev]||{label:'flujo interno',detail:''};
-    let detail=base.detail||'';
-    let status='';
-    if((to||'').startsWith('stonks_')){
-      const trace=[...((state&&state.stonks_trace)||[])].reverse().find(t=>'stonks_'+t.agent===to);
-      if(trace){status=trace.status||'';detail=trace.detail||detail;}
-    }
-    return {label:base.label||'flujo',detail:shortText(detail,72),status};
-  }
-  function curvePath(a,b){
-    const mx=(a.x+b.x)/2,my=(a.y+b.y)/2;const dx=b.x-a.x,dy=b.y-a.y;const len=Math.max(Math.hypot(dx,dy),1);const nx=-dy/len,ny=dx/len;const bend=Math.min(48,Math.max(12,len*.08));const cx=mx+nx*bend,cy=my+ny*bend;return {d:`M ${a.x} ${a.y} Q ${cx} ${cy} ${b.x} ${b.y}`,mx:mx+nx*(bend*.72),my:my+ny*(bend*.72)};
-  }
-  window.zoRender=function(j){
-    const scene=document.querySelector('.zoSceneWrap'),host=document.getElementById('zoNodes'),svg=document.getElementById('zoEdges'),labels=document.getElementById('zoEdgeLabels');
-    if(!scene||!host||!svg||!labels)return;
-    const w=scene.clientWidth||1080,h=scene.clientHeight||560,agents=j.agents||[],pos=window.zoLayout(agents,w,h);window.__zoPos=pos;
-    document.getElementById('zoStats').innerHTML=`<div class="zoStat"><small>Subagentes registrados</small><b>${agents.length}</b></div><div class="zoStat"><small>Router</small><b>${j.router_token_cost||0} tokens</b></div><div class="zoStat"><small>Stonks</small><b>Phase ${j.stonks_phase||'—'} · Paper</b></div><div class="zoStat"><small>Actividad reciente</small><b>${j.active_count||0} eventos</b></div>`;
-    const latest=(j.stonks_trace||[]).slice(-1)[0];const activeId=latest?('stonks_'+latest.agent):'';
-    host.innerHTML=agents.map(a=>{const p=pos[a.id]||{x:w/2,y:h/2};const cls=a.domain==='finance'?'finance':'';const domainLabel=a.domain==='finance'?'finance':(a.domain||'general');return `<div class="zoNode ${cls} ${a.id===activeId?'active':''}" data-agent="${esc(a.id)}" style="left:${p.x}px;top:${p.y}px"><div class="top"><span class="ico">${esc(a.icon||'◇')}</span><b>${esc(a.name)}</b></div><small>${esc(a.role||'')}</small><div class="zoMeta"><span class="zoStatus">${esc(a.status||'ready')}</span><span class="zoDomain">${esc(domainLabel)}</span></div></div>`}).join('');
-    const edges=(j.edges||[]).map((e,i)=>{const from=e[0],to=e[1],a=pos[from],b=pos[to];if(!a||!b)return null;const meta=edgeMeta(from,to,j);const path=curvePath(a,b);const finance=/^stonks_/.test(from)||/^stonks_/.test(to);const edgeId=`${from}|${to}`;return {from,to,finance,edgeId,...meta,...path}}).filter(Boolean);
-    svg.setAttribute('viewBox',`0 0 ${w} ${h}`);
-    svg.innerHTML=`<defs><marker id="zoArrowHead" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#6f9df5"></path></marker></defs>`+edges.map(e=>`<path class="${e.finance?'finance ':''}${e.to===activeId||e.from===activeId?'active':''}" data-edge="${esc(e.edgeId)}" data-from="${esc(e.from)}" data-to="${esc(e.to)}" d="${e.d}" marker-end="url(#zoArrowHead)"></path>`).join('');
-    labels.innerHTML=edges.map(e=>`<div class="zoEdgeLabel ${e.finance?'finance ':''}${e.to===activeId||e.from===activeId?'active':''}" data-edge-label="${esc(e.edgeId)}" data-from="${esc(e.from)}" data-to="${esc(e.to)}" style="left:${e.mx}px;top:${e.my}px"><b>${esc(e.label)}</b><small>${esc(e.detail||'flujo activo')}</small></div>`).join('');
-    const tr=(j.stonks_trace||[]).slice(-18).reverse();
-    document.getElementById('zoTraceMeta').textContent=tr.length+' eventos';
-    document.getElementById('zoTrace').innerHTML=tr.length?tr.map(x=>`<div class="zoTraceRow" data-trace-agent="stonks_${esc(x.agent)}"><b>${esc(x.agent)}</b><span class="state">${esc(x.status)}</span><span>${esc(x.detail||'')}</span></div>`).join(''):'<div class="meta">Todavía no hay comunicaciones registradas.</div>';
-  };
-  window.zoHighlight=function(agentId){
-    document.querySelectorAll('.zoNode').forEach(n=>n.classList.toggle('active',n.dataset.agent===agentId));
-    document.querySelectorAll('.zoEdges path').forEach(p=>{const on=(p.dataset.from===agentId||p.dataset.to===agentId);p.classList.toggle('active',on)});
-    document.querySelectorAll('.zoEdgeLabel').forEach(l=>{const on=(l.dataset.from===agentId||l.dataset.to===agentId);l.classList.toggle('active',on)});
-    document.querySelectorAll('.zoTraceRow').forEach(r=>r.style.background=(r.dataset.traceAgent===agentId?'rgba(57,81,124,.14)':''));
-  };
-  window.zoReplay=function(){
-    if(replayTimer){clearInterval(replayTimer);replayTimer=null}
-    const tr=(window.__zoState?.stonks_trace||[]).slice(-18);
-    if(!tr.length)return;
-    let i=0;
-    const meta=document.getElementById('zoTraceMeta');
-    const step=()=>{const item=tr[i];window.zoHighlight('stonks_'+item.agent);if(meta)meta.textContent=`Paso ${i+1}/${tr.length} · ${item.agent}`;i++;if(i>=tr.length){clearInterval(replayTimer);replayTimer=null;setTimeout(()=>{if(meta)meta.textContent=tr.length+' eventos';},1000)}};
-    step();
-    replayTimer=setInterval(step,900);
-  };
-  window.addEventListener('resize',()=>{if(document.querySelector('.zoPanel')&&window.__zoState)window.zoRender(window.__zoState)});
-})();
-</script>
-
 </body></html>
 
 <style id="zar-v30-10-16-floating-shell">
@@ -5283,7 +5167,8 @@ body.zar-light .zarDockManagerCard{background:#fffaf4;color:#4a3828;border-color
 </style>
 
 
-<script id="zar-orchestration-global-js-v31-3-34">
+
+<script id="zar-orchestration-global-js-v31-3-35">
 (function(){
   let zoReplayTimer=null;
   let zoScale=1;
@@ -5317,17 +5202,17 @@ body.zar-light .zarDockManagerCard{background:#fffaf4;color:#4a3828;border-color
   }
   function clusterOffset(agentId){
     const map={workspace:-2,memory:-1,research:0,files:1,studio:2,voice:3,stonks_market_data:-2,stonks_analysis:-1,stonks_news_sentiment:0,stonks_risk:1,stonks_paper_execution:2,stonks_position_manager:3};
-    return map[(agentId||'').replace('stonks_','')]||0;
+    return map[agentId]||0;
   }
   function edgeMeta(from,to,state){
     const key=from+'|'+to, rev=to+'|'+from;
     const base=EDGE_COPY[key]||EDGE_COPY[rev]||{label:'flujo interno',detail:'Intercambio de estado'};
-    let detail=base.detail||'', status='';
+    let detail=base.detail||'';
     if((to||'').startsWith('stonks_')||(from||'').startsWith('stonks_')){
       const trace=[...((state&&state.stonks_trace)||[])].reverse().find(t=>('stonks_'+t.agent===to)||('stonks_'+t.agent===from));
-      if(trace){ status=trace.status||''; detail=trace.detail||detail; }
+      if(trace && trace.detail) detail=trace.detail;
     }
-    return {label:base.label||'flujo', detail:shortText(detail,86), status};
+    return {label:base.label||'flujo', detail:shortText(detail,86)};
   }
   function curvePath(a,b,idx=0){
     const mx=(a.x+b.x)/2, my=(a.y+b.y)/2;
@@ -5340,40 +5225,54 @@ body.zar-light .zarDockManagerCard{background:#fffaf4;color:#4a3828;border-color
     return {d:`M ${a.x} ${a.y} Q ${cx} ${cy} ${b.x} ${b.y}`, mx:mx+nx*(bend*.72), my:my+ny*(bend*.72)};
   }
   function getBodyEl(){
-    return document.getElementById('editorWorkspaceBodyInner') || (typeof body!=='undefined'?body:document.getElementById('panelBody'));
+    return document.getElementById('editorWorkspaceBodyInner') || document.getElementById('panelBody') || document.querySelector('.editorWorkspaceBodyInner');
+  }
+  function orchestrationMarkup(){
+    return `<div class="zoPanel"><div class="zoHead"><div><span class="eyebrow">ZAR · ARQUITECTURA VIVA</span><h2>🧬 Orquestación de Subagentes</h2><p>Vista tipo HUD inspirada en Jarvis: agentes separados por dominios, enlaces visibles, intercambio de información y control de zoom para inspección fina.</p></div><div class="zoActions"><button class="zoBtn" onclick="zoRefresh()">↻ Actualizar</button><button class="zoBtn" onclick="zoReplay()">▶ Reproducir ciclo</button><button class="zoBtn" onclick="closePanel()">× Cerrar</button></div></div><div id="zoStats" class="zoStats"><div class="zoStat"><small>Estado</small><b>Cargando…</b></div><div class="zoStat"><small>Router</small><b>—</b></div><div class="zoStat"><small>Stonks</small><b>—</b></div><div class="zoStat"><small>Eventos</small><b>—</b></div></div><div class="zoSceneWrap"><div class="zoToolbar"><div class="hint">Zoom y paneo: usa los botones o la rueda del ratón para acercarte a agentes y enlaces.</div><div class="zoZoomControls"><button class="zoBtn" onclick="zoZoomOut()">－</button><div id="zoZoomBadge" class="zoZoomBadge">100%</div><button class="zoBtn" onclick="zoZoomIn()">＋</button><button class="zoBtn" onclick="zoZoomReset()">Reset</button></div></div><div id="zoViewport" class="zoViewport"><div id="zoScaler" class="zoScaler"><div id="zoScene" class="zoScene"><div class="zoGrid3d"></div><div class="zoClusterHalo" id="zoHaloGeneral"></div><div class="zoClusterHalo finance" id="zoHaloFinance"></div><div class="zoClusterLabel" id="zoLabelGeneral">CORE / AGENTES GENERALES</div><div class="zoClusterLabel finance" id="zoLabelFinance">FINANCE / STONKS</div><svg id="zoEdges" class="zoEdges" preserveAspectRatio="none"></svg><div id="zoEdgeLabels" class="zoEdgeLabels"></div><div id="zoNodes" class="zoNodes"><div style="padding:18px;color:#a7b8ce;font-size:12px">Cargando diagrama de orquestación…</div></div><div class="zoLegend"><span><i class="g"></i>ZAR general</span><span><i class="f"></i>Finanzas / Stonks</span><span><i class="a"></i>Actividad reciente</span></div></div></div></div></div><div class="zoTimeline"><div class="zoTimelineHead"><b>DIMENSIÓN TEMPORAL · COMUNICACIONES RECIENTES</b><span id="zoTraceMeta" class="meta">Cargando…</span></div><div id="zoTrace" class="zoTrace"><div class="meta">Preparando trazas…</div></div></div></div>`;
   }
   window.showSubagentOrchestration=function(){
     if(typeof ensurePanelMode==='function')ensurePanelMode('orchestration');
-    const titleEl=document.getElementById('editorWorkspaceTitle'); if(titleEl)titleEl.textContent='Orquestación de Subagentes';
-    const bodyEl=getBodyEl(); if(!bodyEl)return;
-    bodyEl.classList.remove('stonks-host');
-    bodyEl.innerHTML=`<div class="zoPanel"><div class="zoHead"><div><span class="eyebrow">ZAR · ARQUITECTURA VIVA</span><h2>🧬 Orquestación de Subagentes</h2><p>Vista tipo HUD inspirada en Jarvis: cada subagente se muestra sin solaparse, con enlaces visibles, datos compartidos y control de zoom para inspeccionar tanto agentes como comunicaciones.</p></div><div class="zoActions"><button class="zoBtn" onclick="zoRefresh()">↻ Actualizar</button><button class="zoBtn" onclick="zoReplay()">▶ Reproducir ciclo</button><button class="zoBtn" onclick="closePanel()">× Cerrar</button></div></div><div id="zoStats" class="zoStats"></div><div class="zoSceneWrap"><div class="zoToolbar"><div class="hint">Zoom y paneo: usa los botones o la rueda del ratón para acercarte a agentes y enlaces.</div><div class="zoZoomControls"><button class="zoBtn" onclick="zoZoomOut()">－</button><div id="zoZoomBadge" class="zoZoomBadge">100%</div><button class="zoBtn" onclick="zoZoomIn()">＋</button><button class="zoBtn" onclick="zoZoomReset()">Reset</button></div></div><div id="zoViewport" class="zoViewport"><div id="zoScaler" class="zoScaler"><div id="zoScene" class="zoScene"><div class="zoGrid3d"></div><div class="zoClusterHalo" id="zoHaloGeneral"></div><div class="zoClusterHalo finance" id="zoHaloFinance"></div><div class="zoClusterLabel" id="zoLabelGeneral">CORE / AGENTES GENERALES</div><div class="zoClusterLabel finance" id="zoLabelFinance">FINANCE / STONKS</div><svg id="zoEdges" class="zoEdges" preserveAspectRatio="none"></svg><div id="zoEdgeLabels" class="zoEdgeLabels"></div><div id="zoNodes" class="zoNodes"></div><div class="zoLegend"><span><i class="g"></i>ZAR general</span><span><i class="f"></i>Finanzas / Stonks</span><span><i class="a"></i>Actividad reciente</span></div></div></div></div></div><div class="zoTimeline"><div class="zoTimelineHead"><b>DIMENSIÓN TEMPORAL · COMUNICACIONES RECIENTES</b><span id="zoTraceMeta" class="meta">Cargando…</span></div><div id="zoTrace" class="zoTrace"></div></div></div>`;
     if(typeof openPanel==='function')openPanel();
+    const titleEl=document.getElementById('editorWorkspaceTitle'); if(titleEl) titleEl.textContent='Orquestación de Subagentes';
+    const bodyEl=getBodyEl();
+    if(!bodyEl){ return; }
+    bodyEl.classList.remove('stonks-host');
+    bodyEl.innerHTML=orchestrationMarkup();
     const vp=document.getElementById('zoViewport');
     if(vp && !vp.dataset.bound){
       vp.addEventListener('wheel',function(ev){ if(ev.ctrlKey || ev.metaKey || ev.shiftKey){ev.preventDefault(); if(ev.deltaY<0) window.zoZoomIn(); else window.zoZoomOut(); } },{passive:false});
       vp.dataset.bound='1';
     }
     zoScale=1;
-    window.zoRefresh();
+    window.zoUpdateZoom();
+    setTimeout(()=>window.zoRefresh(), 20);
   };
   window.zoUpdateZoom=function(){
     const scaler=document.getElementById('zoScaler'), scene=document.getElementById('zoScene'), badge=document.getElementById('zoZoomBadge');
-    if(!scaler || !scene)return;
+    if(!scaler || !scene) return;
     scaler.style.width=(ZO_BASE_W*zoScale)+'px';
     scaler.style.height=(ZO_BASE_H*zoScale)+'px';
     scene.style.width=ZO_BASE_W+'px';
     scene.style.height=ZO_BASE_H+'px';
     scene.style.transform='scale('+zoScale+')';
     scene.style.transformOrigin='top left';
-    if(badge)badge.textContent=Math.round(zoScale*100)+'%';
+    if(badge) badge.textContent=Math.round(zoScale*100)+'%';
   };
   window.zoZoomIn=function(){ zoScale=Math.min(1.9, +(zoScale+0.12).toFixed(2)); window.zoUpdateZoom(); };
   window.zoZoomOut=function(){ zoScale=Math.max(0.62, +(zoScale-0.12).toFixed(2)); window.zoUpdateZoom(); };
   window.zoZoomReset=function(){ zoScale=1; window.zoUpdateZoom(); };
   window.zoRefresh=async function(){
-    try{ const j=await fetch('/api/subagents/state?_='+Date.now(),{cache:'no-store'}).then(r=>r.json()); if(!j.ok)throw new Error(j.error||'No disponible'); window.__zoState=j; window.zoRender(j); }
-    catch(e){ const n=document.getElementById('zoNodes'); if(n)n.innerHTML='<div class="meta" style="padding:20px">⚠ '+esc(e.message)+'</div>'; }
+    try{
+      const r=await fetch('/api/subagents/state?_='+Date.now(),{cache:'no-store'});
+      const j=await r.json();
+      if(!j.ok) throw new Error(j.error||'No disponible');
+      window.__zoState=j;
+      window.zoRender(j);
+    }catch(e){
+      const n=document.getElementById('zoNodes'); if(n) n.innerHTML='<div style="padding:20px;color:#ffb3b3;font-size:12px">⚠ No se pudo cargar la orquestación: '+esc(e.message)+'</div>';
+      const t=document.getElementById('zoTrace'); if(t) t.innerHTML='<div class="meta">Sin trazas disponibles.</div>';
+      const s=document.getElementById('zoStats'); if(s) s.innerHTML='<div class="zoStat"><small>Error</small><b>Vista no cargada</b></div><div class="zoStat"><small>Detalle</small><b style="font-size:12px">'+esc(e.message)+'</b></div><div class="zoStat"><small>Router</small><b>—</b></div><div class="zoStat"><small>Eventos</small><b>0</b></div>';
+    }
   };
   window.zoLayout=function(agents,w,h){
     const pos={};
@@ -5387,27 +5286,28 @@ body.zar-light .zarDockManagerCard{background:#fffaf4;color:#4a3828;border-color
     return {pos,c1,c2};
   };
   window.zoRender=function(j){
-    const scene=document.getElementById('zoScene'), host=document.getElementById('zoNodes'), svg=document.getElementById('zoEdges'), labels=document.getElementById('zoEdgeLabels');
-    if(!scene||!host||!svg||!labels)return;
+    const host=document.getElementById('zoNodes'), svg=document.getElementById('zoEdges'), labels=document.getElementById('zoEdgeLabels');
+    const stats=document.getElementById('zoStats');
+    if(!host || !svg || !labels || !stats) return;
     window.zoUpdateZoom();
     const agents=j.agents||[];
-    const layout=window.zoLayout(agents,ZO_BASE_W,ZO_BASE_H), pos=layout.pos; window.__zoPos=pos;
-    document.getElementById('zoStats').innerHTML=`<div class="zoStat"><small>Subagentes registrados</small><b>${agents.length}</b></div><div class="zoStat"><small>Router local</small><b>${j.router_token_cost||0} tokens</b></div><div class="zoStat"><small>Stonks</small><b>Phase ${j.stonks_phase||'—'} · Paper</b></div><div class="zoStat"><small>Actividad reciente</small><b>${j.active_count||0} eventos</b></div>`;
+    const layout=window.zoLayout(agents,ZO_BASE_W,ZO_BASE_H), pos=layout.pos;
+    stats.innerHTML=`<div class="zoStat"><small>Subagentes registrados</small><b>${agents.length}</b></div><div class="zoStat"><small>Router local</small><b>${j.router_token_cost||0} tokens</b></div><div class="zoStat"><small>Stonks</small><b>Phase ${j.stonks_phase||'—'} · Paper</b></div><div class="zoStat"><small>Actividad reciente</small><b>${j.active_count||0} eventos</b></div>`;
     const halo1=document.getElementById('zoHaloGeneral'), halo2=document.getElementById('zoHaloFinance'), label1=document.getElementById('zoLabelGeneral'), label2=document.getElementById('zoLabelFinance');
-    Object.assign(halo1.style,{left:(layout.c1.x-300)+'px', top:(layout.c1.y-220)+'px', width:'600px', height:'440px'});
-    Object.assign(halo2.style,{left:(layout.c2.x-300)+'px', top:(layout.c2.y-220)+'px', width:'600px', height:'440px'});
-    Object.assign(label1.style,{left:(layout.c1.x-272)+'px', top:(layout.c1.y-208)+'px'});
-    Object.assign(label2.style,{left:(layout.c2.x-272)+'px', top:(layout.c2.y-208)+'px'});
+    if(halo1) Object.assign(halo1.style,{left:(layout.c1.x-300)+'px', top:(layout.c1.y-220)+'px', width:'600px', height:'440px'});
+    if(halo2) Object.assign(halo2.style,{left:(layout.c2.x-300)+'px', top:(layout.c2.y-220)+'px', width:'600px', height:'440px'});
+    if(label1) Object.assign(label1.style,{left:(layout.c1.x-272)+'px', top:(layout.c1.y-208)+'px'});
+    if(label2) Object.assign(label2.style,{left:(layout.c2.x-272)+'px', top:(layout.c2.y-208)+'px'});
     const latest=(j.stonks_trace||[]).slice(-1)[0]; const activeId=latest?('stonks_'+latest.agent):'';
     host.innerHTML=agents.map(a=>{ const p=pos[a.id]||{x:ZO_BASE_W/2,y:ZO_BASE_H/2}; const finance=a.domain==='finance'; const domainLabel=finance?'finance':(a.domain||'general'); return `<div class="zoNode ${finance?'finance':''} ${a.id===activeId?'active':''}" data-agent="${esc(a.id)}" style="left:${p.x}px;top:${p.y}px"><div class="top"><span class="ico">${esc(a.icon||'◇')}</span><div><b>${esc(a.name)}</b><small>${esc(shortText(a.role||'',64))}</small></div></div><div class="zoMeta"><span class="zoStatus">${esc(a.status||'ready')}</span><span class="zoDomain">${esc(domainLabel)}</span></div></div>`; }).join('');
     const counts={};
-    const edges=(j.edges||[]).map((e)=>{ const from=e[0], to=e[1]; const a=pos[from], b=pos[to]; if(!a||!b)return null; const key=[from,to].sort().join('|'); counts[key]=(counts[key]||0)+1; const meta=edgeMeta(from,to,j); const {d,mx,my}=curvePath(a,b,counts[key]+clusterOffset(to)); const finance=/^stonks_/.test(from)||/^stonks_/.test(to); const bridge=((from==='zar_supervisor'&&to==='stonks_supervisor')||(to==='zar_supervisor'&&from==='stonks_supervisor')); return {from,to,d,mx,my,finance,bridge,...meta}; }).filter(Boolean);
+    const edges=(j.edges||[]).map((e)=>{ const from=e[0], to=e[1]; const a=pos[from], b=pos[to]; if(!a||!b)return null; const key=[from,to].sort().join('|'); counts[key]=(counts[key]||0)+1; const meta=edgeMeta(from,to,j); const {d,mx,my}=curvePath(a,b,counts[key]+clusterOffset(to.replace('stonks_',''))); const finance=/^stonks_/.test(from)||/^stonks_/.test(to); const bridge=((from==='zar_supervisor'&&to==='stonks_supervisor')||(to==='zar_supervisor'&&from==='stonks_supervisor')); return {from,to,d,mx,my,finance,bridge,...meta}; }).filter(Boolean);
     svg.setAttribute('viewBox',`0 0 ${ZO_BASE_W} ${ZO_BASE_H}`);
     svg.innerHTML=`<defs><marker id="zoArrowHeadBlue" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#6f9df5"></path></marker><marker id="zoArrowHeadGold" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#d1a95f"></path></marker></defs>`+edges.map(e=>`<path class="${e.finance?'finance ':''}${e.bridge?'bridge ':''}${e.to===activeId||e.from===activeId?'active':''}" data-from="${esc(e.from)}" data-to="${esc(e.to)}" d="${e.d}" marker-end="url(#${e.finance?'zoArrowHeadGold':'zoArrowHeadBlue'})"></path>`).join('');
     labels.innerHTML=edges.map(e=>`<div class="zoEdgeLabel ${e.finance?'finance ':''}${e.to===activeId||e.from===activeId?'active':''}" data-from="${esc(e.from)}" data-to="${esc(e.to)}" style="left:${e.mx}px;top:${e.my}px"><b>${esc(e.label)}</b><small>${esc(e.detail||'flujo activo')}</small></div>`).join('');
     const tr=(j.stonks_trace||[]).slice(-18).reverse();
-    document.getElementById('zoTraceMeta').textContent=tr.length+' eventos';
-    document.getElementById('zoTrace').innerHTML=tr.length?tr.map(x=>`<div class="zoTraceRow" data-trace-agent="stonks_${esc(x.agent)}"><b>${esc(x.agent)}</b><span class="state">${esc(x.status)}</span><span>${esc(x.detail||'')}</span></div>`).join(''):'<div class="meta">Todavía no hay comunicaciones registradas.</div>';
+    const traceMeta=document.getElementById('zoTraceMeta'); if(traceMeta) traceMeta.textContent=tr.length+' eventos';
+    const trace=document.getElementById('zoTrace'); if(trace) trace.innerHTML=tr.length?tr.map(x=>`<div class="zoTraceRow" data-trace-agent="stonks_${esc(x.agent)}"><b>${esc(x.agent)}</b><span class="state">${esc(x.status)}</span><span>${esc(x.detail||'')}</span></div>`).join(''):'<div class="meta">Todavía no hay comunicaciones registradas.</div>';
   };
   window.zoHighlight=function(agentId){
     document.querySelectorAll('.zoNode').forEach(n=>n.classList.toggle('active',n.dataset.agent===agentId));
@@ -5425,6 +5325,7 @@ body.zar-light .zarDockManagerCard{background:#fffaf4;color:#4a3828;border-color
   window.addEventListener('resize',()=>{ if(document.querySelector('.zoPanel')&&window.__zoState){ window.zoRender(window.__zoState); } });
 })();
 </script>
+
 
 <link rel="stylesheet" href="/static/ui-polish.css?v=31.3.30">
 <script src="/static/ui-polish.js?v=31.3.24"></script>
