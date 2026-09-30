@@ -13,7 +13,7 @@ import html as html_lib
 import uuid
 from functools import wraps
 from contextlib import contextmanager
-from . import stonks_lifecycle, stonks_preflight
+from . import stonks_lifecycle, stonks_preflight, stonks_agents
 from datetime import datetime, timezone
 from .user_scope import set_current_user, get_current_user, anonymous_id, user_id_for_email
 from pathlib import Path
@@ -633,7 +633,9 @@ def _stonks_default():
         'position_ledger': {},
         'paper_connected': False,
         'managed_positions': {},
-        'lifecycle_last_action': None
+        'lifecycle_last_action': None,
+        'agent_last_trace': [],
+        'agent_architecture': 'deterministic_multi_agent'
     }
 def _stonks_read():
     p = _stonks_file()
@@ -827,14 +829,21 @@ def _stonks_engine_cycle(scope_id):
         strategy=d.get('engine_strategy') or 'trend'
         timeframe=d.get('engine_timeframe') or '1Min'
         try:
-            recon = _stonks_reconcile_paper_state(scope_id, emit_audit=True)
-            clock = _alpaca_paper_request('/v2/clock')
-            lifecycle = _stonks_manage_positions(scope_id, recon, clock)
+            agent_trace=[]
+            recon, clock, market_trace = stonks_agents.SUPERVISOR.market.snapshot(
+                scope_id, _stonks_reconcile_paper_state, lambda: _alpaca_paper_request('/v2/clock'))
+            agent_trace.append(market_trace)
+            lifecycle, position_trace = stonks_agents.SUPERVISOR.positions.run(
+                scope_id, recon, clock, _stonks_manage_positions)
+            agent_trace.append(position_trace)
             d = _stonks_read()
+            risk_ok, risk_trace = stonks_agents.SUPERVISOR.risk.precheck(d, clock)
+            agent_trace.append(risk_trace)
             reason = stonks_lifecycle.blocked({**d, 'position_lifecycle_enabled':True}, clock)
             if reason:
                 d['engine_last_run'] = datetime.now(timezone.utc).isoformat()
                 d['engine_last_action'] = reason
+                d['agent_last_trace'] = agent_trace[-30:]
                 _stonks_write(d)
                 return {'status':'idle', 'reason':reason}
             open_symbols = {o['symbol'] for o in recon['open_orders']}
@@ -851,7 +860,9 @@ def _stonks_engine_cycle(scope_id):
                     if symbol in held_symbols and symbol not in records:
                         actions.append(symbol + ': posición manual; sin gestión automática')
                         continue
-                    signal, _ = _stonks_current_signal(symbol,strategy,timeframe,'iex')
+                    signal, analysis_trace = stonks_agents.SUPERVISOR.analysis.signal(
+                        symbol, strategy, timeframe, _stonks_current_signal)
+                    agent_trace.append(analysis_trace)
                     if symbol in held_symbols:
                         # Preserve strategy SELL exits for owned LONGs, through the same
                         # durable close/Risk state machine (also when SL/TP is disabled).
@@ -873,14 +884,18 @@ def _stonks_engine_cycle(scope_id):
                         continue
                     # Reuse the hardened Decision + Risk route so the autonomous path
                     # has exactly the same server-side gates as manual/GUI execution.
-                    with app.test_request_context('/api/stonks/decision', method='POST', json={
-                        'symbol':symbol,'strategy':strategy,'timeframe':timeframe,
-                        'signal':signal.get('signal'),'execute':True,'manual_confirmed':False
-                    }):
-                        session['zar_user_id']=scope_id
-                        result=stonks_decision_api(engine=True)
-                    payload=result[0] if isinstance(result,tuple) else result
-                    data=payload.get_json() if hasattr(payload,'get_json') else {}
+                    def _agent_decision(sym, strat, tf, sig):
+                        with app.test_request_context('/api/stonks/decision', method='POST', json={
+                            'symbol':sym,'strategy':strat,'timeframe':tf,
+                            'signal':sig,'execute':True,'manual_confirmed':False
+                        }):
+                            session['zar_user_id']=scope_id
+                            result=stonks_decision_api(engine=True)
+                        payload=result[0] if isinstance(result,tuple) else result
+                        return payload.get_json() if hasattr(payload,'get_json') else {}
+                    data, execution_trace = stonks_agents.SUPERVISOR.execution.execute(
+                        symbol, strategy, timeframe, signal.get('signal'), _agent_decision)
+                    agent_trace.append(execution_trace)
                     if data.get('order_created'):
                         order=data.get('order') or {}
                         actions.append(f"{symbol}: {signal.get('signal')} · ORDEN {order.get('status','enviada')} · {order.get('id','—')}")
@@ -888,11 +903,15 @@ def _stonks_engine_cycle(scope_id):
                         actions.append(f"{symbol}: {signal.get('signal')} · {data.get('primary_reason') or data.get('reason') or data.get('decision') or 'sin acción'}")
                 except Exception as exc:
                     actions.append(f"{symbol}: ERROR · {exc}")
-            recon2=_stonks_reconcile_paper_state(scope_id, symbols[:8], emit_audit=True)
-            lifecycle2=_stonks_manage_positions(scope_id, recon2, clock)
+            recon2, _clock2, market_trace2 = stonks_agents.SUPERVISOR.market.snapshot(
+                scope_id, _stonks_reconcile_paper_state, lambda: _alpaca_paper_request('/v2/clock'))
+            agent_trace.append(market_trace2)
+            lifecycle2, position_trace2 = stonks_agents.SUPERVISOR.positions.run(
+                scope_id, recon2, clock, _stonks_manage_positions)
+            agent_trace.append(position_trace2)
             actions.extend(lifecycle2.get('actions') or [])
             action=' | '.join(actions)[:2000] if actions else 'Sin señales.'
-            d=_stonks_read(); d['engine_last_run']=datetime.now(timezone.utc).isoformat(); d['engine_last_action']=action; _stonks_write(d)
+            d=_stonks_read(); d['engine_last_run']=datetime.now(timezone.utc).isoformat(); d['engine_last_action']=action; d['agent_last_trace']=agent_trace[-30:]; _stonks_write(d)
             return {'status':'ok','action':action}
         except Exception as exc:
             d=_stonks_read(); d['paper_connected']=False; d['engine_last_run']=datetime.now(timezone.utc).isoformat(); d['engine_last_action']='ERROR · reconciliación Paper no disponible; sin órdenes'; _stonks_write(d)
@@ -943,7 +962,12 @@ def _stonks_engine_loop():
 def stonks_status_api():
     d=_stonks_read()
     pk,ps=_alpaca_paper_credentials()
-    return jsonify({'ok':True, **d, 'lifecycle_test':stonks_lifecycle.test_view(d), 'engine_owner':_stonks_engine_owner_read(), 'engine_owned_by_current_user':_stonks_engine_owner_read()==_user_scope_id(), 'audit_count':len(_stonks_audit_read(200)), 'paper_configured': bool(pk and ps), 'crypto_configured': bool(os.environ.get('KRAKEN_API_KEY') and os.environ.get('KRAKEN_API_SECRET')), 'engine_position_count':len(d.get('engine_last_positions') or []), 'engine_open_order_count':len(d.get('engine_last_open_orders') or []), 'position_lifecycle_enabled':bool(d.get('position_lifecycle_enabled')), 'stop_loss_pct':d.get('stop_loss_pct',1.0), 'take_profit_pct':d.get('take_profit_pct',2.0), 'managed_position_count':sum(r.get('status')!='CERRADA' for r in (d.get('managed_positions') or {}).values()), 'lifecycle_last_action':d.get('lifecycle_last_action')})
+    return jsonify({'ok':True, **d, 'lifecycle_test':stonks_lifecycle.test_view(d), 'engine_owner':_stonks_engine_owner_read(), 'engine_owned_by_current_user':_stonks_engine_owner_read()==_user_scope_id(), 'audit_count':len(_stonks_audit_read(200)), 'paper_configured': bool(pk and ps), 'crypto_configured': bool(os.environ.get('KRAKEN_API_KEY') and os.environ.get('KRAKEN_API_SECRET')), 'engine_position_count':len(d.get('engine_last_positions') or []), 'engine_open_order_count':len(d.get('engine_last_open_orders') or []), 'position_lifecycle_enabled':bool(d.get('position_lifecycle_enabled')), 'stop_loss_pct':d.get('stop_loss_pct',1.0), 'take_profit_pct':d.get('take_profit_pct',2.0), 'managed_position_count':sum(r.get('status')!='CERRADA' for r in (d.get('managed_positions') or {}).values()), 'lifecycle_last_action':d.get('lifecycle_last_action'), 'agents':stonks_agents.describe()})
+
+@app.get('/api/stonks/agents')
+def stonks_agents_api():
+    d=_stonks_read()
+    return jsonify({'ok':True,'paper':True, **stonks_agents.describe(), 'last_trace':d.get('agent_last_trace') or []})
 
 @app.post('/api/stonks/alpaca/test')
 @_stonks_serialized
