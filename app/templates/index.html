@@ -2128,7 +2128,7 @@ function showStonks(){
     <header class="zsTop">
       <div class="zsBrand"><div class="zsLogo"><img src="/static/zar-silhouette.png" alt="ZAR"></div><div><div class="zsTitle">ZAR STONKS</div><div class="zsSub">AI · CRYPTO · STOCK TRADING BOT</div></div></div>
       <div class="zsStatus"><span id="zsStatusDot" class="zsDot"></span><span id="zsStatusText">Pausado · modo seguro</span><span class="zsBadge paper" id="zsLiveSyncBadge" title="El panel sincroniza automáticamente cada 5 segundos">AUTO · 5 s</span></div>
-      <div class="zsTopActions"><button class="zsBtn" onclick="zsRefreshStatus()">↻ <span>Actualizar</span></button><button class="zsBtn" id="zsPauseBtn" onclick="zsTogglePause()">▶ <span>Reanudar</span></button><button class="zsBtn danger" id="zsRevokeBtn" onclick="zsRevoke()">🛑 <span>Revocar</span></button><button class="zsBtn zsMaxBtn" onclick="zsToggleMaximize()">⛶ <span>Pantalla completa</span></button><button class="zsBtn zsCloseBtn" onclick="closeStonksWindow()">× <span>Cerrar</span></button></div>
+      <div class="zsTopActions"><button class="zsBtn" aria-label="Actualizar estado" onclick="zsRefreshStatus()">↻ <span>Actualizar</span></button><button class="zsBtn" id="zsPauseBtn" aria-label="Pausar o reanudar" onclick="zsTogglePause()">▶ <span>Reanudar</span></button><button class="zsBtn danger" id="zsRevokeBtn" aria-label="Revocar" onclick="zsRevoke()">🛑 <span>Revocar</span></button><button class="zsBtn zsMaxBtn" onclick="zsToggleMaximize()">⛶ <span>Pantalla completa</span></button><button class="zsBtn zsCloseBtn" aria-label="Cerrar Stonks" onclick="closeStonksWindow()">× <span>Cerrar</span></button></div>
     </header>
     <div class="zsWorkspace">
       <aside class="zsSide">
@@ -2142,7 +2142,7 @@ function showStonks(){
           <button data-zstab="risk" onclick="zsTab('risk',this)">🛡️ Configuración Risk</button>
         </nav>
         <div class="zsSideCard"><small>Capital bot</small><div class="zsMoney" id="zsCapital">—</div><div class="zsSideMeta"><span>Asignado</span><span>—</span></div></div>
-        <div class="zsInfo" style="margin-top:8px">v31.3.21 · Decision + Risk + Paper · motor autónomo Paper continuo · Position Lifecycle · capital animado. Live no conectado.</div>
+        <div class="zsInfo" style="margin-top:8px">v31.3.22 · Decision + Risk + Paper · motor autónomo Paper continuo · Position Lifecycle · capital animado. Live no conectado.</div>
       </aside>
       <main class="zsMain">
         <section id="zsTab-dashboard" class="zsTabPanel active">
@@ -2186,7 +2186,7 @@ function showStonks(){
         <section id="zsTab-backtesting" class="zsTabPanel"><div class="zsTabTitle"><div><h2>Backtesting</h2><p>Simulación reproducible con datos históricos de Alpaca. No crea, modifica ni cancela órdenes.</p></div></div><div class="zsCard" style="margin-top:9px"><div class="zsControls"><div class="zsField"><label>SÍMBOLO</label><input id="zsBtSymbol" value="AAPL" maxlength="20"></div><div class="zsField"><label>ESTRATEGIA</label><select id="zsBtStrategy"><option value="trend">ZAR Trend · SMA 20/50</option><option value="mean_reversion">ZAR Mean Reversion · RSI 14</option></select></div><div class="zsField"><label>CAPITAL INICIAL (USD)</label><input id="zsBtCapital" type="number" value="10000" min="100"></div><div class="zsField"><label>PERIODO (DÍAS)</label><input id="zsBtDays" type="number" value="365" min="30" max="2000"></div><div class="zsField"><label>RIESGO POR OPERACIÓN (%)</label><input id="zsBtRisk" type="number" value="1" min="0.1" max="10" step="0.1"></div><div class="zsField"><label>SLIPPAGE (%)</label><input id="zsBtSlippage" type="number" value="0.05" min="0" max="2" step="0.01"></div></div><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px"><button class="zsBtn gold" onclick="zsRunBacktest()">▶ Ejecutar Backtest</button><span class="zsBadge paper">DATOS HISTÓRICOS</span><span class="meta">Feed IEX · sin órdenes</span></div><div id="zsBtResult" class="zsInfo" style="margin-top:9px">Configura los parámetros y ejecuta el primer backtest.</div></div><div class="zsCard" style="margin-top:9px"><div class="zsCardLabel">OPERACIONES SIMULADAS</div><div style="overflow:auto;margin-top:7px"><table class="zsTable"><thead><tr><th>Fecha</th><th>Lado</th><th>Precio</th><th>Cantidad</th><th>P/L</th></tr></thead><tbody id="zsBtTradesBody"><tr><td colspan="5">Todavía no hay operaciones simuladas.</td></tr></tbody></table></div></div></section>
         <section id="zsTab-risk" class="zsTabPanel"><div class="zsTabTitle"><div><h2>Configuración Risk</h2><p>Estos límites se guardan en el estado de ZAR Stonks y se comprueban en servidor antes de cualquier ejecución Paper.</p></div></div><div class="zsCard" style="margin-top:9px"><div class="zsControls"><div class="zsField"><label>Máximo por operación (USD)</label><input id="stonksMaxTrade" type="number" min="0" step="1" value="25"></div><div class="zsField"><label>Pérdida diaria máxima (USD)</label><input id="stonksMaxDaily" type="number" min="0" step="1" value="10"></div><div class="zsField"><label>Máximo % de cartera / posición</label><input id="stonksMaxPos" type="number" min="1" max="100" step="1" value="20"></div><div class="zsField"><label>MODO DE EJECUCIÓN</label><select id="stonksExecutionMode"><option value="decision">Evaluar señales · sin órdenes</option><option value="paper_auto">Paper automático · con Risk</option></select></div></div><button class="zsBtn gold" style="margin-top:9px" onclick="saveStonksControls()">Guardar límites y modo</button><button class="zsBtn danger" style="margin-top:9px;margin-left:6px" onclick="zsCancelAllPaperOrders()">✕ Cancelar todas las órdenes Paper</button></div><div class="zsCard" style="margin-top:9px"><div class="zsChartHead"><div><div class="zsCardLabel">MOTOR AUTÓNOMO PAPER</div><div class="zsCardNote">Permite que ZAR siga evaluando señales y ejecutando únicamente en Alpaca Paper aunque cierres la ventana de Stonks. Está separado del modo de ejecución y viene desactivado por defecto.</div></div><span id="zsEngineBadge" class="zsBadge off">DESACTIVADO</span></div><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:9px"><button id="zsEngineBtn" class="zsBtn gold" onclick="zsToggleAutonomousEngine()">⚡ Activar motor servidor</button><span class="meta" id="zsEngineMeta">Sin motor servidor activo.</span></div><div id="zsEngineReconText" class="zsInfo" style="margin-top:9px">Supervisión Paper: esperando la primera reconciliación…</div></div><div class="zsCard" style="margin-top:9px"><div class="zsChartHead"><div><div class="zsCardLabel">GESTIÓN DE POSICIÓN PAPER</div><div class="zsCardNote">Solo gestiona posiciones que ZAR haya abierto mediante su motor Paper. Las posiciones creadas manualmente quedan fuera. El servidor controla la salida; PAUSA y REVOCAR tienen prioridad.</div></div><span id="zsLifecycleBadge" class="zsBadge off">DESACTIVADA</span></div><div class="zsControls" style="margin-top:9px"><div class="zsField"><label>Stop loss (%)</label><input id="stonksStopLoss" type="number" min="0" max="50" step="0.1" value="1"></div><div class="zsField"><label>Take profit (%)</label><input id="stonksTakeProfit" type="number" min="0" max="100" step="0.1" value="2"></div><div class="zsField"><label>Estado</label><select id="stonksLifecycleEnabled"><option value="0">Desactivada</option><option value="1">Activa</option></select></div></div><button class="zsBtn gold" style="margin-top:9px" onclick="saveStonksControls()">Guardar gestión de posición</button><div id="zsLifecycleMeta" class="zsInfo" style="margin-top:9px">Sin posiciones ZAR gestionadas.</div><div class="zsInfo" style="margin-top:9px"><b>PRUEBA PAPER · nunca Live</b><p>Entrada mínima de 1 USD, con los límites Risk actuales. Espera el fill real y usa «Cerrar prueba Paper» para comprobar el cierre sin alterar tus SL/TP. Las órdenes se envían a tu cuenta simulada.</p><div class="zsControls"><div class="zsField"><label for="zsLifecycleTestSymbol">Símbolo fraccionable</label><input id="zsLifecycleTestSymbol" value="AAPL" maxlength="20"></div></div><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:9px"><button id="zsLifecycleTestStart" class="zsBtn gold" disabled onclick="zsStartLifecycleTest()">Probar ciclo Paper</button><button id="zsLifecycleTestClose" class="zsBtn" disabled onclick="zsCloseLifecycleTest()">Cerrar prueba Paper</button></div><div id="zsLifecycleTestState" role="status" aria-live="polite" style="margin-top:9px">Verificando requisitos de la prueba Paper…</div><ol id="zsLifecycleTestSteps"></ol></div><div class="zsInfo" style="margin-top:9px">SL/TP evaluado en servidor cada ~5 s, solo Paper. Pausa, Revocación, motor desactivado o límites Risk suspenden nuevos cierres; la reconciliación continúa. Las órdenes ya aceptadas pueden ejecutarse. PROTEGIDA indica vigilancia del servidor, no una orden stop alojada en Alpaca.</div><div class="zsPortfolioTableWrap"><table class="zsTable"><thead><tr><th>Símbolo</th><th>Dirección</th><th>Cantidad</th><th>Entrada USD</th><th>Actual USD</th><th>Valor USD</th><th>P/L USD</th><th>P/L %</th><th>SL USD</th><th>TP USD</th><th>Dist. SL %</th><th>Dist. TP %</th><th>Apertura</th><th>Estrategia / origen</th><th>Estado</th></tr></thead><tbody id="zsManagedPositionsBody"><tr data-empty="1"><td colspan="15">Sin posiciones ZAR detectadas.</td></tr></tbody></table></div></div><div id="zsRiskStatus" class="zsRiskLine" style="margin-top:9px"><span><span id="zsRiskDot" class="zsRiskDot"></span> <span id="zsRiskText">Comprobando límites…</span></span><span id="zsRiskDetail" class="meta">—</span></div><div id="zsAuditBox" class="zsInfo" style="margin-top:9px">Cargando registro de auditoría…</div><div class="zsInfo" style="margin-top:9px"><b>Kill switch:</b> PAUSAR y REVOCAR tienen prioridad. <b>Paper automático</b> solo puede enviar órdenes a Alpaca Paper; Live no está conectado. Las claves permanecen en servidor.</div></section>
       </main>
-      <aside class="zsRight"><div class="zsRightHead"><span>🤖 Registro IA en vivo</span><span class="zsDot"></span></div><div class="zsLogs" id="zsLogs"><div class="zsLog"><div class="zsLogTop"><b>INICIALIZACIÓN</b><span class="zsLogTime" data-live-time="1">—</span></div><div>Dashboard ZAR Stonks v31.3.21 cargado con Decision + Risk + Paper · sincronización automática, motor autónomo Paper continuo y Position Lifecycle.</div></div><div class="zsLog"><div class="zsLogTop"><b>CONTROL</b><span class="zsLogTime" data-live-time="1">—</span></div><div>El motor permanece pausado hasta completar la configuración.</div></div></div><div class="zsQuick"><div class="zsQuickTitle">Acciones rápidas</div><div class="zsQuickGrid"><button onclick="zsQuick('buy')">↑ Compra demo</button><button onclick="zsQuick('sell')">↓ Venta demo</button></div></div></aside>
+      <aside class="zsRight"><div class="zsRightHead"><span>🤖 Registro IA en vivo</span><span class="zsDot"></span></div><div class="zsLogs" id="zsLogs"><div class="zsLog"><div class="zsLogTop"><b>INICIALIZACIÓN</b><span class="zsLogTime" data-live-time="1">—</span></div><div>Dashboard ZAR Stonks v31.3.22 cargado con Decision + Risk + Paper · sincronización automática, motor autónomo Paper continuo y Position Lifecycle.</div></div><div class="zsLog"><div class="zsLogTop"><b>CONTROL</b><span class="zsLogTime" data-live-time="1">—</span></div><div>El motor permanece pausado hasta completar la configuración.</div></div></div><div class="zsQuick"><div class="zsQuickTitle">Acciones rápidas</div><div class="zsQuickGrid"><button onclick="zsQuick('buy')">↑ Compra demo</button><button onclick="zsQuick('sell')">↓ Venta demo</button></div></div></aside>
     </div>
     <div class="zsChatDock" id="zsChatDock"><div class="zsChatDockHead"><span>💬 Chat con ZAR Stonks</span><button class="zsChatToggle" onclick="zsToggleChat()">Abrir chat</button></div><div class="zsChatHistory" id="zsChatHistory"><div class="zsChatMsg"><b>ZAR:</b> Chat preparado. El motor de señales funciona en modo análisis-only; Stonks sigue sin ejecución automática.</div></div></div><footer class="zsBottom"><div class="zsChips"><button class="zsChip" onclick="zsQuickPrompt('Analiza el estado del mercado')">📊 Mercado</button><button class="zsChip" onclick="zsQuickPrompt('Audita el riesgo de la cartera')">🛡️ Riesgo</button></div><input id="zsChatInput" placeholder="Escribe una instrucción o pregunta a ZAR Stonks…"><button class="zsBtn" onclick="zsVoice()">🎙️</button><button class="zsBtn gold" onclick="zsChatSend()">➤</button></footer>
     <div id="zsConfirmModal" class="zsConfirmModal" aria-hidden="true">
@@ -2219,7 +2219,7 @@ function zsGetWorkspaceBounds(){
   return {left,right:Math.max(left+320,rightEdge),top:topEdge,bottom:bottomEdge};
 }
 function zsClampWindowToWorkspace(){
-  const el=panel;if(!el||el.style.display==='none'||window.innerWidth<=720)return;
+  const el=panel;if(!el||el.style.display==='none'||window.innerWidth<=900)return;
   const b=zsGetWorkspaceBounds();
   const r=el.getBoundingClientRect();
   const w=Math.min(r.width,b.right-b.left-12);
@@ -3159,6 +3159,7 @@ function applyPanelGeometry(){
 }
 function savePanelGeometry(){
   if(!panel||window.innerWidth<=720)return;
+  if(panel.classList.contains('zsFloatingWindow')&&window.innerWidth<=900)return;
   const r=panel.getBoundingClientRect();
   try{localStorage.setItem(zarPanelGeometryKey(),JSON.stringify({left:Math.round(r.left),top:Math.round(r.top),width:Math.round(r.width),height:Math.round(r.height)}))}catch(e){}
 }
@@ -4971,5 +4972,62 @@ body.zar-light .zarDockManagerCard{background:#fffaf4;color:#4a3828;border-color
     pointer-events:auto!important;
   }
   #chatContent .composerMain{z-index:1204!important;}
+}
+</style>
+
+<style id="zar-stonks-mobile-31-3-22">
+/* Scoped overrides: desktop window and other ZAR workspaces retain their layout. */
+@media(max-width:900px){
+  body:has(#panel.zsFloatingWindow) #chatContent .composer,
+  body:has(#panel.zsFloatingWindow) #chatContent .quick,
+  body:has(#panel.zsFloatingWindow) .chatScrollControls{visibility:hidden!important;pointer-events:none!important;}
+  #panel.panel.zsFloatingWindow{z-index:2500!important;inset:0!important;width:100%!important;max-width:100%!important;min-width:0!important;height:100dvh!important;min-height:0!important;max-height:100dvh!important;resize:none!important;border:0!important;border-radius:0!important;}
+  #panel.zsFloatingWindow>.zarPanelDragHandle,#panel.zsFloatingWindow>button{display:none!important;}
+  #panel.zsFloatingWindow #panelBody,#panel.zsFloatingWindow .zarStonksPanel{min-width:0!important;max-width:100%!important;border-radius:0!important;}
+  #zarStonksApp *{box-sizing:border-box;}
+  #zarStonksApp .zsTop{flex:0 0 auto;position:static;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:5px;padding:calc(6px + env(safe-area-inset-top)) max(8px,env(safe-area-inset-right)) 6px max(8px,env(safe-area-inset-left));min-height:0;}
+  #zarStonksApp .zsBrand{min-width:0;gap:6px;}
+  #zarStonksApp .zsLogo{width:28px;height:28px;flex:0 0 28px;}
+  #zarStonksApp .zsTitle{font-size:14px;white-space:nowrap;}
+  #zarStonksApp .zsSub{display:none;}
+  #zarStonksApp .zsStatus{display:flex;grid-column:1/-1;grid-row:2;flex-wrap:wrap;gap:6px;font-size:10px;}
+  #zarStonksApp .zsStatus:before{content:'PAPER';color:#f3c56b;font-weight:800;}
+  #zarStonksApp .zsTopActions{gap:3px;}
+  #zarStonksApp .zsTopActions .zsBtn{min-width:32px;min-height:36px;padding:6px;font-size:12px;}
+  #zarStonksApp .zsTopActions .zsBtn span,#zarStonksApp .zsMaxBtn{display:none;}
+  #panel.zsFloatingWindow .zsWorkspace{display:flex;flex-direction:column;overflow:hidden!important;min-width:0;}
+  #zarStonksApp .zsSide{display:block;flex:0 0 auto;min-width:0;max-width:100%;padding:4px 8px;border-right:0;border-bottom:1px solid #3d3128;}
+  #zarStonksApp .zsSide>.zsSectionLabel,#zarStonksApp .zsSide>.zsInfo,#zarStonksApp .zsSideMeta{display:none;}
+  #zarStonksApp .zsNav{flex-direction:row;overflow-x:auto;overscroll-behavior-x:contain;touch-action:pan-x;max-width:100%;padding-bottom:3px;}
+  #zarStonksApp .zsNav button{flex:0 0 auto;white-space:nowrap;min-height:38px;font-size:11px;}
+  #zarStonksApp .zsNav button.active{box-shadow:inset 0 -3px #d4af37;}
+  #zarStonksApp .zsSideCard{display:flex;align-items:center;gap:8px;margin:2px 0 0;padding:3px 6px;border:0;background:transparent;}
+  #zarStonksApp .zsMoney{font-size:13px;margin:0;overflow-wrap:anywhere;min-width:0;}
+  #panel.zsFloatingWindow .zsMain{flex:1 1 auto;min-width:0;width:100%;overflow-x:hidden!important;overflow-y:auto!important;overscroll-behavior-y:contain;padding:9px;}
+  #zarStonksApp .zsMain *{min-width:0;}
+  #zarStonksApp .zsCards,#zarStonksApp .zsPortfolioStrip{grid-template-columns:repeat(2,minmax(0,1fr));}
+  #zarStonksApp .zsCardValue,#zarStonksApp .zsLiveValue{font-size:clamp(12px,3.5vw,18px);overflow-wrap:anywhere;}
+  #zarStonksApp .zsCardNote{font-size:10px;}
+  #zarStonksApp .zsCardLabel,#zarStonksApp .zsLiveLabel{font-size:10px;}
+  #zarStonksApp .zsTabTitle,#zarStonksApp .zsChartHead,#zarStonksApp .zsRiskLine{flex-wrap:wrap;}
+  #zarStonksApp .zsInfo,#zarStonksApp .meta,#zarStonksApp .zsBadge{overflow-wrap:anywhere;}
+  #zarStonksApp .zsControls,#zarStonksApp .zsSignalControls{grid-template-columns:1fr!important;}
+  #zarStonksApp .zsField input,#zarStonksApp .zsField select{width:100%;max-width:100%;font-size:16px;}
+  #zarStonksApp .zsSignalAuto{flex-wrap:wrap;}
+  #zarStonksApp .zsCanvasWrap{width:100%;height:235px;flex:none;}
+  #zarStonksApp .zsCanvas{width:100%;max-width:100%;height:100%;}
+  #zarStonksApp .zsPortfolioTableWrap,#zarStonksApp .zsSignalTableWrap,#zarStonksApp div:has(>.zsTable){max-width:100%;overflow-x:auto;overscroll-behavior-x:contain;}
+  #zarStonksApp .zsTable{min-width:600px;}
+  #panel.zsFloatingWindow .zsChatHistory{max-height:24dvh!important;overflow-wrap:anywhere;}
+  #panel.zsFloatingWindow .zsBottom{flex:0 0 auto!important;height:auto!important;min-height:60px!important;max-height:none!important;padding:8px max(8px,env(safe-area-inset-right)) calc(8px + env(safe-area-inset-bottom)) max(8px,env(safe-area-inset-left))!important;gap:5px;flex-wrap:nowrap!important;}
+  #zarStonksApp .zsBottom input{order:0;flex:1 1 0!important;width:0;font-size:16px;padding:10px 8px;}
+  #zarStonksApp .zsBottom .zsBtn{order:0;flex:0 0 40px;min-height:42px;padding:7px;}
+  #zarStonksApp .zsChips{display:none;}
+  #zarStonksApp .zsConfirmModal{padding:8px;}
+  #zarStonksApp .zsConfirmCard{max-height:calc(100dvh - 24px);overflow-y:auto;width:100%;}
+}
+@media(max-width:340px){
+  #zarStonksApp .zsCards,#zarStonksApp .zsPortfolioStrip{grid-template-columns:minmax(0,1fr);}
+  #zarStonksApp .zsTopActions .zsBtn{min-width:28px;padding:4px;}
 }
 </style>

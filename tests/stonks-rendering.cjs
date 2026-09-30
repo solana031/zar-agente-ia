@@ -13,14 +13,14 @@ for (const file of fs.readdirSync('app/static').filter(f => f.endsWith('.js'))) 
   new vm.Script(fs.readFileSync(`app/static/${file}`, 'utf8'), {filename: file});
 }
 for (const file of ['VERSION', 'VERSION.txt', 'app/VERSION.txt']) {
-  assert.equal(fs.readFileSync(file, 'utf8').trim(), '31.3.21');
+  assert.equal(fs.readFileSync(file, 'utf8').trim(), '31.3.22');
 }
 console.log(`PASS: ${scripts} inline scripts, static JavaScript and three version files`);
 (async () => {
   const browser = await chromium.launch({headless: true,
     ...(process.env.ZAR_TEST_BROWSER ? {executablePath: process.env.ZAR_TEST_BROWSER} : {})});
   try {
-    for (const viewport of [{width: 1920, height: 1080}, {width: 1440, height: 900}, {width: 390, height: 844}]) {
+    for (const viewport of [{width: 1920, height: 1080}, {width: 1440, height: 900}, {width: 360, height: 800}, {width: 390, height: 844}, {width: 412, height: 915}, {width: 430, height: 932}, {width: 768, height: 1024}]) {
       const page = await browser.newPage({viewport});
       const errors = [], requests = [];
       let controlledReady=false, testSnapshot={active:false,status:'SIN_PRUEBA',steps:[],can_close:false};
@@ -38,6 +38,7 @@ console.log(`PASS: ${scripts} inline scripts, static JavaScript and three versio
           return route.fulfill({status:202,contentType:'application/json',body:JSON.stringify({ok:true,paper:true,lifecycle_test:testSnapshot})});
         }
 
+        if (url.pathname === '/static/zar-silhouette.png') return route.fulfill({contentType:'image/png',body:fs.readFileSync('app/static/zar-silhouette.png')});
         if (url.pathname === '/static/skills.js') return route.fulfill({contentType: 'application/javascript', body: fs.readFileSync('app/static/skills.js', 'utf8')});
         return route.fulfill({contentType: 'application/json', body: JSON.stringify({
           ok: true, paused: !controlledReady, revoked: false, mode: 'paper', execution_mode: controlledReady?'paper_auto':'decision',
@@ -78,28 +79,69 @@ console.log(`PASS: ${scripts} inline scripts, static JavaScript and three versio
         assert.ok(result.dock.bottom <= result.footer.top + 1);
         assert.ok(result.footer.bottom <= result.root.bottom + 1);
       }
-      await checkLayout();
-      if(viewport.width<720){
-        // Existing 460px window minimum exceeds narrow phones (already in 31.3.17).
-        // Validate the new table's containment and DOM here, not pointer reachability.
-        await page.evaluate(()=>zsTab('risk',null));
-        await checkLayout();
-        assert.equal(await page.locator('#zsManagedPositionsBody td').count(),15);
-        assert.equal(await page.locator('#zsManagedPositionsBody').evaluate(e=>getComputedStyle(e.closest('.zsPortfolioTableWrap')).overflowX),'auto');
-        await page.evaluate(()=>zsToggleChat());
-        await checkLayout();
-        assert.deepEqual(errors,[]);
-        console.log('PASS: 390x844 table/DOM/chat layout; existing narrow-phone pointer limitation remains');
-        await page.close();continue;
+      async function checkResponsive() {
+        const issues = await page.evaluate(() => {
+          const issues=[];
+          const root=document.querySelector('#zarStonksApp');
+          const inside=(el,label)=>{const r=el.getBoundingClientRect();if(r.left < -1 || r.right > innerWidth+1 || r.width<=0)issues.push(label+': '+JSON.stringify(r.toJSON()));};
+          if(document.documentElement.scrollWidth>innerWidth)issues.push('global overflow');
+          for(const selector of ['#panel','.zsTop','.zsBottom','.zsCloseBtn']){
+            const el=document.querySelector(selector);inside(el,selector);
+            const r=el.getBoundingClientRect();if(r.top< -1||r.bottom>innerHeight+1)issues.push(selector+' vertical overflow');
+          }
+          if(innerWidth<=900){
+            for(const selector of ['.zsNav','.zsCard','.zsLiveCard','.zsCanvas','.zsField']){
+              root.querySelectorAll(selector).forEach(el=>{if(el.getClientRects().length)inside(el,selector)});
+            }
+            if(getComputedStyle(document.querySelector('#chatContent .composer')).visibility!=='hidden')issues.push('main composer overlays');
+            if(getComputedStyle(document.querySelector('#panel')).resize!=='none')issues.push('window resizable');
+            const nav=root.querySelector('.zsNav');if(getComputedStyle(nav).overflowX!=='auto')issues.push('nav cannot scroll');
+          }
+          for(const table of root.querySelectorAll('table')){
+            if(!table.getClientRects().length)continue;
+            const wrap=table.parentElement;inside(wrap,'table wrapper');
+            if(!['auto','scroll'].includes(getComputedStyle(wrap).overflowX))issues.push('table not contained');
+          }
+          const button=root.querySelector('.zsCloseBtn'),r=button.getBoundingClientRect();
+          if(innerWidth<=900&&!button.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)))issues.push('close obstructed: '+document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)?.outerHTML.slice(0,400));
+          return issues;
+        });
+        assert.deepEqual(issues,[],`${viewport.width}x${viewport.height}`);
       }
+      await checkLayout();
+      await checkResponsive();
+      if(viewport.width<=900){
+        // Exercise resize/orientation while the same window remains open.
+        await page.setViewportSize({width:800,height:430});
+        await checkLayout();await checkResponsive();
+        await page.setViewportSize(viewport);
+        await checkLayout();await checkResponsive();
+        if(process.env.ZAR_TEST_SCREENSHOTS)await page.screenshot({path:`data/stonks-${viewport.width}.png`});
+      }
+      // Real clicks also scroll the compact horizontal navigation into view.
+      for(const tab of ['strategies','orders','wallets','backtesting','risk','dashboard']){
+        await page.locator(`[data-zstab="${tab}"]`).click();
+        assert.equal(await page.locator(`#zsTab-${tab}`).isVisible(),true);
+        assert.equal(await page.locator(`[data-zstab="${tab}"]`).evaluate(e=>e.classList.contains('active')),true);
+        await checkResponsive();
+      }
+      await page.locator('#zsChatInput').fill('Mensaje de prueba sin enviar');
+      assert.equal(await page.locator('#zsChatInput').inputValue(),'Mensaje de prueba sin enviar');
       await page.locator('.zsChatToggle').click();
       await checkLayout();
       assert.equal(await page.locator('#zsChatHistory').isVisible(), true);
       await page.locator('.zsChatToggle').click();
       assert.equal(await page.locator('#zsChatHistory').isVisible(), false);
-      await page.evaluate(() => zsTab('risk', document.querySelector('[data-zstab="risk"]')));
+      await page.locator('[data-zstab="risk"]').click();
       await checkLayout();
       assert.equal(await page.locator('#zsManagedPositionsBody tr').count(), 1);
+      if(viewport.width<=900){
+        await page.locator('#zsManagedPositionsBody td').last().evaluate(e=>{e.textContent='TEST_LIFECYCLE_'.repeat(15);e.style.whiteSpace='nowrap'});
+        const wrap=page.locator('#zsManagedPositionsBody').locator('xpath=../..');
+        assert.equal(await wrap.evaluate(e=>{e.scrollLeft=100;return e.scrollLeft>0}),true,'wide table scrolls locally');
+        await checkResponsive();
+        await page.evaluate(()=>zsRefreshStatus());
+      }
       assert.match(await page.locator('#zsManagedPositionsBody').textContent(), /AAPL.*LONG.*PROTEGIDA/);
       const stable = await page.evaluate(async () => {
         const row=document.querySelector('#zsManagedPositionsBody tr');
@@ -158,9 +200,11 @@ console.log(`PASS: ${scripts} inline scripts, static JavaScript and three versio
       assert.equal(await page.locator('#zsLifecycleTestSteps li').count(),6);
       assert.equal(await page.locator('#zsLifecycleTestSteps li').evaluateAll(rows=>rows.every(r=>r.textContent.startsWith('✓'))),true);
       await checkLayout();
+      await checkResponsive();
       await page.locator('.zsCloseBtn').click();
       assert.equal(await page.locator('#panel').isVisible(), false);
       assert.equal(await page.evaluate(() => zsLiveSyncTimer), null);
+      assert.equal(await page.locator('#chatContent .composer').evaluate(e=>getComputedStyle(e).visibility),'visible');
       await page.evaluate(() => showStonks());
       await page.waitForTimeout(100);
       await checkLayout();
