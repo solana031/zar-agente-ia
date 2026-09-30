@@ -55,13 +55,31 @@ class PositionManagerAgent:
 class AnalysisAgent:
     name = "analysis"
 
+    @staticmethod
+    def _strength(signal):
+        indicators = signal.get("indicators") or {}
+        fast = indicators.get("sma20")
+        slow = indicators.get("sma50")
+        try:
+            fast = float(fast)
+            slow = float(slow)
+            gap_pct = abs(fast - slow) / max(abs(slow), 1e-9) * 100.0
+        except (TypeError, ValueError):
+            gap_pct = 0.0
+        # Technical signal strength, not a probability or forecast.
+        strength = min(100.0, round(gap_pct * 25.0, 1))
+        return strength, round(gap_pct, 4)
+
     def signal(self, symbol, strategy, timeframe, signal_fn):
         signal, _clock = signal_fn(symbol, strategy, timeframe, "iex")
+        strength, gap_pct = self._strength(signal)
         return signal, AgentResult(self.name, "ok", f"{symbol}: {signal.get('signal_label') or signal.get('signal')}", {
             "symbol": symbol,
             "signal": signal.get("signal"),
             "reason": signal.get("reason"),
             "indicators": signal.get("indicators") or {},
+            "signal_strength": strength,
+            "sma_gap_pct": gap_pct,
         }).as_dict()
 
 
@@ -85,9 +103,18 @@ class RiskAgent:
         if not bool((clock or {}).get("is_open")):
             reasons.append("Mercado cerrado")
         status = "blocked" if reasons else "pass"
+        gates = {
+            "revoked": not bool(state.get("revoked")),
+            "paused": not bool(state.get("paused")),
+            "paper_mode": state.get("mode") == "paper",
+            "paper_auto": state.get("execution_mode") == "paper_auto",
+            "autonomous_engine": bool(state.get("autonomous_engine")),
+            "position_lifecycle": bool(state.get("position_lifecycle_enabled")),
+            "market_open": bool((clock or {}).get("is_open")),
+        }
         return not reasons, AgentResult(self.name, status,
             "; ".join(reasons) if reasons else "Pre-check local superado; Decision/Risk servidor mantiene la autoridad final",
-            {"reasons": reasons}).as_dict()
+            {"reasons": reasons, "gates": gates}).as_dict()
 
 
 class PaperExecutionAgent:
@@ -120,7 +147,10 @@ class StonksSupervisor:
     def describe(self):
         return {
             "architecture": "deterministic_multi_agent",
+            "phase": 2,
             "token_cost_router": 0,
+            "paper_only": True,
+            "execution_authority": "Decision + Risk server route",
             "agents": [
                 {"id":"supervisor","role":"Coordina el ciclo y consolida trazas"},
                 {"id":"market_data","role":"Reconcilia Paper y reloj de mercado"},
