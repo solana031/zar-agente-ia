@@ -281,11 +281,26 @@ def _read_job(job_id):
     except Exception:
         return None
 
-def _run_chat_job(job_id, msg, user_id):
+def _run_chat_job(job_id, msg, user_id, session_snapshot=None):
+    """Run chat work in a background thread with an isolated Flask request context.
+
+    Several mature ZAR paths (pending confirmations, Google Workspace/OAuth helpers,
+    browser identity) legitimately read Flask ``session``. Background threads do
+    not inherit the originating request context, so reconstruct the minimum context
+    explicitly instead of letting those helpers touch Flask proxies out of context.
+    """
     set_current_user(user_id)
     try:
-        reply = _process_chat_message(msg)
-        action = (_ctx().get("last_media") or None)
+        with app.test_request_context('/api/chat', method='POST', json={'message': msg}):
+            for key, value in dict(session_snapshot or {}).items():
+                try:
+                    session[key] = value
+                except Exception:
+                    pass
+            session['zar_user_id'] = user_id
+            session.modified = True
+            reply = _process_chat_message(msg)
+            action = (_ctx().get("last_media") or None)
         _write_job(job_id, "done", reply=reply, action=( {"type":"open_url","url":action.get("url"),"platform":action.get("platform"),"query":action.get("query")} if action and action.get("url") else None ))
     except Exception as exc:
         _write_job(job_id, "error", error=str(exc))
@@ -4040,8 +4055,14 @@ def chat():
         return jsonify({"error":"Mensaje vacío"}), 400
     job_id = uuid.uuid4().hex
     user_id = get_current_user()
+    # Snapshot only serialisable session state needed by background chat execution.
+    # The worker restores it inside its own isolated Flask request context.
+    try:
+        session_snapshot = dict(session)
+    except Exception:
+        session_snapshot = {}
     _write_job(job_id, "running", user_id=user_id)
-    threading.Thread(target=_run_chat_job, args=(job_id, msg, user_id), daemon=True).start()
+    threading.Thread(target=_run_chat_job, args=(job_id, msg, user_id, session_snapshot), daemon=True).start()
     return jsonify({"job_id": job_id, "status": "running"}), 202
 
 @app.get("/api/jobs/<job_id>")
