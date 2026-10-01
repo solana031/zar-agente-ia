@@ -869,6 +869,43 @@ def _alpaca_paper_request(path, method='GET', params=None, missing_ok=False):
         raise RuntimeError(f'Alpaca Paper HTTP {r.status_code}; consulta no confirmada')
     return data
 
+
+def _stonks_market_clock_snapshot():
+    """Return a fresh, validated Alpaca Paper market clock.
+
+    UI/orchestration callers must not infer market state from a persisted agent
+    trace.  The broker clock is authoritative; malformed/stale responses are
+    reported as unavailable rather than silently rendered as "market closed".
+    """
+    clock = _alpaca_paper_request('/v2/clock')
+    if not isinstance(clock, dict) or not isinstance(clock.get('is_open'), bool):
+        raise RuntimeError('Reloj de mercado de Alpaca no válido')
+    stamp = clock.get('timestamp')
+    age_seconds = None
+    if stamp:
+        try:
+            dt = datetime.fromisoformat(str(stamp).replace('Z', '+00:00'))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            age_seconds = max(0.0, (datetime.now(timezone.utc) - dt.astimezone(timezone.utc)).total_seconds())
+            # A broker clock should represent "now".  Do not turn a stale or
+            # cached payload into a false CLOSED gate.
+            if age_seconds > 120:
+                raise RuntimeError(f'Reloj de mercado de Alpaca obsoleto ({age_seconds:.0f}s)')
+        except RuntimeError:
+            raise
+        except Exception:
+            raise RuntimeError('Timestamp del reloj de mercado de Alpaca no válido')
+    return {
+        'is_open': clock.get('is_open'),
+        'timestamp': stamp,
+        'next_open': clock.get('next_open'),
+        'next_close': clock.get('next_close'),
+        'age_seconds': round(age_seconds, 1) if age_seconds is not None else None,
+        'received_at': datetime.now(timezone.utc).isoformat(),
+        'source': 'alpaca_paper_clock',
+    }
+
 def _alpaca_market_request(path, method='GET', params=None):
     key, secret = _alpaca_paper_credentials()
     if not key or not secret:
@@ -1376,6 +1413,35 @@ def subagents_state_api():
     base=subagent_orchestrator.describe_general_agents()
     d=_stonks_read()
     st=stonks_agents.describe()
+    # Orchestration is an observational UI. Refresh the broker clock here so
+    # Market Data never displays a stale persisted state when the autonomous
+    # engine is paused/off. This does not authorize or submit any order.
+    trace=list(d.get('agent_last_trace') or [])
+    trace=[row for row in trace if row.get('agent') != 'market_data']
+    try:
+        fresh_clock=_stonks_market_clock_snapshot()
+        trace.append({
+            'agent':'market_data', 'status':'ok',
+            'detail':'Reloj de mercado actualizado directamente desde Alpaca Paper · 0 órdenes',
+            'data':{
+                'positions':len(d.get('engine_last_positions') or []),
+                'open_orders':len(d.get('engine_last_open_orders') or []),
+                'market_open':fresh_clock.get('is_open'),
+                'clock_timestamp':fresh_clock.get('timestamp'),
+                'clock_received_at':fresh_clock.get('received_at'),
+                'clock_age_seconds':fresh_clock.get('age_seconds'),
+                'clock_source':fresh_clock.get('source'),
+                'order_authority':False,
+            },
+            'timestamp':fresh_clock.get('received_at'),
+        })
+    except Exception as exc:
+        trace.append({
+            'agent':'market_data', 'status':'idle',
+            'detail':'Reloj de mercado no disponible; no se asume mercado cerrado',
+            'data':{'market_open':None,'error':str(exc)[:240],'order_authority':False},
+            'timestamp':datetime.now(timezone.utc).isoformat(),
+        })
     # Attach Stonks specialists to the global graph without moving their UI into Stonks.
     financial=[]
     for a in st.get('agents') or []:
@@ -1392,10 +1458,10 @@ def subagents_state_api():
         if a['id']!='stonks_supervisor': base['edges'].append(['stonks_supervisor',a['id']])
     base.update({
         'ok':True,
-        'stonks_trace':d.get('agent_last_trace') or [],
+        'stonks_trace':trace,
         'stonks_phase':st.get('phase'),
         'stonks_paper_only':True,
-        'active_count':len([x for x in (d.get('agent_last_trace') or [])[-10:] if x.get('status') not in ('idle','no_action')]),
+        'active_count':len([x for x in trace[-10:] if x.get('status') not in ('idle','no_action')]),
     })
     return jsonify(base)
 
@@ -1422,7 +1488,7 @@ def stonks_alpaca_quote_api():
         # The trading clock is deliberately queried from the Paper trading API.
         # This lets the UI distinguish a closed market from an authentication or
         # market-data problem instead of presenting every empty quote as an error.
-        clock=_alpaca_paper_request('/v2/clock')
+        clock=_stonks_market_clock_snapshot()
         is_open=bool(clock.get('is_open'))
 
         quote=None
@@ -2171,7 +2237,7 @@ def stonks_alpaca_portfolio_api():
     try:
         account=_alpaca_paper_request('/v2/account')
         positions=_alpaca_paper_request('/v2/positions')
-        clock=_alpaca_paper_request('/v2/clock')
+        clock=_stonks_market_clock_snapshot()
         equity=float(account.get('equity') or 0)
         last_equity=float(account.get('last_equity') or 0)
         day_pl=equity-last_equity
