@@ -35,6 +35,42 @@ def _norm_crypto(symbol):
     return s if s and len(s) <= 24 and all(c in allowed for c in s) else None
 
 
+
+
+def _as_positive_float(value):
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if number <= 0 or number != number or number in (float('inf'), float('-inf')):
+        return None
+    return number
+
+
+def _validate_quote(kind, bid, ask):
+    """Validate a market quote without inventing missing sides.
+
+    Invalid quotes are never promoted to bid/ask/mid. This protects downstream
+    consumers from one-sided, crossed or obviously broken snapshots while still
+    allowing the last valid trade/bar to remain visible as a fallback.
+    """
+    b = _as_positive_float(bid)
+    a = _as_positive_float(ask)
+    if b is None or a is None:
+        return None, None, 'bid/ask no positivos o ausentes'
+    if b > a:
+        return None, None, 'quote cruzada: bid > ask'
+    mid = (b + a) / 2.0
+    spread_pct = ((a - b) / mid) * 100.0 if mid > 0 else 999.0
+    default_limit = 200.0 if kind == 'options' else 25.0
+    try:
+        limit = max(0.1, float(os.environ.get('ZAR_STONKS_MAX_QUOTE_SPREAD_PCT', default_limit)))
+    except (TypeError, ValueError):
+        limit = default_limit
+    if spread_pct > limit:
+        return None, None, f'spread anómalo: {spread_pct:.2f}% > {limit:.2f}%'
+    return b, a, None
+
 def _norm_option(symbol):
     s = str(symbol or '').strip().upper()
     return s if s and len(s) <= 32 and s.isalnum() else None
@@ -333,13 +369,26 @@ class MarketStreamManager:
                     rec['price'] = row.get('p')
                 rec['trade_size'] = row.get('s')
             elif typ == 'q':
-                rec['bid'] = row.get('bp')
-                rec['ask'] = row.get('ap')
-                try:
-                    if rec['bid'] is not None and rec['ask'] is not None:
-                        rec['mid'] = (float(rec['bid']) + float(rec['ask'])) / 2.0
-                except Exception:
-                    pass
+                bid, ask, quote_error = _validate_quote(kind, row.get('bp'), row.get('ap'))
+                if quote_error:
+                    # Do not overwrite the last valid quote or its timestamp. A
+                    # fresh invalid quote marks this row unusable until a valid
+                    # quote arrives, while trade/bar data can remain as fallback.
+                    rec['quote_invalid'] = True
+                    rec['quote_invalid_reason'] = quote_error
+                    rec['quote_invalid_at'] = stamp.isoformat()
+                    rec['updated_at'] = now
+                    rec['message_type'] = typ
+                    self._status[kind]['messages'] += 1
+                    self._status[kind]['last_message_at'] = now
+                    self._status[kind]['updated_at'] = now
+                    return
+                rec['bid'] = bid
+                rec['ask'] = ask
+                rec['mid'] = (bid + ask) / 2.0
+                rec['quote_invalid'] = False
+                rec['quote_invalid_reason'] = None
+                rec['quote_invalid_at'] = None
             elif typ in ('b', 'u', 'd'):
                 rec.update({
                     'open': row.get('o'), 'high': row.get('h'), 'low': row.get('l'),
@@ -370,7 +419,16 @@ class MarketStreamManager:
                 row['timestamp'], row['price'] = max(candidates, key=lambda x: x[0])
             age = (now - datetime.fromisoformat(row['timestamp'])).total_seconds()
             row['age_s'] = round(max(0, age), 1)
-            row['stale'] = age > 120 or age < -5 or not feeds[row['kind']]['authenticated']
+            quote_invalid_recent = False
+            if row.get('quote_invalid') and row.get('quote_invalid_at'):
+                try:
+                    invalid_age = (now - datetime.fromisoformat(row['quote_invalid_at'])).total_seconds()
+                    quote_invalid_recent = -5 <= invalid_age <= 120
+                except (TypeError, ValueError):
+                    quote_invalid_recent = True
+            row['invalid'] = bool(quote_invalid_recent)
+            row['market_usable'] = not row['invalid'] and not (age > 120 or age < -5 or not feeds[row['kind']]['authenticated'])
+            row['stale'] = not row['market_usable']
         rows.sort(key=lambda x: x.get('timestamp') or '', reverse=True)
         return {
             'architecture': 'realtime_zero_token_stream',
@@ -409,6 +467,12 @@ def refresh_snapshot(snapshot, now=None):
     for row in result.get('latest', []):
         elapsed = age(row.get('timestamp'))
         row['age_s'] = round(max(0, elapsed), 1) if elapsed != float('inf') else None
-        row['stale'] = (not -5 <= elapsed <= 120 or
-            not result.get('feeds', {}).get(row.get('kind'), {}).get('authenticated', False))
+        quote_invalid_recent = False
+        if row.get('quote_invalid') and row.get('quote_invalid_at'):
+            invalid_elapsed = age(row.get('quote_invalid_at'))
+            quote_invalid_recent = -5 <= invalid_elapsed <= 120
+        row['invalid'] = bool(quote_invalid_recent)
+        row['market_usable'] = not row['invalid'] and (-5 <= elapsed <= 120) and bool(
+            result.get('feeds', {}).get(row.get('kind'), {}).get('authenticated', False))
+        row['stale'] = not row['market_usable']
     return result

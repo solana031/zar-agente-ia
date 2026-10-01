@@ -122,3 +122,37 @@ def test_broker_subscription_error_closes_connection_for_backoff():
     with patch.dict('sys.modules',{'websocket':SimpleNamespace(WebSocketApp=Socket)}):
         m._run_json_once('equities',['AAPL'],'mock-key','mock-secret')
     assert closed and '405' in m.status()['feeds']['equities']['last_error']
+
+
+def test_invalid_quote_is_rejected_and_marks_row_unusable_until_valid_quote():
+    m=manager(equities=['MSFT'])
+    m._status['equities']['authenticated']=True
+    now=datetime.now(timezone.utc).isoformat()
+    m._ingest('equities',{'T':'t','S':'MSFT','p':518.50,'t':now})
+    m._ingest('equities',{'T':'q','S':'MSFT','bp':518.68,'ap':0,'t':now})
+    row=m.status()['latest'][0]
+    assert row['price']==518.50
+    assert row['bid'] is None and row['ask'] is None
+    assert row['invalid'] is True
+    assert row['market_usable'] is False
+    assert 'no positivos' in row['quote_invalid_reason']
+
+    later=datetime.now(timezone.utc).isoformat()
+    m._ingest('equities',{'T':'q','S':'MSFT','bp':518.60,'ap':518.80,'t':later})
+    row=m.status()['latest'][0]
+    assert row['bid']==518.60 and row['ask']==518.80
+    assert row['invalid'] is False
+    assert row['market_usable'] is True
+
+
+def test_crossed_and_absurd_spread_quotes_are_rejected():
+    m=manager(equities=['AAPL'])
+    m._status['equities']['authenticated']=True
+    now=datetime.now(timezone.utc).isoformat()
+    m._ingest('equities',{'T':'t','S':'AAPL','p':250,'t':now})
+    m._ingest('equities',{'T':'q','S':'AAPL','bp':251,'ap':250,'t':now})
+    row=m.status()['latest'][0]
+    assert row['invalid'] and 'bid > ask' in row['quote_invalid_reason']
+    m._ingest('equities',{'T':'q','S':'AAPL','bp':100,'ap':200,'t':datetime.now(timezone.utc).isoformat()})
+    row=m.status()['latest'][0]
+    assert row['invalid'] and 'spread anómalo' in row['quote_invalid_reason']
