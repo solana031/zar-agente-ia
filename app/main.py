@@ -2150,6 +2150,57 @@ def stonks_orphan_test_close_api():
     _stonks_audit_append('ORPHAN_TEST_CLOSE',{'paper':True,'symbol':snap['symbol'],'qty':snap['qty'],'order_id':data.get('id'),'owner_previous':snap.get('owner')})
     return jsonify({'ok':True,'paper':True,'order':{'id':data.get('id'),'status':data.get('status'),'symbol':data.get('symbol'),'qty':data.get('qty')}}),202
 
+@app.post('/api/stonks/paper-position/close-single')
+@_stonks_serialized
+def stonks_close_single_paper_position_api():
+    """Close the only blocking Alpaca Paper position after explicit user confirmation.
+
+    Paper-only recovery action for ownership-transfer deadlocks. It never touches Live,
+    requires exactly one open Paper position and zero open Paper orders, and rechecks
+    symbol/quantity immediately before submitting the market SELL.
+    """
+    payload=request.get_json(silent=True) or {}
+    if payload.get('confirm') is not True:
+        return jsonify({'ok':False,'error':'Hace falta confirmación explícita para cerrar la posición Paper.'}),400
+    positions=_alpaca_paper_request('/v2/positions')
+    orders=_alpaca_paper_request('/v2/orders', params={'status':'open','limit':500,'nested':'false'})
+    if not isinstance(positions,list) or not isinstance(orders,list):
+        return jsonify({'ok':False,'error':'No se pudo verificar la exposición Alpaca Paper.'}),502
+    if len(positions)!=1:
+        return jsonify({'ok':False,'error':f'Esta recuperación exige exactamente 1 posición Paper abierta; ahora hay {len(positions)}.'}),409
+    if orders:
+        return jsonify({'ok':False,'error':f'Hay {len(orders)} orden(es) Paper abierta(s). Resuélvelas antes de cerrar la posición bloqueante.'}),409
+    pos=positions[0]
+    symbol=str(pos.get('symbol') or '').upper().strip()
+    qty=str(pos.get('qty') or '').strip()
+    try:
+        if not symbol or float(qty)<=0:
+            raise ValueError
+    except Exception:
+        return jsonify({'ok':False,'error':'La posición Paper no tiene símbolo/cantidad válidos.'}),409
+    requested_symbol=str(payload.get('symbol') or symbol).upper().strip()
+    requested_qty=str(payload.get('qty') or qty).strip()
+    try:
+        qty_match=abs(float(requested_qty)-float(qty)) <= max(1e-9, abs(float(qty))*1e-8)
+    except Exception:
+        qty_match=False
+    if requested_symbol!=symbol or not qty_match:
+        return jsonify({'ok':False,'error':'La posición cambió desde que se mostró en pantalla. Actualiza la cartera y vuelve a intentarlo.'}),409
+    account=_alpaca_paper_request('/v2/account')
+    if account.get('status')!='ACTIVE' or account.get('trading_blocked') or account.get('account_blocked'):
+        return jsonify({'ok':False,'error':'La cuenta Alpaca Paper no está operativa.'}),409
+    key,secret=_alpaca_paper_credentials()
+    import requests as _requests
+    cid=('zar-paper-recovery-close-'+uuid.uuid4().hex[:16])[:48]
+    body={'symbol':symbol,'qty':qty,'side':'sell','type':'market','time_in_force':'day','client_order_id':cid}
+    r=_requests.post('https://paper-api.alpaca.markets/v2/orders',headers={'APCA-API-KEY-ID':key,'APCA-API-SECRET-KEY':secret},json=body,timeout=12)
+    try: data=r.json()
+    except Exception: data={}
+    if not r.ok or not isinstance(data,dict) or not data.get('id'):
+        return jsonify({'ok':False,'error':'Alpaca Paper no confirmó el cierre de la posición.'}),502
+    _stonks_audit_append('PAPER_BLOCKING_POSITION_CLOSE',{'paper':True,'symbol':symbol,'qty':qty,'order_id':data.get('id')})
+    return jsonify({'ok':True,'paper':True,'order':{'id':data.get('id'),'status':data.get('status'),'symbol':data.get('symbol'),'qty':data.get('qty')}}),202
+
 @app.delete('/api/stonks/alpaca/orders')
 @_stonks_serialized
 def stonks_alpaca_cancel_all_orders_api():
