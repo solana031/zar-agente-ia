@@ -25,3 +25,14 @@ def test_risk_precheck_passes_safe_operating_state():
     }, {'is_open': True})
     assert ok
     assert trace['status'] == 'pass'
+
+
+
+def test_risk_precheck_allows_shadow_without_position_lifecycle():
+    ok, trace = stonks_agents.SUPERVISOR.risk.precheck({
+        'revoked': False, 'paused': False, 'mode': 'paper', 'execution_mode': 'shadow',
+        'autonomous_engine': True, 'position_lifecycle_enabled': False,
+    }, {'is_open': True})
+    assert ok
+    assert trace['status'] == 'pass'
+    assert trace['data']['gates']['shadow'] is True

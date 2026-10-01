@@ -129,11 +129,12 @@ class RiskAgent:
             reasons.append("Motor pausado")
         if state.get("mode") != "paper":
             reasons.append("Modo no Paper")
-        if state.get("execution_mode") != "paper_auto":
-            reasons.append("Paper automático desactivado")
+        execution_mode = state.get("execution_mode")
+        if execution_mode not in ("paper_auto", "shadow"):
+            reasons.append("Modo autónomo desactivado")
         if not state.get("autonomous_engine"):
             reasons.append("Motor autónomo desactivado")
-        if not state.get("position_lifecycle_enabled"):
+        if execution_mode == "paper_auto" and not state.get("position_lifecycle_enabled"):
             reasons.append("Position Management desactivado")
         if not bool((clock or {}).get("is_open")):
             reasons.append("Mercado cerrado")
@@ -142,7 +143,9 @@ class RiskAgent:
             "revoked": not bool(state.get("revoked")),
             "paused": not bool(state.get("paused")),
             "paper_mode": state.get("mode") == "paper",
-            "paper_auto": state.get("execution_mode") == "paper_auto",
+            "execution_mode": execution_mode,
+            "paper_auto": execution_mode == "paper_auto",
+            "shadow": execution_mode == "shadow",
             "autonomous_engine": bool(state.get("autonomous_engine")),
             "position_lifecycle": bool(state.get("position_lifecycle_enabled")),
             "market_open": bool((clock or {}).get("is_open")),
@@ -187,7 +190,7 @@ class StonksSupervisor:
     def describe(self):
         return {
             "architecture": "deterministic_multi_agent",
-            "phase": 4,
+            "phase": 5,
             "token_cost_router": 0,
             "paper_only": True,
             "execution_authority": "Decision + Risk server route",
@@ -197,6 +200,7 @@ class StonksSupervisor:
                 {"id":"analysis","role":"Combina señal, momentum, volatilidad y régimen"},
                 {"id":"news_sentiment","role":"Busca noticias y RRSS públicas; aporta sentimiento sin autoridad de orden"},
                 {"id":"risk","role":"Pre-check local; Decision/Risk servidor es autoridad final"},
+                {"id":"shadow_validation","role":"Evalúa señales y Risk sin enviar órdenes en modo Shadow"},
                 {"id":"paper_execution","role":"Ejecuta únicamente por la ruta Paper endurecida"},
                 {"id":"position_manager","role":"Gestiona lifecycle, ownership, SL/TP y reconciliación"},
             ],

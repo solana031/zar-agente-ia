@@ -13,7 +13,7 @@ import html as html_lib
 import uuid
 from functools import wraps
 from contextlib import contextmanager
-from . import stonks_lifecycle, stonks_preflight, stonks_agents, stonks_news, subagent_orchestrator, stonks_backtest
+from . import stonks_lifecycle, stonks_preflight, stonks_agents, stonks_news, subagent_orchestrator, stonks_backtest, stonks_validation
 from datetime import datetime, timezone
 from .user_scope import set_current_user, get_current_user, anonymous_id, user_id_for_email
 from pathlib import Path
@@ -635,7 +635,10 @@ def _stonks_default():
         'managed_positions': {},
         'lifecycle_last_action': None,
         'agent_last_trace': [],
-        'agent_architecture': 'deterministic_multi_agent'
+        'agent_architecture': 'deterministic_multi_agent',
+        'shadow_log': [],
+        'shadow_last_run': None,
+        'shadow_total_signals': 0
     }
 def _stonks_read():
     p = _stonks_file()
@@ -848,13 +851,23 @@ def _stonks_engine_cycle(scope_id):
             d = _stonks_read()
             risk_ok, risk_trace = stonks_agents.SUPERVISOR.risk.precheck(d, clock)
             agent_trace.append(risk_trace)
-            reason = stonks_lifecycle.blocked({**d, 'position_lifecycle_enabled':True}, clock)
+            shadow_mode = d.get('execution_mode') == 'shadow'
+            if shadow_mode:
+                shadow_reasons=[]
+                if d.get('revoked'): shadow_reasons.append('Control revocado')
+                if d.get('paused'): shadow_reasons.append('Motor pausado')
+                if d.get('mode')!='paper': shadow_reasons.append('Modo no Paper')
+                if not d.get('autonomous_engine'): shadow_reasons.append('Motor autónomo desactivado')
+                if not bool(clock.get('is_open')): shadow_reasons.append('Mercado cerrado')
+                reason='; '.join(shadow_reasons)
+            else:
+                reason = stonks_lifecycle.blocked({**d, 'position_lifecycle_enabled':True}, clock)
             if reason:
                 d['engine_last_run'] = datetime.now(timezone.utc).isoformat()
-                d['engine_last_action'] = reason
+                d['engine_last_action'] = ('SHADOW · ' if shadow_mode else '') + reason
                 d['agent_last_trace'] = agent_trace[-30:]
                 _stonks_write(d)
-                return {'status':'idle', 'reason':reason}
+                return {'status':'idle', 'reason':reason, 'shadow':shadow_mode}
             open_symbols = {o['symbol'] for o in recon['open_orders']}
             held_symbols = {p['symbol'] for p in recon['positions']}
             records = {r['symbol']:r for r in stonks_lifecycle.active_records(d)}
@@ -891,7 +904,30 @@ def _stonks_engine_cycle(scope_id):
                     if signal.get('signal') not in ('BUY','SELL'):
                         actions.append(f"{symbol}: ESPERAR")
                         continue
-                    # Reuse the hardened Decision + Risk route so the autonomous path
+                    # Shadow mode evaluates the hardened Decision + Risk route but never submits an order.
+                    if shadow_mode:
+                        with app.test_request_context('/api/stonks/decision', method='POST', json={
+                            'symbol':symbol,'strategy':strategy,'timeframe':timeframe,
+                            'signal':signal.get('signal'),'execute':False,'manual_confirmed':False
+                        }):
+                            session['zar_user_id']=scope_id
+                            _shadow_result=stonks_decision_api(engine=True)
+                        _shadow_payload=_shadow_result[0] if isinstance(_shadow_result,tuple) else _shadow_result
+                        _shadow_data=_shadow_payload.get_json() if hasattr(_shadow_payload,'get_json') else {}
+                        _event={
+                            'timestamp':datetime.now(timezone.utc).isoformat(),'symbol':symbol,'strategy':strategy,
+                            'timeframe':timeframe,'signal':signal.get('signal'),'decision':_shadow_data.get('decision'),
+                            'primary_reason':_shadow_data.get('primary_reason') or _shadow_data.get('reason'),
+                            'price':_shadow_data.get('price'),'estimated_value':_shadow_data.get('estimated_value'),
+                            'order_created':False
+                        }
+                        latest=_stonks_read(); log=list(latest.get('shadow_log') or []); log.append(_event); latest['shadow_log']=log[-200:]
+                        latest['shadow_last_run']=_event['timestamp']; latest['shadow_total_signals']=int(latest.get('shadow_total_signals') or 0)+1
+                        _stonks_write(latest); _stonks_audit_append('SHADOW_SIGNAL',_event)
+                        agent_trace.append({'agent':'shadow_validation','status':'observed','detail':f"{symbol}: {signal.get('signal')} · {_event.get('decision') or 'sin decisión'} · 0 órdenes",'data':_event,'timestamp':_event['timestamp']})
+                        actions.append(f"{symbol}: SHADOW {signal.get('signal')} · {_event.get('decision') or 'sin acción'} · 0 órdenes")
+                        continue
+                    # Reuse the hardened Decision + Risk route so the autonomous Paper path
                     # has exactly the same server-side gates as manual/GUI execution.
                     def _agent_decision(sym, strat, tf, sig):
                         with app.test_request_context('/api/stonks/decision', method='POST', json={
@@ -1761,10 +1797,12 @@ def stonks_validation_suite_api():
             except Exception as exc:
                 errors.append({'symbol':symbol,'error':str(exc)})
 
+        qualification=stonks_validation.assess_suite(rows,walk_rows)
         return jsonify({'ok':True,'paper':True,'orders_created':False,'strategy':strategy,'feed':feed,
             'symbols':symbols,'periods':periods,'rows':rows,'walk_forward':walk_rows,'errors':errors,
+            'qualification':qualification,
             'parameters':{'capital':capital,'risk_pct':risk_pct,'slippage_pct':slippage_pct},
-            'model':{'deterministic':True,'llm_tokens':0,'codex_required':False,'live_orders':False,'ranking':False}})
+            'model':{'deterministic':True,'llm_tokens':0,'codex_required':False,'live_orders':False,'ranking':False,'auto_enable_paper':False}})
     except Exception as exc:
         return jsonify({'ok':False,'error':str(exc)}),502
 
@@ -1985,7 +2023,11 @@ def stonks_controls_api():
         except Exception: val=default
         d[key]=max(0,val)
     mode=str(payload.get('execution_mode',d.get('execution_mode','decision'))).strip().lower()
-    if mode not in ('decision','paper_auto'): mode='decision'
+    if mode not in ('decision','shadow','paper_auto'): mode='decision'
+    if mode=='shadow':
+        active_owned = stonks_lifecycle.active_records(d) or d.get('pending_entries') or any(r.get('status')!='CERRADA' for r in d.get('managed_positions',{}).values())
+        if active_owned:
+            return jsonify({'ok':False,'error':'No se puede pasar a Shadow mientras existan posiciones/intenciones ZAR pendientes. Resuelve primero la exposición Paper.'}),409
     d['execution_mode']=mode
     d['max_position_pct']=min(100,d['max_position_pct'])
     d['position_lifecycle_enabled']=bool(payload.get('position_lifecycle_enabled',d.get('position_lifecycle_enabled',False)))
@@ -2031,14 +2073,19 @@ def stonks_engine_api():
             return jsonify({'ok':False,'error':'Primero restaura el control de ZAR Stonks; después podrás activar el motor autónomo.'}),409
         if d.get('mode')!='paper':
             return jsonify({'ok':False,'error':'El motor autónomo solo funciona en modo Paper.'}),409
-        d['execution_mode']='paper_auto'
+        requested_mode=str(payload.get('execution_mode') or d.get('execution_mode') or 'decision').strip().lower()
+        if requested_mode not in ('shadow','paper_auto'):
+            requested_mode='shadow'
+        if requested_mode=='shadow' and (stonks_lifecycle.active_records(d) or d.get('pending_entries')):
+            return jsonify({'ok':False,'error':'Shadow requiere no tener posiciones/intenciones ZAR activas.'}),409
+        d['execution_mode']=requested_mode
         d['autonomous_engine']=True
         d['engine_symbols']=symbols
         d['engine_strategy']=strategy
         d['engine_timeframe']=timeframe
         d['engine_last_action']='Motor autónomo Paper activado; pendiente del siguiente ciclo.'
         _stonks_write(d); _stonks_engine_owner_write(me)
-        _stonks_audit_append('MOTOR AUTÓNOMO',{'decision':'ACTIVADO','symbols':symbols,'strategy':strategy,'timeframe':timeframe,'paused':bool(d.get('paused'))})
+        _stonks_audit_append('MOTOR AUTÓNOMO',{'decision':'ACTIVADO','execution_mode':d.get('execution_mode'),'symbols':symbols,'strategy':strategy,'timeframe':timeframe,'paused':bool(d.get('paused'))})
         return jsonify({'ok':True,**d,'engine_owner':me})
     d['autonomous_engine']=False
     d['engine_last_action']='Motor autónomo Paper desactivado por el usuario.'
