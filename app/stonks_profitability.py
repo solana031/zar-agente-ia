@@ -138,8 +138,9 @@ def evaluate(state, symbol, strategy, timeframe, signal, news=None, learning=Non
     lg = _learning_group(learning, symbol, strategy, timeframe, regime)
     score, notes = _quality_score(signal, news, lg)
     threshold = max(0.0, min(100.0, _f(state.get('paper_min_signal_quality'), DEFAULT_MIN_QUALITY)))
-    cooldown_m = max(0, int(_f(state.get('paper_symbol_cooldown_minutes'), DEFAULT_COOLDOWN_MINUTES)))
-    max_daily = max(1, int(_f(state.get('paper_max_entries_per_symbol_day'), DEFAULT_MAX_ENTRIES_PER_SYMBOL_DAY)))
+    crypto = '/' in str(symbol or '').replace('-', '/')
+    cooldown_m = max(0, int(_f(state.get('paper_crypto_cooldown_minutes') if crypto else state.get('paper_symbol_cooldown_minutes'), 3 if crypto else DEFAULT_COOLDOWN_MINUTES)))
+    max_daily = max(1, int(_f(state.get('paper_crypto_max_entries_per_symbol_day') if crypto else state.get('paper_max_entries_per_symbol_day'), 16 if crypto else DEFAULT_MAX_ENTRIES_PER_SYMBOL_DAY)))
     reasons = []
 
     if action != 'BUY':

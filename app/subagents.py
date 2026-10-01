@@ -17,7 +17,7 @@ DOMAINS = {
     "workspace": {
         "google_workspace_status", "drive_list_recent", "drive_search",
         "docs_create", "docs_append", "sheets_create", "sheets_read",
-        "sheets_write", "sheets_add_professional_table", "sheets_build_workbook", "slides_create", "slides_build_deck", "docs_build_report", "forms_create", "forms_get",
+        "sheets_write", "sheets_add_professional_table", "sheets_build_workbook", "sheets_upgrade_workbook", "slides_create", "slides_build_deck", "docs_build_report", "forms_create", "forms_get",
         "forms_add_question",
     },
     "gmail": {
@@ -28,7 +28,7 @@ DOMAINS = {
     "calendar": {"calendar_status", "calendar_upcoming", "calendar_create_confirmed"},
     "contacts": {"contacts_status", "contacts_search", "contacts_get", "contacts_create", "contacts_update"},
     "files": {"file_list", "file_search", "file_get", "file_analyze", "file_update_metadata"},
-    "research": {"web_search", "web_open", "open_url"},
+    "research": {"web_search", "web_image_search", "web_open", "open_url"},
     "maps": {"maps_status", "maps_search", "maps_open_search", "maps_directions"},
     "studio": {"video_get_current_project", "video_edit_project", "video_viral_optimize", "video_transition_catalog", "music_reference_analyze"},
     "media": {"search_youtube", "search_spotify", "open_url"},

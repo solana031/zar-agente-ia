@@ -10,6 +10,10 @@ import uuid
 TERMINAL = {'filled', 'canceled', 'expired', 'rejected'}
 
 
+def is_crypto_symbol(symbol):
+    return '/' in str(symbol or '').replace('-', '/')
+
+
 def number(value):
     try:
         result = Decimal(str(value))
@@ -286,7 +290,8 @@ def manage(state, positions, orders, lookup, submit, save, audit, account, clock
             if detected:
                 event('POSITION_DETECTED', row, 'Posición y fills reales reconciliados')
             test_event(record, 'TEST_POSITION_DETECTED', audit, 'Fill y posición propios verificados', row['qty'], row['entry_price'])
-            reason = blocked({**state, 'position_lifecycle_enabled':True} if record.get('trigger')=='SIGNAL' else state, clock)
+            record_clock = {**(clock or {}), 'is_open': True if is_crypto_symbol(symbol) else bool((clock or {}).get('is_open'))}
+            reason = blocked({**state, 'position_lifecycle_enabled':True} if record.get('trigger')=='SIGNAL' else state, record_clock)
             pending = [(i, o) for i, o in exit_orders if not o or o.get('status') not in TERMINAL]
             if pending:
                 intent, order = pending[0]
@@ -311,8 +316,21 @@ def manage(state, positions, orders, lookup, submit, save, audit, account, clock
                 if not trigger:
                     if stop and sign * (current - stop) <= 0:
                         trigger = 'SL'
-                    elif take and sign * (current - take) >= 0:
+                    elif take and sign * (take - current) <= 0:
                         trigger = 'TP'
+                # Paper scalp objective: harvest a small positive move only after
+                # reserving a configurable round-trip cost/slippage buffer. This is
+                # an exit rule, never a profit guarantee or a reason to force entry.
+                if not trigger and bool(state.get('paper_scalp_mode', False)) and direction == 'LONG':
+                    try:
+                        target = number(state.get('paper_min_net_profit_usd', 0.10))
+                        bps = max(Decimal(0), number(state.get('paper_cost_buffer_bps', 20)))
+                        gross = (current - entry_price) * qty
+                        reserve = abs(current * qty) * bps * Decimal(2) / Decimal(10000)
+                        if gross >= target + reserve:
+                            trigger = 'SCALP_TP'
+                    except Exception:
+                        pass
                 if not trigger:
                     continue
                 if not record.get('trigger'):
@@ -353,7 +371,7 @@ def manage(state, positions, orders, lookup, submit, save, audit, account, clock
             save(state)  # durable before any side effect, including retries
             order = submit({'symbol': symbol, 'qty': intent['qty'],
                             'side': 'sell' if direction == 'LONG' else 'buy',
-                            'type': 'market', 'time_in_force': 'day',
+                            'type': 'market', 'time_in_force': 'gtc' if is_crypto_symbol(symbol) else 'day',
                             'client_order_id': intent['client_order_id']})
             intent['order_id'] = order.get('id')
             event('CLOSE_REQUESTED', {**row, 'qty':intent['qty'], 'client_order_id':intent['client_order_id']}, intent['trigger'])

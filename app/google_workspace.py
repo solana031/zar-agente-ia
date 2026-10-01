@@ -443,6 +443,90 @@ def sheets_add_professional_table(spreadsheet_id, sheet_title, table_title, head
             'url':meta.get('spreadsheetUrl') or f'https://docs.google.com/spreadsheets/d/{sid}/edit'}
 
 
+def _a1_range_parts(range_a1, default_sheet=None):
+    """Return (sheet, r1, c1, r2, c2) for a simple rectangular A1 range."""
+    import re
+    value=str(range_a1 or '').strip()
+    sheet=default_sheet or ''
+    if '!' in value:
+        left,value=value.split('!',1)
+        sheet=left.strip().strip("'").replace("''", "'")
+    m=re.match(r'^\$?([A-Za-z]{1,3})\$?(\d+)(?::\$?([A-Za-z]{1,3})\$?(\d+))?$', value.strip())
+    if not m:
+        raise ValueError('Rango A1 no válido: '+str(range_a1))
+    def colnum(chars):
+        n=0
+        for ch in chars.upper(): n=n*26+(ord(ch)-64)
+        return n
+    c1=colnum(m.group(1)); r1=int(m.group(2)); c2=colnum(m.group(3) or m.group(1)); r2=int(m.group(4) or m.group(2))
+    if r2<r1 or c2<c1: raise ValueError('Rango A1 invertido')
+    return sheet,r1,c1,r2,c2
+
+
+def sheets_upgrade_workbook(spreadsheet_id, tabs, charts=None):
+    """Add a professional management layer to an existing workbook.
+
+    Existing sheets/data are never deleted. Requested tabs are created when absent
+    and their designated management tables are updated in place. Charts are added
+    only after all tables have been written; an invalid chart cannot erase data.
+    """
+    sid=_normalize_spreadsheet_id(spreadsheet_id)
+    meta=_sheet_metadata(sid)
+    results=[]
+    for tab in tabs or []:
+        results.append(sheets_add_professional_table(
+            sid, str(tab.get('name') or 'Resumen')[:100], str(tab.get('table_title') or tab.get('name') or 'Resumen'),
+            tab.get('headers') or [], tab.get('rows') or [], tab.get('start_cell') or 'A1',
+            str(tab.get('subtitle') or ''), tab.get('summary') or []))
+    chart_results=[]
+    if charts:
+        svc=sheets_service(); meta=_sheet_metadata(sid)
+        props={str((x.get('properties') or {}).get('title')):(x.get('properties') or {}) for x in (meta.get('sheets') or [])}
+        for chart in charts:
+            try:
+                sheet_title=str(chart.get('sheet_title') or '')
+                prop=props.get(sheet_title)
+                if not prop: raise ValueError('Pestaña no encontrada para gráfico: '+sheet_title)
+                _,r1,c1,r2,c2=_a1_range_parts(chart.get('range_a1'),sheet_title)
+                if c2-c1 < 1: raise ValueError('El gráfico necesita al menos dos columnas')
+                _,ar,ac,_,_=_a1_range_parts(chart.get('anchor_cell') or 'H2',sheet_title)
+                ctype=str(chart.get('chart_type') or 'COLUMN').upper()
+                source={'sheetId':prop['sheetId'],'startRowIndex':r1-1,'endRowIndex':r2,
+                        'startColumnIndex':c1-1,'endColumnIndex':c2}
+                spec={'title':str(chart.get('title') or ''), 'basicChart':{
+                    'chartType': 'BAR' if ctype=='BAR' else ('LINE' if ctype=='LINE' else 'COLUMN'),
+                    'legendPosition':'BOTTOM_LEGEND',
+                    'headerCount':1,
+                    'domains':[{'domain':{'sourceRange':{'sources':[{
+                        'sheetId':prop['sheetId'],'startRowIndex':r1-1,'endRowIndex':r2,
+                        'startColumnIndex':c1-1,'endColumnIndex':c1}]}}}],
+                    'series':[{'series':{'sourceRange':{'sources':[{
+                        'sheetId':prop['sheetId'],'startRowIndex':r1-1,'endRowIndex':r2,
+                        'startColumnIndex':ci,'endColumnIndex':ci+1}]}}} for ci in range(c1, c2)],
+                    'axis':[{'position':'BOTTOM_AXIS','title':''},{'position':'LEFT_AXIS','title':''}],
+                }}
+                if ctype=='PIE':
+                    spec={'title':str(chart.get('title') or ''),'pieChart':{
+                        'legendPosition':'RIGHT_LEGEND',
+                        'domain':{'sourceRange':{'sources':[{
+                            'sheetId':prop['sheetId'],'startRowIndex':r1-1,'endRowIndex':r2,
+                            'startColumnIndex':c1-1,'endColumnIndex':c1}]}},
+                        'series':{'sourceRange':{'sources':[{
+                            'sheetId':prop['sheetId'],'startRowIndex':r1-1,'endRowIndex':r2,
+                            'startColumnIndex':c1,'endColumnIndex':c1+1}]}}
+                    }}
+                body={'requests':[{'addChart':{'chart':{'spec':spec,'position':{'overlayPosition':{
+                    'anchorCell':{'sheetId':prop['sheetId'],'rowIndex':ar-1,'columnIndex':ac-1},
+                    'offsetXPixels':0,'offsetYPixels':0,'widthPixels':640,'heightPixels':360}}}}}]}
+                resp=svc.spreadsheets().batchUpdate(spreadsheetId=sid,body=body).execute()
+                chart_results.append({'ok':True,'title':chart.get('title'),'response':bool(resp)})
+            except Exception as exc:
+                chart_results.append({'ok':False,'title':chart.get('title'),'error':str(exc)})
+    return {'ok':True,'spreadsheetId':sid,'url':meta.get('spreadsheetUrl') or f'https://docs.google.com/spreadsheets/d/{sid}/edit',
+            'tabs_updated':[x.get('sheet') for x in results], 'charts':chart_results,
+            'preserved_existing':True}
+
+
 def sheets_build_workbook(title, sheets):
     svc = sheets_service()
     tabs = sheets or [{'name':'Resumen','table_title':title,'headers':['Dato','Valor'],'rows':[]}]
@@ -487,24 +571,82 @@ def docs_build_report(title, subtitle, sections):
 
 
 def slides_build_deck(title, subtitle, slides):
-    svc=slides_service(); pres=svc.presentations().create(body={'title':title}).execute(); pid=pres['presentationId']
-    existing=[x.get('objectId') for x in (pres.get('slides') or []) if x.get('objectId')]
-    req=[]
-    for oid in existing: req.append({'deleteObject':{'objectId':oid}})
-    deck=[{'title':title,'body':subtitle or ''}]+[{'title':str(x.get('title') or ''),'body':'\n'.join('• '+str(b) for b in (x.get('bullets') or [])) or str(x.get('body') or '')} for x in (slides or [])]
-    for i,item in enumerate(deck):
-        page=f'zarSlide{i+1}'; title_id=f'zarTitle{i+1}'; body_id=f'zarBody{i+1}'
-        req.append({'createSlide':{'objectId':page,'slideLayoutReference':{'predefinedLayout':'BLANK'}}})
-        req.append({'createShape':{'objectId':title_id,'shapeType':'TEXT_BOX','elementProperties':{'pageObjectId':page,
-            'size':{'width':{'magnitude':8000000,'unit':'EMU'},'height':{'magnitude':900000,'unit':'EMU'}},
-            'transform':{'scaleX':1,'scaleY':1,'translateX':650000,'translateY':500000,'unit':'EMU'}}}})
-        req.append({'insertText':{'objectId':title_id,'text':item['title']}})
-        req.append({'updateTextStyle':{'objectId':title_id,'textRange':{'type':'ALL'},'style':{'bold':True,'fontSize':{'magnitude':26 if i else 30,'unit':'PT'},'foregroundColor':{'opaqueColor':{'rgbColor':{'red':0.12,'green':0.17,'blue':0.24}}}},'fields':'bold,fontSize,foregroundColor'}})
-        if item['body']:
-            req.append({'createShape':{'objectId':body_id,'shapeType':'TEXT_BOX','elementProperties':{'pageObjectId':page,
-                'size':{'width':{'magnitude':7900000,'unit':'EMU'},'height':{'magnitude':4000000,'unit':'EMU'}},
-                'transform':{'scaleX':1,'scaleY':1,'translateX':700000,'translateY':1650000,'unit':'EMU'}}}})
-            req.append({'insertText':{'objectId':body_id,'text':item['body']}})
-            req.append({'updateTextStyle':{'objectId':body_id,'textRange':{'type':'ALL'},'style':{'fontSize':{'magnitude':16 if i else 18,'unit':'PT'},'foregroundColor':{'opaqueColor':{'rgbColor':{'red':0.25,'green':0.28,'blue':0.32}}}},'fields':'fontSize,foregroundColor'}})
-    svc.presentations().batchUpdate(presentationId=pid,body={'requests':req}).execute()
-    return {'ok':True,'presentationId':pid,'url':f'https://docs.google.com/presentation/d/{pid}/edit'}
+    """Create a visually structured deck with optional sourced imagery."""
+    svc = slides_service()
+    pres = svc.presentations().create(body={"title": title}).execute()
+    pid = pres["presentationId"]
+    req = []
+    for slide in pres.get("slides") or []:
+        if slide.get("objectId"):
+            req.append({"deleteObject": {"objectId": slide["objectId"]}})
+    raw = [{"title": title, "body": subtitle or "", "bullets": [], "image_url": "", "source_note": ""}] + list(slides or [])
+    for i, src in enumerate(raw):
+        src = src or {}
+        page = f"zarSlide{i+1}"
+        title_id = f"zarTitle{i+1}"
+        body_id = f"zarBody{i+1}"
+        accent_id = f"zarAccent{i+1}"
+        item_title = str(src.get("title") or "")
+        bullets = [str(x) for x in (src.get("bullets") or [])]
+        body_text = "\n".join("• " + x for x in bullets) if bullets else str(src.get("body") or "")
+        has_image = bool(str(src.get("image_url") or "").strip())
+        req.append({"createSlide": {"objectId": page, "slideLayoutReference": {"predefinedLayout": "BLANK"}}})
+        req.append({"createShape": {"objectId": accent_id, "shapeType": "RECTANGLE", "elementProperties": {
+            "pageObjectId": page,
+            "size": {"width": {"magnitude": 9144000, "unit": "EMU"}, "height": {"magnitude": 420000, "unit": "EMU"}},
+            "transform": {"scaleX": 1, "scaleY": 1, "translateX": 0, "translateY": 0, "unit": "EMU"}}}})
+        req.append({"updateShapeProperties": {"objectId": accent_id, "shapeProperties": {
+            "shapeBackgroundFill": {"solidFill": {"color": {"rgbColor": {"red": 0.10, "green": 0.15, "blue": 0.22}}}},
+            "outline": {"propertyState": "NOT_RENDERED"}}, "fields": "shapeBackgroundFill,outline"}})
+        req.append({"createShape": {"objectId": title_id, "shapeType": "TEXT_BOX", "elementProperties": {
+            "pageObjectId": page,
+            "size": {"width": {"magnitude": 7900000, "unit": "EMU"}, "height": {"magnitude": 950000, "unit": "EMU"}},
+            "transform": {"scaleX": 1, "scaleY": 1, "translateX": 650000, "translateY": 600000, "unit": "EMU"}}}})
+        req.append({"insertText": {"objectId": title_id, "text": item_title}})
+        title_style = {"bold": True, "fontSize": {"magnitude": 30 if i == 0 else 24, "unit": "PT"},
+                       "foregroundColor": {"opaqueColor": {"rgbColor": {"red": 0.10, "green": 0.15, "blue": 0.22}}},
+                       "fontFamily": "Arial"}
+        req.append({"updateTextStyle": {"objectId": title_id, "textRange": {"type": "ALL"},
+                                          "style": title_style, "fields": "bold,fontSize,foregroundColor,fontFamily"}})
+        if body_text:
+            width = 4700000 if has_image else 7900000
+            req.append({"createShape": {"objectId": body_id, "shapeType": "TEXT_BOX", "elementProperties": {
+                "pageObjectId": page,
+                "size": {"width": {"magnitude": width, "unit": "EMU"}, "height": {"magnitude": 3900000, "unit": "EMU"}},
+                "transform": {"scaleX": 1, "scaleY": 1, "translateX": 700000, "translateY": 1650000, "unit": "EMU"}}}})
+            req.append({"insertText": {"objectId": body_id, "text": body_text}})
+            body_style = {"fontSize": {"magnitude": 18 if i == 0 else 15, "unit": "PT"},
+                          "foregroundColor": {"opaqueColor": {"rgbColor": {"red": 0.22, "green": 0.25, "blue": 0.29}}},
+                          "fontFamily": "Arial"}
+            req.append({"updateTextStyle": {"objectId": body_id, "textRange": {"type": "ALL"},
+                                              "style": body_style, "fields": "fontSize,foregroundColor,fontFamily"}})
+        source_note = str(src.get("source_note") or "").strip()
+        if source_note:
+            source_id = f"zarSource{i+1}"
+            req.append({"createShape": {"objectId": source_id, "shapeType": "TEXT_BOX", "elementProperties": {
+                "pageObjectId": page,
+                "size": {"width": {"magnitude": 8000000, "unit": "EMU"}, "height": {"magnitude": 350000, "unit": "EMU"}},
+                "transform": {"scaleX": 1, "scaleY": 1, "translateX": 650000, "translateY": 6350000, "unit": "EMU"}}}})
+            req.append({"insertText": {"objectId": source_id, "text": source_note[:500]}})
+            source_style = {"fontSize": {"magnitude": 8, "unit": "PT"},
+                            "foregroundColor": {"opaqueColor": {"rgbColor": {"red": 0.45, "green": 0.48, "blue": 0.52}}},
+                            "fontFamily": "Arial"}
+            req.append({"updateTextStyle": {"objectId": source_id, "textRange": {"type": "ALL"},
+                                              "style": source_style, "fields": "fontSize,foregroundColor,fontFamily"}})
+    svc.presentations().batchUpdate(presentationId=pid, body={"requests": req}).execute()
+    image_errors = []
+    for i, src in enumerate(raw):
+        url = str((src or {}).get("image_url") or "").strip()
+        if not url:
+            continue
+        try:
+            image_req = {"createImage": {"objectId": f"zarImage{i+1}", "url": url, "elementProperties": {
+                "pageObjectId": f"zarSlide{i+1}",
+                "size": {"width": {"magnitude": 3000000, "unit": "EMU"}, "height": {"magnitude": 3000000, "unit": "EMU"}},
+                "transform": {"scaleX": 1, "scaleY": 1, "translateX": 5750000, "translateY": 1900000, "unit": "EMU"}}}}
+            svc.presentations().batchUpdate(presentationId=pid, body={"requests": [image_req]}).execute()
+        except Exception as exc:
+            image_errors.append({"slide": i + 1, "error": str(exc)[:240]})
+    return {"ok": True, "presentationId": pid, "url": f"https://docs.google.com/presentation/d/{pid}/edit",
+            "slides": len(raw), "image_errors": image_errors}
+

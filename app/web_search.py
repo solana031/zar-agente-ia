@@ -478,3 +478,43 @@ def analyze_inspiration_image(image_url, instructions=""):
         return {"ok": bool(text), "analysis": text or "No se obtuvo análisis.", "url": url, "model": model}
     except Exception as exc:
         return {"ok": False, "error": f"No se pudo analizar la referencia: {exc}"}
+
+
+def search_reusable_images(query, limit=8):
+    """Search Wikimedia Commons for public/reusable visual references.
+
+    Returns direct thumbnail/original URLs plus source/license metadata. This is
+    intentionally conservative: ZAR can use the result in Docs/Slides without
+    pretending that arbitrary web images are free to reuse.
+    """
+    q=(query or '').strip()
+    limit=max(1,min(int(limit or 8),12))
+    if not q:
+        return {'ok':False,'error':'Indica qué imagen quieres buscar.','results':[]}
+    try:
+        r=requests.get('https://commons.wikimedia.org/w/api.php', params={
+            'action':'query','generator':'search','gsrsearch':q,'gsrnamespace':6,
+            'gsrlimit':limit,'prop':'imageinfo','iiprop':'url|extmetadata','iiurlwidth':1600,
+            'format':'json','origin':'*'
+        }, headers={'User-Agent':'ZAR-Workspace/32.1 (+https://example.invalid)'}, timeout=20)
+        r.raise_for_status(); data=r.json()
+        pages=((data.get('query') or {}).get('pages') or {})
+        out=[]
+        for page in pages.values():
+            info=((page.get('imageinfo') or [{}])[0] or {})
+            meta=info.get('extmetadata') or {}
+            def mv(k):
+                v=(meta.get(k) or {}).get('value')
+                return re.sub(r'<[^>]+>','',str(v or '')).strip()
+            url=info.get('thumburl') or info.get('url')
+            if not url: continue
+            out.append({
+                'title':page.get('title'), 'image_url':url, 'original_url':info.get('url'),
+                'source_url':info.get('descriptionurl') or ('https://commons.wikimedia.org/?curid='+str(page.get('pageid'))),
+                'license':mv('LicenseShortName') or mv('UsageTerms') or 'ver fuente',
+                'artist':mv('Artist'), 'credit':mv('Credit'), 'description':mv('ImageDescription')[:500],
+            })
+        return {'ok':True,'provider':'Wikimedia Commons','query':q,'results':out[:limit],
+                'note':'Verifica la licencia/atribución indicada antes de publicar fuera de uso interno.'}
+    except Exception as exc:
+        return {'ok':False,'error':str(exc),'results':[]}

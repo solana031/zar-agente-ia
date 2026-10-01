@@ -15,6 +15,7 @@ from functools import wraps
 from contextlib import contextmanager
 from . import stonks_lifecycle, stonks_preflight, stonks_agents, stonks_news, stonks_dataplane, stonks_selftest, stonks_stream, subagent_orchestrator, stonks_backtest, stonks_validation, stonks_shadow, stonks_learning, stonks_execution, stonks_readiness, stonks_profitability
 from datetime import datetime, timezone
+from urllib.parse import quote as urlquote
 from .user_scope import set_current_user, get_current_user, anonymous_id, user_id_for_email
 from pathlib import Path
 from .cloud_auth import authorization_url, finish_oauth, connected, auth_status, get_credentials
@@ -628,7 +629,8 @@ def _stonks_default():
         'max_trade_eur': 25, 'max_daily_loss_eur': 10, 'max_position_pct': 20,
         'execution_mode': 'decision',
         'autonomous_engine': False,
-        'engine_symbols': ['AAPL'],
+        'engine_symbols': ['AAPL','MSFT','SPY','BTC/USD','ETH/USD','SOL/USD','DOGE/USD'],
+        'engine_auto_universe': True,
         'engine_strategy': 'trend',
         'engine_timeframe': '1Min',
         'engine_last_run': None,
@@ -660,7 +662,11 @@ def _stonks_default():
         'shadow_outcome_last_update': None,
         'data_plane_telemetry': {},
         'stream_watchlist_equities': ['AAPL','MSFT','SPY','QQQ'],
-        'stream_watchlist_crypto': ['BTC/USD','ETH/USD'],
+        'stream_watchlist_crypto': ['BTC/USD','ETH/USD','SOL/USD','DOGE/USD'],
+        'crypto_universe_cache': {},
+        'paper_scalp_mode': True,
+        'paper_min_net_profit_usd': 0.10,
+        'paper_cost_buffer_bps': 20.0,
         'stream_watchlist_options': [],
         'market_stream_snapshot': {},
         'paper_learning_journal_count': 0,
@@ -671,6 +677,8 @@ def _stonks_default():
         'paper_min_signal_quality': 55.0,
         'paper_symbol_cooldown_minutes': 15,
         'paper_max_entries_per_symbol_day': 4,
+        'paper_crypto_cooldown_minutes': 3,
+        'paper_crypto_max_entries_per_symbol_day': 16,
         'paper_last_entry_at': {},
         'paper_entry_counts': {},
         'paper_quality_seen': {},
@@ -769,6 +777,7 @@ def _stonks_order_history(after):
     params = {'status':'all', 'limit':500, 'direction':'desc', 'nested':'false', 'after':after}
     for _ in range(100):
         page = _alpaca_paper_request('/v2/orders', params=dict(params))
+        if isinstance(page,list): page=[_stonks_normalize_broker_row(x) for x in page]
         if not isinstance(page, list):
             raise RuntimeError('Historial Paper no válido')
         if any(not o.get('id') or o['id'] in seen for o in page):
@@ -791,6 +800,8 @@ def _stonks_reconcile_paper_state(scope_id, symbols=None, emit_audit=True):
     if not isinstance(account, dict): account = {}
     positions = _alpaca_paper_request('/v2/positions')
     orders = _alpaca_paper_request('/v2/orders', params={'status':'open','limit':500,'nested':'false'})
+    if isinstance(positions,list): positions=[_stonks_normalize_broker_row(x) for x in positions]
+    if isinstance(orders,list): orders=[_stonks_normalize_broker_row(x) for x in orders]
     if not isinstance(positions, list) or not isinstance(orders, list) or len(orders) >= 500:
         raise RuntimeError('Snapshot Paper incompleto; ejecución bloqueada')
     d = _stonks_read()
@@ -810,7 +821,8 @@ def _stonks_reconcile_paper_state(scope_id, symbols=None, emit_audit=True):
 
 
 def _stonks_lookup_order(cid):
-    return _alpaca_paper_request('/v2/orders:by_client_order_id', params={'client_order_id':cid}, missing_ok=True)
+    row=_alpaca_paper_request('/v2/orders:by_client_order_id', params={'client_order_id':cid}, missing_ok=True)
+    return _stonks_normalize_broker_row(row) if row else row
 
 
 def _stonks_submit_paper_order(body):
@@ -921,6 +933,156 @@ def _alpaca_market_request(path, method='GET', params=None):
     return data
 
 
+def _stonks_is_crypto(symbol):
+    return '/' in str(symbol or '').replace('-', '/')
+
+
+def _stonks_symbol_key(symbol):
+    """Normalize user/engine crypto symbols to Alpaca pair form when possible."""
+    s=str(symbol or '').strip().upper().replace('-', '/')
+    if '/' in s:
+        return s
+    # Alpaca may expose compact crypto symbols in some account payloads.
+    for quote in ('USDT','USDC','USD'):
+        if s.endswith(quote) and len(s) > len(quote):
+            return s[:-len(quote)] + '/' + quote
+    return s
+
+
+def _stonks_asset_path(symbol):
+    return '/v2/assets/' + urlquote(_stonks_symbol_key(symbol), safe='')
+
+
+def _stonks_normalize_broker_row(row):
+    if not isinstance(row, dict):
+        return row
+    out=dict(row)
+    if out.get('symbol'):
+        out['symbol']=_stonks_symbol_key(out.get('symbol'))
+    return out
+
+
+def _stonks_crypto_clock():
+    now=datetime.now(timezone.utc).isoformat()
+    return {'is_open':True,'timestamp':now,'next_open':None,'next_close':None,
+            'source':'alpaca_crypto_24_7','received_at':now}
+
+
+def _stonks_discover_crypto_universe(d, limit=4, force=False):
+    """Discover a small, liquid Paper crypto universe from Alpaca.
+
+    Keeps BTC/ETH/SOL when tradable and reserves at least one slot for a
+    meme-style asset when Alpaca exposes one with usable liquidity/spread.
+    This selector has no order authority.
+    """
+    now=datetime.now(timezone.utc)
+    cache=d.get('crypto_universe_cache') or {}
+    try:
+        stamp=datetime.fromisoformat(str(cache.get('updated_at') or '').replace('Z','+00:00'))
+        if stamp.tzinfo is None: stamp=stamp.replace(tzinfo=timezone.utc)
+        if not force and (now-stamp.astimezone(timezone.utc)).total_seconds() < 900 and cache.get('selected'):
+            return list(cache.get('selected') or [])[:limit]
+    except Exception:
+        pass
+    try:
+        assets=_alpaca_paper_request('/v2/assets', params={'status':'active','asset_class':'crypto'})
+        if not isinstance(assets,list):
+            raise RuntimeError('Lista de activos crypto no válida')
+        rows=[]
+        for a in assets:
+            raw=_stonks_symbol_key(a.get('symbol'))
+            if not raw.endswith('/USD'):
+                continue
+            if a.get('status')!='active' or a.get('tradable') is not True:
+                continue
+            rows.append({'symbol':raw,'name':str(a.get('name') or ''),'asset':a})
+        if not rows:
+            raise RuntimeError('No hay pares crypto USD activos/tradables')
+        meme_words=('DOGE','SHIB','PEPE','BONK','WIF','FLOKI','TRUMP','MEME','PENGU','MOG','BRETT','BABYDOGE')
+        preferred=['BTC/USD','ETH/USD','SOL/USD']
+        candidates=[r['symbol'] for r in rows]
+        # Snapshots let the selector reject extremely illiquid/wide-spread pairs.
+        snapshots={}
+        try:
+            payload=_alpaca_market_request('/v1beta3/crypto/us/snapshots', params={'symbols':','.join(candidates[:80])})
+            snapshots=(payload.get('snapshots') or {}) if isinstance(payload,dict) else {}
+        except Exception:
+            snapshots={}
+        scored=[]
+        for row in rows:
+            sym=row['symbol']; snap=snapshots.get(sym) or {}
+            daily=snap.get('dailyBar') or {}; quote=snap.get('latestQuote') or {}
+            try: price=float((snap.get('latestTrade') or {}).get('p') or daily.get('c') or 0)
+            except Exception: price=0.0
+            try: vol=float(daily.get('v') or 0)
+            except Exception: vol=0.0
+            try:
+                bid=float(quote.get('bp') or 0); ask=float(quote.get('ap') or 0)
+                mid=(bid+ask)/2 if bid>0 and ask>0 else price
+                spread=((ask-bid)/mid*100) if mid and bid>0 and ask>=bid else None
+            except Exception: spread=None
+            liquidity=max(0.0, price*vol)
+            meme=any(w in (sym+' '+row['name']).upper() for w in meme_words)
+            # Keep unknown spread assets eligible, but heavily penalize very wide ones.
+            spread_penalty=(spread or 0.25)*4.0
+            score=(__import__('math').log10(liquidity+1.0) if liquidity>0 else 0.0)-spread_penalty+(0.35 if meme else 0.0)
+            if spread is not None and spread > 1.25:
+                score -= 5.0
+            scored.append({'symbol':sym,'score':score,'meme':meme,'spread_pct':spread,'notional_volume':liquidity})
+        selected=[]
+        tradable={x['symbol'] for x in scored}
+        for sym in preferred:
+            if sym in tradable and sym not in selected:
+                selected.append(sym)
+        memes=sorted((x for x in scored if x['meme'] and x['symbol'] not in selected), key=lambda x:x['score'], reverse=True)
+        if memes and len(selected)<limit:
+            selected.append(memes[0]['symbol'])
+        for x in sorted(scored,key=lambda x:x['score'],reverse=True):
+            if len(selected)>=limit: break
+            if x['symbol'] not in selected:
+                selected.append(x['symbol'])
+        d['crypto_universe_cache']={'updated_at':now.isoformat(),'selected':selected[:limit],
+            'meme_candidates':[x['symbol'] for x in memes[:8]],
+            'ranking':scored[:40]}
+        _stonks_write(d)
+        return selected[:limit]
+    except Exception as exc:
+        fallback=[x for x in (d.get('stream_watchlist_crypto') or ['BTC/USD','ETH/USD','SOL/USD','DOGE/USD']) if x]
+        d['crypto_universe_cache']={'updated_at':now.isoformat(),'selected':fallback[:limit],'error':str(exc)[:240]}
+        _stonks_write(d)
+        return fallback[:limit]
+
+
+def _stonks_engine_universe(d):
+    if not bool(d.get('engine_auto_universe', True)):
+        return list(d.get('engine_symbols') or ['AAPL'])[:8]
+    equities=[]
+    for raw in (d.get('stream_watchlist_equities') or ['AAPL','MSFT','SPY','QQQ']):
+        s=_stonks_symbol_key(raw)
+        if s and not _stonks_is_crypto(s) and s not in equities:
+            equities.append(s)
+        if len(equities)>=4: break
+    crypto=_stonks_discover_crypto_universe(d, 4)
+    universe=(equities+crypto)[:8]
+    if universe != list(d.get('engine_symbols') or []):
+        d['engine_symbols']=universe
+        _stonks_write(d)
+    return universe or ['AAPL']
+
+
+def _stonks_latest_price(symbol):
+    symbol=_stonks_symbol_key(symbol)
+    if _stonks_is_crypto(symbol):
+        payload=_alpaca_market_request('/v1beta3/crypto/us/latest/trades', params={'symbols':symbol})
+        last=((payload.get('trades') or {}).get(symbol) or (payload.get('trades') or {}).get(symbol.replace('/','')) or {}) if isinstance(payload,dict) else {}
+        return last, _stonks_crypto_clock()
+    payload=_alpaca_market_request(f'/v2/stocks/{symbol}/trades/latest', params={'feed':'iex'})
+    last=(payload.get('trade') or {}) if isinstance(payload,dict) else {}
+    if not last and isinstance(payload,dict):
+        last=(payload.get('trades') or {}).get(symbol) or {}
+    return last, _stonks_market_clock_snapshot()
+
+
 def _stonks_refresh_shadow_outcomes(d, force=False):
     """Refresh Shadow outcomes from completed 1-minute IEX bars.
 
@@ -961,23 +1123,29 @@ def _stonks_refresh_shadow_outcomes(d, force=False):
         return d, {'agent':'shadow_outcome','status':'idle','detail':'Timestamps Shadow no válidos','data':{'orders_created':0},'timestamp':now.isoformat()}
     from datetime import timedelta
     start=min(starts)-timedelta(minutes=2)
-    params={
-        'symbols':','.join(symbols),'timeframe':'1Min','start':start.strftime('%Y-%m-%dT%H:%M:%SZ'),
-        'end':now.strftime('%Y-%m-%dT%H:%M:%SZ'),'limit':10000,'feed':'iex','sort':'asc'
-    }
-    bars={}; seen_tokens=set()
-    for _ in range(8):
-        payload=_alpaca_market_request('/v2/stocks/bars',params=dict(params))
-        for symbol, page in (payload.get('bars') or {}).items():
-            bars.setdefault(symbol,[]).extend(page or [])
-        token=payload.get('next_page_token')
-        if not token:
-            break
-        if token in seen_tokens:
-            raise RuntimeError('Paginación Outcome repetida; snapshot incompleto')
-        seen_tokens.add(token); params['page_token']=token
-    else:
+    bars={}
+    equity_symbols=[x for x in symbols if not _stonks_is_crypto(x)]
+    crypto_symbols=[x for x in symbols if _stonks_is_crypto(x)]
+    def _pages(path, group, extra=None):
+        if not group: return
+        params={
+            'symbols':','.join(group),'timeframe':'1Min','start':start.strftime('%Y-%m-%dT%H:%M:%SZ'),
+            'end':now.strftime('%Y-%m-%dT%H:%M:%SZ'),'limit':10000,'sort':'asc'
+        }
+        if extra: params.update(extra)
+        seen_tokens=set()
+        for _ in range(8):
+            payload=_alpaca_market_request(path,params=dict(params))
+            for sym, page in (payload.get('bars') or {}).items():
+                bars.setdefault(_stonks_symbol_key(sym),[]).extend(page or [])
+            token=payload.get('next_page_token')
+            if not token: return
+            if token in seen_tokens:
+                raise RuntimeError('Paginación Outcome repetida; snapshot incompleto')
+            seen_tokens.add(token); params['page_token']=token
         raise RuntimeError('Histórico Outcome demasiado extenso; snapshot incompleto')
+    _pages('/v2/stocks/bars', equity_symbols, {'feed':'iex'})
+    _pages('/v1beta3/crypto/us/bars', crypto_symbols)
     rows=stonks_shadow.update_log(rows,bars,now=now)
     summary=stonks_shadow.summarize(rows)
     d['shadow_log']=rows[-stonks_shadow.MAX_EVENTS:]
@@ -1046,7 +1214,7 @@ def _stonks_engine_cycle(scope_id):
         stonks_dataplane.PLANE.hydrate(scope_id, d.get('data_plane_telemetry'))
         stonks_dataplane.PLANE.begin_cycle(scope_id)
         _stream_status=_stonks_stream_plan(d, activate=True)
-        symbols=d.get('engine_symbols') or ['AAPL']
+        symbols=_stonks_engine_universe(d)
         strategy=d.get('engine_strategy') or 'trend'
         timeframe=d.get('engine_timeframe') or '1Min'
         try:
@@ -1112,10 +1280,10 @@ def _stonks_engine_cycle(scope_id):
                 if d.get('paused'): shadow_reasons.append('Motor pausado')
                 if d.get('mode')!='paper': shadow_reasons.append('Modo no Paper')
                 if not d.get('autonomous_engine'): shadow_reasons.append('Motor autónomo desactivado')
-                if not bool(clock.get('is_open')): shadow_reasons.append('Mercado cerrado')
+                if not bool(clock.get('is_open')) and not any(_stonks_is_crypto(x) for x in symbols): shadow_reasons.append('Mercado cerrado')
                 reason='; '.join(shadow_reasons)
             else:
-                reason = stonks_lifecycle.blocked({**d, 'position_lifecycle_enabled':True}, clock)
+                reason = stonks_lifecycle.blocked({**d, 'position_lifecycle_enabled':True}, {**clock, 'is_open': bool(clock.get('is_open') or any(_stonks_is_crypto(x) for x in symbols))})
             if reason:
                 _cycle_now = datetime.now(timezone.utc).isoformat()
                 d['engine_last_run'] = _cycle_now
@@ -1125,7 +1293,7 @@ def _stonks_engine_cycle(scope_id):
                     d['shadow_cycle_total'] = int(d.get('shadow_cycle_total') or 0) + 1
                     d['shadow_last_cycle'] = _cycle_now
                     d['shadow_last_reason'] = reason
-                    d['shadow_last_market_open'] = bool(clock.get('is_open'))
+                    d['shadow_last_market_open'] = bool(clock.get('is_open') or any(_stonks_is_crypto(x) for x in symbols))
                     d['shadow_last_signal_count'] = 0
                 d['market_stream_snapshot'] = _stream_status
                 _health=_stonks_zero_token_health(d, scope_id)
@@ -1143,6 +1311,11 @@ def _stonks_engine_cycle(scope_id):
             shadow_actionable_count = 0
             shadow_wait_count = 0
             for symbol in symbols[:8]:
+                symbol=_stonks_symbol_key(symbol)
+                symbol_open=bool(_stonks_is_crypto(symbol) or clock.get('is_open'))
+                if not symbol_open:
+                    actions.append(f"{symbol}: mercado equity cerrado · esperando apertura")
+                    continue
                 if symbol in open_symbols:
                     actions.append(f"{symbol}: ORDEN ABIERTA · esperando confirmación de Alpaca")
                     continue
@@ -1152,7 +1325,7 @@ def _stonks_engine_cycle(scope_id):
                         continue
                     # Technical features refresh only when a new completed-bar window can exist.
                     _signal_pair, signal_cache = stonks_dataplane.PLANE.signal(
-                        scope_id, symbol, strategy, timeframe, bool(clock.get('is_open')),
+                        scope_id, symbol, strategy, timeframe, symbol_open,
                         lambda sym=symbol: _stonks_current_signal(sym, strategy, timeframe, 'iex'))
                     signal = _signal_pair[0] if isinstance(_signal_pair, tuple) else _signal_pair
                     agent_trace.append(stonks_agents.AgentResult(
@@ -1277,7 +1450,7 @@ def _stonks_engine_cycle(scope_id):
             if shadow_observe:
                 d['shadow_cycle_total'] = int(d.get('shadow_cycle_total') or 0) + 1
                 d['shadow_last_cycle'] = _cycle_now
-                d['shadow_last_market_open'] = bool(clock.get('is_open'))
+                d['shadow_last_market_open'] = bool(clock.get('is_open') or any(_stonks_is_crypto(x) for x in symbols))
                 d['shadow_last_signal_count'] = int(shadow_actionable_count)
                 d['shadow_last_reason'] = f"Escaneo completado · {shadow_actionable_count} BUY/SELL · {shadow_wait_count} ESPERAR"
             d['market_stream_snapshot'] = _stream_status
@@ -1491,72 +1664,50 @@ def stonks_alpaca_test_api():
 
 @app.get('/api/stonks/alpaca/quote')
 def stonks_alpaca_quote_api():
-    symbol=(request.args.get('symbol') or 'AAPL').strip().upper()
-    if not symbol or len(symbol)>20 or not symbol.replace('.','').replace('-','').isalnum():
+    symbol=_stonks_symbol_key(request.args.get('symbol') or 'AAPL')
+    if not symbol or len(symbol)>24 or not symbol.replace('.','').replace('-','').replace('/','').isalnum():
         return jsonify({'ok':False,'error':'Símbolo no válido.'}),400
     try:
-        # The trading clock is deliberately queried from the Paper trading API.
-        # This lets the UI distinguish a closed market from an authentication or
-        # market-data problem instead of presenting every empty quote as an error.
-        clock=_stonks_market_clock_snapshot()
-        is_open=bool(clock.get('is_open'))
-
-        quote=None
-        trade=None
-        snapshot=None
-        quote_error=None
-        trade_error=None
-        snapshot_error=None
-
-        try:
-            q=_alpaca_market_request(f'/v2/stocks/{symbol}/quotes/latest')
-            quote=(q.get('quotes') or {}).get(symbol)
-        except Exception as exc:
-            quote_error=str(exc)
-
-        # Outside regular hours the latest quote can be empty depending on the
-        # entitled feed. Fall back to latest trade and then snapshot so ZAR can
-        # still show the most recent available market information.
-        if not quote:
+        if _stonks_is_crypto(symbol):
+            key=symbol.replace('/','')
+            encoded=urlquote(symbol, safe='')
+            clock=_stonks_crypto_clock()
+            trade=None; snapshot=None; trade_error=None; snapshot_error=None
             try:
-                t=_alpaca_market_request(f'/v2/stocks/{symbol}/trades/latest')
-                trade=(t.get('trades') or {}).get(symbol)
+                raw=_alpaca_market_request(f'/v1beta3/crypto/us/latest/trades?symbols={encoded}')
+                trade=(raw.get('trades') or {}).get(symbol) or (raw.get('trades') or {}).get(key)
             except Exception as exc:
                 trade_error=str(exc)
+            if not trade:
+                try:
+                    raw=_alpaca_market_request(f'/v1beta3/crypto/us/snapshots?symbols={encoded}')
+                    snapshot=(raw.get('snapshots') or {}).get(symbol) or (raw.get('snapshots') or {}).get(key)
+                except Exception as exc:
+                    snapshot_error=str(exc)
+            latest_trade=trade or (snapshot or {}).get('latestTrade')
+            latest_quote=(snapshot or {}).get('latestQuote')
+            daily_bar=(snapshot or {}).get('dailyBar')
+            return jsonify({'ok':True,'symbol':symbol,'asset_class':'crypto','market':clock,
+                'quote':latest_quote,'trade':latest_trade,'daily_bar':daily_bar,
+                'source':'trade' if trade else ('snapshot' if snapshot else None),
+                'diagnostics':{'trade_error':trade_error,'snapshot_error':snapshot_error}})
 
-        if not quote and not trade:
+        clock=_stonks_market_clock_snapshot(); is_open=bool(clock.get('is_open'))
+        quote=None; trade=None; snapshot=None; quote_error=None; trade_error=None; snapshot_error=None
+        try:
+            q=_alpaca_market_request(f'/v2/stocks/{symbol}/quotes/latest'); quote=(q.get('quotes') or {}).get(symbol)
+        except Exception as exc: quote_error=str(exc)
+        if not quote:
             try:
-                snapshot=_alpaca_market_request(f'/v2/stocks/{symbol}/snapshot')
-            except Exception as exc:
-                snapshot_error=str(exc)
-
-        latest_trade=trade or (snapshot or {}).get('latestTrade')
-        latest_quote=quote or (snapshot or {}).get('latestQuote')
-        daily_bar=(snapshot or {}).get('dailyBar')
-
-        return jsonify({
-            'ok':True,
-            'symbol':symbol,
-            'market':{
-                'is_open':is_open,
-                'timestamp':clock.get('timestamp'),
-                'next_open':clock.get('next_open'),
-                'next_close':clock.get('next_close'),
-            },
-            'quote':latest_quote,
-            'trade':latest_trade,
-            'daily_bar':daily_bar,
-            'source':'quote' if quote else ('trade' if trade else ('snapshot' if snapshot else None)),
-            'diagnostics':{
-                'quote_error':quote_error,
-                'trade_error':trade_error,
-                'snapshot_error':snapshot_error,
-            }
-        })
+                t=_alpaca_market_request(f'/v2/stocks/{symbol}/trades/latest'); trade=(t.get('trades') or {}).get(symbol)
+            except Exception as exc: trade_error=str(exc)
+        if not quote and not trade:
+            try: snapshot=_alpaca_market_request(f'/v2/stocks/{symbol}/snapshot')
+            except Exception as exc: snapshot_error=str(exc)
+        latest_trade=trade or (snapshot or {}).get('latestTrade'); latest_quote=quote or (snapshot or {}).get('latestQuote'); daily_bar=(snapshot or {}).get('dailyBar')
+        return jsonify({'ok':True,'symbol':symbol,'asset_class':'equity','market':{'is_open':is_open,'timestamp':clock.get('timestamp'),'next_open':clock.get('next_open'),'next_close':clock.get('next_close')},'quote':latest_quote,'trade':latest_trade,'daily_bar':daily_bar,'source':'quote' if quote else ('trade' if trade else ('snapshot' if snapshot else None)),'diagnostics':{'quote_error':quote_error,'trade_error':trade_error,'snapshot_error':snapshot_error}})
     except Exception as exc:
         return jsonify({'ok':False,'error':str(exc)}),502
-
-
 
 
 def _stonks_sma(values, period):
@@ -1613,7 +1764,7 @@ def _stonks_max_drawdown(equity_curve):
 
 
 def _stonks_current_signal(symbol, strategy='trend', timeframe='1Min', feed='iex'):
-    symbol=str(symbol or 'AAPL').strip().upper()
+    symbol=_stonks_symbol_key(symbol or 'AAPL')
     timeframe=str(timeframe or '1Min').strip()
     strategy=str(strategy or 'trend').strip().lower()
     feed=str(feed or 'iex').strip().lower()
@@ -1623,18 +1774,25 @@ def _stonks_current_signal(symbol, strategy='trend', timeframe='1Min', feed='iex
         strategy='trend'
     if feed not in ('iex','sip'):
         feed='iex'
-    clock=_alpaca_paper_request('/v2/clock')
+    crypto=_stonks_is_crypto(symbol)
+    clock=_stonks_crypto_clock() if crypto else _stonks_market_clock_snapshot()
     end=datetime.now(timezone.utc)
     from datetime import timedelta
-    start=end-timedelta(hours=8 if timeframe=='1Min' else 24)
+    # Crypto is 24/7; use a wider lookback so 55 completed bars are available even
+    # when equity RTH is closed.
+    start=end-timedelta(hours=12 if timeframe=='1Min' else 36)
     params={
         'symbols':symbol,'timeframe':timeframe,
         'start':start.strftime('%Y-%m-%dT%H:%M:%SZ'),
         'end':end.strftime('%Y-%m-%dT%H:%M:%SZ'),'limit':1000,
-        'feed':feed,'sort':'asc'
+        'sort':'asc'
     }
-    data=_alpaca_market_request('/v2/stocks/bars',params=params)
-    raw=(data.get('bars') or {}).get(symbol) if isinstance(data,dict) else []
+    if crypto:
+        data=_alpaca_market_request('/v1beta3/crypto/us/bars',params=params)
+    else:
+        params['feed']=feed
+        data=_alpaca_market_request('/v2/stocks/bars',params=params)
+    raw=((data.get('bars') or {}).get(symbol) or (data.get('bars') or {}).get(symbol.replace('/',''))) if isinstance(data,dict) else []
     raw=raw if isinstance(raw,list) else []
     bars=[]
     for b in raw:
@@ -1701,12 +1859,12 @@ def stonks_signals_api():
         raw_symbols=str(request.args.get('symbols') or 'AAPL')
         symbols=[]
         for raw in raw_symbols.split(','):
-            symbol=raw.strip().upper()
+            symbol=_stonks_symbol_key(raw)
             if symbol and symbol not in symbols: symbols.append(symbol)
         if not symbols: symbols=['AAPL']
         if len(symbols)>8: return jsonify({'ok':False,'error':'Máximo 8 símbolos por análisis.'}),400
         for symbol in symbols:
-            if len(symbol)>20 or not symbol.replace('.','').replace('-','').isalnum():
+            if len(symbol)>24 or not symbol.replace('.','').replace('-','').replace('/','').isalnum():
                 return jsonify({'ok':False,'error':f'Símbolo no válido: {symbol}.'}),400
         timeframe=request.args.get('timeframe','1Min')
         strategy=request.args.get('strategy','trend')
@@ -1733,7 +1891,7 @@ def stonks_test_cycle_api():
         if not bool(payload.get('confirm')):
             return jsonify({'ok':False,'error':'La prueba Paper requiere confirmación explícita.'}),400
         symbol=str(payload.get('symbol') or 'AAPL').strip().upper()
-        if not symbol or len(symbol)>20 or not symbol.replace('.','').replace('-','').isalnum():
+        if not symbol or len(symbol)>24 or not symbol.replace('.','').replace('-','').replace('/','').isalnum():
             return jsonify({'ok':False,'error':'Símbolo no válido.'}),400
         d=_stonks_read()
         if d.get('revoked'):
@@ -1820,13 +1978,13 @@ def stonks_decision_api(engine=False, lifecycle_test=False):
     Live trading is intentionally impossible in this endpoint."""
     try:
         payload=request.get_json(silent=True) or {}
-        symbol=str(payload.get('symbol') or '').strip().upper()
+        symbol=_stonks_symbol_key(payload.get('symbol') or '')
         strategy=str(payload.get('strategy') or 'trend').strip().lower()
         timeframe=str(payload.get('timeframe') or '1Min').strip()
         requested_signal=str(payload.get('signal') or '').strip().upper()
         execute=bool(payload.get('execute'))
         manual_confirmed=bool(payload.get('manual_confirmed'))
-        if not symbol or len(symbol)>20 or not symbol.replace('.','').replace('-','').isalnum():
+        if not symbol or len(symbol)>24 or not symbol.replace('.','').replace('-','').replace('/','').isalnum():
             return jsonify({'ok':False,'error':'Símbolo no válido.'}),400
         if requested_signal not in ('BUY','SELL'):
             return jsonify({'ok':True,'paper':True,'decision':'NO_ACTION','reason':'La señal actual no requiere una operación.','order_created':False})
@@ -1857,7 +2015,7 @@ def stonks_decision_api(engine=False, lifecycle_test=False):
         add_check('MODE','Modo distinto de Paper',d.get('mode')=='paper')
         if execute:
             add_check('SHADOW','Shadow no permite enviar órdenes',d.get('execution_mode')!='shadow')
-        add_check('MARKET','Mercado cerrado',bool(clock.get('is_open')))
+        add_check('MARKET','Mercado cerrado',bool(_stonks_is_crypto(symbol) or clock.get('is_open')))
         if lifecycle_test:
             add_check('LIFECYCLE', 'Gestión de posición desactivada', bool(d.get('position_lifecycle_enabled')))
             add_check('AUTO', 'Modo Paper automático requerido', d.get('execution_mode')=='paper_auto')
@@ -1876,7 +2034,7 @@ def stonks_decision_api(engine=False, lifecycle_test=False):
             add_check('EQUITY', 'Capital Paper no válido para una prueba', equity>0)
             add_check('CONNECTED', 'Alpaca Paper no está disponible para operar', account.get('status')=='ACTIVE' and not (account.get('trading_blocked') or account.get('account_blocked')))
             add_check('BUYING_POWER', 'Saldo Paper insuficiente para 1 USD', float(account.get('buying_power') or 0)>=1)
-            asset = _alpaca_paper_request('/v2/assets/'+symbol)
+            asset = _alpaca_paper_request(_stonks_asset_path(symbol))
             add_check('FRACTIONABLE', 'Activo no compatible con prueba mínima Paper', asset.get('status')=='active' and asset.get('tradable') is True and asset.get('fractionable') is True and asset.get('class')=='us_equity')
 
         daily_loss=max(0.0,last_equity-equity); max_daily=float(d.get('max_daily_loss_eur',10))
@@ -1885,7 +2043,8 @@ def stonks_decision_api(engine=False, lifecycle_test=False):
         positions=_alpaca_paper_request('/v2/positions')
         if not isinstance(positions,list):
             raise RuntimeError('Snapshot de posiciones Paper no válido')
-        current=next((p for p in positions if str(p.get('symbol','')).upper()==symbol),None)
+        positions=[_stonks_normalize_broker_row(x) for x in positions]
+        current=next((p for p in positions if _stonks_symbol_key(p.get('symbol'))==symbol),None)
         if engine:
             add_check('ENGINE_OWNER', 'Motor no autorizado', d.get('autonomous_engine') and _stonks_engine_owner_read()==_user_scope_id())
             add_check('FLAT_BASELINE', 'El motor solo abre símbolos sin posición previa', current is None)
@@ -1893,12 +2052,8 @@ def stonks_decision_api(engine=False, lifecycle_test=False):
                       not any(r['symbol']==symbol for r in stonks_lifecycle.active_records(d)))
 
 
-        # The single-symbol latest-trade endpoint returns {symbol, trade}; the plural endpoint returns {trades:{SYMBOL:...}}.
-        # v31.3.7 accepts both forms so a valid live price cannot be misclassified as unavailable.
-        latest=_alpaca_market_request(f'/v2/stocks/{symbol}/trades/latest', params={'feed':'iex'})
-        last=(latest.get('trade') or {}) if isinstance(latest,dict) else {}
-        if not last and isinstance(latest,dict):
-            last=(latest.get('trades') or {}).get(symbol) or {}
+        # Stocks and crypto use separate Alpaca market-data endpoints.
+        last, _price_clock = _stonks_latest_price(symbol)
         price=float(stonks_lifecycle.number(last.get('p') or 0))
         try:
             age=(datetime.now(timezone.utc)-datetime.fromisoformat(str(last.get('t')).replace('Z','+00:00'))).total_seconds()
@@ -1940,7 +2095,8 @@ def stonks_decision_api(engine=False, lifecycle_test=False):
             open_orders=_alpaca_paper_request('/v2/orders', params={'status':'open','limit':500,'nested':'false'})
             if not isinstance(open_orders,list) or len(open_orders)>=500:
                 raise RuntimeError('Snapshot de órdenes Paper incompleto')
-            same_symbol=[o for o in open_orders if str(o.get('symbol') or '').upper()==symbol]
+            open_orders=[_stonks_normalize_broker_row(x) for x in open_orders]
+            same_symbol=[o for o in open_orders if _stonks_symbol_key(o.get('symbol'))==symbol]
         except Exception as exc:
             same_symbol=[]
             add_check('OPEN_ORDER','No se pudo comprobar órdenes abiertas',False,str(exc))
@@ -1965,7 +2121,7 @@ def stonks_decision_api(engine=False, lifecycle_test=False):
                 preflight = _stonks_lifecycle_preflight(symbol)
                 if preflight['status']!='READY':
                     return jsonify({'ok':False,'order_created':False,'primary_reason':'Pre-flight Paper no READY','preflight':preflight}),409
-            body={'symbol':symbol,'qty':str(qty),'side':'buy' if requested_signal=='BUY' else 'sell','type':'market','time_in_force':'day'}
+            body={'symbol':symbol,'qty':str(qty),'side':'buy' if requested_signal=='BUY' else 'sell','type':'market','time_in_force':'gtc' if _stonks_is_crypto(symbol) else 'day'}
             if engine:
                 intent = stonks_lifecycle.entry_intent(d, symbol, body['side'], qty, strategy, timeframe)
                 if not lifecycle_test:
@@ -2151,7 +2307,7 @@ def stonks_orphan_test_close_api():
     key,secret=_alpaca_paper_credentials()
     import requests as _requests
     cid=('zar-orphan-test-close-'+uuid.uuid4().hex[:18])[:48]
-    body={'symbol':str(snap['symbol']).upper(),'qty':str(snap['qty']),'side':'sell','type':'market','time_in_force':'day','client_order_id':cid}
+    body={'symbol':_stonks_symbol_key(snap['symbol']),'qty':str(snap['qty']),'side':'sell','type':'market','time_in_force':'gtc' if _stonks_is_crypto(snap['symbol']) else 'day','client_order_id':cid}
     r=_requests.post('https://paper-api.alpaca.markets/v2/orders',headers={'APCA-API-KEY-ID':key,'APCA-API-SECRET-KEY':secret},json=body,timeout=12)
     try: data=r.json()
     except Exception: data={}
@@ -2202,7 +2358,7 @@ def stonks_close_single_paper_position_api():
     key,secret=_alpaca_paper_credentials()
     import requests as _requests
     cid=('zar-paper-recovery-close-'+uuid.uuid4().hex[:16])[:48]
-    body={'symbol':symbol,'qty':qty,'side':'sell','type':'market','time_in_force':'day','client_order_id':cid}
+    body={'symbol':symbol,'qty':qty,'side':'sell','type':'market','time_in_force':'gtc' if _stonks_is_crypto(symbol) else 'day','client_order_id':cid}
     r=_requests.post('https://paper-api.alpaca.markets/v2/orders',headers={'APCA-API-KEY-ID':key,'APCA-API-SECRET-KEY':secret},json=body,timeout=12)
     try: data=r.json()
     except Exception: data={}
@@ -2239,7 +2395,7 @@ def stonks_backtest_api():
         try: slippage_pct=float(payload.get('slippage_pct') or 0.05)
         except Exception: slippage_pct=0.05
         feed=str(payload.get('feed') or 'iex').strip().lower()
-        if not symbol or len(symbol)>20 or not symbol.replace('.','').replace('-','').isalnum():
+        if not symbol or len(symbol)>24 or not symbol.replace('.','').replace('-','').replace('/','').isalnum():
             return jsonify({'ok':False,'error':'Símbolo no válido.'}),400
         if strategy not in ('trend','mean_reversion'):
             return jsonify({'ok':False,'error':'Estrategia no válida.'}),400
@@ -2377,18 +2533,18 @@ def stonks_alpaca_portfolio_api():
 def stonks_alpaca_positions_api():
     try:
         data=_alpaca_paper_request('/v2/positions')
-        return jsonify({'ok':True,'paper':True,'positions':data if isinstance(data,list) else []})
+        return jsonify({'ok':True,'paper':True,'positions':[_stonks_normalize_broker_row(x) for x in data] if isinstance(data,list) else []})
     except Exception as exc:
         return jsonify({'ok':False,'error':str(exc)}),502
 
-@app.get('/api/stonks/alpaca/position/<symbol>')
+@app.get('/api/stonks/alpaca/position/<path:symbol>')
 def stonks_alpaca_position_get_api(symbol):
-    symbol=str(symbol or '').strip().upper()
-    if not symbol or len(symbol)>20 or not symbol.replace('.','').replace('-','').isalnum():
+    symbol=_stonks_symbol_key(symbol)
+    if not symbol or len(symbol)>24 or not symbol.replace('.','').replace('-','').replace('/','').isalnum():
         return jsonify({'ok':False,'error':'Símbolo no válido.'}),400
     try:
-        data=_alpaca_paper_request('/v2/positions/'+symbol)
-        return jsonify({'ok':True,'paper':True,'position':data})
+        data=_alpaca_paper_request('/v2/positions/'+urlquote(symbol, safe=''))
+        return jsonify({'ok':True,'paper':True,'position':_stonks_normalize_broker_row(data)})
     except Exception as exc:
         return jsonify({'ok':False,'error':str(exc)}),502
 
@@ -2407,7 +2563,7 @@ def stonks_alpaca_order_api():
         if d.get('execution_mode') == 'shadow':
             return jsonify({'ok':False,'error':'Shadow no permite enviar órdenes Paper.'}),409
         payload=request.get_json(silent=True) or {}
-        symbol=(str(payload.get('symbol') or 'AAPL').strip().upper())
+        symbol=_stonks_symbol_key(payload.get('symbol') or 'AAPL')
         side=str(payload.get('side') or 'buy').strip().lower()
         order_type=str(payload.get('type') or 'limit').strip().lower()
         tif=str(payload.get('time_in_force') or 'day').strip().lower()
@@ -2415,21 +2571,21 @@ def stonks_alpaca_order_api():
         except Exception: qty=0
         try: limit_price=float(payload.get('limit_price')) if payload.get('limit_price') not in (None,'') else None
         except Exception: limit_price=None
-        if not symbol or len(symbol)>20 or not symbol.replace('.','').replace('-','').isalnum():
+        if not symbol or len(symbol)>24 or not symbol.replace('.','').replace('-','').replace('/','').isalnum():
             return jsonify({'ok':False,'error':'Símbolo no válido.'}),400
         if side not in ('buy','sell'):
             return jsonify({'ok':False,'error':'El lado debe ser buy o sell.'}),400
         if order_type not in ('market','limit'):
             return jsonify({'ok':False,'error':'Solo se permiten órdenes market o limit en este primer bloque.'}),400
-        if tif not in ('day','gtc'):
-            return jsonify({'ok':False,'error':'Time in force no válido. Usa day o gtc.'}),400
+        if tif not in ('day','gtc','ioc'):
+            return jsonify({'ok':False,'error':'Time in force no válido. Usa day, gtc o ioc.'}),400
         import math
         if not math.isfinite(qty) or qty <= 0 or qty > 10000:
             return jsonify({'ok':False,'error':'Cantidad no válida.'}),400
         if order_type == 'limit' and (limit_price is None or not math.isfinite(limit_price) or limit_price <= 0):
             return jsonify({'ok':False,'error':'Una orden limit necesita un precio límite positivo.'}),400
-        if order_type == 'market' and tif != 'day':
-            return jsonify({'ok':False,'error':'Las órdenes market de este panel usan time in force day.'}),400
+        if order_type == 'market' and ((_stonks_is_crypto(symbol) and tif not in ('gtc','ioc')) or (not _stonks_is_crypto(symbol) and tif != 'day')):
+            return jsonify({'ok':False,'error':'Time in force incompatible con el tipo de activo.'}),400
 
         # Conservative server-side cap. The existing control is denominated in EUR;
         # we use the same numeric ceiling in USD so we never exceed it because of FX assumptions.
@@ -2443,8 +2599,7 @@ def stonks_alpaca_order_api():
             return jsonify({'ok':False,'error':f'La orden supera el límite de seguridad configurado ({max_trade:.2f}).'}),409
         if order_type == 'market':
             try:
-                t=_alpaca_market_request(f'/v2/stocks/{symbol}/trades/latest')
-                last=t.get('trade') or (t.get('trades') or {}).get(symbol) or {}
+                last, _manual_clock = _stonks_latest_price(symbol)
                 px=float(stonks_lifecycle.number(last.get('p') or 0))
                 if not px:
                     return jsonify({'ok':False,'error':'No hay un último precio disponible para verificar el límite de seguridad. Usa una orden limit.'}),409
@@ -2468,7 +2623,8 @@ def stonks_alpaca_order_api():
                 return jsonify({'ok':False,'error':f'El límite de pérdida diaria está alcanzado: {daily_loss:.2f} USD frente a un máximo configurado de {max_daily:.2f}.'}),409
             positions=_alpaca_paper_request('/v2/positions')
             if not isinstance(positions,list): positions=[]
-            current=next((p for p in positions if str(p.get('symbol','')).upper()==symbol),None)
+            positions=[_stonks_normalize_broker_row(x) for x in positions]
+            current=next((p for p in positions if _stonks_symbol_key(p.get('symbol'))==symbol),None)
             if side=='sell':
                 current_qty=float((current or {}).get('qty') or 0)
                 if current_qty <= 0:
@@ -2623,12 +2779,12 @@ def stonks_engine_api():
                 _stonks_audit_append('OWNER PAPER',{'decision':'LIBERADO','previous_owner':owner,'new_owner':me,'broker_positions':0,'broker_open_orders':0})
         symbols=[]
         for raw in str(payload.get('symbols') or ','.join(d.get('engine_symbols') or ['AAPL'])).split(','):
-            sym=raw.strip().upper()
+            sym=_stonks_symbol_key(raw)
             if sym and sym not in symbols: symbols.append(sym)
         if not symbols: symbols=['AAPL']
         if len(symbols)>8: return jsonify({'ok':False,'error':'Máximo 8 símbolos para el motor autónomo.'}),400
         for sym in symbols:
-            if len(sym)>20 or not sym.replace('.','').replace('-','').isalnum():
+            if len(sym)>24 or not sym.replace('.','').replace('-','').replace('/','').isalnum():
                 return jsonify({'ok':False,'error':f'Símbolo no válido: {sym}.'}),400
         strategy=str(payload.get('strategy') or d.get('engine_strategy') or 'trend').strip().lower()
         timeframe=str(payload.get('timeframe') or d.get('engine_timeframe') or '1Min').strip()
@@ -2645,6 +2801,7 @@ def stonks_engine_api():
             return jsonify({'ok':False,'error':'Shadow requiere no tener posiciones/intenciones ZAR activas.'}),409
         d['execution_mode']=requested_mode
         d['autonomous_engine']=True
+        d['engine_auto_universe']=bool(payload.get('auto_universe', d.get('engine_auto_universe', True)))
         d['engine_symbols']=symbols
         d['engine_strategy']=strategy
         d['engine_timeframe']=timeframe
@@ -3198,6 +3355,30 @@ def test():
     except Exception as exc:
         return jsonify({"ok":False,"reply":str(exc)})
 
+def _set_pending_workspace_action(pending):
+    """Persist a Workspace action in both durable user context and browser session.
+
+    The session copy survives user-scope migrations/rebinding during Google flows,
+    while the context copy remains the canonical persistent state.
+    """
+    set_pending_workspace(pending)
+    try:
+        session['zar_pending_workspace']=pending
+        session.modified=True
+    except Exception:
+        pass
+    return pending
+
+
+def _clear_pending_workspace_action():
+    clear_pending_workspace()
+    try:
+        session.pop('zar_pending_workspace', None)
+        session.modified=True
+    except Exception:
+        pass
+
+
 def _execute_workspace_action(pending):
     service = pending.get("service")
     action = pending.get("action")
@@ -3213,6 +3394,7 @@ def _execute_workspace_action(pending):
     if service == "Google Sheets":
         if action == "crear hoja de cálculo": return gw.sheets_create(args["title"])
         if action == "crear libro profesional": return gw.sheets_build_workbook(args["title"], args.get("sheets") or [])
+        if action == "reorganizar libro profesional": return gw.sheets_upgrade_workbook(args["spreadsheet_id"], args.get("tabs") or [], args.get("charts") or [])
         if action == "añadir tabla profesional": return gw.sheets_add_professional_table(args["spreadsheet_id"], args["sheet_title"], args["table_title"], args.get("headers") or [], args.get("rows") or [], args.get("start_cell") or "A1", args.get("subtitle") or "", args.get("summary") or [])
         return gw.sheets_write(args["spreadsheet_id"], args["range_a1"], args["values"])
     if service == "Google Slides":
@@ -3255,12 +3437,12 @@ def _process_chat_message(msg):
         clear_task_state()
         reply = "🟢 No he modificado el contacto."
         _remember_turn("user", msg); _remember_turn("assistant", reply); return reply
-    pending_workspace = ctx.get("pending_workspace")
+    pending_workspace = ctx.get("pending_workspace") or session.get("zar_pending_workspace")
 
     if pending_workspace and _looks_like_send(msg):
         try:
             result = _execute_workspace_action(pending_workspace)
-            clear_pending_workspace()
+            _clear_pending_workspace_action()
             try:
                 from .context import set_last_workspace
             except ImportError:
@@ -3277,11 +3459,18 @@ def _process_chat_message(msg):
         return reply
 
     if pending_workspace and _looks_like_cancel(msg):
-        clear_pending_workspace()
+        _clear_pending_workspace_action()
         reply = "✅ He cancelado la acción pendiente de Google Workspace."
         _remember_turn("user",msg); _remember_turn("assistant",reply)
         return reply
 
+
+    if _looks_like_send(msg):
+        task=(ctx.get("task") or {})
+        if task.get("status")=="awaiting_confirmation" and task.get("intent")=="google workspace" and not pending_workspace:
+            reply=("La confirmación de Workspace existe, pero el payload de la acción no está disponible. "
+                   "No voy a fingir que la ejecuté. Repite la orden de modificación y la dejaré preparada de nuevo con confirmación durable.")
+            _remember_turn("user",msg); _remember_turn("assistant",reply); return reply
 
     # Contexto natural: permite usar «guárdala», «hazlo más formal», «contéstale que…»
     # y preguntas cortas sobre el correo actual sin repetir el objeto de la conversación.
@@ -3457,7 +3646,7 @@ def _process_chat_message(msg):
             elif isinstance(reply, str) and reply.startswith("WORKSPACE_ACTION::"):
                 data = json.loads(reply.split("::", 1)[1])
                 pending = {"service": data.get("service", "Google Workspace"), "action": data.get("action", "realizar una acción"), "args": data.get("args") or {}}
-                set_pending_workspace(pending)
+                _set_pending_workspace_action(pending)
                 set_task_state("google workspace", (pending.get("service") or "workspace").lower(), "", pending.get("action", ""), "high", "awaiting_confirmation", f"Preparado para {pending.get('action','acción')} en {pending.get('service','Google Workspace')}")
                 reply = f"⚠️ La habilidad «{used_skill.get('name')}» ha preparado la acción: {pending.get('action','acción')} en {pending.get('service','Google Workspace')}.\n\n¿Confirmas? Responde «sí» o «cancelar»."
             elif isinstance(reply, str) and reply.startswith("CONTACT_ACTION::"):
@@ -3509,7 +3698,7 @@ def _process_chat_message(msg):
                         "action": data.get("action", "realizar una acción"),
                         "args": data.get("args") or {},
                     }
-                    set_pending_workspace(pending)
+                    _set_pending_workspace_action(pending)
                     set_task_state(
                         "google workspace",
                         (pending.get("service") or "workspace").lower(),
@@ -3615,6 +3804,7 @@ def _process_chat_message(msg):
                     "sheets_write": ("Google Sheets", "escribir datos"),
                     "sheets_add_professional_table": ("Google Sheets", "añadir tabla profesional"),
                     "sheets_build_workbook": ("Google Sheets", "crear libro profesional"),
+                    "sheets_upgrade_workbook": ("Google Sheets", "reorganizar libro profesional"),
                     "slides_create": ("Google Slides", "crear presentación"),
                     "slides_build_deck": ("Google Slides", "crear presentación profesional"),
                     "docs_build_report": ("Google Docs", "crear informe profesional"),
@@ -3625,7 +3815,7 @@ def _process_chat_message(msg):
                     args = dict(data)
                     args.pop("type", None)
                     pending = {"service": service, "action": action, "args": args}
-                    set_pending_workspace(pending)
+                    _set_pending_workspace_action(pending)
                     set_task_state("google workspace", service.lower(), "", action, "high", "awaiting_confirmation", f"Preparado para {action} en {service}")
                     reply = f"⚠️ Voy a {action} en {service}.\n\n¿Confirmas? Responde «sí» para continuar o «cancelar» para detenerlo."
         if isinstance(reply, str) and reply.startswith("CONTACT_EMAIL_MISSING::"):
@@ -3665,7 +3855,7 @@ def _process_chat_message(msg):
             try:
                 data = json.loads(reply.split("::", 1)[1])
                 pending = {k: data.get(k) for k in ("service", "action", "args")}
-                set_pending_workspace(pending)
+                _set_pending_workspace_action(pending)
                 set_task_state("google workspace", (data.get("service") or "workspace").lower(), "", data.get("action", ""), "high", "awaiting_confirmation", f"Preparado para {data.get('action','acción')} en {data.get('service','Google Workspace')}")
                 reply = f"⚠️ Voy a {data.get('action','realizar esta acción')} en {data.get('service','Google Workspace')}.\n\n¿Confirmas? Responde «sí» para continuar o «cancelar» para detenerlo."
             except Exception as exc:
@@ -4920,7 +5110,7 @@ def api_skill_execute(skill_id):
         elif isinstance(result, str) and result.startswith("WORKSPACE_ACTION::"):
             action = json.loads(result.split("::", 1)[1])
             pending = {"service": action.get("service", "Google Workspace"), "action": action.get("action", "acción"), "args": action.get("args") or {}}
-            set_pending_workspace(pending)
+            _set_pending_workspace_action(pending)
             set_task_state("google workspace", (pending.get("service") or "workspace").lower(), "", pending.get("action", ""), "high", "awaiting_confirmation", f"Preparado para {pending.get('action','acción')}")
             result = f"He preparado {pending.get('action','acción')} en {pending.get('service','Google Workspace')}. Confírmalo desde el chat."
         _remember_turn("user", message)
