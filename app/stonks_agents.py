@@ -190,13 +190,14 @@ class StonksSupervisor:
     def describe(self):
         return {
             "architecture": "deterministic_multi_agent",
-            "phase": 7,
+            "phase": 8,
             "token_cost_router": 0,
             "paper_only": True,
             "execution_authority": "Decision + Risk server route",
             "agents": [
                 {"id":"supervisor","role":"Coordina el ciclo y consolida trazas"},
                 {"id":"market_data","role":"Reconcilia Paper y reloj de mercado"},
+                {"id":"market_stream","role":"Mantiene precios en streaming de acciones/ETF, crypto y opciones configuradas; 0 tokens"},
                 {"id":"analysis","role":"Combina señal, momentum, volatilidad y régimen"},
                 {"id":"news_sentiment","role":"Busca noticias y RRSS públicas; aporta sentimiento sin autoridad de orden"},
                 {"id":"data_plane","role":"Mantiene caché de mercado, noticias y features; sirve ciclos con 0 tokens"},

@@ -13,7 +13,7 @@ import html as html_lib
 import uuid
 from functools import wraps
 from contextlib import contextmanager
-from . import stonks_lifecycle, stonks_preflight, stonks_agents, stonks_news, stonks_dataplane, stonks_selftest, subagent_orchestrator, stonks_backtest, stonks_validation, stonks_shadow
+from . import stonks_lifecycle, stonks_preflight, stonks_agents, stonks_news, stonks_dataplane, stonks_selftest, stonks_stream, subagent_orchestrator, stonks_backtest, stonks_validation, stonks_shadow
 from datetime import datetime, timezone
 from .user_scope import set_current_user, get_current_user, anonymous_id, user_id_for_email
 from pathlib import Path
@@ -646,7 +646,10 @@ def _stonks_default():
         'shadow_last_signal_count': 0,
         'shadow_outcome_summary': {},
         'shadow_outcome_last_update': None,
-        'data_plane_telemetry': {}
+        'data_plane_telemetry': {},
+        'stream_watchlist_equities': ['AAPL','MSFT','SPY','QQQ'],
+        'stream_watchlist_crypto': ['BTC/USD','ETH/USD'],
+        'stream_watchlist_options': []
     }
 def _stonks_read():
     p = _stonks_file()
@@ -881,6 +884,26 @@ def _stonks_refresh_shadow_outcomes(d, force=False):
     d['shadow_outcome_last_update']=now.isoformat()
     return d, {'agent':'shadow_outcome','status':'ok','detail':f"{summary.get('complete',0)} completos · {summary.get('pending',0)} pendientes · 0 órdenes",'data':summary,'timestamp':now.isoformat()}
 
+def _stonks_stream_plan(d):
+    """Build a small real-time watch plan without model calls."""
+    equities=[]
+    for raw in list(d.get('engine_symbols') or []) + list(d.get('stream_watchlist_equities') or []):
+        s=str(raw or '').strip().upper()
+        if s and '/' not in s and s not in equities:
+            equities.append(s)
+    crypto=[]
+    for raw in d.get('stream_watchlist_crypto') or []:
+        s=str(raw or '').strip().upper().replace('-', '/')
+        if s and s not in crypto:
+            crypto.append(s)
+    options=[]
+    for raw in d.get('stream_watchlist_options') or []:
+        s=str(raw or '').strip().upper()
+        if s and s not in options:
+            options.append(s)
+    stonks_stream.MANAGER.configure(equities=equities, crypto=crypto, options=options)
+    return stonks_stream.MANAGER.status(limit=30)
+
 def _stonks_zero_token_health(d, scope_id):
     stonks_dataplane.PLANE.sync_state(d, scope_id)
     health=stonks_selftest.run(d, stonks_agents.describe(), d.get('data_plane_telemetry') or {})
@@ -897,6 +920,7 @@ def _stonks_engine_cycle(scope_id):
         d=_stonks_read()
         stonks_dataplane.PLANE.hydrate(scope_id, d.get('data_plane_telemetry'))
         stonks_dataplane.PLANE.begin_cycle(scope_id)
+        _stream_status=_stonks_stream_plan(d)
         symbols=d.get('engine_symbols') or ['AAPL']
         strategy=d.get('engine_strategy') or 'trend'
         timeframe=d.get('engine_timeframe') or '1Min'
@@ -1076,6 +1100,8 @@ def _stonks_engine_cycle(scope_id):
                 d['shadow_last_reason'] = f"Escaneo completado · {shadow_actionable_count} BUY/SELL · {shadow_wait_count} ESPERAR"
             _health=_stonks_zero_token_health(d, scope_id)
             d['agent_last_trace'].append({'agent':'data_plane','status':'ok','detail':'Ciclo 0 tokens · datos en caché + event router','data':d.get('data_plane_telemetry') or {},'timestamp':_cycle_now})
+            _feeds=_stream_status.get('feeds') or {}; _connected=sum(1 for x in _feeds.values() if x.get('connected')); _subs=sum(int(x.get('subscriptions') or 0) for x in _feeds.values())
+            d['agent_last_trace'].append({'agent':'market_stream','status':'ok' if _connected else 'idle','detail':f'Stream market data · {_connected} feed(s) conectado(s) · {_subs} suscripciones · 0 tokens','data':_stream_status,'timestamp':_cycle_now})
             d['agent_last_trace'].append({'agent':'self_test','status':'ok' if _health.get('ok') else 'blocked','detail':f"Self-Test {_health.get('passed')}/{_health.get('total')} · 0 tokens",'data':_health,'timestamp':_cycle_now})
             d['agent_last_trace']=d['agent_last_trace'][-30:]
             _stonks_write(d)
@@ -1138,8 +1164,9 @@ def stonks_status_api():
     pk,ps=_alpaca_paper_credentials()
     stonks_dataplane.PLANE.hydrate(_user_scope_id(), d.get('data_plane_telemetry'))
     data_plane=stonks_dataplane.PLANE.status(_user_scope_id(), d.get('data_plane_telemetry'))
+    market_stream=_stonks_stream_plan(d)
     self_test=stonks_selftest.run(d, stonks_agents.describe(), data_plane)
-    return jsonify({'ok':True, **d, 'data_plane':data_plane, 'self_test':self_test, 'lifecycle_test':stonks_lifecycle.test_view(d), 'engine_owner':_stonks_engine_owner_read(), 'engine_owned_by_current_user':_stonks_engine_owner_read()==_user_scope_id(), 'audit_count':len(_stonks_audit_read(200)), 'paper_configured': bool(pk and ps), 'crypto_configured': bool(os.environ.get('KRAKEN_API_KEY') and os.environ.get('KRAKEN_API_SECRET')), 'engine_position_count':len(d.get('engine_last_positions') or []), 'engine_open_order_count':len(d.get('engine_last_open_orders') or []), 'position_lifecycle_enabled':bool(d.get('position_lifecycle_enabled')), 'stop_loss_pct':d.get('stop_loss_pct',1.0), 'take_profit_pct':d.get('take_profit_pct',2.0), 'managed_position_count':sum(r.get('status')!='CERRADA' for r in (d.get('managed_positions') or {}).values()), 'lifecycle_last_action':d.get('lifecycle_last_action'), 'agents':stonks_agents.describe()})
+    return jsonify({'ok':True, **d, 'data_plane':data_plane, 'market_stream':market_stream, 'self_test':self_test, 'lifecycle_test':stonks_lifecycle.test_view(d), 'engine_owner':_stonks_engine_owner_read(), 'engine_owned_by_current_user':_stonks_engine_owner_read()==_user_scope_id(), 'audit_count':len(_stonks_audit_read(200)), 'paper_configured': bool(pk and ps), 'crypto_configured': bool(os.environ.get('KRAKEN_API_KEY') and os.environ.get('KRAKEN_API_SECRET')), 'engine_position_count':len(d.get('engine_last_positions') or []), 'engine_open_order_count':len(d.get('engine_last_open_orders') or []), 'position_lifecycle_enabled':bool(d.get('position_lifecycle_enabled')), 'stop_loss_pct':d.get('stop_loss_pct',1.0), 'take_profit_pct':d.get('take_profit_pct',2.0), 'managed_position_count':sum(r.get('status')!='CERRADA' for r in (d.get('managed_positions') or {}).values()), 'lifecycle_last_action':d.get('lifecycle_last_action'), 'agents':stonks_agents.describe()})
 
 @app.get('/api/stonks/agents')
 def stonks_agents_api():
@@ -1150,6 +1177,41 @@ def stonks_agents_api():
 def stonks_dataplane_api():
     d=_stonks_read()
     return jsonify({'ok':True,'paper':True,'zero_token':True,'data_plane':stonks_dataplane.PLANE.status(_user_scope_id(), d.get('data_plane_telemetry'))})
+
+@app.get('/api/stonks/stream')
+def stonks_stream_api():
+    d=_stonks_read()
+    return jsonify({'ok':True,'zero_token':True,'stream':_stonks_stream_plan(d)})
+
+@app.post('/api/stonks/stream/watchlist')
+@_stonks_serialized
+def stonks_stream_watchlist_api():
+    payload=request.get_json(silent=True) or {}; d=_stonks_read()
+    def parse(raw, kind):
+        rows=[]
+        values=raw if isinstance(raw,list) else str(raw or '').split(',')
+        for item in values:
+            s=str(item or '').strip().upper()
+            if kind=='crypto': s=s.replace('-', '/')
+            if s and s not in rows: rows.append(s)
+        return rows
+    eq=parse(payload.get('equities', d.get('stream_watchlist_equities')), 'equities')[:30]
+    cr=parse(payload.get('crypto', d.get('stream_watchlist_crypto')), 'crypto')[:20]
+    op=parse(payload.get('options', d.get('stream_watchlist_options')), 'options')[:20]
+    for s in eq:
+        if '/' in s or len(s)>24 or not s.replace('.','').replace('-','').isalnum():
+            return jsonify({'ok':False,'error':f'Símbolo equity/ETF no válido: {s}'}),400
+    for s in cr:
+        if '/' not in s or len(s)>24:
+            return jsonify({'ok':False,'error':f'Par crypto no válido: {s}'}),400
+    for s in op:
+        if len(s)>32 or not s.isalnum():
+            return jsonify({'ok':False,'error':f'Contrato de opción no válido: {s}'}),400
+    d['stream_watchlist_equities']=eq; d['stream_watchlist_crypto']=cr; d['stream_watchlist_options']=op
+    _stonks_write(d)
+    stream=_stonks_stream_plan(d)
+    _stonks_audit_append('MARKET STREAM',{'equities':eq,'crypto':cr,'options':op,'orders_created':0,'token_cost':0})
+    return jsonify({'ok':True,'stream':stream,'watchlist':stream.get('watchlist'),'orders_created':0,'token_cost':0})
 
 @app.get('/api/stonks/selftest')
 def stonks_selftest_api():

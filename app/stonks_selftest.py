@@ -21,7 +21,7 @@ def run(state, agents_meta, data_plane):
     check('paper_only', state.get('mode') == 'paper', 'Modo operativo permanece Paper')
     check('router_zero_tokens', int(agents_meta.get('token_cost_router') or 0) == 0, 'Router determinista a 0 tokens')
     check('agent_ids_unique', len(ids) == len(set(ids)), 'IDs de subagentes sin duplicados')
-    required = {'supervisor','market_data','analysis','news_sentiment','data_plane','event_router','ai_gate','self_test','risk','shadow_validation','shadow_outcome','paper_execution','position_manager'}
+    required = {'supervisor','market_data','market_stream','analysis','news_sentiment','data_plane','event_router','ai_gate','self_test','risk','shadow_validation','shadow_outcome','paper_execution','position_manager'}
     check('agents_complete', required.issubset(set(ids)), 'Especialistas críticos registrados')
     check('data_plane_zero_token', data_plane.get('architecture') == 'zero_token_data_plane', 'Data Plane determinista activo')
     check('ai_gate_closed', data_plane.get('ai_gate_enabled') is False, 'AI Gate cerrado por defecto')
