@@ -13,7 +13,7 @@ import html as html_lib
 import uuid
 from functools import wraps
 from contextlib import contextmanager
-from . import stonks_lifecycle, stonks_preflight, stonks_agents, stonks_news, subagent_orchestrator, stonks_backtest, stonks_validation
+from . import stonks_lifecycle, stonks_preflight, stonks_agents, stonks_news, subagent_orchestrator, stonks_backtest, stonks_validation, stonks_shadow
 from datetime import datetime, timezone
 from .user_scope import set_current_user, get_current_user, anonymous_id, user_id_for_email
 from pathlib import Path
@@ -643,7 +643,9 @@ def _stonks_default():
         'shadow_last_cycle': None,
         'shadow_last_reason': None,
         'shadow_last_market_open': None,
-        'shadow_last_signal_count': 0
+        'shadow_last_signal_count': 0,
+        'shadow_outcome_summary': {},
+        'shadow_outcome_last_update': None
     }
 def _stonks_read():
     p = _stonks_file()
@@ -825,6 +827,59 @@ def _alpaca_market_request(path, method='GET', params=None):
         raise RuntimeError(f'Alpaca Market Data {r.status_code}: {msg or "respuesta no válida"}')
     return data
 
+
+def _stonks_refresh_shadow_outcomes(d, force=False):
+    """Refresh Shadow outcomes from completed 1-minute IEX bars.
+
+    This is observational only. It never calls an order endpoint and is rate-limited
+    to roughly once per minute even though the main engine runs every ~5 seconds.
+    """
+    rows=list(d.get('shadow_log') or [])
+    if not rows:
+        d['shadow_outcome_summary']=stonks_shadow.summarize([])
+        return d, {'agent':'shadow_outcome','status':'idle','detail':'Sin señales Shadow que evaluar','data':{'signals':0,'orders_created':0},'timestamp':datetime.now(timezone.utc).isoformat()}
+    now=datetime.now(timezone.utc)
+    try:
+        last=d.get('shadow_outcome_last_update')
+        if last and not force:
+            dt=datetime.fromisoformat(str(last).replace('Z','+00:00'))
+            if dt.tzinfo is None: dt=dt.replace(tzinfo=timezone.utc)
+            if (now-dt.astimezone(timezone.utc)).total_seconds() < 50:
+                summary=stonks_shadow.summarize(rows)
+                d['shadow_outcome_summary']=summary
+                return d, {'agent':'shadow_outcome','status':'idle','detail':'Outcome cache vigente; sin llamadas extra','data':summary,'timestamp':now.isoformat()}
+    except Exception:
+        pass
+    pending=[x for x in rows if x.get('outcome_status')!='complete' and x.get('timestamp') and x.get('symbol') and float(x.get('price') or 0)>0]
+    if not pending:
+        summary=stonks_shadow.summarize(rows)
+        d['shadow_outcome_summary']=summary
+        d['shadow_outcome_last_update']=now.isoformat()
+        return d, {'agent':'shadow_outcome','status':'ok','detail':f"{summary.get('complete',0)} outcome(s) completos · 0 órdenes",'data':summary,'timestamp':now.isoformat()}
+    symbols=[]
+    for x in pending:
+        s=str(x.get('symbol') or '').upper()
+        if s and s not in symbols: symbols.append(s)
+    starts=[]
+    for x in pending:
+        try: starts.append(datetime.fromisoformat(str(x['timestamp']).replace('Z','+00:00')).astimezone(timezone.utc))
+        except Exception: pass
+    if not starts:
+        return d, {'agent':'shadow_outcome','status':'idle','detail':'Timestamps Shadow no válidos','data':{'orders_created':0},'timestamp':now.isoformat()}
+    from datetime import timedelta
+    start=min(starts)-timedelta(minutes=2)
+    payload=_alpaca_market_request('/v2/stocks/bars',params={
+        'symbols':','.join(symbols),'timeframe':'1Min','start':start.strftime('%Y-%m-%dT%H:%M:%SZ'),
+        'end':now.strftime('%Y-%m-%dT%H:%M:%SZ'),'limit':10000,'feed':'iex','sort':'asc'
+    })
+    bars=(payload.get('bars') or {}) if isinstance(payload,dict) else {}
+    rows=stonks_shadow.update_log(rows,bars,now=now)
+    summary=stonks_shadow.summarize(rows)
+    d['shadow_log']=rows[-200:]
+    d['shadow_outcome_summary']=summary
+    d['shadow_outcome_last_update']=now.isoformat()
+    return d, {'agent':'shadow_outcome','status':'ok','detail':f"{summary.get('complete',0)} completos · {summary.get('pending',0)} pendientes · 0 órdenes",'data':summary,'timestamp':now.isoformat()}
+
 @_stonks_serialized
 def _stonks_engine_cycle(scope_id):
     """Run one autonomous Paper cycle for the single authorized Stonks owner.
@@ -858,6 +913,12 @@ def _stonks_engine_cycle(scope_id):
             agent_trace.append(risk_trace)
             shadow_mode = d.get('execution_mode') == 'shadow'
             if shadow_mode:
+                try:
+                    d, outcome_trace = _stonks_refresh_shadow_outcomes(d)
+                    _stonks_write(d)
+                    agent_trace.append(outcome_trace)
+                except Exception as _outcome_exc:
+                    agent_trace.append({'agent':'shadow_outcome','status':'idle','detail':'Outcome Tracker temporalmente no disponible','data':{'error':str(_outcome_exc)[:240],'orders_created':0},'timestamp':datetime.now(timezone.utc).isoformat()})
                 shadow_reasons=[]
                 if d.get('revoked'): shadow_reasons.append('Control revocado')
                 if d.get('paused'): shadow_reasons.append('Motor pausado')
@@ -932,13 +993,14 @@ def _stonks_engine_cycle(scope_id):
                         _shadow_payload=_shadow_result[0] if isinstance(_shadow_result,tuple) else _shadow_result
                         _shadow_data=_shadow_payload.get_json() if hasattr(_shadow_payload,'get_json') else {}
                         _event={
-                            'timestamp':datetime.now(timezone.utc).isoformat(),'symbol':symbol,'strategy':strategy,
+                            'id':uuid.uuid4().hex,'timestamp':datetime.now(timezone.utc).isoformat(),'symbol':symbol,'strategy':strategy,
                             'timeframe':timeframe,'signal':signal.get('signal'),'decision':_shadow_data.get('decision'),
                             'primary_reason':_shadow_data.get('primary_reason') or _shadow_data.get('reason'),
                             'price':_shadow_data.get('price'),'estimated_value':_shadow_data.get('estimated_value'),
-                            'order_created':False
+                            'order_created':False,'outcomes':{},'outcome_status':'pending','outcome_bars':0
                         }
                         latest=_stonks_read(); log=list(latest.get('shadow_log') or []); log.append(_event); latest['shadow_log']=log[-200:]
+                        latest['shadow_outcome_summary']=stonks_shadow.summarize(latest['shadow_log'])
                         latest['shadow_last_run']=_event['timestamp']; latest['shadow_total_signals']=int(latest.get('shadow_total_signals') or 0)+1
                         _stonks_write(latest); _stonks_audit_append('SHADOW_SIGNAL',_event)
                         agent_trace.append({'agent':'shadow_validation','status':'observed','detail':f"{symbol}: {signal.get('signal')} · {_event.get('decision') or 'sin decisión'} · 0 órdenes",'data':_event,'timestamp':_event['timestamp']})
