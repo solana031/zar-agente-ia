@@ -638,7 +638,12 @@ def _stonks_default():
         'agent_architecture': 'deterministic_multi_agent',
         'shadow_log': [],
         'shadow_last_run': None,
-        'shadow_total_signals': 0
+        'shadow_total_signals': 0,
+        'shadow_cycle_total': 0,
+        'shadow_last_cycle': None,
+        'shadow_last_reason': None,
+        'shadow_last_market_open': None,
+        'shadow_last_signal_count': 0
     }
 def _stonks_read():
     p = _stonks_file()
@@ -863,9 +868,16 @@ def _stonks_engine_cycle(scope_id):
             else:
                 reason = stonks_lifecycle.blocked({**d, 'position_lifecycle_enabled':True}, clock)
             if reason:
-                d['engine_last_run'] = datetime.now(timezone.utc).isoformat()
+                _cycle_now = datetime.now(timezone.utc).isoformat()
+                d['engine_last_run'] = _cycle_now
                 d['engine_last_action'] = ('SHADOW · ' if shadow_mode else '') + reason
                 d['agent_last_trace'] = agent_trace[-30:]
+                if shadow_mode:
+                    d['shadow_cycle_total'] = int(d.get('shadow_cycle_total') or 0) + 1
+                    d['shadow_last_cycle'] = _cycle_now
+                    d['shadow_last_reason'] = reason
+                    d['shadow_last_market_open'] = bool(clock.get('is_open'))
+                    d['shadow_last_signal_count'] = 0
                 _stonks_write(d)
                 return {'status':'idle', 'reason':reason, 'shadow':shadow_mode}
             open_symbols = {o['symbol'] for o in recon['open_orders']}
@@ -874,6 +886,8 @@ def _stonks_engine_cycle(scope_id):
             open_symbols.update(symbol for symbol in records if symbol not in held_symbols)
             open_symbols.update(d.get('pending_entries', {}))
             actions = list(lifecycle.get('actions') or [])
+            shadow_actionable_count = 0
+            shadow_wait_count = 0
             for symbol in symbols[:8]:
                 if symbol in open_symbols:
                     actions.append(f"{symbol}: ORDEN ABIERTA · esperando confirmación de Alpaca")
@@ -902,10 +916,13 @@ def _stonks_engine_cycle(scope_id):
                             actions.extend(result.get('actions') or [])
                         continue
                     if signal.get('signal') not in ('BUY','SELL'):
+                        if shadow_mode:
+                            shadow_wait_count += 1
                         actions.append(f"{symbol}: ESPERAR")
                         continue
                     # Shadow mode evaluates the hardened Decision + Risk route but never submits an order.
                     if shadow_mode:
+                        shadow_actionable_count += 1
                         with app.test_request_context('/api/stonks/decision', method='POST', json={
                             'symbol':symbol,'strategy':strategy,'timeframe':timeframe,
                             'signal':signal.get('signal'),'execute':False,'manual_confirmed':False
@@ -956,10 +973,23 @@ def _stonks_engine_cycle(scope_id):
             agent_trace.append(position_trace2)
             actions.extend(lifecycle2.get('actions') or [])
             action=' | '.join(actions)[:2000] if actions else 'Sin señales.'
-            d=_stonks_read(); d['engine_last_run']=datetime.now(timezone.utc).isoformat(); d['engine_last_action']=action; d['agent_last_trace']=agent_trace[-30:]; _stonks_write(d)
-            return {'status':'ok','action':action}
+            d=_stonks_read(); _cycle_now=datetime.now(timezone.utc).isoformat(); d['engine_last_run']=_cycle_now; d['engine_last_action']=action; d['agent_last_trace']=agent_trace[-30:]
+            if shadow_mode:
+                d['shadow_cycle_total'] = int(d.get('shadow_cycle_total') or 0) + 1
+                d['shadow_last_cycle'] = _cycle_now
+                d['shadow_last_market_open'] = bool(clock.get('is_open'))
+                d['shadow_last_signal_count'] = int(shadow_actionable_count)
+                d['shadow_last_reason'] = f"Escaneo completado · {shadow_actionable_count} BUY/SELL · {shadow_wait_count} ESPERAR"
+            _stonks_write(d)
+            return {'status':'ok','action':action,'shadow':shadow_mode}
         except Exception as exc:
-            d=_stonks_read(); d['paper_connected']=False; d['engine_last_run']=datetime.now(timezone.utc).isoformat(); d['engine_last_action']='ERROR · reconciliación Paper no disponible; sin órdenes'; _stonks_write(d)
+            d=_stonks_read(); _cycle_now=datetime.now(timezone.utc).isoformat(); d['paper_connected']=False; d['engine_last_run']=_cycle_now; d['engine_last_action']='ERROR · reconciliación Paper no disponible; sin órdenes'
+            if d.get('execution_mode') == 'shadow':
+                d['shadow_cycle_total'] = int(d.get('shadow_cycle_total') or 0) + 1
+                d['shadow_last_cycle'] = _cycle_now
+                d['shadow_last_reason'] = 'ERROR · reconciliación Paper no disponible; 0 órdenes'
+                d['shadow_last_signal_count'] = 0
+            _stonks_write(d)
             for record in stonks_lifecycle.active_records(d):
                 stonks_lifecycle.test_event(record, 'TEST_LIFECYCLE_ERROR', _stonks_audit_append, 'Alpaca no disponible; conservando intención y ownership')
             for row in d.get('managed_positions', {}).values():
