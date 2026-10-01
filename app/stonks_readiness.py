@@ -1,6 +1,8 @@
-"""Read-only evidence checklist. It has no broker, state-write or model access."""
+"""Read-only evidence checklist. It has no state-write or model access."""
 from datetime import datetime, timezone
 import math
+
+from . import stonks_live_readonly
 
 
 def evaluate(state, stream, self_test, journal_verified=False):
@@ -39,5 +41,27 @@ def evaluate(state, stream, self_test, journal_verified=False):
     add('Journal persistence', True if journal_verified else None, 'Lectura y contador del journal verificados' if journal_verified else 'Sin journal verificable')
     add('Broker connection', bool(state.get('paper_connected')) and recent(state.get('engine_last_reconcile')), 'Reconciliacion Paper reciente requerida')
     add('Self-Test', self_test.get('ok') is True)
-    return {'status': 'bloqueado', 'live_trading_enabled': False, 'label': 'LIVE BLOQUEADO',
-            'read_only': True, 'orders_created': 0, 'token_cost': 0, 'checks': checks}
+
+    live = stonks_live_readonly.status()
+    if live.get('state') == 'read_only' and live.get('connected'):
+        detail = (
+            f"Solo lectura · equity {live.get('equity', 0):.2f} USD · "
+            f"cash {live.get('cash', 0):.2f} USD · "
+            f"{int(live.get('positions_count') or 0)} posicion(es)"
+        )
+        add('Cuenta real read-only', True, detail)
+    elif live.get('state') == 'error':
+        add('Cuenta real read-only', False, 'Configurada pero no disponible; LIVE sigue bloqueado')
+    else:
+        add('Cuenta real read-only', None, 'No conectada; configurar credenciales Live read-only separadas de Paper')
+
+    return {
+        'status': 'bloqueado',
+        'live_trading_enabled': False,
+        'label': 'LIVE BLOQUEADO',
+        'read_only': True,
+        'orders_created': 0,
+        'token_cost': 0,
+        'live_account': live,
+        'checks': checks,
+    }

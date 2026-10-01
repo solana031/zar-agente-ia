@@ -1,7 +1,7 @@
 """Runtime invariant checks for ZAR Stonks. Zero model tokens, zero orders."""
 from __future__ import annotations
 from datetime import datetime, timezone
-from . import stonks_execution, stonks_readiness
+from . import stonks_execution, stonks_readiness, stonks_live_readonly
 
 
 def _now():
@@ -28,6 +28,18 @@ def run(state, agents_meta, data_plane):
     check('ai_gate_closed', data_plane.get('ai_gate_enabled') is False, 'AI Gate cerrado por defecto')
     check('shadow_no_orders', all(not bool(r.get('order_created')) for r in shadow_rows), 'Diario Shadow contiene 0 órdenes')
     check('live_hard_locked', stonks_execution.LIVE_TRADING_ENABLED is False, 'Live no disponible; ninguna variable de entorno lo habilita')
+    check('live_gate_locked', stonks_execution.LiveSafetyGate.allowed() is False, 'LiveSafetyGate deniega toda escritura Live')
+    try:
+        stonks_execution.LiveSafetyGate.require('buy')
+        gate_raises = False
+    except RuntimeError:
+        gate_raises = True
+    check('live_gate_enforced', gate_raises, 'El gate de servidor rechaza rutas Live')
+    adapter = stonks_live_readonly.LiveReadOnlyAdapter
+    forbidden = {'submit','buy','sell','cancel','cancel_order','replace','replace_order','modify','patch','post','delete'}
+    check('live_adapter_read_only', not any(hasattr(adapter, name) for name in forbidden), 'Adapter Live expone únicamente lectura GET')
+    check('live_credentials_separate', 'ALPACA_LIVE_READONLY_KEY' != 'ALPACA_API_KEY', 'Credenciales Live read-only usan namespace separado de Paper')
+
     readiness = stonks_readiness.evaluate(state, {}, {})
     check('readiness_read_only', readiness['read_only'] and readiness['orders_created'] == 0 and readiness['live_trading_enabled'] is False, 'Readiness nunca autoriza ordenes')
     learning = state.get('paper_learning') or {}

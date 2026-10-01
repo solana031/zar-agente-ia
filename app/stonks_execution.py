@@ -4,6 +4,18 @@ import math
 LIVE_TRADING_ENABLED = False
 
 
+class LiveSafetyGate:
+    """Server-side hard lock for every future Live write path."""
+
+    @staticmethod
+    def allowed(action=None):
+        return False
+
+    @staticmethod
+    def require(action=None):
+        raise RuntimeError('LIVE BLOQUEADO')
+
+
 class LiveExecutionAdapter:
     def __new__(cls, *args, **kwargs):
         raise RuntimeError('LIVE BLOQUEADO: adapter no disponible')
