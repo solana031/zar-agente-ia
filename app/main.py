@@ -2471,10 +2471,39 @@ def stonks_engine_api():
             with app.test_request_context('/api/stonks/engine/owner-check'):
                 session['zar_user_id']=owner
                 previous=_stonks_read()
-            if (previous.get('autonomous_engine') or stonks_lifecycle.active_records(previous)
-                    or previous.get('pending_entries')
-                    or any(r.get('status')!='CERRADA' for r in previous.get('managed_positions',{}).values())):
-                return jsonify({'ok':False,'error':'Otro espacio conserva el motor o posiciones/intenciones pendientes. Debe desactivarlo y resolver su exposición antes de transferir el control.'}),409
+            previous_claims_control = bool(
+                previous.get('autonomous_engine')
+                or stonks_lifecycle.active_records(previous)
+                or previous.get('pending_entries')
+                or any(r.get('status')!='CERRADA' for r in previous.get('managed_positions',{}).values())
+            )
+            if previous_claims_control:
+                # v32.0.3: local ownership can survive a browser/session change even after
+                # the real Paper exposure has disappeared.  Alpaca Paper is the source of
+                # truth before allowing a takeover.  Fail closed when broker state cannot
+                # be verified, and never transfer while any Paper position/order is open.
+                try:
+                    broker_positions = _alpaca_paper_request('/v2/positions')
+                    broker_orders = _alpaca_paper_request('/v2/orders', params={
+                        'status':'open','limit':500,'nested':'false'
+                    })
+                    if not isinstance(broker_positions, list) or not isinstance(broker_orders, list):
+                        raise RuntimeError('Estado Paper no verificable')
+                except Exception:
+                    return jsonify({'ok':False,'error':'No se puede verificar la exposición de Alpaca Paper. El control no se transferirá hasta confirmar posiciones y órdenes abiertas.'}),409
+                if broker_positions or broker_orders:
+                    return jsonify({'ok':False,'error':f'Otro espacio conserva el control y Alpaca Paper aún tiene exposición activa: {len(broker_positions)} posición(es) y {len(broker_orders)} orden(es) abierta(s). Resuélvela antes de transferir el motor.'}),409
+                # No broker exposure remains: the persisted owner is stale.  The global
+                # worker follows engine_owner.json every cycle, so moving ownership here
+                # cannot create a second engine.  Preserve historical records; only clear
+                # stale execution claims in the old scope.
+                previous['autonomous_engine']=False
+                previous['pending_entries']={}
+                previous['engine_last_action']='Owner huérfano liberado tras verificar 0 exposición en Alpaca Paper.'
+                with app.test_request_context('/api/stonks/engine/owner-release'):
+                    session['zar_user_id']=owner
+                    _stonks_write(previous)
+                _stonks_audit_append('OWNER PAPER',{'decision':'LIBERADO','previous_owner':owner,'new_owner':me,'broker_positions':0,'broker_open_orders':0})
         symbols=[]
         for raw in str(payload.get('symbols') or ','.join(d.get('engine_symbols') or ['AAPL'])).split(','):
             sym=raw.strip().upper()
