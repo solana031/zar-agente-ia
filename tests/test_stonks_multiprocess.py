@@ -13,6 +13,8 @@ class FakeManager:
         return {'feeds':{'equities':{'connected':True}},'watchlist':self.configures[-1] if self.configures else {},'latest':[],'zero_tokens':True}
 
 class FakeStream:
+    from app.stonks_stream import refresh_snapshot
+    refresh_snapshot = staticmethod(refresh_snapshot)
     def __init__(self): self.MANAGER=FakeManager()
 
 
@@ -41,6 +43,7 @@ def test_non_owner_web_worker_never_configures_streams():
 def test_engine_owner_is_only_path_that_configures_streams():
     ns=load_stream_plan(); mgr=ns['stonks_stream'].MANAGER
     state={'engine_symbols':['AAPL'],'stream_watchlist_equities':['MSFT'],'stream_watchlist_crypto':['BTC/USD'],'stream_watchlist_options':[]}
+    ns['_STONKS_ENGINE_OWNER_PID']=os.getpid()
     out=ns['_stonks_stream_plan'](state,activate=True)
     assert len(mgr.configures)==1
     assert mgr.configures[0]['equities']==['AAPL','MSFT']

@@ -93,11 +93,20 @@ def _summary_for(rows):
     rets = [_f(x.get('return_pct')) for x in rows]
     wins = [x for x in pnls if x > 0]
     losses = [x for x in pnls if x < 0]
+    streak = 0
+    for pnl in reversed(pnls):
+        sign = 1 if pnl > 0 else -1 if pnl < 0 else 0
+        if not sign or (streak and (streak > 0) != (sign > 0)):
+            break
+        streak += sign
     gross_profit = sum(wins)
     gross_loss = abs(sum(losses))
     pf = (gross_profit / gross_loss) if gross_loss else (float('inf') if gross_profit > 0 else None)
     return {
         'trades': n,
+        'current_streak': streak,
+        'recent_pnl_usd': round(sum(pnls[-20:]), 6),
+        'recent_sample': min(20, n),
         'wins': len(wins),
         'losses': len(losses),
         'win_rate': round(len(wins) / n * 100.0, 2),
@@ -163,7 +172,11 @@ def _trade_from_record(record):
         return None
     if not result.get('complete'):
         return None
-    if not entry.get('price') or not result.get('exit_price'):
+    if record.get('ownership_conflict') or not record.get('baseline_flat'):
+        return None
+    if not record.get('client_order_id') or any(_f(v) <= 0 for v in (entry.get('price'), result.get('exit_price'), result.get('qty'))):
+        return None
+    if any(_f(result.get(k), None) is None for k in ('realized_pnl', 'return_pct', 'duration_s')):
         return None
     ctx = record.get('decision_context') or {}
     indicators = deepcopy(ctx.get('indicators') or {})
@@ -196,6 +209,7 @@ def _trade_from_record(record):
         'news_sources': deepcopy((ctx.get('news_sources') or [])[:5]),
         'indicators': indicators,
         'risk_decision': ctx.get('risk_decision') or 'APROBADA',
+        'entry_reason': ctx.get('entry_reason') or 'unknown',
         'risk_reason': ctx.get('risk_reason') or 'Todos los controles Risk superados',
         'order_created': True,
         'paper': True,
@@ -204,7 +218,7 @@ def _trade_from_record(record):
 
 def ingest(state):
     """Idempotently add newly closed Paper trades to the durable state journal."""
-    journal = list(state.get('paper_learning_journal') or [])[-MAX_TRADES:]
+    journal = list(state.get('paper_learning_journal') or [])
     existing = {str(x.get('id')) for x in journal if x.get('id')}
     added = []
     for record in (state.get('position_ledger') or {}).values():
@@ -215,7 +229,6 @@ def ingest(state):
         existing.add(str(trade.get('id')))
         record['learning_processed_at'] = _now()
         added.append(trade)
-    journal = journal[-MAX_TRADES:]
     state['paper_learning_journal'] = journal
     state['paper_learning'] = summarize(journal)
     state['paper_learning_last_update'] = state['paper_learning']['updated_at']
@@ -241,7 +254,7 @@ def decision_context(signal=None, news=None, risk_decision='APROBADA', risk_reas
     news = news or {}
     indicators = deepcopy(signal.get('indicators') or {})
     allowed_indicators = {}
-    for key in ('sma20','sma50','rsi14','atr','atr_pct','regime','momentum','volatility'):
+    for key in ('sma20','sma50','rsi14','atr','atr14','atr_pct','regime','momentum','volatility'):
         if key in indicators:
             allowed_indicators[key] = indicators.get(key)
     sources = []
@@ -256,6 +269,7 @@ def decision_context(signal=None, news=None, risk_decision='APROBADA', risk_reas
         })
     return {
         'captured_at': _now(),
+        'entry_reason': str(signal.get('reason') or '')[:300],
         'signal': str(signal.get('signal') or '')[:16],
         'bar_time': signal.get('bar_time'),
         'indicators': allowed_indicators,

@@ -391,3 +391,24 @@ class MarketStreamManager:
 
 
 MANAGER = MarketStreamManager()
+
+
+def refresh_snapshot(snapshot, now=None):
+    """Persisted stream health must expire even if the owner stops writing."""
+    result = deepcopy(snapshot)
+    now = now or datetime.now(timezone.utc)
+    def age(value):
+        try:
+            stamp = datetime.fromisoformat(str(value).replace('Z', '+00:00'))
+            return (now - stamp).total_seconds()
+        except (ValueError, TypeError):
+            return float('inf')
+    for feed in result.get('feeds', {}).values():
+        if not -5 <= age(feed.get('last_message_at')) <= 120:
+            feed.update(connected=False, authenticated=False, stale=True)
+    for row in result.get('latest', []):
+        elapsed = age(row.get('timestamp'))
+        row['age_s'] = round(max(0, elapsed), 1) if elapsed != float('inf') else None
+        row['stale'] = (not -5 <= elapsed <= 120 or
+            not result.get('feeds', {}).get(row.get('kind'), {}).get('authenticated', False))
+    return result

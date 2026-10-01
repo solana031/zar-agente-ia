@@ -1,6 +1,7 @@
 """Runtime invariant checks for ZAR Stonks. Zero model tokens, zero orders."""
 from __future__ import annotations
 from datetime import datetime, timezone
+from . import stonks_execution, stonks_readiness
 
 
 def _now():
@@ -26,6 +27,9 @@ def run(state, agents_meta, data_plane):
     check('data_plane_zero_token', data_plane.get('architecture') == 'zero_token_data_plane', 'Data Plane determinista activo')
     check('ai_gate_closed', data_plane.get('ai_gate_enabled') is False, 'AI Gate cerrado por defecto')
     check('shadow_no_orders', all(not bool(r.get('order_created')) for r in shadow_rows), 'Diario Shadow contiene 0 órdenes')
+    check('live_hard_locked', stonks_execution.LIVE_TRADING_ENABLED is False, 'Live no disponible; ninguna variable de entorno lo habilita')
+    readiness = stonks_readiness.evaluate(state, {}, {})
+    check('readiness_read_only', readiness['read_only'] and readiness['orders_created'] == 0 and readiness['live_trading_enabled'] is False, 'Readiness nunca autoriza ordenes')
     learning = state.get('paper_learning') or {}
     journal_count = int(state.get('paper_learning_journal_count') or 0)
     check('learning_store_count', journal_count >= 0, 'Contador de journal Paper persistente válido')
@@ -41,6 +45,9 @@ def run(state, agents_meta, data_plane):
     else:
         check('paper_lifecycle_guard', True, 'Guard lifecycle no requerido en modo actual')
 
+    bounds = data_plane.get('runtime_bounds')
+    if bounds is not None:
+        check('caches_bounded', 0 <= bounds.get('cache_entries', -1) <= bounds.get('cache_limit', -2) and 0 <= bounds.get('scopes', -1) <= bounds.get('scope_limit', -2), 'Caches y scopes dentro del limite duro')
     failed = [x for x in checks if not x['ok']]
     return {
         'ok': not failed,

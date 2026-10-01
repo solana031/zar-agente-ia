@@ -10,7 +10,7 @@ ROOT=Path(__file__).resolve().parents[1]
 
 def closed_record(cid='c1'):
     return {
-        'client_order_id':cid,'closed':True,'symbol':'AAPL','side':'buy','strategy':'trend','timeframe':'1Min',
+        'client_order_id':cid,'baseline_flat':True,'closed':True,'symbol':'AAPL','side':'buy','strategy':'trend','timeframe':'1Min',
         'submitted_at':'2026-10-01T13:30:00+00:00',
         'entry_fill':{'qty':'1','price':100,'filled_at':'2026-10-01T13:30:00+00:00'},
         'decision_context':{'signal':'BUY','regime':'trend','asset_class':'us_equity','indicators':{},'news_sources':[]},
@@ -47,3 +47,12 @@ def test_learning_journal_is_separate_persistent_and_idempotent():
         assert out2['added']==[]
         assert state2['paper_learning_journal_count']==1
         assert len(ns2['_stonks_learning_read']()['journal'])==1
+
+
+def test_corrupt_journal_is_preserved_instead_of_overwritten(tmp_path):
+    import pytest
+    ns=namespace(tmp_path);path=tmp_path/'owner_paper_learning.json'
+    path.write_text('{broken',encoding='utf-8')
+    with pytest.raises(RuntimeError,match='se conserva'):
+        ns['_stonks_learning_update_state']({'position_ledger':{'c1':closed_record()}})
+    assert path.read_text(encoding='utf-8')=='{broken'

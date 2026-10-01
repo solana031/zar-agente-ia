@@ -28,7 +28,7 @@ const project={id:'mock-video',name:'Proyecto de prueba',preset:'youtube',media:
  async function home(){
  await globalWidth();await bounds('.top');await bounds('.composerMain');
  assert.equal(await page.locator('#editorBackBtn').isVisible(),false);
- assert.equal(await page.locator('.zarDockItem:visible').count(),9);
+ assert.equal(await page.locator('.zarDockItem:visible').count(),10);
  for(const b of await page.locator('.zarDockItem').all()){await b.scrollIntoViewIfNeeded();await bounds(`[data-dock-id="${await b.getAttribute('data-dock-id')}"]`,false)}
  for(const id of ['#attachBtn','#mic','#speakBtn','.composerMain button:last-child']){await bounds(id);assert.equal(await page.locator(id).isVisible(),true)}
  await page.locator('#input').fill('Borrador conservado');

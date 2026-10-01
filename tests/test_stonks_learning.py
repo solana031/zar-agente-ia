@@ -3,7 +3,7 @@ from app import stonks_learning
 
 def closed_record(cid='zar-e-1', pnl=5.0, ret=2.5, regime='trend'):
     return {
-        'client_order_id': cid, 'closed': True, 'symbol': 'AAPL', 'side': 'buy',
+        'client_order_id': cid, 'baseline_flat': True, 'closed': True, 'symbol': 'AAPL', 'side': 'buy',
         'strategy': 'trend', 'timeframe': '1Min', 'submitted_at': '2026-10-01T13:30:00+00:00',
         'entry_fill': {'qty':'2','price':100.0,'filled_at':'2026-10-01T13:30:00+00:00'},
         'decision_context': {

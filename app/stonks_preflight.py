@@ -44,6 +44,7 @@ def evaluate(state, symbol, snapshots, configured, owner, now=None):
     check('OWNER', 'Propietario del motor correcto', owner)
     check('PAUSE', 'Sin Pausa', flag(state, 'paused', False))
     check('REVOCATION', 'Sin Revocación', flag(state, 'revoked', False))
+    check('LIVE_LOCK', 'LIVE BLOQUEADO; solo Paper autorizado', state.get('mode') == 'paper')
     check('PAPER', 'Modo Paper', flag(state, 'mode', 'paper'))
     check('AUTO', 'Paper automático', flag(state, 'execution_mode', 'paper_auto'))
     check('MANAGEMENT', 'Position Management activo', flag(state, 'position_lifecycle_enabled', True))

@@ -13,7 +13,7 @@ for (const file of fs.readdirSync('app/static').filter(f => f.endsWith('.js'))) 
   new vm.Script(fs.readFileSync(`app/static/${file}`, 'utf8'), {filename: file});
 }
 for (const file of ['VERSION', 'VERSION.txt', 'app/VERSION.txt']) {
-  assert.equal(fs.readFileSync(file, 'utf8').trim(), '31.3.51');
+  assert.equal(fs.readFileSync(file, 'utf8').trim(), '31.3.52');
 }
 console.log(`PASS: ${scripts} inline scripts, static JavaScript and three version files`);
 (async () => {
@@ -29,6 +29,13 @@ console.log(`PASS: ${scripts} inline scripts, static JavaScript and three versio
         const request = route.request(), url = new URL(request.url());
         requests.push({path: url.pathname, method: request.method(), body: request.postData()});
         if (url.pathname === '/') return route.fulfill({contentType: 'text/html', body: html});
+        if(url.pathname==='/api/stonks/lifecycle-test/preflight'){
+          return route.fulfill({contentType:'application/json',body:JSON.stringify({ok:true,preflight:{
+            status:controlledReady?'READY':'BLOCKED',symbol:url.searchParams.get('symbol'),
+            checked_at:new Date().toISOString(),market_open:controlledReady,
+            checks:[{code:'MOCK_ACCOUNT',label:'Cuenta simulada',status:controlledReady?'PASS':'BLOCKED'}]
+          }})});
+        }
         if(url.pathname==='/api/stonks/lifecycle-test/start'){
           testSnapshot={id:'zar-e-ui-test',symbol:'AAPL',active:true,status:'ESPERANDO_FILL',can_close:false,steps:[{event:'TEST_LIFECYCLE_STARTED'},{event:'TEST_ENTRY_REQUESTED'}]};
           return route.fulfill({status:202,contentType:'application/json',body:JSON.stringify({ok:true,paper:true,lifecycle_test:testSnapshot})});

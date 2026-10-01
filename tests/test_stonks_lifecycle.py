@@ -38,10 +38,19 @@ def control_plane(directory):
               stonks_lifecycle=lifecycle, stonks_preflight=preflight, session=session, request=request, jsonify=jsonify,
               _STONKS_DIR=Path(directory), _STONKS_LOCK=threading.RLock(),
               _STONKS_LOCK_DEPTH=threading.local(), requests=Mock())
+    from app import stonks_agents, stonks_dataplane, stonks_learning, stonks_selftest, stonks_shadow, stonks_execution, stonks_readiness
+    from types import SimpleNamespace
+    ns.update(stonks_agents=stonks_agents, stonks_dataplane=stonks_dataplane,
+              stonks_learning=stonks_learning, stonks_selftest=stonks_selftest,
+              stonks_shadow=stonks_shadow, stonks_execution=stonks_execution,
+              stonks_readiness=stonks_readiness, _STONKS_ENGINE_OWNER_PID=None,
+              stonks_news=SimpleNamespace(get_context=Mock(return_value={})))
+    stonks_dataplane.PLANE.reset_runtime()
     tree = ast.parse((ROOT / 'app/main.py').read_text(encoding='utf-8-sig'))
     nodes = [n for n in tree.body if isinstance(n, ast.FunctionDef) and
              (n.name.startswith(('_stonks_', 'stonks_', '_alpaca_')) or n.name == '_user_scope_id')]
     exec(compile(ast.Module(body=nodes, type_ignores=[]), 'app/main.py', 'exec'), ns)
+    ns['_stonks_stream_plan'] = Mock(return_value={})
     return ns
 
 
@@ -64,7 +73,7 @@ class LifecycleTests(unittest.TestCase):
         self.posts = []
         self.cancels = []
         self.clock = {'is_open': True}
-        self.account = {'equity':'10000', 'last_equity':'10000'}
+        self.account = {'equity':'10000', 'last_equity':'10000', 'status':'ACTIVE', 'buying_power':'10000', 'trading_blocked':False, 'account_blocked':False}
         self.save = self.api['_stonks_write']
 
     def entry(self, side='buy', filled='2', status='filled', price=100):
@@ -286,6 +295,7 @@ class LifecycleTests(unittest.TestCase):
         self.api['_alpaca_paper_credentials']=lambda:('mock-key','mock-secret')
         response=self.api['requests'].post.return_value
         response.ok=True;response.json.return_value={'id':'test-order'}
+        self.save(self.state)
         self.api['_stonks_submit_paper_order']({'client_order_id':'test'})
         args,kwargs=self.api['requests'].post.call_args
         self.assertEqual(args[0],'https://paper-api.alpaca.markets/v2/orders')
@@ -303,7 +313,7 @@ class LifecycleTests(unittest.TestCase):
         self.save(self.state)
         self.api['_stonks_engine_owner_write']('test-owner')
         self.api['_stonks_current_signal'] = Mock(return_value=({'signal':signal,'bar_time':'2026-09-28T10:00:00Z'},self.clock))
-        self.api['_alpaca_market_request'] = Mock(return_value={'trade':{'p':100}})
+        self.api['_alpaca_market_request'] = Mock(return_value={'trade':{'p':100,'t':datetime.now(timezone.utc).isoformat()}})
         def broker(path, **kwargs):
             if path=='/v2/positions':return self.positions
             if path=='/v2/clock':return self.clock

@@ -224,6 +224,7 @@ class ZeroTokenDataPlane:
     def status(self, scope_id, persisted=None):
         with self._lock:
             s = deepcopy(self._scope(scope_id))
+            bounds = {'cache_entries':len(self._cache), 'cache_limit':self.MAX_CACHE, 'scopes':len(self._runtime), 'scope_limit':self.MAX_SCOPES}
         if persisted and not s.get('cycles_total'):
             # Normally runtime wins; this fallback keeps a useful view immediately after restart.
             for k, v in dict(persisted).items():
@@ -234,6 +235,7 @@ class ZeroTokenDataPlane:
         avoided = max(0, naive_calls - api_calls)
         baseline = max(100, _safe_int(os.environ.get('ZAR_STONKS_TOKEN_BASELINE_PER_CYCLE', '1200'), 1200))
         s.update({
+            'runtime_bounds': bounds,
             'architecture': 'zero_token_data_plane',
             'ai_gate_enabled': False,
             'llm_calls_avoided_estimate': avoided,

@@ -13,7 +13,7 @@ import html as html_lib
 import uuid
 from functools import wraps
 from contextlib import contextmanager
-from . import stonks_lifecycle, stonks_preflight, stonks_agents, stonks_news, stonks_dataplane, stonks_selftest, stonks_stream, subagent_orchestrator, stonks_backtest, stonks_validation, stonks_shadow, stonks_learning
+from . import stonks_lifecycle, stonks_preflight, stonks_agents, stonks_news, stonks_dataplane, stonks_selftest, stonks_stream, subagent_orchestrator, stonks_backtest, stonks_validation, stonks_shadow, stonks_learning, stonks_execution, stonks_readiness
 from datetime import datetime, timezone
 from .user_scope import set_current_user, get_current_user, anonymous_id, user_id_for_email
 from pathlib import Path
@@ -592,6 +592,12 @@ def _stonks_transaction():
 def _stonks_serialized(fn):
     @wraps(fn)
     def wrapped(*args, **kwargs):
+        from flask import has_request_context
+        if has_request_context():
+            payload = request.get_json(silent=True) or {}
+            if (str(payload.get('mode', 'paper')).lower() != 'paper' or
+                    payload.get('live_trading_enabled') or payload.get('execution_mode') == 'live'):
+                return jsonify({'ok':False, 'error':'LIVE BLOQUEADO'}),409
         with _stonks_transaction():
             return fn(*args, **kwargs)
     return wrapped
@@ -696,22 +702,25 @@ def _stonks_learning_file():
     return _STONKS_DIR / f"{_user_scope_id()}_paper_learning.json"
 
 def _stonks_learning_read():
+    p=_stonks_learning_file()
+    if not p.exists():
+        return {'journal':[]}
+    # An unreadable existing journal is not an empty journal: never overwrite it.
     try:
-        p=_stonks_learning_file()
-        if p.exists():
-            data=json.loads(p.read_text(encoding='utf-8'))
-            rows=data.get('journal') if isinstance(data,dict) else None
-            if isinstance(rows,list):
-                return {'journal':rows[-stonks_learning.MAX_TRADES:]}
-    except Exception:
-        pass
-    return {'journal':[]}
+        data=json.loads(p.read_text(encoding='utf-8'))
+        rows=data.get('journal') if isinstance(data,dict) else None
+        if not isinstance(rows,list) or any(not isinstance(row,dict) or not row.get('id') for row in rows):
+            raise ValueError('Invalid journal')
+        return {'journal':rows}
+    except (OSError, ValueError) as exc:
+        raise RuntimeError('Journal Paper no verificable; se conserva sin cambios') from exc
+
 
 def _stonks_learning_write(rows):
     _stonks_atomic_json(_stonks_learning_file(), {
         'version':1, 'updated_at':datetime.now(timezone.utc).isoformat(),
         'paper_only':True, 'risk_authority':False, 'live_authority':False,
-        'journal':list(rows or [])[-stonks_learning.MAX_TRADES:]
+        'journal':list(rows or [])
     })
 
 def _stonks_learning_update_state(d):
@@ -797,18 +806,8 @@ def _stonks_lookup_order(cid):
 
 
 def _stonks_submit_paper_order(body):
-    # Fixed Paper URL + Paper-only credential names; caller holds the state transaction.
-    key, secret = _alpaca_paper_credentials()
-    if not key or not secret:
-        raise RuntimeError('Credenciales Paper no configuradas')
-    response = requests.post('https://paper-api.alpaca.markets/v2/orders',
-        headers={'APCA-API-KEY-ID':key, 'APCA-API-SECRET-KEY':secret}, json=body, timeout=12)
-    if not response.ok:
-        raise RuntimeError('Orden Paper no confirmada; reconciliar identificador antes de reintentar')
-    order = response.json()
-    if not isinstance(order, dict) or not order.get('id'):
-        raise RuntimeError('Respuesta Paper no válida')
-    return order
+    return stonks_execution.PaperExecutionAdapter(requests.post).submit(
+        body, _stonks_read(), _alpaca_paper_credentials())
 
 
 def _stonks_manage_positions(scope_id, recon, clock=None):
@@ -846,6 +845,8 @@ def _alpaca_paper_credentials():
     return (os.environ.get('ALPACA_PAPER_API_KEY','').strip(), os.environ.get('ALPACA_PAPER_API_SECRET','').strip())
 
 def _alpaca_paper_request(path, method='GET', params=None, missing_ok=False):
+    if method.upper() not in ('GET', 'DELETE'):
+        raise RuntimeError('Usar el adapter Paper para enviar ordenes')
     key, secret = _alpaca_paper_credentials()
     if not key or not secret:
         raise RuntimeError('Faltan ALPACA_PAPER_API_KEY y ALPACA_PAPER_API_SECRET en Railway.')
@@ -945,20 +946,23 @@ def _stonks_stream_plan(d, activate=None):
     Web workers return the last persisted snapshot so UI requests cannot create
     duplicate WebSocket connections in a multi-process Gunicorn deployment.
     """
-    if activate is None:
-        activate = _stonks_process_owns_engine()
+    activate = activate is not False and _stonks_process_owns_engine()
     equities=[]
-    for raw in list(d.get('engine_symbols') or []) + list(d.get('stream_watchlist_equities') or []):
+    exposure = (d.get('engine_last_positions') or []) + (d.get('engine_last_open_orders') or [])
+    option_symbols = {r.get('symbol') for r in exposure if r.get('asset_class') == 'us_option'} | set(d.get('stream_watchlist_options') or [])
+    priority = [r.get('symbol') for r in exposure]
+    priority += [r.get('symbol') for r in [t.get('data') or {} for t in (d.get('agent_last_trace') or [])] if r.get('signal') in ('BUY', 'SELL')]
+    for raw in priority + list(d.get('engine_symbols') or []) + list(d.get('stream_watchlist_equities') or []):
         s=str(raw or '').strip().upper()
-        if s and '/' not in s and s not in equities:
+        if s and '/' not in s and s not in option_symbols and s not in equities:
             equities.append(s)
     crypto=[]
-    for raw in d.get('stream_watchlist_crypto') or []:
+    for raw in [s for s in priority if '/' in str(s)] + list(d.get('stream_watchlist_crypto') or []):
         s=str(raw or '').strip().upper().replace('-', '/')
         if s and s not in crypto:
             crypto.append(s)
     options=[]
-    for raw in d.get('stream_watchlist_options') or []:
+    for raw in [s for s in priority if s in option_symbols] + list(d.get('stream_watchlist_options') or []):
         s=str(raw or '').strip().upper()
         if s and s not in options:
             options.append(s)
@@ -968,7 +972,7 @@ def _stonks_stream_plan(d, activate=None):
         status['process_owner'] = True
         status['owner_pid'] = os.getpid()
         return status
-    snap = dict(d.get('market_stream_snapshot') or {})
+    snap = stonks_stream.refresh_snapshot(d.get('market_stream_snapshot') or {})
     if snap:
         snap['process_owner'] = False
         snap['served_from_persisted_snapshot'] = True
@@ -1268,7 +1272,12 @@ def stonks_status_api():
     data_plane=stonks_dataplane.PLANE.status(_user_scope_id(), d.get('data_plane_telemetry'))
     market_stream=_stonks_stream_plan(d)
     self_test=stonks_selftest.run(d, stonks_agents.describe(), data_plane)
-    return jsonify({'ok':True, **d, 'data_plane':data_plane, 'market_stream':market_stream, 'self_test':self_test, 'lifecycle_test':stonks_lifecycle.test_view(d), 'engine_owner':_stonks_engine_owner_read(), 'engine_owned_by_current_user':_stonks_engine_owner_read()==_user_scope_id(), 'audit_count':len(_stonks_audit_read(200)), 'paper_configured': bool(pk and ps), 'crypto_configured': bool(os.environ.get('KRAKEN_API_KEY') and os.environ.get('KRAKEN_API_SECRET')), 'engine_position_count':len(d.get('engine_last_positions') or []), 'engine_open_order_count':len(d.get('engine_last_open_orders') or []), 'position_lifecycle_enabled':bool(d.get('position_lifecycle_enabled')), 'stop_loss_pct':d.get('stop_loss_pct',1.0), 'take_profit_pct':d.get('take_profit_pct',2.0), 'managed_position_count':sum(r.get('status')!='CERRADA' for r in (d.get('managed_positions') or {}).values()), 'lifecycle_last_action':d.get('lifecycle_last_action'), 'agents':stonks_agents.describe()})
+    journal_verified = False
+    try:
+        journal_verified = _stonks_learning_file().is_file() and len(_stonks_learning_read()['journal']) == int(d.get('paper_learning_journal_count') or 0)
+    except (OSError, ValueError, KeyError, TypeError, RuntimeError):
+        pass
+    return jsonify({'ok':True, **d, 'data_plane':data_plane, 'market_stream':market_stream, 'self_test':self_test, 'live_trading_enabled':False, 'readiness':stonks_readiness.evaluate(d, market_stream, self_test, journal_verified), 'lifecycle_test':stonks_lifecycle.test_view(d), 'engine_owner':_stonks_engine_owner_read(), 'engine_owned_by_current_user':_stonks_engine_owner_read()==_user_scope_id(), 'audit_count':len(_stonks_audit_read(200)), 'paper_configured': bool(pk and ps), 'crypto_configured': bool(os.environ.get('KRAKEN_API_KEY') and os.environ.get('KRAKEN_API_SECRET')), 'engine_position_count':len(d.get('engine_last_positions') or []), 'engine_open_order_count':len(d.get('engine_last_open_orders') or []), 'position_lifecycle_enabled':bool(d.get('position_lifecycle_enabled')), 'stop_loss_pct':d.get('stop_loss_pct',1.0), 'take_profit_pct':d.get('take_profit_pct',2.0), 'managed_position_count':sum(r.get('status')!='CERRADA' for r in (d.get('managed_positions') or {}).values()), 'lifecycle_last_action':d.get('lifecycle_last_action'), 'agents':stonks_agents.describe()})
 
 @app.get('/api/stonks/agents')
 def stonks_agents_api():
@@ -1519,12 +1528,11 @@ def _stonks_current_signal(symbol, strategy='trend', timeframe='1Min', feed='iex
     data=_alpaca_market_request('/v2/stocks/bars',params=params)
     raw=(data.get('bars') or {}).get(symbol) if isinstance(data,dict) else []
     raw=raw if isinstance(raw,list) else []
-    current_minute=end.replace(second=0,microsecond=0)
     bars=[]
     for b in raw:
         try:
             ts=datetime.fromisoformat(str(b.get('t','')).replace('Z','+00:00'))
-            if ts >= current_minute: continue
+            if ts.tzinfo is None or ts + timedelta(minutes=int(timeframe[:-3])) > end: continue
             if all(k in b for k in ('o','h','l','c')): bars.append(b)
         except Exception:
             continue
@@ -1676,14 +1684,7 @@ def stonks_test_cycle_api():
             return jsonify({'ok':True,'paper':True,'order_created':False,'decision':'DENEGADA','primary_reason':reason})
 
         body={'symbol':symbol,'qty':str(qty),'side':'buy','type':'market','time_in_force':'day'}
-        key_api,secret_api=_alpaca_paper_credentials()
-        rr=requests.post('https://paper-api.alpaca.markets/v2/orders',headers={'APCA-API-KEY-ID':key_api,'APCA-API-SECRET-KEY':secret_api,'Accept':'application/json','Content-Type':'application/json'},json=body,timeout=12)
-        try: order=rr.json()
-        except Exception: order={'raw':rr.text[:1000]}
-        if not rr.ok:
-            error=order.get('message') if isinstance(order,dict) else 'orden rechazada'
-            _stonks_audit_append('TEST_PAPER',{'symbol':symbol,'decision':'RECHAZADA_POR_ALPACA','error':error,'qty':qty,'estimated_value':order_value})
-            return jsonify({'ok':False,'paper':True,'order_created':False,'error':error}),502
+        order=_stonks_submit_paper_order(body)
         _stonks_audit_append('TEST_PAPER',{'symbol':symbol,'decision':'ORDEN_ENVIADA','side':'buy','qty':qty,'estimated_value':order_value,'order_id':order.get('id'),'status':order.get('status')})
         return jsonify({'ok':True,'paper':True,'order_created':True,'test':True,'symbol':symbol,'qty':qty,'estimated_value':order_value,'order':order})
     except Exception as exc:
@@ -1756,7 +1757,9 @@ def stonks_decision_api(engine=False, lifecycle_test=False):
 
 
         account=_alpaca_paper_request('/v2/account')
-        equity=float(account.get('equity') or 0); last_equity=float(account.get('last_equity') or 0)
+        equity=float(stonks_lifecycle.number(account.get('equity'))); last_equity=float(stonks_lifecycle.number(account.get('last_equity')))
+        add_check('ACCOUNT_ACTIVE','Cuenta Paper no operativa', account.get('status')=='ACTIVE' and not (account.get('trading_blocked') or account.get('account_blocked')))
+        add_check('ACCOUNT_EQUITY','Capital Paper no valido',equity>0)
         if lifecycle_test:
             equity = float(stonks_lifecycle.number(account.get('equity')))
             last_equity = float(stonks_lifecycle.number(account.get('last_equity')))
@@ -1788,7 +1791,13 @@ def stonks_decision_api(engine=False, lifecycle_test=False):
         last=(latest.get('trade') or {}) if isinstance(latest,dict) else {}
         if not last and isinstance(latest,dict):
             last=(latest.get('trades') or {}).get(symbol) or {}
-        price=float(last.get('p') or 0)
+        price=float(stonks_lifecycle.number(last.get('p') or 0))
+        try:
+            age=(datetime.now(timezone.utc)-datetime.fromisoformat(str(last.get('t')).replace('Z','+00:00'))).total_seconds()
+            fresh=-5 <= age <= 120
+        except (ValueError, TypeError):
+            fresh=False
+        add_check('PRICE_FRESH','Precio desactualizado o no verificable',fresh)
         add_check('PRICE','Precio actual no disponible',price>0)
 
         max_trade=float(d.get('max_trade_eur',25))
@@ -1874,18 +1883,10 @@ def stonks_decision_api(engine=False, lifecycle_test=False):
                 _stonks_audit_append('ORDEN PAPER', {'symbol':symbol, 'qty':qty, 'price':price,
                     'order_id':order['id'], 'client_order_id':intent['client_order_id'], 'strategy':strategy})
                 return jsonify(result)
-            key_api,secret_api=_alpaca_paper_credentials()
-            rr=requests.post('https://paper-api.alpaca.markets/v2/orders',headers={'APCA-API-KEY-ID':key_api,'APCA-API-SECRET-KEY':secret_api,'Accept':'application/json','Content-Type':'application/json'},json=body,timeout=12)
-            try: order=rr.json()
-            except Exception: order={'raw':rr.text[:1000]}
-            if not rr.ok:
-                result['decision']='ERROR_PAPER'; result['order_error']=order.get('message') if isinstance(order,dict) else 'orden rechazada'
-                _stonks_audit_append('ORDEN PAPER',{'symbol':symbol,'signal':requested_signal,'decision':'RECHAZADA_POR_ALPACA','error':result['order_error']})
-            else:
-                d['last_executed_signals'][key]=datetime.now(timezone.utc).isoformat()
-                d['execution_mode']='paper_auto' if d.get('execution_mode')=='paper_auto' else d.get('execution_mode','decision')
-                _stonks_write(d); result['order_created']=True; result['order']=order
-                _stonks_audit_append('ORDEN PAPER',{'symbol':symbol,'signal':requested_signal,'side':body['side'],'qty':qty,'estimated_value':order_value,'order_id':order.get('id'),'status':order.get('status')})
+            order=_stonks_submit_paper_order(body)
+            d['last_executed_signals'][key]=datetime.now(timezone.utc).isoformat()
+            _stonks_write(d); result['order_created']=True; result['order']=order
+            _stonks_audit_append('ORDEN PAPER',{'symbol':symbol,'signal':requested_signal,'side':body['side'],'qty':qty,'estimated_value':order_value,'order_id':order.get('id'),'status':order.get('status')})
         return jsonify(result)
     except Exception as exc:
         return jsonify({'ok':False,'error':str(exc)}),502
@@ -2207,9 +2208,10 @@ def stonks_alpaca_order_api():
             return jsonify({'ok':False,'error':'Solo se permiten órdenes market o limit en este primer bloque.'}),400
         if tif not in ('day','gtc'):
             return jsonify({'ok':False,'error':'Time in force no válido. Usa day o gtc.'}),400
-        if qty <= 0 or qty > 10000:
+        import math
+        if not math.isfinite(qty) or qty <= 0 or qty > 10000:
             return jsonify({'ok':False,'error':'Cantidad no válida.'}),400
-        if order_type == 'limit' and (limit_price is None or limit_price <= 0):
+        if order_type == 'limit' and (limit_price is None or not math.isfinite(limit_price) or limit_price <= 0):
             return jsonify({'ok':False,'error':'Una orden limit necesita un precio límite positivo.'}),400
         if order_type == 'market' and tif != 'day':
             return jsonify({'ok':False,'error':'Las órdenes market de este panel usan time in force day.'}),400
@@ -2227,8 +2229,8 @@ def stonks_alpaca_order_api():
         if order_type == 'market':
             try:
                 t=_alpaca_market_request(f'/v2/stocks/{symbol}/trades/latest')
-                last=(t.get('trades') or {}).get(symbol) or {}
-                px=float(last.get('p') or 0)
+                last=t.get('trade') or (t.get('trades') or {}).get(symbol) or {}
+                px=float(stonks_lifecycle.number(last.get('p') or 0))
                 if not px:
                     return jsonify({'ok':False,'error':'No hay un último precio disponible para verificar el límite de seguridad. Usa una orden limit.'}),409
                 market_estimated=qty*px
@@ -2269,16 +2271,7 @@ def stonks_alpaca_order_api():
 
         body={'symbol':symbol,'qty':str(qty),'side':side,'type':order_type,'time_in_force':tif}
         if order_type == 'limit': body['limit_price']=str(limit_price)
-        # Submit through the Paper trading endpoint using JSON; credentials stay server-side.
-        # Re-use the same credentials and Paper base URL, without ever exposing them to the client.
-        key, secret=_alpaca_paper_credentials()
-        import requests as _requests
-        rr=_requests.post('https://paper-api.alpaca.markets/v2/orders', headers={'APCA-API-KEY-ID':key,'APCA-API-SECRET-KEY':secret,'Accept':'application/json','Content-Type':'application/json'}, json=body, timeout=12)
-        try: data=rr.json()
-        except Exception: data={'raw':rr.text[:1000]}
-        if not rr.ok:
-            msg=data.get('message') if isinstance(data,dict) else None
-            return jsonify({'ok':False,'error':f'Alpaca Paper {rr.status_code}: {msg or "orden rechazada"}'}),502
+        data=_stonks_submit_paper_order(body)
         return jsonify({'ok':True,'paper':True,'order':data})
     except Exception as exc:
         return jsonify({'ok':False,'error':str(exc)}),502
