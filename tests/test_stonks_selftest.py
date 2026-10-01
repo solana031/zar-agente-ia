@@ -17,3 +17,11 @@ def test_selftest_fails_if_shadow_created_order():
     r=stonks_selftest.run(st,stonks_agents.describe(),{'architecture':'zero_token_data_plane','ai_gate_enabled':False})
     assert r['ok'] is False
     assert any(x['id']=='shadow_no_orders' and not x['ok'] for x in r['checks'])
+
+
+def test_selftest_paper_auto_reports_not_armed_when_paused_or_engine_off():
+    st=base_state();st.update(execution_mode='paper_auto',autonomous_engine=False,position_lifecycle_enabled=True,paused=True,revoked=False)
+    r=stonks_selftest.run(st,stonks_agents.describe(),{'architecture':'zero_token_data_plane','ai_gate_enabled':False})
+    assert r['ok'] is False
+    failed={x['id'] for x in r['checks'] if not x['ok']}
+    assert {'paper_auto_engine','paper_auto_not_paused'} <= failed

@@ -13,7 +13,7 @@ import html as html_lib
 import uuid
 from functools import wraps
 from contextlib import contextmanager
-from . import stonks_lifecycle, stonks_preflight, stonks_agents, stonks_news, stonks_dataplane, stonks_selftest, stonks_stream, subagent_orchestrator, stonks_backtest, stonks_validation, stonks_shadow
+from . import stonks_lifecycle, stonks_preflight, stonks_agents, stonks_news, stonks_dataplane, stonks_selftest, stonks_stream, subagent_orchestrator, stonks_backtest, stonks_validation, stonks_shadow, stonks_learning
 from datetime import datetime, timezone
 from .user_scope import set_current_user, get_current_user, anonymous_id, user_id_for_email
 from pathlib import Path
@@ -562,6 +562,12 @@ _STONKS_DIR.mkdir(parents=True, exist_ok=True)
 # Serialize worker and HTTP mutations across threads/processes on the persistent volume.
 _STONKS_LOCK = threading.RLock()
 _STONKS_LOCK_DEPTH = threading.local()
+# Set only inside the Gunicorn process that owns engine.lock. Other web workers
+# must never create duplicate market-stream sockets.
+_STONKS_ENGINE_OWNER_PID = None
+
+def _stonks_process_owns_engine():
+    return _STONKS_ENGINE_OWNER_PID == os.getpid()
 
 @contextmanager
 def _stonks_transaction():
@@ -649,7 +655,12 @@ def _stonks_default():
         'data_plane_telemetry': {},
         'stream_watchlist_equities': ['AAPL','MSFT','SPY','QQQ'],
         'stream_watchlist_crypto': ['BTC/USD','ETH/USD'],
-        'stream_watchlist_options': []
+        'stream_watchlist_options': [],
+        'market_stream_snapshot': {},
+        'paper_learning_journal_count': 0,
+        'paper_learning': {},
+        'paper_learning_last_update': None,
+        'paper_learning_enabled': True
     }
 def _stonks_read():
     p = _stonks_file()
@@ -680,6 +691,38 @@ def _stonks_audit_read(limit=100):
     except Exception:
         pass
     return []
+
+def _stonks_learning_file():
+    return _STONKS_DIR / f"{_user_scope_id()}_paper_learning.json"
+
+def _stonks_learning_read():
+    try:
+        p=_stonks_learning_file()
+        if p.exists():
+            data=json.loads(p.read_text(encoding='utf-8'))
+            rows=data.get('journal') if isinstance(data,dict) else None
+            if isinstance(rows,list):
+                return {'journal':rows[-stonks_learning.MAX_TRADES:]}
+    except Exception:
+        pass
+    return {'journal':[]}
+
+def _stonks_learning_write(rows):
+    _stonks_atomic_json(_stonks_learning_file(), {
+        'version':1, 'updated_at':datetime.now(timezone.utc).isoformat(),
+        'paper_only':True, 'risk_authority':False, 'live_authority':False,
+        'journal':list(rows or [])[-stonks_learning.MAX_TRADES:]
+    })
+
+def _stonks_learning_update_state(d):
+    store=_stonks_learning_read()
+    d['paper_learning_journal']=list(store.get('journal') or [])
+    update=stonks_learning.ingest(d)
+    rows=d.pop('paper_learning_journal', [])
+    d['paper_learning_journal_count']=len(rows)
+    if update.get('added'):
+        _stonks_learning_write(rows)
+    return update
 
 def _stonks_engine_owner_file():
     return _STONKS_DIR / 'engine_owner.json'
@@ -896,8 +939,14 @@ def _stonks_refresh_shadow_outcomes(d, force=False):
     d['shadow_outcome_last_update']=now.isoformat()
     return d, {'agent':'shadow_outcome','status':'ok','detail':f"{summary.get('complete',0)} completos · {summary.get('pending',0)} pendientes · 0 órdenes",'data':summary,'timestamp':now.isoformat()}
 
-def _stonks_stream_plan(d):
-    """Build a small real-time watch plan without model calls."""
+def _stonks_stream_plan(d, activate=None):
+    """Build the zero-token watch plan. Only the engine-lock owner opens sockets.
+
+    Web workers return the last persisted snapshot so UI requests cannot create
+    duplicate WebSocket connections in a multi-process Gunicorn deployment.
+    """
+    if activate is None:
+        activate = _stonks_process_owns_engine()
     equities=[]
     for raw in list(d.get('engine_symbols') or []) + list(d.get('stream_watchlist_equities') or []):
         s=str(raw or '').strip().upper()
@@ -913,8 +962,23 @@ def _stonks_stream_plan(d):
         s=str(raw or '').strip().upper()
         if s and s not in options:
             options.append(s)
-    stonks_stream.MANAGER.configure(equities=equities, crypto=crypto, options=options)
-    return stonks_stream.MANAGER.status(limit=30)
+    if activate:
+        stonks_stream.MANAGER.configure(equities=equities, crypto=crypto, options=options)
+        status = stonks_stream.MANAGER.status(limit=30)
+        status['process_owner'] = True
+        status['owner_pid'] = os.getpid()
+        return status
+    snap = dict(d.get('market_stream_snapshot') or {})
+    if snap:
+        snap['process_owner'] = False
+        snap['served_from_persisted_snapshot'] = True
+        return snap
+    return {
+        'architecture':'realtime_zero_token_stream', 'zero_tokens':True, 'order_authority':False,
+        'watchlist':{'equities':equities,'crypto':crypto,'options':options},
+        'feeds':{}, 'latest':[], 'process_owner':False, 'served_from_persisted_snapshot':True,
+        'updated_at':datetime.now(timezone.utc).isoformat(),
+    }
 
 def _stonks_zero_token_health(d, scope_id):
     stonks_dataplane.PLANE.sync_state(d, scope_id)
@@ -932,7 +996,7 @@ def _stonks_engine_cycle(scope_id):
         d=_stonks_read()
         stonks_dataplane.PLANE.hydrate(scope_id, d.get('data_plane_telemetry'))
         stonks_dataplane.PLANE.begin_cycle(scope_id)
-        _stream_status=_stonks_stream_plan(d)
+        _stream_status=_stonks_stream_plan(d, activate=True)
         symbols=d.get('engine_symbols') or ['AAPL']
         strategy=d.get('engine_strategy') or 'trend'
         timeframe=d.get('engine_timeframe') or '1Min'
@@ -961,6 +1025,20 @@ def _stonks_engine_cycle(scope_id):
                 scope_id, recon, clock, _stonks_manage_positions)
             agent_trace.append(position_trace)
             d = _stonks_read()
+            learning_update = _stonks_learning_update_state(d) if d.get('paper_learning_enabled', True) else {'added':[], 'summary':d.get('paper_learning') or {}}
+            if learning_update.get('added'):
+                _stonks_write(d)
+                _stonks_audit_append('PAPER LEARNING', {
+                    'new_trades':len(learning_update['added']),
+                    'journal_count':int(d.get('paper_learning_journal_count') or 0),
+                    'risk_authority':False, 'live_authority':False
+                })
+            agent_trace.append({
+                'agent':'paper_learning','status':'ok',
+                'detail':f"Learning Paper · {int(d.get('paper_learning_journal_count') or 0)} operación(es) · Risk intacto · 0 tokens",
+                'data':{'journal_count':int(d.get('paper_learning_journal_count') or 0),'new_trades':len(learning_update.get('added') or []),'risk_authority':False,'live_authority':False},
+                'timestamp':datetime.now(timezone.utc).isoformat()
+            })
             risk_ok, risk_trace = stonks_agents.SUPERVISOR.risk.precheck(d, clock)
             agent_trace.append(risk_trace)
             shadow_mode = d.get('execution_mode') == 'shadow'
@@ -991,6 +1069,7 @@ def _stonks_engine_cycle(scope_id):
                     d['shadow_last_reason'] = reason
                     d['shadow_last_market_open'] = bool(clock.get('is_open'))
                     d['shadow_last_signal_count'] = 0
+                d['market_stream_snapshot'] = _stream_status
                 _health=_stonks_zero_token_health(d, scope_id)
                 d['agent_last_trace'].append({'agent':'data_plane','status':'ok','detail':'Ciclo servido sin IA · caché/event router activos','data':d.get('data_plane_telemetry') or {},'timestamp':_cycle_now})
                 d['agent_last_trace'].append({'agent':'self_test','status':'ok' if _health.get('ok') else 'blocked','detail':f"Self-Test {_health.get('passed')}/{_health.get('total')} · 0 tokens",'data':_health,'timestamp':_cycle_now})
@@ -1086,7 +1165,8 @@ def _stonks_engine_cycle(scope_id):
                     def _agent_decision(sym, strat, tf, sig):
                         with app.test_request_context('/api/stonks/decision', method='POST', json={
                             'symbol':sym,'strategy':strat,'timeframe':tf,
-                            'signal':sig,'execute':True,'manual_confirmed':False
+                            'signal':sig,'execute':True,'manual_confirmed':False,
+                            'news_context':news_by_symbol.get(sym) or {}
                         }):
                             session['zar_user_id']=scope_id
                             result=stonks_decision_api(engine=True)
@@ -1117,6 +1197,7 @@ def _stonks_engine_cycle(scope_id):
                 d['shadow_last_market_open'] = bool(clock.get('is_open'))
                 d['shadow_last_signal_count'] = int(shadow_actionable_count)
                 d['shadow_last_reason'] = f"Escaneo completado · {shadow_actionable_count} BUY/SELL · {shadow_wait_count} ESPERAR"
+            d['market_stream_snapshot'] = _stream_status
             _health=_stonks_zero_token_health(d, scope_id)
             d['agent_last_trace'].append({'agent':'data_plane','status':'ok','detail':'Ciclo 0 tokens · datos en caché + event router','data':d.get('data_plane_telemetry') or {},'timestamp':_cycle_now})
             _feeds=_stream_status.get('feeds') or {}; _connected=sum(1 for x in _feeds.values() if x.get('connected')); _subs=sum(int(x.get('subscriptions') or 0) for x in _feeds.values())
@@ -1155,6 +1236,8 @@ def _stonks_engine_loop():
     try:
         fh=open(lock_path,'a+')
         fcntl.flock(fh,fcntl.LOCK_EX)
+        global _STONKS_ENGINE_OWNER_PID
+        _STONKS_ENGINE_OWNER_PID = os.getpid()
     except Exception:
         try:
             if fh: fh.close()
@@ -1229,6 +1312,7 @@ def stonks_stream_watchlist_api():
     d['stream_watchlist_equities']=eq; d['stream_watchlist_crypto']=cr; d['stream_watchlist_options']=op
     _stonks_write(d)
     stream=_stonks_stream_plan(d)
+    stream['watchlist']={'equities':eq,'crypto':cr,'options':op}
     _stonks_audit_append('MARKET STREAM',{'equities':eq,'crypto':cr,'options':op,'orders_created':0,'token_cost':0})
     return jsonify({'ok':True,'stream':stream,'watchlist':stream.get('watchlist'),'orders_created':0,'token_cost':0})
 
@@ -1609,6 +1693,17 @@ def stonks_test_cycle_api():
 def stonks_audit_api():
     return jsonify({'ok':True,'paper':True,'audit':list(reversed(_stonks_audit_read(100)))})
 
+@app.get('/api/stonks/learning')
+@_stonks_serialized
+def stonks_learning_api():
+    d=_stonks_read()
+    if d.get('paper_learning_enabled', True):
+        update=_stonks_learning_update_state(d)
+        if update.get('added'):
+            _stonks_write(d)
+    store=_stonks_learning_read(); view_state=dict(d); view_state['paper_learning_journal']=store.get('journal') or []
+    return jsonify({'ok':True,'zero_tokens':True,'learning':stonks_learning.public_view(view_state, limit=30)})
+
 @app.post('/api/stonks/decision')
 @_stonks_serialized
 def stonks_decision_api(engine=False, lifecycle_test=False):
@@ -1756,6 +1851,10 @@ def stonks_decision_api(engine=False, lifecycle_test=False):
             body={'symbol':symbol,'qty':str(qty),'side':'buy' if requested_signal=='BUY' else 'sell','type':'market','time_in_force':'day'}
             if engine:
                 intent = stonks_lifecycle.entry_intent(d, symbol, body['side'], qty, strategy, timeframe)
+                if not lifecycle_test:
+                    intent['decision_context'] = stonks_learning.decision_context(
+                        actual, payload.get('news_context') if isinstance(payload.get('news_context'), dict) else {},
+                        decision, primary_reason)
                 if lifecycle_test:
                     body.pop('qty')
                     body['notional'] = '1.00'

@@ -207,6 +207,7 @@ class StonksSupervisor:
                 {"id":"risk","role":"Pre-check local; Decision/Risk servidor es autoridad final"},
                 {"id":"shadow_validation","role":"Evalúa señales y Risk sin enviar órdenes en modo Shadow"},
                 {"id":"shadow_outcome","role":"Mide resultados posteriores de señales Shadow con barras reales; 0 órdenes"},
+                {"id":"paper_learning","role":"Aprende de operaciones Paper cerradas; estadísticas persistentes, 0 tokens y sin autoridad Risk/Live"},
                 {"id":"paper_execution","role":"Ejecuta únicamente por la ruta Paper endurecida"},
                 {"id":"position_manager","role":"Gestiona lifecycle, ownership, SL/TP y reconciliación"},
             ],

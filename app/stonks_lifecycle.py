@@ -149,6 +149,16 @@ def manage(state, positions, orders, lookup, submit, save, audit, account, clock
             record.pop('test_error', None)
             test_event(record, 'TEST_ENTRY_REQUESTED', audit, 'Orden confirmada por Alpaca', entry.get('qty'), entry.get('filled_avg_price'))
             filled = number(entry.get('filled_qty') or 0)
+            if filled > 0 and entry.get('filled_avg_price'):
+                try:
+                    record['entry_fill'] = {
+                        'qty': str(filled),
+                        'price': float(number(entry.get('filled_avg_price'))),
+                        'filled_at': entry.get('filled_at') or entry.get('updated_at') or entry.get('submitted_at'),
+                        'order_id': entry.get('id'),
+                    }
+                except Exception:
+                    pass
             if filled == 0:
                 record['status'] = entry.get('status')
                 if entry.get('status') in TERMINAL:
@@ -166,6 +176,26 @@ def manage(state, positions, orders, lookup, submit, save, audit, account, clock
                 if order:
                     test_event(record, 'TEST_CLOSE_REQUESTED', audit, intent['trigger'], intent['qty'], order.get('filled_avg_price'))
             exited = sum((number(o.get('filled_qty') or 0) for _, o in exit_orders if o), Decimal(0))
+            exit_fills = []
+            for intent, order in exit_orders:
+                if not order:
+                    continue
+                try:
+                    fq = number(order.get('filled_qty') or 0)
+                    fp = number(order.get('filled_avg_price') or 0)
+                except Exception:
+                    continue
+                if fq > 0 and fp > 0:
+                    exit_fills.append({
+                        'client_order_id': intent.get('client_order_id'),
+                        'qty': str(fq),
+                        'price': float(fp),
+                        'filled_at': order.get('filled_at') or order.get('updated_at') or order.get('submitted_at'),
+                        'trigger': intent.get('trigger'),
+                        'order_id': order.get('id'),
+                    })
+            if exit_fills:
+                record['exit_fills'] = exit_fills
             remaining = filled - exited
             position = by_symbol.get(symbol)
             known_ids = {cid} | {x['client_order_id'] for x in record['exits']}
@@ -181,6 +211,35 @@ def manage(state, positions, orders, lookup, submit, save, audit, account, clock
                 continue
             # Do not close a new manual position or mistake transient missing data for closure.
             if remaining == 0 and not position and entry.get('status') in TERMINAL:
+                # Freeze a deterministic Paper result before marking the ledger closed.
+                try:
+                    ef = record.get('entry_fill') or {}
+                    ep = number(ef.get('price') or entry.get('filled_avg_price') or 0)
+                    fills = record.get('exit_fills') or exit_fills
+                    total_exit = sum((number(x.get('qty') or 0) for x in fills), Decimal(0))
+                    weighted = sum((number(x.get('qty') or 0) * number(x.get('price') or 0) for x in fills), Decimal(0))
+                    xp = (weighted / total_exit) if total_exit > 0 else Decimal(0)
+                    if ep > 0 and xp > 0 and total_exit > 0:
+                        sign = Decimal(1) if record.get('side') == 'buy' else Decimal(-1)
+                        pnl = sign * (xp - ep) * total_exit
+                        notional = ep * total_exit
+                        try:
+                            opened = timestamp(ef.get('filled_at') or entry.get('filled_at') or entry.get('submitted_at'))
+                            closed = max(timestamp(x.get('filled_at')) for x in fills if x.get('filled_at'))
+                            duration = max(0, int((closed-opened).total_seconds()))
+                            closed_at = closed.isoformat()
+                        except Exception:
+                            duration = 0
+                            closed_at = now()
+                        record['learning_result'] = {
+                            'complete': True, 'qty': str(total_exit), 'exit_price': float(xp),
+                            'realized_pnl': float(pnl),
+                            'return_pct': float((pnl / notional) * 100) if notional > 0 else 0.0,
+                            'duration_s': duration, 'closed_at': closed_at,
+                            'exit_reason': record.get('trigger') or (fills[-1].get('trigger') if fills else None) or 'CLOSE',
+                        }
+                except Exception:
+                    pass
                 if row.get('status') != 'CERRADA':
                     row.update(status='CERRADA', qty='0', market_value=0, unrealized_pl=0, unrealized_pl_pct=0, reason='Cierre confirmado en Alpaca Paper', closed_at=now())
                     event('POSITION_CLOSED', row, row['reason'])
@@ -207,6 +266,13 @@ def manage(state, positions, orders, lookup, submit, save, audit, account, clock
             stop = entry_price * (1 - sign * sl / 100) if sl > 0 else None
             take = entry_price * (1 + sign * tp / 100) if tp > 0 else None
             detected = not row.get('opened_at')
+            # Maintain excursion statistics for the eventual learning journal.
+            try:
+                move_pct = float(sign * (current - entry_price) / entry_price * 100)
+                record['mfe_pct'] = max(float(record.get('mfe_pct') or 0.0), move_pct)
+                record['mae_pct'] = min(float(record.get('mae_pct') or 0.0), move_pct)
+            except Exception:
+                pass
             row.update(direction=direction, qty=str(qty), entry_price=float(entry_price),
                        current_price=float(current), market_value=float(number(position['market_value'])),
                        unrealized_pl=float(number(position['unrealized_pl'])),
