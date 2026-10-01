@@ -13,7 +13,7 @@ import html as html_lib
 import uuid
 from functools import wraps
 from contextlib import contextmanager
-from . import stonks_lifecycle, stonks_preflight, stonks_agents, stonks_news, subagent_orchestrator, stonks_backtest, stonks_validation, stonks_shadow
+from . import stonks_lifecycle, stonks_preflight, stonks_agents, stonks_news, stonks_dataplane, stonks_selftest, subagent_orchestrator, stonks_backtest, stonks_validation, stonks_shadow
 from datetime import datetime, timezone
 from .user_scope import set_current_user, get_current_user, anonymous_id, user_id_for_email
 from pathlib import Path
@@ -645,7 +645,8 @@ def _stonks_default():
         'shadow_last_market_open': None,
         'shadow_last_signal_count': 0,
         'shadow_outcome_summary': {},
-        'shadow_outcome_last_update': None
+        'shadow_outcome_last_update': None,
+        'data_plane_telemetry': {}
     }
 def _stonks_read():
     p = _stonks_file()
@@ -880,6 +881,12 @@ def _stonks_refresh_shadow_outcomes(d, force=False):
     d['shadow_outcome_last_update']=now.isoformat()
     return d, {'agent':'shadow_outcome','status':'ok','detail':f"{summary.get('complete',0)} completos · {summary.get('pending',0)} pendientes · 0 órdenes",'data':summary,'timestamp':now.isoformat()}
 
+def _stonks_zero_token_health(d, scope_id):
+    stonks_dataplane.PLANE.sync_state(d, scope_id)
+    health=stonks_selftest.run(d, stonks_agents.describe(), d.get('data_plane_telemetry') or {})
+    d['stonks_self_test']=health
+    return health
+
 @_stonks_serialized
 def _stonks_engine_cycle(scope_id):
     """Run one autonomous Paper cycle for the single authorized Stonks owner.
@@ -888,6 +895,8 @@ def _stonks_engine_cycle(scope_id):
     with app.test_request_context('/api/stonks/engine/cycle', method='POST'):
         session['zar_user_id']=scope_id
         d=_stonks_read()
+        stonks_dataplane.PLANE.hydrate(scope_id, d.get('data_plane_telemetry'))
+        stonks_dataplane.PLANE.begin_cycle(scope_id)
         symbols=d.get('engine_symbols') or ['AAPL']
         strategy=d.get('engine_strategy') or 'trend'
         timeframe=d.get('engine_timeframe') or '1Min'
@@ -896,13 +905,20 @@ def _stonks_engine_cycle(scope_id):
             recon, clock, market_trace = stonks_agents.SUPERVISOR.market.snapshot(
                 scope_id, _stonks_reconcile_paper_state, lambda: _alpaca_paper_request('/v2/clock'))
             agent_trace.append(market_trace)
-            # Public-news context is cached and observational only. It never creates orders.
+            # Zero-token Data Plane: news is refreshed on its own TTL, not every 5-second cycle.
             news_by_symbol = {}
             for _sym in symbols[:8]:
                 try:
-                    news_ctx, news_trace = stonks_agents.SUPERVISOR.news.context(_sym, stonks_news.get_context)
+                    news_ctx, news_cache = stonks_dataplane.PLANE.news(
+                        scope_id, _sym, lambda sym=_sym: stonks_news.get_context(sym), ttl=300.0)
                     news_by_symbol[_sym] = news_ctx
-                    agent_trace.append(news_trace)
+                    agent_trace.append({
+                        'agent':'news_sentiment','status':'ok' if news_ctx.get('ok') else 'idle',
+                        'detail':f"{_sym}: {news_ctx.get('sentiment','neutral')} · {'cache' if news_cache.get('cached') else 'actualizado'} · 0 tokens",
+                        'data':{'symbol':_sym,'sentiment':news_ctx.get('sentiment'),'sentiment_score':news_ctx.get('sentiment_score'),
+                                'source_count':len(news_ctx.get('items') or []),'cached':bool(news_cache.get('cached')),
+                                'public_only':True,'order_authority':False},
+                        'timestamp':datetime.now(timezone.utc).isoformat()})
                 except Exception as _news_exc:
                     agent_trace.append({'agent':'news_sentiment','status':'idle','detail':f'{_sym}: noticias no disponibles', 'data':{'error':str(_news_exc)[:240]}, 'timestamp':datetime.now(timezone.utc).isoformat()})
             lifecycle, position_trace = stonks_agents.SUPERVISOR.positions.run(
@@ -939,6 +955,10 @@ def _stonks_engine_cycle(scope_id):
                     d['shadow_last_reason'] = reason
                     d['shadow_last_market_open'] = bool(clock.get('is_open'))
                     d['shadow_last_signal_count'] = 0
+                _health=_stonks_zero_token_health(d, scope_id)
+                d['agent_last_trace'].append({'agent':'data_plane','status':'ok','detail':'Ciclo servido sin IA · caché/event router activos','data':d.get('data_plane_telemetry') or {},'timestamp':_cycle_now})
+                d['agent_last_trace'].append({'agent':'self_test','status':'ok' if _health.get('ok') else 'blocked','detail':f"Self-Test {_health.get('passed')}/{_health.get('total')} · 0 tokens",'data':_health,'timestamp':_cycle_now})
+                d['agent_last_trace']=d['agent_last_trace'][-30:]
                 _stonks_write(d)
                 return {'status':'idle', 'reason':reason, 'shadow':shadow_mode}
             open_symbols = {o['symbol'] for o in recon['open_orders']}
@@ -957,9 +977,21 @@ def _stonks_engine_cycle(scope_id):
                     if symbol in held_symbols and symbol not in records:
                         actions.append(symbol + ': posición manual; sin gestión automática')
                         continue
-                    signal, analysis_trace = stonks_agents.SUPERVISOR.analysis.signal(
-                        symbol, strategy, timeframe, _stonks_current_signal)
-                    agent_trace.append(analysis_trace)
+                    # Technical features refresh only when a new completed-bar window can exist.
+                    _signal_pair, signal_cache = stonks_dataplane.PLANE.signal(
+                        scope_id, symbol, strategy, timeframe, bool(clock.get('is_open')),
+                        lambda sym=symbol: _stonks_current_signal(sym, strategy, timeframe, 'iex'))
+                    signal = _signal_pair[0] if isinstance(_signal_pair, tuple) else _signal_pair
+                    agent_trace.append(stonks_agents.AgentResult(
+                        'analysis','ok',
+                        f"{symbol}: {signal.get('signal_label') or signal.get('signal')} · {'cache' if signal_cache.get('cached') else 'barra actualizada'} · 0 tokens",
+                        {'symbol':symbol,'signal':signal.get('signal'),'reason':signal.get('reason'),
+                         'indicators':signal.get('indicators') or {},'cached':bool(signal_cache.get('cached'))}).as_dict())
+                    _dp_event = stonks_dataplane.PLANE.route_event(scope_id, symbol, signal, news_by_symbol.get(symbol) or {})
+                    if _dp_event.get('significant'):
+                        agent_trace.append({'agent':'event_router','status':'event','detail':f"{symbol}: {_dp_event.get('reason')} · 0 tokens",'data':_dp_event,'timestamp':_dp_event.get('timestamp')})
+                    if _dp_event.get('ai_candidate'):
+                        agent_trace.append({'agent':'ai_gate','status':'queued','detail':f"{symbol}: candidato a IA bajo demanda; gate cerrado · 0 llamadas",'data':{'model_called':False,'reason':_dp_event.get('reason')},'timestamp':_dp_event.get('timestamp')})
                     if symbol in held_symbols:
                         # Preserve strategy SELL exits for owned LONGs, through the same
                         # durable close/Risk state machine (also when SL/TP is disabled).
@@ -1042,6 +1074,10 @@ def _stonks_engine_cycle(scope_id):
                 d['shadow_last_market_open'] = bool(clock.get('is_open'))
                 d['shadow_last_signal_count'] = int(shadow_actionable_count)
                 d['shadow_last_reason'] = f"Escaneo completado · {shadow_actionable_count} BUY/SELL · {shadow_wait_count} ESPERAR"
+            _health=_stonks_zero_token_health(d, scope_id)
+            d['agent_last_trace'].append({'agent':'data_plane','status':'ok','detail':'Ciclo 0 tokens · datos en caché + event router','data':d.get('data_plane_telemetry') or {},'timestamp':_cycle_now})
+            d['agent_last_trace'].append({'agent':'self_test','status':'ok' if _health.get('ok') else 'blocked','detail':f"Self-Test {_health.get('passed')}/{_health.get('total')} · 0 tokens",'data':_health,'timestamp':_cycle_now})
+            d['agent_last_trace']=d['agent_last_trace'][-30:]
             _stonks_write(d)
             return {'status':'ok','action':action,'shadow':shadow_mode}
         except Exception as exc:
@@ -1051,6 +1087,7 @@ def _stonks_engine_cycle(scope_id):
                 d['shadow_last_cycle'] = _cycle_now
                 d['shadow_last_reason'] = 'ERROR · reconciliación Paper no disponible; 0 órdenes'
                 d['shadow_last_signal_count'] = 0
+            _stonks_zero_token_health(d, scope_id)
             _stonks_write(d)
             for record in stonks_lifecycle.active_records(d):
                 stonks_lifecycle.test_event(record, 'TEST_LIFECYCLE_ERROR', _stonks_audit_append, 'Alpaca no disponible; conservando intención y ownership')
@@ -1099,12 +1136,27 @@ def _stonks_engine_loop():
 def stonks_status_api():
     d=_stonks_read()
     pk,ps=_alpaca_paper_credentials()
-    return jsonify({'ok':True, **d, 'lifecycle_test':stonks_lifecycle.test_view(d), 'engine_owner':_stonks_engine_owner_read(), 'engine_owned_by_current_user':_stonks_engine_owner_read()==_user_scope_id(), 'audit_count':len(_stonks_audit_read(200)), 'paper_configured': bool(pk and ps), 'crypto_configured': bool(os.environ.get('KRAKEN_API_KEY') and os.environ.get('KRAKEN_API_SECRET')), 'engine_position_count':len(d.get('engine_last_positions') or []), 'engine_open_order_count':len(d.get('engine_last_open_orders') or []), 'position_lifecycle_enabled':bool(d.get('position_lifecycle_enabled')), 'stop_loss_pct':d.get('stop_loss_pct',1.0), 'take_profit_pct':d.get('take_profit_pct',2.0), 'managed_position_count':sum(r.get('status')!='CERRADA' for r in (d.get('managed_positions') or {}).values()), 'lifecycle_last_action':d.get('lifecycle_last_action'), 'agents':stonks_agents.describe()})
+    stonks_dataplane.PLANE.hydrate(_user_scope_id(), d.get('data_plane_telemetry'))
+    data_plane=stonks_dataplane.PLANE.status(_user_scope_id(), d.get('data_plane_telemetry'))
+    self_test=stonks_selftest.run(d, stonks_agents.describe(), data_plane)
+    return jsonify({'ok':True, **d, 'data_plane':data_plane, 'self_test':self_test, 'lifecycle_test':stonks_lifecycle.test_view(d), 'engine_owner':_stonks_engine_owner_read(), 'engine_owned_by_current_user':_stonks_engine_owner_read()==_user_scope_id(), 'audit_count':len(_stonks_audit_read(200)), 'paper_configured': bool(pk and ps), 'crypto_configured': bool(os.environ.get('KRAKEN_API_KEY') and os.environ.get('KRAKEN_API_SECRET')), 'engine_position_count':len(d.get('engine_last_positions') or []), 'engine_open_order_count':len(d.get('engine_last_open_orders') or []), 'position_lifecycle_enabled':bool(d.get('position_lifecycle_enabled')), 'stop_loss_pct':d.get('stop_loss_pct',1.0), 'take_profit_pct':d.get('take_profit_pct',2.0), 'managed_position_count':sum(r.get('status')!='CERRADA' for r in (d.get('managed_positions') or {}).values()), 'lifecycle_last_action':d.get('lifecycle_last_action'), 'agents':stonks_agents.describe()})
 
 @app.get('/api/stonks/agents')
 def stonks_agents_api():
     d=_stonks_read()
     return jsonify({'ok':True,'paper':True, **stonks_agents.describe(), 'last_trace':d.get('agent_last_trace') or []})
+
+@app.get('/api/stonks/dataplane')
+def stonks_dataplane_api():
+    d=_stonks_read()
+    return jsonify({'ok':True,'paper':True,'zero_token':True,'data_plane':stonks_dataplane.PLANE.status(_user_scope_id(), d.get('data_plane_telemetry'))})
+
+@app.get('/api/stonks/selftest')
+def stonks_selftest_api():
+    d=_stonks_read()
+    stonks_dataplane.PLANE.hydrate(_user_scope_id(), d.get('data_plane_telemetry'))
+    telemetry=stonks_dataplane.PLANE.status(_user_scope_id(), d.get('data_plane_telemetry'))
+    return jsonify({'ok':True,'paper':True,'self_test':stonks_selftest.run(d, stonks_agents.describe(), telemetry)})
 
 @app.get('/api/stonks/news')
 def stonks_news_api():
