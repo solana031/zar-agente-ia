@@ -1090,14 +1090,23 @@ def _stonks_engine_cycle(scope_id):
             })
             risk_ok, risk_trace = stonks_agents.SUPERVISOR.risk.precheck(d, clock)
             agent_trace.append(risk_trace)
-            shadow_mode = d.get('execution_mode') == 'shadow'
-            if shadow_mode:
+            # Shadow is an observation layer, not an execution mode.  In Paper Auto it
+            # runs in parallel with the real Paper decision path, but never submits orders.
+            # Legacy execution_mode='shadow' remains supported as a shadow-only mode.
+            shadow_only = d.get('execution_mode') == 'shadow'
+            shadow_observe = shadow_only or (
+                d.get('execution_mode') == 'paper_auto'
+                and d.get('mode') == 'paper'
+                and bool(d.get('autonomous_engine'))
+            )
+            if shadow_observe:
                 try:
                     d, outcome_trace = _stonks_refresh_shadow_outcomes(d)
                     _stonks_write(d)
                     agent_trace.append(outcome_trace)
                 except Exception as _outcome_exc:
                     agent_trace.append({'agent':'shadow_outcome','status':'idle','detail':'Outcome Tracker temporalmente no disponible','data':{'error':str(_outcome_exc)[:240],'orders_created':0},'timestamp':datetime.now(timezone.utc).isoformat()})
+            if shadow_only:
                 shadow_reasons=[]
                 if d.get('revoked'): shadow_reasons.append('Control revocado')
                 if d.get('paused'): shadow_reasons.append('Motor pausado')
@@ -1110,9 +1119,9 @@ def _stonks_engine_cycle(scope_id):
             if reason:
                 _cycle_now = datetime.now(timezone.utc).isoformat()
                 d['engine_last_run'] = _cycle_now
-                d['engine_last_action'] = ('SHADOW · ' if shadow_mode else '') + reason
+                d['engine_last_action'] = ('SHADOW · ' if shadow_only else '') + reason
                 d['agent_last_trace'] = agent_trace[-30:]
-                if shadow_mode:
+                if shadow_observe:
                     d['shadow_cycle_total'] = int(d.get('shadow_cycle_total') or 0) + 1
                     d['shadow_last_cycle'] = _cycle_now
                     d['shadow_last_reason'] = reason
@@ -1124,7 +1133,7 @@ def _stonks_engine_cycle(scope_id):
                 d['agent_last_trace'].append({'agent':'self_test','status':'ok' if _health.get('ok') else 'blocked','detail':f"Self-Test {_health.get('passed')}/{_health.get('total')} · 0 tokens",'data':_health,'timestamp':_cycle_now})
                 d['agent_last_trace']=d['agent_last_trace'][-30:]
                 _stonks_write(d)
-                return {'status':'idle', 'reason':reason, 'shadow':shadow_mode}
+                return {'status':'idle', 'reason':reason, 'shadow':shadow_observe}
             open_symbols = {o['symbol'] for o in recon['open_orders']}
             held_symbols = {p['symbol'] for p in recon['positions']}
             records = {r['symbol']:r for r in stonks_lifecycle.active_records(d)}
@@ -1173,42 +1182,43 @@ def _stonks_engine_cycle(scope_id):
                             actions.extend(result.get('actions') or [])
                         continue
                     if signal.get('signal') not in ('BUY','SELL'):
-                        if shadow_mode:
+                        if shadow_observe:
                             shadow_wait_count += 1
                         actions.append(f"{symbol}: ESPERAR")
                         continue
-                    # Shadow mode evaluates the hardened Decision + Risk route but never submits an order.
-                    if shadow_mode:
-                        # A cached signal is one observation, not a new sample every 5 s.
-                        if signal.get('bar_time') and any(
+                    # Shadow observes the same actionable bar in parallel. It evaluates
+                    # Decision + Risk with execute=False and therefore has zero broker authority.
+                    if shadow_observe:
+                        duplicate_shadow = bool(signal.get('bar_time')) and any(
                             all(e.get(k) == v for k, v in {
                                 'symbol': symbol, 'strategy': strategy, 'timeframe': timeframe,
                                 'signal': signal.get('signal'), 'bar_time': signal['bar_time']}.items())
-                            for e in (_stonks_read().get('shadow_log') or [])):
+                            for e in (_stonks_read().get('shadow_log') or []))
+                        if not duplicate_shadow:
+                            shadow_actionable_count += 1
+                            with app.test_request_context('/api/stonks/decision', method='POST', json={
+                                'symbol':symbol,'strategy':strategy,'timeframe':timeframe,
+                                'signal':signal.get('signal'),'execute':False,'manual_confirmed':False
+                            }):
+                                session['zar_user_id']=scope_id
+                                _shadow_result=stonks_decision_api(engine=True)
+                            _shadow_payload=_shadow_result[0] if isinstance(_shadow_result,tuple) else _shadow_result
+                            _shadow_data=_shadow_payload.get_json() if hasattr(_shadow_payload,'get_json') else {}
+                            _event={
+                                'id':uuid.uuid4().hex,'timestamp':datetime.now(timezone.utc).isoformat(),'symbol':symbol,'strategy':strategy,
+                                'timeframe':timeframe,'signal':signal.get('signal'),'bar_time':signal.get('bar_time'),'decision':_shadow_data.get('decision'),
+                                'primary_reason':_shadow_data.get('primary_reason') or _shadow_data.get('reason'),
+                                'price':_shadow_data.get('price'),'estimated_value':_shadow_data.get('estimated_value'),
+                                'order_created':False,'outcomes':{},'outcome_status':'pending','outcome_bars':0
+                            }
+                            latest=_stonks_read(); log=list(latest.get('shadow_log') or []); log.append(_event); latest['shadow_log']=log[-stonks_shadow.MAX_EVENTS:]
+                            latest['shadow_outcome_summary']=stonks_shadow.summarize(latest['shadow_log'])
+                            latest['shadow_last_run']=_event['timestamp']; latest['shadow_total_signals']=int(latest.get('shadow_total_signals') or 0)+1
+                            _stonks_write(latest); _stonks_audit_append('SHADOW_SIGNAL',_event)
+                            agent_trace.append({'agent':'shadow_validation','status':'observed','detail':f"{symbol}: {signal.get('signal')} · {_event.get('decision') or 'sin decisión'} · 0 órdenes",'data':_event,'timestamp':_event['timestamp']})
+                            actions.append(f"{symbol}: SHADOW {signal.get('signal')} · {_event.get('decision') or 'sin acción'} · 0 órdenes")
+                        if shadow_only:
                             continue
-                        shadow_actionable_count += 1
-                        with app.test_request_context('/api/stonks/decision', method='POST', json={
-                            'symbol':symbol,'strategy':strategy,'timeframe':timeframe,
-                            'signal':signal.get('signal'),'execute':False,'manual_confirmed':False
-                        }):
-                            session['zar_user_id']=scope_id
-                            _shadow_result=stonks_decision_api(engine=True)
-                        _shadow_payload=_shadow_result[0] if isinstance(_shadow_result,tuple) else _shadow_result
-                        _shadow_data=_shadow_payload.get_json() if hasattr(_shadow_payload,'get_json') else {}
-                        _event={
-                            'id':uuid.uuid4().hex,'timestamp':datetime.now(timezone.utc).isoformat(),'symbol':symbol,'strategy':strategy,
-                            'timeframe':timeframe,'signal':signal.get('signal'),'bar_time':signal.get('bar_time'),'decision':_shadow_data.get('decision'),
-                            'primary_reason':_shadow_data.get('primary_reason') or _shadow_data.get('reason'),
-                            'price':_shadow_data.get('price'),'estimated_value':_shadow_data.get('estimated_value'),
-                            'order_created':False,'outcomes':{},'outcome_status':'pending','outcome_bars':0
-                        }
-                        latest=_stonks_read(); log=list(latest.get('shadow_log') or []); log.append(_event); latest['shadow_log']=log[-stonks_shadow.MAX_EVENTS:]
-                        latest['shadow_outcome_summary']=stonks_shadow.summarize(latest['shadow_log'])
-                        latest['shadow_last_run']=_event['timestamp']; latest['shadow_total_signals']=int(latest.get('shadow_total_signals') or 0)+1
-                        _stonks_write(latest); _stonks_audit_append('SHADOW_SIGNAL',_event)
-                        agent_trace.append({'agent':'shadow_validation','status':'observed','detail':f"{symbol}: {signal.get('signal')} · {_event.get('decision') or 'sin decisión'} · 0 órdenes",'data':_event,'timestamp':_event['timestamp']})
-                        actions.append(f"{symbol}: SHADOW {signal.get('signal')} · {_event.get('decision') or 'sin acción'} · 0 órdenes")
-                        continue
                     # v32 Paper Quality Gate: reduce weak/repetitive autonomous entries.
                     # This filter has no broker, sizing, Risk or Live authority.
                     if d.get('paper_profitability_enabled', True):
@@ -1264,7 +1274,7 @@ def _stonks_engine_cycle(scope_id):
             actions.extend(lifecycle2.get('actions') or [])
             action=' | '.join(actions)[:2000] if actions else 'Sin señales.'
             d=_stonks_read(); _cycle_now=datetime.now(timezone.utc).isoformat(); d['engine_last_run']=_cycle_now; d['engine_last_action']=action; d['agent_last_trace']=agent_trace[-30:]
-            if shadow_mode:
+            if shadow_observe:
                 d['shadow_cycle_total'] = int(d.get('shadow_cycle_total') or 0) + 1
                 d['shadow_last_cycle'] = _cycle_now
                 d['shadow_last_market_open'] = bool(clock.get('is_open'))
@@ -1278,10 +1288,10 @@ def _stonks_engine_cycle(scope_id):
             d['agent_last_trace'].append({'agent':'self_test','status':'ok' if _health.get('ok') else 'blocked','detail':f"Self-Test {_health.get('passed')}/{_health.get('total')} · 0 tokens",'data':_health,'timestamp':_cycle_now})
             d['agent_last_trace']=d['agent_last_trace'][-30:]
             _stonks_write(d)
-            return {'status':'ok','action':action,'shadow':shadow_mode}
+            return {'status':'ok','action':action,'shadow':shadow_observe}
         except Exception as exc:
             d=_stonks_read(); _cycle_now=datetime.now(timezone.utc).isoformat(); d['paper_connected']=False; d['engine_last_run']=_cycle_now; d['engine_last_action']='ERROR · reconciliación Paper no disponible; sin órdenes'
-            if d.get('execution_mode') == 'shadow':
+            if d.get('execution_mode') in ('shadow','paper_auto') and d.get('mode') == 'paper' and d.get('autonomous_engine'):
                 d['shadow_cycle_total'] = int(d.get('shadow_cycle_total') or 0) + 1
                 d['shadow_last_cycle'] = _cycle_now
                 d['shadow_last_reason'] = 'ERROR · reconciliación Paper no disponible; 0 órdenes'
