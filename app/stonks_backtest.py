@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from math import sqrt
-from statistics import mean, pstdev
+from statistics import mean, pstdev, median
 from typing import Any
 
 
@@ -108,7 +108,7 @@ def _segments(curve):
     return out
 
 
-def simulate(bars, strategy='trend', capital=10000.0, risk_pct=1.0, slippage_pct=0.05):
+def simulate(bars, strategy='trend', capital=10000.0, risk_pct=1.0, slippage_pct=0.05, start_index=0):
     """Pure deterministic long-only simulation.
 
     Signals use only closed bars and execute at the next bar open. Position size uses
@@ -122,6 +122,7 @@ def simulate(bars, strategy='trend', capital=10000.0, risk_pct=1.0, slippage_pct
     if len(bars)<60:
         raise ValueError('Se necesitan al menos 60 barras')
     capital=float(capital); risk_pct=float(risk_pct); slippage_pct=float(slippage_pct)
+    start_index=max(0,min(int(start_index or 0),len(bars)-1))
     closes=[float(b['c']) for b in bars]
     sma20=sma(closes,20); sma50=sma(closes,50); atr14=atr(bars,14); rsi14=rsi(closes,14)
     cash=capital; shares=0.0; entry_price=None; entry_index=None; stop_price=None
@@ -143,7 +144,27 @@ def simulate(bars, strategy='trend', capital=10000.0, risk_pct=1.0, slippage_pct
         trades.append(row); closed.append(row)
         shares=0.0; entry_price=None; entry_index=None; stop_price=None
 
+    def signal_at(i, has_position):
+        if i < 0:
+            return None
+        if strategy=='trend' and sma20[i] is not None and sma50[i] is not None:
+            if not has_position and sma20[i]>sma50[i]: return 'buy'
+            if has_position and sma20[i]<sma50[i]: return 'sell'
+        elif strategy=='mean_reversion' and rsi14[i] is not None:
+            if not has_position and rsi14[i]<30: return 'buy'
+            if has_position and rsi14[i]>70: return 'sell'
+        return None
+
+    # Walk-forward/out-of-sample mode: indicators may use warm-up history, but
+    # portfolio activity starts exactly at start_index. The prior close may
+    # legitimately produce an order for the evaluation window's first open.
+    if start_index > 0:
+        pending=signal_at(start_index-1, False)
+
     for i,b in enumerate(bars):
+        if i < start_index:
+            equity_curve.append(capital)
+            continue
         o=float(b['o']); h=float(b['h']); l=float(b['l']); c=float(b['c'])
         # Signal decided on previous close; execution occurs now at today's open.
         if pending:
@@ -177,12 +198,8 @@ def simulate(bars, strategy='trend', capital=10000.0, risk_pct=1.0, slippage_pct
 
         # Generate a signal from THIS CLOSED bar, for execution at NEXT open.
         if i+1<len(bars):
-            if strategy=='trend' and sma20[i] is not None and sma50[i] is not None:
-                if shares==0 and sma20[i]>sma50[i]: pending='buy'
-                elif shares>0 and sma20[i]<sma50[i]: pending='sell'
-            elif strategy=='mean_reversion' and rsi14[i] is not None:
-                if shares==0 and rsi14[i]<30: pending='buy'
-                elif shares>0 and rsi14[i]>70: pending='sell'
+            sig=signal_at(i, shares>0)
+            if sig: pending=sig
 
     if shares>0:
         close_position(closes[-1],bars[-1],'FINAL_CLOSE',len(bars)-1)
@@ -194,10 +211,12 @@ def simulate(bars, strategy='trend', capital=10000.0, risk_pct=1.0, slippage_pct
     wins=[p for p in pnls if p>0]; losses=[p for p in pnls if p<0]
     gross_profit=sum(wins); gross_loss=abs(sum(losses))
     pf=(gross_profit/gross_loss) if gross_loss else (float('inf') if gross_profit>0 else None)
+    eval_curve=equity_curve[start_index:] or [capital]
+    eval_bars=max(1,len(bars)-start_index)
     ret=(final_equity/capital-1)*100
-    dd=max_drawdown(equity_curve)*100
-    cagr=_annualized_return(capital, final_equity, len(bars))
-    sharpe=_sharpe(equity_curve)
+    dd=max_drawdown(eval_curve)*100
+    cagr=_annualized_return(capital, final_equity, eval_bars)
+    sharpe=_sharpe(eval_curve)
     calmar=(cagr/abs(dd)) if dd<0 else None
     avg_win=(sum(wins)/len(wins)) if wins else 0.0
     avg_loss=(sum(losses)/len(losses)) if losses else 0.0
@@ -207,10 +226,11 @@ def simulate(bars, strategy='trend', capital=10000.0, risk_pct=1.0, slippage_pct
     for p in pnls:
         consec=consec+1 if p<0 else 0
         max_consec=max(max_consec,consec)
-    benchmark=((closes[-1]/float(bars[0]['o']))-1)*100 if float(bars[0]['o']) else 0.0
-    segment_returns=_segments(equity_curve)
+    benchmark_start=float(bars[start_index]['o']) if bars[start_index].get('o') else 0.0
+    benchmark=((closes[-1]/benchmark_start)-1)*100 if benchmark_start else 0.0
+    segment_returns=_segments(eval_curve)
     diagnostics=[]
-    if len(bars)<252: diagnostics.append('Histórico inferior a ~1 año bursátil.')
+    if eval_bars<252: diagnostics.append('Ventana evaluada inferior a ~1 año bursátil.')
     if len(sell_trades)<10: diagnostics.append('Muestra pequeña: menos de 10 operaciones cerradas.')
     if not losses and sell_trades: diagnostics.append('No hay operaciones perdedoras en la muestra; profit factor poco informativo.')
     if abs(dd)<1e-9 and sell_trades: diagnostics.append('Drawdown prácticamente nulo: revisar tamaño de muestra y frecuencia de operaciones.')
@@ -224,7 +244,7 @@ def simulate(bars, strategy='trend', capital=10000.0, risk_pct=1.0, slippage_pct
             'expectancy_usd':round(expectancy,2),'avg_win_usd':round(avg_win,2),'avg_loss_usd':round(avg_loss,2),
             'sharpe':round(sharpe,3) if sharpe is not None else None,
             'calmar':round(calmar,3) if calmar is not None else None,
-            'exposure_pct':round((exposure_bars/max(1,len(bars))*100),2),
+            'exposure_pct':round((exposure_bars/eval_bars*100),2),
             'avg_bars_held':round(avg_held,2),'max_consecutive_losses':max_consec,
             'benchmark_return_pct':round(benchmark,2),'vs_benchmark_pct':round(ret-benchmark,2),
         },
@@ -235,7 +255,7 @@ def simulate(bars, strategy='trend', capital=10000.0, risk_pct=1.0, slippage_pct
         'model':{
             'lookahead_safe':True,'signal_timing':'closed_bar','execution_timing':'next_open',
             'position_sizing':'risk_pct / 2ATR','atr_source':'prior_closed_bar','protective_stop':'2ATR',
-            'slippage_applied':True,'live_orders':False,
+            'slippage_applied':True,'live_orders':False,'evaluation_start_index':start_index,'evaluation_bars':eval_bars,
         }
     }
 
@@ -251,3 +271,71 @@ def run_backtest(bars, strategy='trend', capital=10000.0, risk_pct=1.0, slippage
         stress_levels.append({'label':f'{mult}x slippage','slippage_pct':round(slip,3),'return_pct':m['return_pct'],'max_drawdown_pct':m['max_drawdown_pct'],'trades':m['trades'],'profit_factor':m['profit_factor']})
     base['stress_tests']=stress_levels
     return base
+
+
+
+def walk_forward(bars, strategy='trend', capital=10000.0, risk_pct=1.0, slippage_pct=0.05,
+                 folds=4, train_bars=126, test_bars=63):
+    """Rolling out-of-sample validation for a fixed deterministic strategy.
+
+    There is no parameter fitting here: each fold uses prior bars strictly as
+    indicator warm-up/context, resets capital at the first out-of-sample bar,
+    and scores only the subsequent test window. This makes the result useful
+    as a stability check without introducing LLMs or optimization leakage.
+    """
+    bars=[dict(b) for b in bars if all(k in b for k in ('o','h','l','c'))]
+    folds=max(2,min(int(folds or 4),8))
+    train_bars=max(60,min(int(train_bars or 126),504))
+    test_bars=max(21,min(int(test_bars or 63),252))
+    n=len(bars)
+    possible=max(0,(n-train_bars)//test_bars)
+    fold_count=min(folds,possible)
+    if fold_count < 2:
+        return {
+            'ok':False,'folds':[],
+            'summary':{'folds':0,'positive_folds':0,'positive_fold_pct':0.0,'trades':0},
+            'diagnostics':['No hay histórico suficiente para al menos 2 ventanas walk-forward.']
+        }
+
+    first_test_start=n-(fold_count*test_bars)
+    rows=[]
+    for k in range(fold_count):
+        test_start=first_test_start+k*test_bars
+        test_end=min(n,test_start+test_bars)
+        context_start=max(0,test_start-train_bars)
+        subset=bars[context_start:test_end]
+        eval_start=test_start-context_start
+        sim=simulate(subset,strategy,capital,risk_pct,slippage_pct,start_index=eval_start)
+        m=sim['metrics']
+        rows.append({
+            'fold':k+1,
+            'train_start':bars[context_start].get('t'),'train_end':bars[test_start-1].get('t') if test_start>0 else None,
+            'test_start':bars[test_start].get('t'),'test_end':bars[test_end-1].get('t'),
+            'test_bars':test_end-test_start,
+            'return_pct':m['return_pct'],'max_drawdown_pct':m['max_drawdown_pct'],
+            'sharpe':m['sharpe'],'profit_factor':m['profit_factor'],'trades':m['trades'],
+            'win_rate_pct':m['win_rate_pct'],'vs_benchmark_pct':m['vs_benchmark_pct'],
+        })
+
+    returns=[float(r['return_pct']) for r in rows]
+    dds=[float(r['max_drawdown_pct']) for r in rows]
+    sharpes=[float(r['sharpe']) for r in rows if r.get('sharpe') is not None]
+    positive=sum(1 for x in returns if x>0)
+    diagnostics=[]
+    if sum(int(r.get('trades') or 0) for r in rows)<10:
+        diagnostics.append('Walk-forward con pocas operaciones totales; interpretar con cautela.')
+    if positive < len(rows):
+        diagnostics.append('No todas las ventanas fuera de muestra fueron positivas.')
+    return {
+        'ok':True,
+        'folds':rows,
+        'summary':{
+            'folds':len(rows),'positive_folds':positive,'positive_fold_pct':round(positive/len(rows)*100,1),
+            'median_return_pct':round(median(returns),2),'worst_return_pct':round(min(returns),2),'best_return_pct':round(max(returns),2),
+            'median_drawdown_pct':round(median(dds),2),'median_sharpe':round(median(sharpes),3) if sharpes else None,
+            'trades':sum(int(r.get('trades') or 0) for r in rows),
+            'avg_vs_benchmark_pct':round(mean(float(r.get('vs_benchmark_pct') or 0) for r in rows),2),
+        },
+        'diagnostics':diagnostics,
+        'model':{'fixed_strategy':True,'parameter_optimization':False,'out_of_sample':True,'live_orders':False}
+    }

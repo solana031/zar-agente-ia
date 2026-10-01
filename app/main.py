@@ -1688,6 +1688,86 @@ def stonks_backtest_api():
     except Exception as exc:
         return jsonify({'ok':False,'error':str(exc)}),502
 
+
+@app.post('/api/stonks/validation-suite')
+def stonks_validation_suite_api():
+    """Multi-symbol/multi-period deterministic robustness lab. Never sends broker orders."""
+    try:
+        payload=request.get_json(silent=True) or {}
+        raw_symbols=payload.get('symbols') or ['AAPL','MSFT','SPY','QQQ']
+        if isinstance(raw_symbols,str): raw_symbols=[x.strip().upper() for x in raw_symbols.split(',') if x.strip()]
+        symbols=[]
+        for sym in raw_symbols:
+            sym=str(sym).strip().upper()
+            if sym and len(sym)<=20 and sym.replace('.','').replace('-','').isalnum() and sym not in symbols:
+                symbols.append(sym)
+        symbols=symbols[:6]
+        if not symbols: return jsonify({'ok':False,'error':'Añade al menos un símbolo válido.'}),400
+
+        raw_periods=payload.get('periods') or [180,365,730]
+        if isinstance(raw_periods,str): raw_periods=[x.strip() for x in raw_periods.split(',') if x.strip()]
+        periods=[]
+        for value in raw_periods:
+            try: d=max(90,min(int(value),2000))
+            except Exception: continue
+            if d not in periods: periods.append(d)
+        periods=sorted(periods)[:5]
+        if not periods: periods=[180,365,730]
+
+        strategy=str(payload.get('strategy') or 'trend').strip().lower()
+        if strategy not in ('trend','mean_reversion'): return jsonify({'ok':False,'error':'Estrategia no válida.'}),400
+        try: capital=max(100.0,min(float(payload.get('capital') or 10000),100000000.0))
+        except Exception: capital=10000.0
+        try: risk_pct=max(0.1,min(float(payload.get('risk_pct') or 1),10.0))
+        except Exception: risk_pct=1.0
+        try: slippage_pct=max(0,min(float(payload.get('slippage_pct') or 0.05),2.0))
+        except Exception: slippage_pct=0.05
+        feed=str(payload.get('feed') or 'iex').strip().lower()
+        if feed not in ('iex','sip'): feed='iex'
+
+        from datetime import timedelta
+        end=datetime.now(timezone.utc)
+        fetch_days=max(max(periods)+180,900)
+        fetch_start=end-timedelta(days=fetch_days)
+        rows=[]; walk_rows=[]; errors=[]
+        for symbol in symbols:
+            try:
+                params={'timeframe':'1Day','start':fetch_start.strftime('%Y-%m-%dT%H:%M:%SZ'),'end':end.strftime('%Y-%m-%dT%H:%M:%SZ'),'limit':10000,'feed':feed,'sort':'asc'}
+                data=_alpaca_market_request('/v2/stocks/'+symbol+'/bars',params=params)
+                all_bars=data.get('bars') if isinstance(data,dict) else []
+                all_bars=[b for b in (all_bars or []) if all(k in b for k in ('o','h','l','c'))]
+                if len(all_bars)<100:
+                    errors.append({'symbol':symbol,'error':f'Histórico insuficiente ({len(all_bars)} barras).'})
+                    continue
+                for days in periods:
+                    cutoff=end-timedelta(days=days)
+                    bars=[]
+                    for b in all_bars:
+                        try: dt=datetime.fromisoformat(str(b.get('t') or '').replace('Z','+00:00'))
+                        except Exception: dt=None
+                        if dt is None or dt>=cutoff: bars.append(b)
+                    if len(bars)<60:
+                        rows.append({'symbol':symbol,'days':days,'ok':False,'error':f'Solo {len(bars)} barras.'})
+                        continue
+                    result=stonks_backtest.run_backtest(bars,strategy,capital,risk_pct,slippage_pct)
+                    m=result['metrics']
+                    rows.append({'symbol':symbol,'days':days,'ok':True,'bars':len(bars),
+                        'return_pct':m['return_pct'],'cagr_pct':m['cagr_pct'],'max_drawdown_pct':m['max_drawdown_pct'],
+                        'sharpe':m['sharpe'],'profit_factor':m['profit_factor'],'trades':m['trades'],
+                        'win_rate_pct':m['win_rate_pct'],'expectancy_usd':m['expectancy_usd'],
+                        'benchmark_return_pct':m['benchmark_return_pct'],'vs_benchmark_pct':m['vs_benchmark_pct']})
+                wf=stonks_backtest.walk_forward(all_bars,strategy,capital,risk_pct,slippage_pct,folds=4,train_bars=126,test_bars=63)
+                walk_rows.append({'symbol':symbol,**wf})
+            except Exception as exc:
+                errors.append({'symbol':symbol,'error':str(exc)})
+
+        return jsonify({'ok':True,'paper':True,'orders_created':False,'strategy':strategy,'feed':feed,
+            'symbols':symbols,'periods':periods,'rows':rows,'walk_forward':walk_rows,'errors':errors,
+            'parameters':{'capital':capital,'risk_pct':risk_pct,'slippage_pct':slippage_pct},
+            'model':{'deterministic':True,'llm_tokens':0,'codex_required':False,'live_orders':False,'ranking':False}})
+    except Exception as exc:
+        return jsonify({'ok':False,'error':str(exc)}),502
+
 @app.get('/api/stonks/alpaca/portfolio')
 def stonks_alpaca_portfolio_api():
     """Return the current Paper account, positions and trading clock."""

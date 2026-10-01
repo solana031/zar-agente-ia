@@ -53,3 +53,24 @@ def test_metrics_include_robustness_fields():
         assert key in m
     assert isinstance(r['segments'],list)
     assert isinstance(r['diagnostics'],list)
+
+
+
+def test_out_of_sample_start_index_scores_only_evaluation_window():
+    bars=make_bars(360)
+    r=stonks_backtest.simulate(bars,'trend',10000,1,0.05,start_index=200)
+    assert r['model']['evaluation_start_index']==200
+    assert r['model']['evaluation_bars']==160
+    assert all((t.get('date') or '') for t in r['trades'])
+
+
+def test_walk_forward_is_deterministic_and_out_of_sample():
+    bars=make_bars(520)
+    a=stonks_backtest.walk_forward(bars,'trend',10000,1,0.05,folds=4,train_bars=126,test_bars=63)
+    b=stonks_backtest.walk_forward(bars,'trend',10000,1,0.05,folds=4,train_bars=126,test_bars=63)
+    assert a==b
+    assert a['ok'] is True
+    assert len(a['folds'])==4
+    assert a['model']['out_of_sample'] is True
+    assert a['model']['live_orders'] is False
+    assert a['summary']['folds']==4
