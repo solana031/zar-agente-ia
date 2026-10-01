@@ -2094,6 +2094,62 @@ def stonks_lifecycle_test_close_api():
     return jsonify({'ok':True,'paper':True,'lifecycle_test':stonks_lifecycle.test_view(d)}),202
 
 
+
+
+def _stonks_orphan_test_snapshot():
+    owner=_stonks_engine_owner_read(); me=_user_scope_id()
+    if not owner or owner==me:
+        return {'ok':True,'available':False,'reason':'No hay owner anterior distinto.'}
+    with app.test_request_context('/api/stonks/orphan-test/inspect'):
+        session['zar_user_id']=owner
+        previous=_stonks_read()
+    tests=[r for r in stonks_lifecycle.active_records(previous) if r.get('purpose')=='TEST_LIFECYCLE']
+    non_tests=[r for r in stonks_lifecycle.active_records(previous) if r.get('purpose')!='TEST_LIFECYCLE']
+    positions=_alpaca_paper_request('/v2/positions')
+    orders=_alpaca_paper_request('/v2/orders', params={'status':'open','limit':500,'nested':'false'})
+    if not isinstance(positions,list) or not isinstance(orders,list):
+        raise RuntimeError('No se pudo verificar la exposición Alpaca Paper.')
+    if len(tests)!=1 or non_tests or len(positions)!=1 or orders:
+        return {'ok':True,'available':False,'owner':owner,'test_count':len(tests),'other_records':len(non_tests),
+                'positions':len(positions),'orders':len(orders),'reason':'La exposición no coincide con una única prueba Paper huérfana.'}
+    record=tests[0]; pos=positions[0]
+    if str(pos.get('symbol','')).upper()!=str(record.get('symbol','')).upper() or float(pos.get('qty') or 0)<=0:
+        return {'ok':True,'available':False,'owner':owner,'positions':1,'orders':0,'reason':'La posición abierta no coincide con la prueba registrada.'}
+    return {'ok':True,'available':True,'owner':owner,'record_id':record.get('id'),'symbol':pos.get('symbol'),
+            'qty':pos.get('qty'),'market_value':pos.get('market_value'),'avg_entry_price':pos.get('avg_entry_price')}
+
+@app.get('/api/stonks/orphan-test')
+@_stonks_serialized
+def stonks_orphan_test_api():
+    try:
+        return jsonify(_stonks_orphan_test_snapshot())
+    except Exception as exc:
+        return jsonify({'ok':False,'available':False,'error':str(exc)}),502
+
+@app.post('/api/stonks/orphan-test/close')
+@_stonks_serialized
+def stonks_orphan_test_close_api():
+    payload=request.get_json(silent=True) or {}
+    if payload.get('confirm') is not True:
+        return jsonify({'ok':False,'error':'Hace falta confirmación explícita para cerrar la prueba Paper.'}),400
+    snap=_stonks_orphan_test_snapshot()
+    if not snap.get('available'):
+        return jsonify({'ok':False,'error':snap.get('reason') or 'No hay una prueba Paper huérfana cerrable.'}),409
+    account=_alpaca_paper_request('/v2/account')
+    if account.get('status')!='ACTIVE' or account.get('trading_blocked') or account.get('account_blocked'):
+        return jsonify({'ok':False,'error':'La cuenta Alpaca Paper no está operativa.'}),409
+    key,secret=_alpaca_paper_credentials()
+    import requests as _requests
+    cid=('zar-orphan-test-close-'+uuid.uuid4().hex[:18])[:48]
+    body={'symbol':str(snap['symbol']).upper(),'qty':str(snap['qty']),'side':'sell','type':'market','time_in_force':'day','client_order_id':cid}
+    r=_requests.post('https://paper-api.alpaca.markets/v2/orders',headers={'APCA-API-KEY-ID':key,'APCA-API-SECRET-KEY':secret},json=body,timeout=12)
+    try: data=r.json()
+    except Exception: data={}
+    if not r.ok or not isinstance(data,dict) or not data.get('id'):
+        return jsonify({'ok':False,'error':'Alpaca Paper no confirmó el cierre de la prueba.'}),502
+    _stonks_audit_append('ORPHAN_TEST_CLOSE',{'paper':True,'symbol':snap['symbol'],'qty':snap['qty'],'order_id':data.get('id'),'owner_previous':snap.get('owner')})
+    return jsonify({'ok':True,'paper':True,'order':{'id':data.get('id'),'status':data.get('status'),'symbol':data.get('symbol'),'qty':data.get('qty')}}),202
+
 @app.delete('/api/stonks/alpaca/orders')
 @_stonks_serialized
 def stonks_alpaca_cancel_all_orders_api():
@@ -3090,10 +3146,16 @@ def _execute_workspace_action(pending):
     except ImportError:
         import google_workspace as gw
     if service == "Google Docs":
-        return gw.docs_create(args["title"], args.get("text", "")) if action == "crear documento" else gw.docs_append(args["document_id"], args["text"])
+        if action == "crear documento": return gw.docs_create(args["title"], args.get("text", ""))
+        if action == "crear informe profesional": return gw.docs_build_report(args["title"], args.get("subtitle", ""), args.get("sections") or [])
+        return gw.docs_append(args["document_id"], args["text"])
     if service == "Google Sheets":
-        return gw.sheets_create(args["title"]) if action == "crear hoja de cálculo" else gw.sheets_write(args["spreadsheet_id"], args["range_a1"], args["values"])
+        if action == "crear hoja de cálculo": return gw.sheets_create(args["title"])
+        if action == "crear libro profesional": return gw.sheets_build_workbook(args["title"], args.get("sheets") or [])
+        if action == "añadir tabla profesional": return gw.sheets_add_professional_table(args["spreadsheet_id"], args["sheet_title"], args["table_title"], args.get("headers") or [], args.get("rows") or [], args.get("start_cell") or "A1", args.get("subtitle") or "", args.get("summary") or [])
+        return gw.sheets_write(args["spreadsheet_id"], args["range_a1"], args["values"])
     if service == "Google Slides":
+        if action == "crear presentación profesional": return gw.slides_build_deck(args["title"], args.get("subtitle", ""), args.get("slides") or [])
         return gw.slides_create(args["title"])
     if service == "Google Forms":
         if action == "crear formulario":
@@ -3490,7 +3552,11 @@ def _process_chat_message(msg):
                     "docs_append": ("Google Docs", "añadir texto al documento"),
                     "sheets_create": ("Google Sheets", "crear hoja de cálculo"),
                     "sheets_write": ("Google Sheets", "escribir datos"),
+                    "sheets_add_professional_table": ("Google Sheets", "añadir tabla profesional"),
+                    "sheets_build_workbook": ("Google Sheets", "crear libro profesional"),
                     "slides_create": ("Google Slides", "crear presentación"),
+                    "slides_build_deck": ("Google Slides", "crear presentación profesional"),
+                    "docs_build_report": ("Google Docs", "crear informe profesional"),
                     "forms_create": ("Google Forms", "crear formulario"),
                 }
                 if typ in mapping:

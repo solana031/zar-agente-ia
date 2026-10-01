@@ -17,7 +17,7 @@ DOMAINS = {
     "workspace": {
         "google_workspace_status", "drive_list_recent", "drive_search",
         "docs_create", "docs_append", "sheets_create", "sheets_read",
-        "sheets_write", "slides_create", "forms_create", "forms_get",
+        "sheets_write", "sheets_add_professional_table", "sheets_build_workbook", "slides_create", "slides_build_deck", "docs_build_report", "forms_create", "forms_get",
         "forms_add_question",
     },
     "gmail": {

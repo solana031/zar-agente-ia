@@ -164,6 +164,11 @@ def sheets_write(spreadsheet_id, range_a1, values):
             ).execute()
         else:
             raise RuntimeError(f'Google Sheets rechazó la edición en {rng}: {exc}') from exc
+    try:
+        _style_written_range(sid, rng, clean_values)
+    except Exception:
+        # Formatting is best-effort; a successful data write must not be reported as failed.
+        pass
     return {'ok': True, 'updated': out, 'spreadsheetId': sid, 'range': rng,
             'url': meta.get('spreadsheetUrl') or f'https://docs.google.com/spreadsheets/d/{sid}/edit'}
 
@@ -261,3 +266,245 @@ def forms_add_question(form_id, question, required=False, paragraph=False):
     form['itemId'] = out.get('itemId')
     form['url'] = f'https://docs.google.com/forms/d/{form_id}/edit'
     return form
+
+
+# ---------------- Workspace Pro formatting/builders ----------------
+
+def _col_letter(n):
+    out = ''
+    n = int(n)
+    while n > 0:
+        n, r = divmod(n - 1, 26)
+        out = chr(65 + r) + out
+    return out or 'A'
+
+
+def _parse_a1_start(range_a1):
+    import re
+    raw = str(range_a1 or 'A1')
+    sheet = None
+    if '!' in raw:
+        sheet, raw = raw.rsplit('!', 1)
+        sheet = sheet.strip("'").replace("''", "'")
+    m = re.search(r'\$?([A-Za-z]+)\$?(\d+)', raw)
+    if not m:
+        return sheet, 1, 1
+    letters = m.group(1).upper()
+    col = 0
+    for ch in letters:
+        col = col * 26 + (ord(ch) - 64)
+    return sheet, int(m.group(2)), col
+
+
+def _style_written_range(spreadsheet_id, range_a1, values):
+    """Apply conservative professional formatting after a successful write."""
+    if not values:
+        return
+    meta = _sheet_metadata(spreadsheet_id)
+    props = [x.get('properties') or {} for x in (meta.get('sheets') or [])]
+    sheet_name, start_row, start_col = _parse_a1_start(range_a1)
+    target = next((x for x in props if x.get('title') == sheet_name), props[0] if props else {})
+    sheet_id = target.get('sheetId')
+    if sheet_id is None:
+        return
+    nrows = len(values)
+    ncols = max((len(r) for r in values), default=1)
+    end_row = start_row - 1 + nrows
+    end_col = start_col - 1 + ncols
+    grid = {'sheetId': sheet_id, 'startRowIndex': start_row-1, 'endRowIndex': end_row,
+            'startColumnIndex': start_col-1, 'endColumnIndex': end_col}
+    req = [
+        {'repeatCell': {'range': grid, 'cell': {'userEnteredFormat': {
+            'verticalAlignment': 'MIDDLE', 'wrapStrategy': 'WRAP',
+            'textFormat': {'fontFamily': 'Arial', 'fontSize': 10},
+            'borders': {
+                'top': {'style':'SOLID','color':{'red':0.86,'green':0.86,'blue':0.86}},
+                'bottom': {'style':'SOLID','color':{'red':0.86,'green':0.86,'blue':0.86}},
+                'left': {'style':'SOLID','color':{'red':0.90,'green':0.90,'blue':0.90}},
+                'right': {'style':'SOLID','color':{'red':0.90,'green':0.90,'blue':0.90}},
+            }}}, 'fields':'userEnteredFormat(verticalAlignment,wrapStrategy,textFormat,borders)'}},
+        {'autoResizeDimensions': {'dimensions': {'sheetId': sheet_id, 'dimension':'COLUMNS',
+            'startIndex': start_col-1, 'endIndex': end_col}}},
+    ]
+    # First row of every written table becomes a clear header when it looks tabular.
+    first = values[0] if values else []
+    nonempty = [x for x in first if str(x or '').strip()]
+    if ncols > 1 and len(nonempty) >= 2:
+        req.append({'repeatCell': {'range': {'sheetId':sheet_id,'startRowIndex':start_row-1,'endRowIndex':start_row,
+            'startColumnIndex':start_col-1,'endColumnIndex':end_col}, 'cell': {'userEnteredFormat': {
+                'backgroundColor': {'red':0.12,'green':0.17,'blue':0.24},
+                'textFormat': {'bold':True,'foregroundColor':{'red':1,'green':1,'blue':1},'fontSize':10},
+                'horizontalAlignment':'CENTER'}}, 'fields':'userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)'}})
+        if start_row == 1:
+            req.append({'updateSheetProperties': {'properties': {'sheetId':sheet_id,'gridProperties':{'frozenRowCount':1}},
+                'fields':'gridProperties.frozenRowCount'}})
+    # Emphasize rows that are clearly summaries/totals.
+    for offset,row in enumerate(values):
+        first_cell = str((row or [''])[0] or '').strip().lower()
+        if first_cell.startswith(('total','resumen','subtotal','saldo','diferencia')):
+            rr = start_row-1+offset
+            req.append({'repeatCell': {'range': {'sheetId':sheet_id,'startRowIndex':rr,'endRowIndex':rr+1,
+                'startColumnIndex':start_col-1,'endColumnIndex':end_col}, 'cell': {'userEnteredFormat': {
+                    'backgroundColor': {'red':0.94,'green':0.95,'blue':0.97},
+                    'textFormat': {'bold':True}}}, 'fields':'userEnteredFormat(backgroundColor,textFormat)'}})
+    sheets_service().spreadsheets().batchUpdate(spreadsheetId=spreadsheet_id, body={'requests':req}).execute()
+
+
+def sheets_add_professional_table(spreadsheet_id, sheet_title, table_title, headers, rows, start_cell='A1', subtitle='', summary=None):
+    sid = _normalize_spreadsheet_id(spreadsheet_id)
+    meta = _sheet_metadata(sid)
+    svc = sheets_service()
+    props = [x.get('properties') or {} for x in (meta.get('sheets') or [])]
+    target = next((x for x in props if x.get('title') == sheet_title), None)
+    if target is None:
+        add = svc.spreadsheets().batchUpdate(spreadsheetId=sid, body={'requests':[{'addSheet':{'properties':{'title':sheet_title[:100] or 'Datos'}}}]}).execute()
+        target = ((add.get('replies') or [{}])[0].get('addSheet') or {}).get('properties') or {}
+    sheet_id = target['sheetId']
+    _, r0, c0 = _parse_a1_start(start_cell)
+    headers = [str(x) for x in (headers or [])]
+    clean_rows = [[x if x is None or isinstance(x,(str,int,float,bool)) else str(x) for x in (row or [])] for row in (rows or [])]
+    width = max(len(headers), max((len(x) for x in clean_rows), default=0), 1)
+    values = [[table_title]]
+    if subtitle:
+        values.append([subtitle])
+    header_offset = len(values)
+    values.append(headers)
+    values.extend(clean_rows)
+    summary = summary or []
+    if summary:
+        values.append([])
+        values.extend([[str(x.get('label','')), x.get('value','')] for x in summary])
+    end_col = c0 + width - 1
+    range_name = f"'{sheet_title.replace(chr(39), chr(39)*2)}'!{_col_letter(c0)}{r0}:{_col_letter(end_col)}{r0+len(values)-1}"
+    svc.spreadsheets().values().update(spreadsheetId=sid, range=range_name, valueInputOption='USER_ENTERED',
+        body={'majorDimension':'ROWS','values':values}).execute()
+    req = [
+        {'mergeCells': {'range': {'sheetId':sheet_id,'startRowIndex':r0-1,'endRowIndex':r0,
+            'startColumnIndex':c0-1,'endColumnIndex':end_col}, 'mergeType':'MERGE_ALL'}},
+        {'repeatCell': {'range': {'sheetId':sheet_id,'startRowIndex':r0-1,'endRowIndex':r0,
+            'startColumnIndex':c0-1,'endColumnIndex':end_col}, 'cell': {'userEnteredFormat': {
+                'backgroundColor': {'red':0.08,'green':0.12,'blue':0.18},
+                'textFormat': {'bold':True,'fontSize':14,'foregroundColor':{'red':1,'green':1,'blue':1}},
+                'horizontalAlignment':'LEFT','verticalAlignment':'MIDDLE'}},
+            'fields':'userEnteredFormat(backgroundColor,textFormat,horizontalAlignment,verticalAlignment)'}},
+    ]
+    if subtitle:
+        req += [
+            {'mergeCells': {'range': {'sheetId':sheet_id,'startRowIndex':r0,'endRowIndex':r0+1,
+                'startColumnIndex':c0-1,'endColumnIndex':end_col}, 'mergeType':'MERGE_ALL'}},
+            {'repeatCell': {'range': {'sheetId':sheet_id,'startRowIndex':r0,'endRowIndex':r0+1,
+                'startColumnIndex':c0-1,'endColumnIndex':end_col}, 'cell': {'userEnteredFormat': {
+                    'backgroundColor': {'red':0.94,'green':0.95,'blue':0.97},
+                    'textFormat': {'italic':True,'foregroundColor':{'red':0.28,'green':0.32,'blue':0.38}}}},
+                'fields':'userEnteredFormat(backgroundColor,textFormat)'}}]
+    hrow = r0 - 1 + header_offset
+    header_range = {
+        'sheetId': sheet_id,
+        'startRowIndex': hrow,
+        'endRowIndex': hrow + 1,
+        'startColumnIndex': c0 - 1,
+        'endColumnIndex': end_col,
+    }
+    data_range = {
+        'sheetId': sheet_id,
+        'startRowIndex': hrow + 1,
+        'endRowIndex': hrow + 1 + len(clean_rows),
+        'startColumnIndex': c0 - 1,
+        'endColumnIndex': end_col,
+    }
+    req.append({
+        'repeatCell': {
+            'range': header_range,
+            'cell': {'userEnteredFormat': {
+                'backgroundColor': {'red':0.18,'green':0.27,'blue':0.38},
+                'textFormat': {'bold':True,'foregroundColor':{'red':1,'green':1,'blue':1}},
+                'horizontalAlignment':'CENTER',
+            }},
+            'fields':'userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)',
+        }
+    })
+    if clean_rows:
+        req.append({
+            'repeatCell': {
+                'range': data_range,
+                'cell': {'userEnteredFormat': {
+                    'wrapStrategy':'WRAP',
+                    'verticalAlignment':'MIDDLE',
+                    'borders': {'bottom': {'style':'SOLID','color':{'red':0.86,'green':0.86,'blue':0.86}}},
+                }},
+                'fields':'userEnteredFormat(wrapStrategy,verticalAlignment,borders)',
+            }
+        })
+    req.append({'autoResizeDimensions': {'dimensions': {
+        'sheetId':sheet_id,'dimension':'COLUMNS','startIndex':c0-1,'endIndex':end_col
+    }}})
+    svc.spreadsheets().batchUpdate(spreadsheetId=sid, body={'requests':req}).execute()
+    return {'ok':True,'spreadsheetId':sid,'sheet':sheet_title,'range':range_name,
+            'url':meta.get('spreadsheetUrl') or f'https://docs.google.com/spreadsheets/d/{sid}/edit'}
+
+
+def sheets_build_workbook(title, sheets):
+    svc = sheets_service()
+    tabs = sheets or [{'name':'Resumen','table_title':title,'headers':['Dato','Valor'],'rows':[]}]
+    names=[]
+    for i,tab in enumerate(tabs):
+        name=str(tab.get('name') or ('Resumen' if i==0 else f'Hoja {i+1}'))[:100]
+        if name in names: name=f'{name[:90]} {i+1}'
+        names.append(name)
+    body={'properties':{'title':title},'sheets':[{'properties':{'title':n}} for n in names]}
+    sh=svc.spreadsheets().create(body=body).execute(); sid=sh['spreadsheetId']
+    for name,tab in zip(names,tabs):
+        sheets_add_professional_table(sid,name,str(tab.get('table_title') or name),tab.get('headers') or [],tab.get('rows') or [],
+            'A1',str(tab.get('subtitle') or ''),tab.get('summary') or [])
+    return {'ok':True,'spreadsheetId':sid,'url':sh.get('spreadsheetUrl') or f'https://docs.google.com/spreadsheets/d/{sid}/edit'}
+
+
+def docs_build_report(title, subtitle, sections):
+    svc=docs_service(); doc=svc.documents().create(body={'title':title}).execute(); did=doc['documentId']
+    text=title+'\n'+(subtitle+'\n' if subtitle else '')+'\n'
+    spans=[]; pos=len(title)+2+(len(subtitle)+1 if subtitle else 0)
+    for sec in sections or []:
+        heading=str(sec.get('heading') or '').strip(); body=str(sec.get('body') or '').strip()
+        if heading:
+            spans.append((pos,pos+len(heading),'HEADING_1'))
+            text += heading+'\n'; pos += len(heading)+1
+        if body:
+            text += body+'\n\n'; pos += len(body)+2
+    req=[{'insertText':{'endOfSegmentLocation':{},'text':text}},
+         {'updateParagraphStyle':{'range':{'startIndex':1,'endIndex':1+len(title)},'paragraphStyle':{'namedStyleType':'TITLE'},'fields':'namedStyleType'}}]
+    if subtitle:
+        st=2+len(title); req.append({'updateParagraphStyle':{'range':{'startIndex':st,'endIndex':st+len(subtitle)},'paragraphStyle':{'namedStyleType':'SUBTITLE'},'fields':'namedStyleType'}})
+    # Recompute headings from final inserted text using deterministic search offsets.
+    cursor=1+len(title)+1+(len(subtitle)+1 if subtitle else 0)+1
+    for sec in sections or []:
+        heading=str(sec.get('heading') or '').strip(); body=str(sec.get('body') or '').strip()
+        if heading:
+            req.append({'updateParagraphStyle':{'range':{'startIndex':cursor,'endIndex':cursor+len(heading)},'paragraphStyle':{'namedStyleType':'HEADING_1'},'fields':'namedStyleType'}})
+            cursor += len(heading)+1
+        if body: cursor += len(body)+2
+    svc.documents().batchUpdate(documentId=did,body={'requests':req}).execute()
+    return {'ok':True,'documentId':did,'url':f'https://docs.google.com/document/d/{did}/edit'}
+
+
+def slides_build_deck(title, subtitle, slides):
+    svc=slides_service(); pres=svc.presentations().create(body={'title':title}).execute(); pid=pres['presentationId']
+    existing=[x.get('objectId') for x in (pres.get('slides') or []) if x.get('objectId')]
+    req=[]
+    for oid in existing: req.append({'deleteObject':{'objectId':oid}})
+    deck=[{'title':title,'body':subtitle or ''}]+[{'title':str(x.get('title') or ''),'body':'\n'.join('• '+str(b) for b in (x.get('bullets') or [])) or str(x.get('body') or '')} for x in (slides or [])]
+    for i,item in enumerate(deck):
+        page=f'zarSlide{i+1}'; title_id=f'zarTitle{i+1}'; body_id=f'zarBody{i+1}'
+        req.append({'createSlide':{'objectId':page,'slideLayoutReference':{'predefinedLayout':'BLANK'}}})
+        req.append({'createShape':{'objectId':title_id,'shapeType':'TEXT_BOX','elementProperties':{'pageObjectId':page,
+            'size':{'width':{'magnitude':8000000,'unit':'EMU'},'height':{'magnitude':900000,'unit':'EMU'}},
+            'transform':{'scaleX':1,'scaleY':1,'translateX':650000,'translateY':500000,'unit':'EMU'}}}})
+        req.append({'insertText':{'objectId':title_id,'text':item['title']}})
+        req.append({'updateTextStyle':{'objectId':title_id,'textRange':{'type':'ALL'},'style':{'bold':True,'fontSize':{'magnitude':26 if i else 30,'unit':'PT'},'foregroundColor':{'opaqueColor':{'rgbColor':{'red':0.12,'green':0.17,'blue':0.24}}}},'fields':'bold,fontSize,foregroundColor'}})
+        if item['body']:
+            req.append({'createShape':{'objectId':body_id,'shapeType':'TEXT_BOX','elementProperties':{'pageObjectId':page,
+                'size':{'width':{'magnitude':7900000,'unit':'EMU'},'height':{'magnitude':4000000,'unit':'EMU'}},
+                'transform':{'scaleX':1,'scaleY':1,'translateX':700000,'translateY':1650000,'unit':'EMU'}}}})
+            req.append({'insertText':{'objectId':body_id,'text':item['body']}})
+            req.append({'updateTextStyle':{'objectId':body_id,'textRange':{'type':'ALL'},'style':{'fontSize':{'magnitude':16 if i else 18,'unit':'PT'},'foregroundColor':{'opaqueColor':{'rgbColor':{'red':0.25,'green':0.28,'blue':0.32}}}},'fields':'fontSize,foregroundColor'}})
+    svc.presentations().batchUpdate(presentationId=pid,body={'requests':req}).execute()
+    return {'ok':True,'presentationId':pid,'url':f'https://docs.google.com/presentation/d/{pid}/edit'}
