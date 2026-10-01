@@ -73,3 +73,52 @@ def test_hydrate_preserves_accumulated_telemetry():
     assert s['zero_token_cycles']==40
     assert s['ai_calls']==1
     assert s['signal_cache_hits']==10
+
+
+def test_cache_is_bounded_and_expired_buckets_are_removed():
+    from unittest.mock import patch
+    dp=stonks_dataplane.ZeroTokenDataPlane()
+    with patch.object(stonks_dataplane.time, 'monotonic', return_value=10):
+        for i in range(dp.MAX_CACHE+20):
+            dp._cached('u','signal',i,60,lambda: {'signal':'BUY'})
+    assert len(dp._cache)==dp.MAX_CACHE
+    with patch.object(stonks_dataplane.time, 'monotonic', return_value=71):
+        dp._cached('u','signal','next',60,lambda: {})
+    assert len(dp._cache)==1
+
+
+def test_concurrent_cache_misses_load_once():
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+    dp=stonks_dataplane.ZeroTokenDataPlane()
+    entered, release=Event(), Event()
+    calls=[]
+    def loader():
+        calls.append(1); entered.set()
+        assert release.wait(2)
+        return {'value': 1}
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        a=pool.submit(dp._cached,'u','signal','key',60,loader)
+        assert entered.wait(2)
+        b=pool.submit(dp._cached,'u','signal','key',60,loader)
+        release.set()
+        assert a.result()[0]==b.result()[0]
+    assert len(calls)==1
+
+
+def test_identical_cached_event_is_not_counted_every_cycle():
+    dp=stonks_dataplane.ZeroTokenDataPlane()
+    signal={'signal':'BUY','bar_time':'2026-10-01T10:00:00Z'}
+    news={'sentiment':'bullish','sentiment_score':54,'fetched_at':'x'}
+    assert dp.route_event('u','AAPL',signal,news)['significant']
+    repeated=dp.route_event('u','AAPL',signal,news)
+    assert not repeated['significant'] and not repeated['ai_candidate']
+    assert dp.status('u')['significant_events']==1
+
+
+def test_runtime_maps_are_bounded():
+    dp=stonks_dataplane.ZeroTokenDataPlane()
+    for i in range(dp.MAX_SCOPES+2): dp.begin_cycle(str(i))
+    assert len(dp._runtime)==dp.MAX_SCOPES
+    for i in range(dp.MAX_SYMBOLS+2): dp.route_event('u',str(i))
+    assert len(dp._scope('u')['last_signal_signatures'])==dp.MAX_SYMBOLS

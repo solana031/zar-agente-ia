@@ -46,3 +46,18 @@ def test_summary_never_reports_orders():
     assert s['orders_created']==0
     assert s['horizons']['60']['evaluated']==1
     assert s['horizons']['60']['approved_hypothetical_pnl_usd']>0
+
+
+def test_outcome_excludes_open_future_duplicate_and_pre_signal_bars():
+    start=datetime(2026,1,1,14,30,tzinfo=timezone.utc)
+    ev={'timestamp':start.isoformat(),'symbol':'AAA','signal':'BUY','price':100}
+    data=bars(start,[101]*60)
+    # Only four distinct bars have fully closed at 14:35:30.
+    mixed=data+[data[0]]*10+[{'t':start.isoformat(),'h':999,'l':1,'c':999}]
+    now=start+timedelta(minutes=5,seconds=30)
+    out=stonks_shadow.update_event(ev,mixed,now=now)
+    assert out['outcomes']=={} and out['outcome_bars']==4
+    assert out['mfe_pct']==2
+    out=stonks_shadow.update_event(ev,mixed,now=start+timedelta(minutes=6))
+    assert out['outcomes']['5']['return_pct']==1
+    assert out['outcome_bars']==5
