@@ -74,3 +74,11 @@ def test_walk_forward_is_deterministic_and_out_of_sample():
     assert a['model']['out_of_sample'] is True
     assert a['model']['live_orders'] is False
     assert a['summary']['folds']==4
+
+
+def test_first_out_of_sample_loss_counts_in_drawdown():
+    bars=make_bars(60)
+    bars[-1].update(o=100,h=101,l=1,c=90)
+    result=stonks_backtest.simulate(bars,'trend',10000,1,0,start_index=59)
+    assert result['metrics']['return_pct']<0
+    assert result['metrics']['max_drawdown_pct']==result['metrics']['return_pct']

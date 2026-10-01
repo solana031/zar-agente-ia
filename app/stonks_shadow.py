@@ -1,9 +1,11 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from statistics import median
 
 HORIZONS = (5, 15, 60)
+# Eight engine symbols, one observation per minute, plus completion margin.
+MAX_EVENTS = 600
 
 
 def _ts(value):
@@ -32,24 +34,23 @@ def directional_return_pct(signal, entry, exit_price):
     return raw if str(signal or '').upper()=='BUY' else -raw
 
 
-def _bars_after(event, bars):
+def _bars_after(event, bars, now):
     try:
         start=_ts(event.get('timestamp'))
     except Exception:
         return []
-    clean=[]
+    clean={}
     for bar in bars or []:
         try:
             bt=_ts(bar.get('t'))
-            if bt <= start:
+            if bt <= start or bt + timedelta(minutes=1) > now:
                 continue
             if not all(k in bar for k in ('h','l','c')):
                 continue
-            clean.append((bt,bar))
+            clean[bt]=bar
         except Exception:
             continue
-    clean.sort(key=lambda x:x[0])
-    return [b for _,b in clean]
+    return [clean[t] for t in sorted(clean)]
 
 
 def update_event(event, bars, now=None):
@@ -64,7 +65,8 @@ def update_event(event, bars, now=None):
     if signal not in ('BUY','SELL') or entry <= 0:
         out['outcome_status']='invalid'
         return out
-    after=_bars_after(out,bars)
+    now=_ts(now or datetime.now(timezone.utc))
+    after=_bars_after(out,bars,now)
     outcomes=dict(out.get('outcomes') or {})
     for horizon in HORIZONS:
         key=str(horizon)

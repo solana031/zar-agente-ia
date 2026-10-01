@@ -2441,7 +2441,9 @@ function zsRenderManagedPositions(positions){
 }
 
 let zsRiskDraftDirty=false;
+let zsRiskDraftRevision=0;
 function zsSetRiskDraftState(dirty,label){
+  if(dirty) zsRiskDraftRevision++;
   zsRiskDraftDirty=!!dirty;
   const el=document.getElementById('zsRiskDraftStatus');if(!el)return;
   el.className=dirty?'dirty':(label&&label.startsWith('Guardado')?'saved':'');
@@ -2463,7 +2465,7 @@ function zsRenderDataPlane(j){
   const feedBadge=(key,label)=>{const f=feeds[key]||{};const state=f.connected?'CONECTADO':f.enabled?(f.last_error?'ERROR':'CONECTANDO'):'INACTIVO';const cls=f.connected?'on':f.last_error?'off':'paper';return `<span class="zsBadge ${cls}" title="${escHtml(f.last_error||'')}">${escHtml(label)} · ${escHtml(state)}</span>`};
   const latest=Array.isArray(ms.latest)?ms.latest.slice(0,12):[];
   const num=(v)=>v==null?'—':Number(v).toLocaleString('es-ES',{maximumFractionDigits:6});
-  const streamRows=latest.length?latest.map(x=>`<tr><td><b>${escHtml(x.symbol||'—')}</b></td><td>${escHtml(x.kind==='equities'?'Acción/ETF':x.kind==='crypto'?'Crypto':'Opción')}</td><td>${escHtml(num(x.price??x.mid??x.bar_close))}</td><td>${escHtml(num(x.bid))}</td><td>${escHtml(num(x.ask))}</td><td>${escHtml(x.updated_at?zsSignalTime(x.updated_at):'—')}</td></tr>`).join(''):'<tr><td colspan="6">Esperando el primer tick del stream…</td></tr>';
+  const streamRows=latest.length?latest.map(x=>`<tr><td><b>${escHtml(x.symbol||'—')}</b></td><td>${escHtml(x.kind==='equities'?'Acción/ETF':x.kind==='crypto'?'Crypto':'Opción')}</td><td>${escHtml(num(x.price??x.mid??x.bar_close))}</td><td>${escHtml(num(x.bid))}</td><td>${escHtml(num(x.ask))}</td><td>${x.stale?'OBSOLETO · ':''}${escHtml(x.timestamp?zsSignalTime(x.timestamp):'—')}</td></tr>`).join(''):'<tr><td colspan="6">Esperando el primer tick del stream…</td></tr>';
   const wl=ms.watchlist||{};const watchText=`Equities ${Array.isArray(wl.equities)?wl.equities.join(', '):'—'} · Crypto ${Array.isArray(wl.crypto)?wl.crypto.join(', '):'—'}${Array.isArray(wl.options)&&wl.options.length?' · Options '+wl.options.join(', '):''}`;
   box.innerHTML=`<div class="zsDataPlaneHead"><div><b>ZERO-TOKEN DATA PLANE</b><span>El ciclo de ~5 s lee estado/caché; señales y noticias solo se refrescan cuando toca.</span></div><div style="display:flex;gap:5px;align-items:center"><span class="zsBadge on">AI GATE CERRADO</span><span class="zsBadge ${t.ok===false?'off':'on'}">SELF-TEST ${escHtml(t.status||'PASS')}</span></div></div><div class="zsDataPlaneGrid"><div class="zsDataPlaneMetric"><small>Ciclos 0 tokens</small><b>${escHtml(String(zero))}/${escHtml(String(cycles))}</b><span>${cycles?Math.round(zero/cycles*100):100}% sin API LLM</span></div><div class="zsDataPlaneMetric"><small>Cache señales</small><b>${escHtml(String(zsPct(sh,sh+sm)))}%</b><span>${escHtml(String(sh))} hits · ${escHtml(String(sm))} refresh</span></div><div class="zsDataPlaneMetric"><small>Cache noticias</small><b>${escHtml(String(zsPct(nh,nh+nm)))}%</b><span>${escHtml(String(nh))} hits · ${escHtml(String(nm))} refresh</span></div><div class="zsDataPlaneMetric"><small>Eventos significativos</small><b>${escHtml(String(d.significant_events||0))}</b><span>${escHtml(String(d.ai_candidates||0))} candidatos IA</span></div><div class="zsDataPlaneMetric"><small>Llamadas IA</small><b>${escHtml(String(d.ai_calls||0))}</b><span>${escHtml(String(d.local_model_calls||0))} modelo local</span></div><div class="zsDataPlaneMetric"><small>IA evitada · estimación</small><b>${escHtml(zsCompactNumber(d.estimated_tokens_avoided||0))}</b><span>${escHtml(String(d.llm_calls_avoided_estimate||0))} llamadas evitadas · tokens estimados</span></div></div><div class="zsStreamBox"><div class="zsStreamHead"><div><b>MARKET STREAM MANAGER</b><span>Precios por WebSocket/caché · 0 tokens · sin autoridad de orden</span></div><div class="zsStreamBadges">${feedBadge('equities','ACCIONES/ETF')}${feedBadge('crypto','CRYPTO')}${feedBadge('options','OPCIONES')}</div></div><div class="zsStreamWatch">${escHtml(watchText)}</div><div class="zsStreamTableWrap"><table class="zsStreamTable"><thead><tr><th>Símbolo</th><th>Tipo</th><th>Precio</th><th>Bid</th><th>Ask</th><th>Actualizado</th></tr></thead><tbody>${streamRows}</tbody></table></div></div><div class="zsDataPlaneLast"><b>Último evento:</b> ${escHtml(eventText)} · <b>modelo llamado: no</b> · <b>Self-Test:</b> ${escHtml(String(t.passed||0))}/${escHtml(String(t.total||0))} · 0 tokens</div>`;
 }
@@ -2578,7 +2580,7 @@ async function zsToggleAutonomousEngine(){
     try{const r=await fetch('/api/stonks/engine',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled:false})});const j=await r.json();if(!r.ok||!j.ok)throw new Error(j.error||'No se pudo desactivar');zsAddLog('MOTOR AUTÓNOMO','Desactivado por el usuario.');zsRefreshStatus();zsLoadAudit()}catch(e){alert(e.message||'No se pudo desactivar el motor autónomo.')}
   }
 }
-async function saveStonksControls(){const lifecycleEnabled=document.getElementById('stonksLifecycleEnabled')?.value==='1';const payload={max_trade_eur:Number(document.getElementById('stonksMaxTrade')?.value||25),max_daily_loss_eur:Number(document.getElementById('stonksMaxDaily')?.value||10),max_position_pct:Number(document.getElementById('stonksMaxPos')?.value||20),execution_mode:document.getElementById('stonksExecutionMode')?.value||'decision',position_lifecycle_enabled:lifecycleEnabled,stop_loss_pct:Number(document.getElementById('stonksStopLoss')?.value||1),take_profit_pct:Number(document.getElementById('stonksTakeProfit')?.value||2)};if(lifecycleEnabled){const ok=await zsOpenConfirm('Activarás la gestión automática de salida para las posiciones que ZAR abra en Paper. Se usarán los porcentajes configurados y nunca se gestionarán posiciones creadas manualmente.','Activar gestión de posiciones Paper','Revisa Stop Loss y Take Profit antes de permitir salidas automáticas. Solo afecta a Paper.','Activar gestión','Cancelar','primary','🛡️','PAUSAR y REVOCAR siguen teniendo prioridad.');if(!ok)return;}if(payload.execution_mode==='paper_auto'){const ok=await zsOpenConfirm('Activarás el modo Paper automático. ZAR podrá enviar órdenes a Alpaca Paper cuando una señal BUY/SELL pase todos los controles Risk y el motor esté reanudado.','Activar Paper automático','Revisa esta configuración antes de permitir ejecución automática.','Activar Paper automático','Cancelar','primary','⚡','Solo se utiliza Alpaca Paper. No se utiliza dinero real ni existe conexión con Live. PAUSAR y REVOCAR siguen teniendo prioridad.');if(!ok)return;}try{const j=await fetch('/api/stonks/controls',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).then(r=>r.json());if(!j.ok)throw new Error(j.error||'Error');zsAddLog('RISK',`Configuración guardada · modo ${j.execution_mode==='paper_auto'?'Paper automático':(j.execution_mode==='shadow'?'Shadow · 0 órdenes':'decisión sin órdenes')} · gestión de posiciones ${j.position_lifecycle_enabled?'activa':'desactivada'}.`);zsSetRiskDraftState(false,'Guardado · sincronización reanudada');zsRefreshStatus();zsLoadAudit()}catch(e){alert('No se pudieron guardar los límites: '+(e.message||'error'))}}
+async function saveStonksControls(){const draftRevision=zsRiskDraftRevision;const lifecycleEnabled=document.getElementById('stonksLifecycleEnabled')?.value==='1';const payload={max_trade_eur:Number(document.getElementById('stonksMaxTrade')?.value||25),max_daily_loss_eur:Number(document.getElementById('stonksMaxDaily')?.value||10),max_position_pct:Number(document.getElementById('stonksMaxPos')?.value||20),execution_mode:document.getElementById('stonksExecutionMode')?.value||'decision',position_lifecycle_enabled:lifecycleEnabled,stop_loss_pct:Number(document.getElementById('stonksStopLoss')?.value||1),take_profit_pct:Number(document.getElementById('stonksTakeProfit')?.value||2)};if(lifecycleEnabled){const ok=await zsOpenConfirm('Activarás la gestión automática de salida para las posiciones que ZAR abra en Paper. Se usarán los porcentajes configurados y nunca se gestionarán posiciones creadas manualmente.','Activar gestión de posiciones Paper','Revisa Stop Loss y Take Profit antes de permitir salidas automáticas. Solo afecta a Paper.','Activar gestión','Cancelar','primary','🛡️','PAUSAR y REVOCAR siguen teniendo prioridad.');if(!ok)return;}if(payload.execution_mode==='paper_auto'){const ok=await zsOpenConfirm('Activarás el modo Paper automático. ZAR podrá enviar órdenes a Alpaca Paper cuando una señal BUY/SELL pase todos los controles Risk y el motor esté reanudado.','Activar Paper automático','Revisa esta configuración antes de permitir ejecución automática.','Activar Paper automático','Cancelar','primary','⚡','Solo se utiliza Alpaca Paper. No se utiliza dinero real ni existe conexión con Live. PAUSAR y REVOCAR siguen teniendo prioridad.');if(!ok)return;}try{const j=await fetch('/api/stonks/controls',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).then(r=>r.json());if(!j.ok)throw new Error(j.error||'Error');zsAddLog('RISK',`Configuración guardada · modo ${j.execution_mode==='paper_auto'?'Paper automático':(j.execution_mode==='shadow'?'Shadow · 0 órdenes':'decisión sin órdenes')} · gestión de posiciones ${j.position_lifecycle_enabled?'activa':'desactivada'}.`);if(zsRiskDraftRevision===draftRevision)zsSetRiskDraftState(false,'Guardado · sincronización reanudada');zsRefreshStatus();zsLoadAudit()}catch(e){alert('No se pudieron guardar los límites: '+(e.message||'error'))}}
 async function zsLoadAudit(){const box=document.getElementById('zsAuditBox');if(!box)return;try{const j=await fetch('/api/stonks/audit?_='+Date.now(),{cache:'no-store'}).then(r=>r.json());const rows=j.audit||[];box.innerHTML='<b>Auditoría reciente</b><br>'+ (rows.length?rows.slice(0,8).map(x=>{const d=x.details||{};const verdict=d.decision||d.primary_reason||d.message||'Configuración actual';const extra=d.primary_reason&&d.decision?(' · '+d.primary_reason):'';return '<div style="margin-top:6px"><b>'+escHtml(x.event||'EVENT')+'</b> · '+escHtml(zsSignalTime(x.timestamp))+' · '+escHtml(d.symbol||'')+' · '+escHtml(verdict)+escHtml(extra)+'</div>'}).join(''):'<span class="meta">Todavía no hay eventos.</span>')}catch(e){box.textContent='No se pudo cargar la auditoría.'}}
 async function zsEvaluateSignal(symbol,strategy,timeframe,signal,executeAfterConfirm=false,silent=false){try{const r=await fetch('/api/stonks/decision',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({symbol,strategy,timeframe,signal,execute:false})});const j=await r.json();if(!j.ok)throw new Error(j.error||'No se pudo evaluar la señal');zsLoadAudit();if(j.decision!=='APROBADA'){const why=j.primary_reason||((j.reasons||[])[0])||j.reason||'sin motivo adicional';zsAddLog('RISK DENEGADO',symbol+' · '+signal+' · '+why);if(!silent)alert('Señal denegada por Risk: '+why);return j}if(silent)zsAddLog('DECISIÓN RISK',symbol+' · '+signal+' · APROBADA · sin ejecución');if(!executeAfterConfirm)return j;const st=await fetch('/api/stonks/status?_='+Date.now(),{cache:'no-store'}).then(r=>r.json());const autoApproved=(st.execution_mode==='paper_auto'&&!st.paused&&!st.revoked);if(!autoApproved){const ok=await zsOpenConfirm(`${signal==='BUY'?'COMPRAR':'VENDER'} ${j.qty} ${symbol} a mercado · valor estimado ${Number(j.estimated_value||0).toFixed(2)} USD`,'Ejecutar señal en Alpaca Paper','La decisión ha pasado los controles Risk. Se enviará una orden simulada, nunca a Live.','Ejecutar Paper','Cancelar','primary','⚡','Solo Paper. La señal debe seguir vigente cuando el servidor procese la ejecución.');if(!ok)return j;}const rr=await fetch('/api/stonks/decision',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({symbol,strategy,timeframe,signal,execute:true,manual_confirmed:!autoApproved})});const jj=await rr.json();if(!jj.ok)throw new Error(jj.error||'No se pudo ejecutar Paper');if(jj.order_created){zsAddLog('ORDEN PAPER',symbol+' · '+signal+' · '+(jj.order?.status||'enviada')+' · '+(jj.order?.id||'—'));zsLoadOrders();zsLoadPortfolio();zsLoadAudit()}else{zsAddLog('DECISIÓN',symbol+' · '+(jj.decision||'sin acción')+' · '+(jj.primary_reason||((jj.reasons||[]).join('; ')||'')));zsLoadAudit()}return jj}catch(e){zsAddLog('ERROR DECISIÓN',e.message||'No se pudo evaluar la señal');alert(e.message||'No se pudo evaluar la señal')}}
 function zsNowExact(){try{return new Intl.DateTimeFormat('es-ES',{timeZone:'Europe/Madrid',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}).format(new Date())}catch(e){return new Date().toLocaleString('es-ES')}}
@@ -5345,8 +5347,8 @@ body.zar-light .zarDockManagerCard{background:#fffaf4;color:#4a3828;border-color
 .orchestrationWorkspace .zoPanel{overflow:visible!important;height:auto!important;min-height:0!important}
 .orchestrationWorkspace .zoSceneWrap{
   position:relative!important;
-  width:min(100%,1480px)!important;
-  height:clamp(640px,72vh,920px)!important;
+  width:min(100%,1480px);
+  height:clamp(640px,72vh,920px);
   min-width:760px!important;
   min-height:520px!important;
   max-width:none!important;
@@ -5400,8 +5402,7 @@ body.zar-light .zarDockManagerCard{background:#fffaf4;color:#4a3828;border-color
 (function(){
   let zoReplayTimer=null;
   let zoScale=1;
-  let zoPanBound=false;
-  let zoWindowBound=false;
+  let zoWindowObserver=null;
   const ZO_BASE_W=1880;
   const ZO_BASE_H=980;
   let ZO_SCENE_W=ZO_BASE_W;
@@ -5532,7 +5533,7 @@ body.zar-light .zarDockManagerCard{background:#fffaf4;color:#4a3828;border-color
       },{passive:false});
       vp.dataset.bound='1';
     }
-    if(vp && !zoPanBound){
+    if(vp && !vp.dataset.panBound){
       let drag=null;
       const allow=(el)=>!(el.closest('button,input,textarea,a,label,.zoNode'));
       vp.addEventListener('pointerdown',function(ev){
@@ -5549,7 +5550,7 @@ body.zar-light .zarDockManagerCard{background:#fffaf4;color:#4a3828;border-color
       });
       function stop(ev){ if(!drag) return; if(ev && drag.id!==undefined){ try{ vp.releasePointerCapture(drag.id); }catch(_e){} } drag=null; vp.classList.remove('dragging'); }
       vp.addEventListener('pointerup',stop); vp.addEventListener('pointercancel',stop); vp.addEventListener('pointerleave',function(ev){ if(drag && ev.buttons===0) stop(ev); });
-      zoPanBound=true;
+      vp.dataset.panBound='1';
     }
   }
 
@@ -5571,6 +5572,7 @@ function saveMapWindowState(){
   if(!wrap) return;
   try{
     const r=wrap.getBoundingClientRect();
+    if(!r.width || !r.height) return; // Hidden workspaces must not erase saved dimensions.
     localStorage.setItem('zarOrchestrationMapWindowV1',JSON.stringify({width:r.width,height:r.height,left:parseFloat(wrap.style.left)||0,top:parseFloat(wrap.style.top)||0}));
   }catch(_e){}
 }
@@ -5579,7 +5581,7 @@ function bindMapWindowMoveResize(){
   const handle=wrap?.querySelector('.zoToolbar .hint');
   if(!wrap || !handle) return;
   restoreMapWindowState();
-  if(!zoWindowBound){
+  if(!wrap.dataset.windowBound){
     let drag=null;
     handle.addEventListener('pointerdown',function(ev){
       if(ev.button!==0) return;
@@ -5604,9 +5606,10 @@ function bindMapWindowMoveResize(){
     };
     handle.addEventListener('pointerup',stop);
     handle.addEventListener('pointercancel',stop);
-    const ro=new ResizeObserver(()=>saveMapWindowState());
-    ro.observe(wrap);
-    zoWindowBound=true;
+    if(zoWindowObserver) zoWindowObserver.disconnect();
+    zoWindowObserver=new ResizeObserver(()=>saveMapWindowState());
+    zoWindowObserver.observe(wrap);
+    wrap.dataset.windowBound='1';
   }
 }
 
@@ -5622,6 +5625,7 @@ function bindMapWindowMoveResize(){
     const top=document.getElementById('topTitle'); if(top) top.textContent='Zar · Orquestación de Subagentes';
     const inner=document.getElementById('orchestrationWorkspaceInner');
     if(!inner) return;
+    if(zoWindowObserver){ zoWindowObserver.disconnect(); zoWindowObserver=null; }
     inner.innerHTML=orchestrationMarkup();
     zoScale=1;
     window.zoUpdateZoom();

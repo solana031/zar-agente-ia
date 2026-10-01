@@ -211,7 +211,7 @@ def simulate(bars, strategy='trend', capital=10000.0, risk_pct=1.0, slippage_pct
     wins=[p for p in pnls if p>0]; losses=[p for p in pnls if p<0]
     gross_profit=sum(wins); gross_loss=abs(sum(losses))
     pf=(gross_profit/gross_loss) if gross_loss else (float('inf') if gross_profit>0 else None)
-    eval_curve=equity_curve[start_index:] or [capital]
+    eval_curve=[capital] + equity_curve[start_index:]
     eval_bars=max(1,len(bars)-start_index)
     ret=(final_equity/capital-1)*100
     dd=max_drawdown(eval_curve)*100

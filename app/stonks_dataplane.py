@@ -38,14 +38,21 @@ def _frame_seconds(timeframe):
 class ZeroTokenDataPlane:
     """Thread-safe cache + event router used by the autonomous Stonks worker."""
 
+    MAX_CACHE = 512
+    MAX_SCOPES = 64
+    MAX_SYMBOLS = 128
+
     def __init__(self):
         self._lock = threading.RLock()
         self._cache = {}
         self._runtime = {}
+        self._loads = [threading.Lock() for _ in range(32)]
 
     def _scope(self, scope_id):
         sid = str(scope_id or 'default')
         with self._lock:
+            if sid not in self._runtime and len(self._runtime) >= self.MAX_SCOPES:
+                self._runtime.pop(next(iter(self._runtime)))
             return self._runtime.setdefault(sid, {
                 'started_at': _utcnow(),
                 'cycles_total': 0,
@@ -106,15 +113,23 @@ class ZeroTokenDataPlane:
 
     def _cached(self, scope_id, kind, key, ttl, loader):
         ck = self._cache_key(scope_id, kind, key)
-        now = time.monotonic()
-        with self._lock:
-            row = self._cache.get(ck)
-            if row and now - row['mono'] < max(0.0, float(ttl)):
-                return deepcopy(row['value']), True, max(0.0, now-row['mono'])
-        value = loader()
-        with self._lock:
-            self._cache[ck] = {'mono': now, 'value': deepcopy(value), 'updated_at': _utcnow()}
-        return value, False, 0.0
+        # Striped locks collapse concurrent misses without holding the state lock
+        # during I/O or accumulating one lock per temporal cache key.
+        with self._loads[hash(ck) % len(self._loads)]:
+            now = time.monotonic()
+            with self._lock:
+                for expired in [k for k, r in self._cache.items() if r['expires'] <= now]:
+                    del self._cache[expired]
+                row = self._cache.get(ck)
+                if row:
+                    return deepcopy(row['value']), True, max(0.0, now-row['mono'])
+            value = loader()
+            with self._lock:
+                if ck not in self._cache and len(self._cache) >= self.MAX_CACHE:
+                    self._cache.pop(next(iter(self._cache)))
+                self._cache[ck] = {'mono': now, 'expires': now + max(0.0, float(ttl)),
+                                   'value': deepcopy(value), 'updated_at': _utcnow()}
+            return value, False, 0.0
 
     def signal(self, scope_id, symbol, strategy, timeframe, market_open, loader):
         """Refresh once per completed-bar window instead of every 5-second worker cycle."""
@@ -171,14 +186,18 @@ class ZeroTokenDataPlane:
             signal_changed = prev_sig is not None and prev_sig != sig
             news_changed = prev_news is not None and prev_news != news_sig
             first_seen = prev_sig is None
+            if symbol not in s['last_signal_signatures'] and len(s['last_signal_signatures']) >= self.MAX_SYMBOLS:
+                oldest = next(iter(s['last_signal_signatures']))
+                s['last_signal_signatures'].pop(oldest, None)
+                s['last_news_signatures'].pop(oldest, None)
             s['last_signal_signatures'][symbol] = sig
             s['last_news_signatures'][symbol] = news_sig
 
         actionable = str(signal.get('signal') or '').upper() in ('BUY', 'SELL')
         score = abs(_safe_float(news.get('sentiment_score')))
         strong_news = score >= 30.0 and str(news.get('sentiment') or 'neutral') != 'neutral'
-        significant = actionable or signal_changed or news_changed
-        ai_candidate = bool(actionable and (strong_news or signal_changed or news_changed))
+        significant = (first_seen and actionable) or signal_changed or news_changed
+        ai_candidate = bool(significant and actionable and (strong_news or signal_changed or news_changed))
         reasons = []
         if actionable: reasons.append('señal accionable')
         if signal_changed and not first_seen: reasons.append('cambio técnico')
@@ -203,7 +222,8 @@ class ZeroTokenDataPlane:
         return event
 
     def status(self, scope_id, persisted=None):
-        s = deepcopy(self._scope(scope_id))
+        with self._lock:
+            s = deepcopy(self._scope(scope_id))
         if persisted and not s.get('cycles_total'):
             # Normally runtime wins; this fallback keeps a useful view immediately after restart.
             for k, v in dict(persisted).items():

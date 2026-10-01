@@ -85,6 +85,7 @@ class MarketStreamManager:
                 op.append(s)
         plan = {'equities': eq[:max_eq], 'crypto': cr[:max_cr], 'options': op[:max_op]}
         changed = []
+        closing = []
         with self._lock:
             for kind, items in plan.items():
                 if self._watch.get(kind) != items:
@@ -96,10 +97,15 @@ class MarketStreamManager:
                     self._restart[kind].set()
                     ws = self._ws.get(kind)
                     if ws is not None:
-                        try:
-                            ws.close()
-                        except Exception:
-                            pass
+                        closing.append(ws)
+            allowed = {f'{kind}:{symbol}' for kind, items in plan.items() for symbol in items}
+            self._latest = {k: v for k, v in self._latest.items() if k in allowed}
+        # close() can wait for a callback that needs _lock.
+        for ws in closing:
+            try:
+                ws.close()
+            except Exception:
+                pass
         self._ensure_threads()
         return {'changed': changed, 'watchlist': deepcopy(plan)}
 
@@ -131,18 +137,23 @@ class MarketStreamManager:
         return f'wss://stream.data.alpaca.markets/v1beta1/{feed}', feed.upper()
 
     def _run_loop(self, kind):
+        delay = 2.5
+        wake = self._restart[kind]
         while True:
             with self._lock:
                 symbols = list(self._watch.get(kind) or [])
-            if not symbols:
-                time.sleep(2.0)
-                continue
+                if not symbols:
+                    # Remove atomically so configure() cannot miss starting a replacement.
+                    self._threads.pop(kind, None)
+                    self._ws.pop(kind, None)
+                    self._status[kind].update(connected=False, authenticated=False)
+                    return
+                wake.clear()
             key, secret = self._credentials()
-            if not key or not secret:
-                self._set_error(kind, 'Credenciales Alpaca no configuradas')
-                time.sleep(15.0)
-                continue
+            started = time.monotonic()
             try:
+                if not key or not secret:
+                    raise RuntimeError('Credenciales Alpaca no configuradas')
                 if kind == 'options':
                     self._run_options_once(kind, symbols, key, secret)
                 else:
@@ -150,12 +161,21 @@ class MarketStreamManager:
             except Exception as exc:
                 self._set_error(kind, str(exc)[:300])
             with self._lock:
+                self._ws.pop(kind, None)
                 self._status[kind]['connected'] = False
                 self._status[kind]['authenticated'] = False
                 self._status[kind]['reconnects'] += 1
                 self._status[kind]['updated_at'] = _utcnow()
-            self._restart[kind].clear()
-            time.sleep(2.5)
+            if time.monotonic() - started >= 60:
+                delay = 2.5
+            if wake.wait(delay):
+                delay = 2.5
+            else:
+                delay = min(60.0, delay * 2)
+
+    def _current(self, kind, symbols):
+        with self._lock:
+            return self._watch[kind] == symbols and not self._restart[kind].is_set()
 
     def _run_json_once(self, kind, symbols, key, secret):
         try:
@@ -163,14 +183,19 @@ class MarketStreamManager:
         except Exception as exc:
             raise RuntimeError('Falta websocket-client en el entorno') from exc
         url, feed = self._stream_url(kind)
-        auth_done = threading.Event()
 
         def on_open(ws):
+            if not self._current(kind, symbols):
+                ws.close()
+                return
             with self._lock:
                 self._status[kind].update(connected=True, authenticated=False, feed=feed, last_error=None, updated_at=_utcnow())
             ws.send(json.dumps({'action': 'auth', 'key': key, 'secret': secret}))
 
         def on_message(ws, raw):
+            if not self._current(kind, symbols):
+                ws.close()
+                return
             try:
                 payload = json.loads(raw)
             except Exception:
@@ -180,7 +205,6 @@ class MarketStreamManager:
                 if not isinstance(row, dict):
                     continue
                 if row.get('T') == 'success' and row.get('msg') == 'authenticated':
-                    auth_done.set()
                     with self._lock:
                         self._status[kind]['authenticated'] = True
                         self._status[kind]['updated_at'] = _utcnow()
@@ -189,7 +213,8 @@ class MarketStreamManager:
                     continue
                 if row.get('T') == 'error':
                     self._set_error(kind, f"{row.get('code')}: {row.get('msg')}")
-                    continue
+                    ws.close()
+                    return
                 if row.get('T') == 'subscription':
                     with self._lock:
                         self._status[kind]['subscriptions'] = len(symbols)
@@ -208,6 +233,8 @@ class MarketStreamManager:
 
         ws = websocket.WebSocketApp(url, on_open=on_open, on_message=on_message, on_error=on_error, on_close=on_close)
         with self._lock:
+            if not self._current(kind, symbols):
+                return
             self._ws[kind] = ws
         ws.run_forever(ping_interval=20, ping_timeout=10)
 
@@ -224,11 +251,17 @@ class MarketStreamManager:
             ws.send(msgpack.packb(obj, use_bin_type=True), opcode=websocket.ABNF.OPCODE_BINARY)
 
         def on_open(ws):
+            if not self._current(kind, symbols):
+                ws.close()
+                return
             with self._lock:
                 self._status[kind].update(connected=True, authenticated=False, feed=feed, last_error=None, updated_at=_utcnow())
             send_obj(ws, {'action': 'auth', 'key': key, 'secret': secret})
 
         def on_data(ws, raw, opcode, fin):
+            if not self._current(kind, symbols):
+                ws.close()
+                return
             if opcode != websocket.ABNF.OPCODE_BINARY:
                 return
             try:
@@ -247,7 +280,8 @@ class MarketStreamManager:
                     continue
                 if row.get('T') == 'error':
                     self._set_error(kind, f"{row.get('code')}: {row.get('msg')}")
-                    continue
+                    ws.close()
+                    return
                 self._ingest(kind, row)
 
         def on_error(ws, err):
@@ -261,6 +295,8 @@ class MarketStreamManager:
 
         ws = websocket.WebSocketApp(url, header=['Content-Type: application/msgpack'], on_open=on_open, on_data=on_data, on_error=on_error, on_close=on_close)
         with self._lock:
+            if not self._current(kind, symbols):
+                return
             self._ws[kind] = ws
         ws.run_forever(ping_interval=20, ping_timeout=10)
 
@@ -274,13 +310,24 @@ class MarketStreamManager:
         symbol = str(row.get('S') or '').upper()
         if not symbol or typ not in ('t', 'q', 'b', 'u', 'd'):
             return
+        try:
+            stamp = datetime.fromisoformat(str(row.get('t') or '').replace('Z', '+00:00')).astimezone(timezone.utc)
+        except (TypeError, ValueError):
+            return
+        channel = 'bar' if typ in ('b', 'u', 'd') else typ
         now = _utcnow()
         key = f'{kind}:{symbol}'
         with self._lock:
+            if symbol not in self._watch[kind]:
+                return
             rec = self._latest.setdefault(key, {
                 'kind': kind, 'symbol': symbol, 'price': None, 'bid': None, 'ask': None,
                 'bar_close': None, 'timestamp': None, 'updated_at': now, 'source': 'alpaca_stream'
             })
+            previous = rec.get(channel + '_timestamp')
+            if previous and stamp < datetime.fromisoformat(previous):
+                return
+            rec[channel + '_timestamp'] = stamp.isoformat()
             if typ == 't':
                 if row.get('p') is not None:
                     rec['price'] = row.get('p')
@@ -300,7 +347,7 @@ class MarketStreamManager:
                 })
                 if rec.get('price') is None and row.get('c') is not None:
                     rec['price'] = row.get('c')
-            rec['timestamp'] = row.get('t') or rec.get('timestamp')
+            rec['timestamp'] = max(rec.get('timestamp') or '', stamp.isoformat())
             rec['updated_at'] = now
             rec['message_type'] = typ
             self._status[kind]['messages'] += 1
@@ -312,7 +359,19 @@ class MarketStreamManager:
             feeds = deepcopy(self._status)
             watch = deepcopy(self._watch)
             rows = list(deepcopy(self._latest).values())
-        rows.sort(key=lambda x: x.get('updated_at') or '', reverse=True)
+        now = datetime.now(timezone.utc)
+        for row in rows:
+            # Select the freshest available channel instead of preferring a stale trade.
+            candidates = [(row.get('t_timestamp'), row.get('price')),
+                          (row.get('q_timestamp'), row.get('mid')),
+                          (row.get('bar_timestamp'), row.get('bar_close'))]
+            candidates = [(t, p) for t, p in candidates if t and p is not None]
+            if candidates:
+                row['timestamp'], row['price'] = max(candidates, key=lambda x: x[0])
+            age = (now - datetime.fromisoformat(row['timestamp'])).total_seconds()
+            row['age_s'] = round(max(0, age), 1)
+            row['stale'] = age > 120 or age < -5 or not feeds[row['kind']]['authenticated']
+        rows.sort(key=lambda x: x.get('timestamp') or '', reverse=True)
         return {
             'architecture': 'realtime_zero_token_stream',
             'zero_tokens': True,

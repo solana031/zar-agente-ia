@@ -872,14 +872,26 @@ def _stonks_refresh_shadow_outcomes(d, force=False):
         return d, {'agent':'shadow_outcome','status':'idle','detail':'Timestamps Shadow no válidos','data':{'orders_created':0},'timestamp':now.isoformat()}
     from datetime import timedelta
     start=min(starts)-timedelta(minutes=2)
-    payload=_alpaca_market_request('/v2/stocks/bars',params={
+    params={
         'symbols':','.join(symbols),'timeframe':'1Min','start':start.strftime('%Y-%m-%dT%H:%M:%SZ'),
         'end':now.strftime('%Y-%m-%dT%H:%M:%SZ'),'limit':10000,'feed':'iex','sort':'asc'
-    })
-    bars=(payload.get('bars') or {}) if isinstance(payload,dict) else {}
+    }
+    bars={}; seen_tokens=set()
+    for _ in range(8):
+        payload=_alpaca_market_request('/v2/stocks/bars',params=dict(params))
+        for symbol, page in (payload.get('bars') or {}).items():
+            bars.setdefault(symbol,[]).extend(page or [])
+        token=payload.get('next_page_token')
+        if not token:
+            break
+        if token in seen_tokens:
+            raise RuntimeError('Paginación Outcome repetida; snapshot incompleto')
+        seen_tokens.add(token); params['page_token']=token
+    else:
+        raise RuntimeError('Histórico Outcome demasiado extenso; snapshot incompleto')
     rows=stonks_shadow.update_log(rows,bars,now=now)
     summary=stonks_shadow.summarize(rows)
-    d['shadow_log']=rows[-200:]
+    d['shadow_log']=rows[-stonks_shadow.MAX_EVENTS:]
     d['shadow_outcome_summary']=summary
     d['shadow_outcome_last_update']=now.isoformat()
     return d, {'agent':'shadow_outcome','status':'ok','detail':f"{summary.get('complete',0)} completos · {summary.get('pending',0)} pendientes · 0 órdenes",'data':summary,'timestamp':now.isoformat()}
@@ -1039,6 +1051,13 @@ def _stonks_engine_cycle(scope_id):
                         continue
                     # Shadow mode evaluates the hardened Decision + Risk route but never submits an order.
                     if shadow_mode:
+                        # A cached signal is one observation, not a new sample every 5 s.
+                        if signal.get('bar_time') and any(
+                            all(e.get(k) == v for k, v in {
+                                'symbol': symbol, 'strategy': strategy, 'timeframe': timeframe,
+                                'signal': signal.get('signal'), 'bar_time': signal['bar_time']}.items())
+                            for e in (_stonks_read().get('shadow_log') or [])):
+                            continue
                         shadow_actionable_count += 1
                         with app.test_request_context('/api/stonks/decision', method='POST', json={
                             'symbol':symbol,'strategy':strategy,'timeframe':timeframe,
@@ -1050,12 +1069,12 @@ def _stonks_engine_cycle(scope_id):
                         _shadow_data=_shadow_payload.get_json() if hasattr(_shadow_payload,'get_json') else {}
                         _event={
                             'id':uuid.uuid4().hex,'timestamp':datetime.now(timezone.utc).isoformat(),'symbol':symbol,'strategy':strategy,
-                            'timeframe':timeframe,'signal':signal.get('signal'),'decision':_shadow_data.get('decision'),
+                            'timeframe':timeframe,'signal':signal.get('signal'),'bar_time':signal.get('bar_time'),'decision':_shadow_data.get('decision'),
                             'primary_reason':_shadow_data.get('primary_reason') or _shadow_data.get('reason'),
                             'price':_shadow_data.get('price'),'estimated_value':_shadow_data.get('estimated_value'),
                             'order_created':False,'outcomes':{},'outcome_status':'pending','outcome_bars':0
                         }
-                        latest=_stonks_read(); log=list(latest.get('shadow_log') or []); log.append(_event); latest['shadow_log']=log[-200:]
+                        latest=_stonks_read(); log=list(latest.get('shadow_log') or []); log.append(_event); latest['shadow_log']=log[-stonks_shadow.MAX_EVENTS:]
                         latest['shadow_outcome_summary']=stonks_shadow.summarize(latest['shadow_log'])
                         latest['shadow_last_run']=_event['timestamp']; latest['shadow_total_signals']=int(latest.get('shadow_total_signals') or 0)+1
                         _stonks_write(latest); _stonks_audit_append('SHADOW_SIGNAL',_event)
@@ -1632,6 +1651,8 @@ def stonks_decision_api(engine=False, lifecycle_test=False):
         add_check('REVOKED','Control revocado',not bool(d.get('revoked')))
         add_check('PAUSED','Motor pausado',not bool(d.get('paused')))
         add_check('MODE','Modo distinto de Paper',d.get('mode')=='paper')
+        if execute:
+            add_check('SHADOW','Shadow no permite enviar órdenes',d.get('execution_mode')!='shadow')
         add_check('MARKET','Mercado cerrado',bool(clock.get('is_open')))
         if lifecycle_test:
             add_check('LIFECYCLE', 'Gestión de posición desactivada', bool(d.get('position_lifecycle_enabled')))
@@ -2068,6 +2089,8 @@ def stonks_alpaca_order_api():
             return jsonify({'ok':False,'error':'El motor está pausado. Pulsa Reanudar para habilitar órdenes Paper.'}),409
         if d.get('mode') != 'paper':
             return jsonify({'ok':False,'error':'ZAR Stonks solo permite órdenes Paper en esta versión.'}),409
+        if d.get('execution_mode') == 'shadow':
+            return jsonify({'ok':False,'error':'Shadow no permite enviar órdenes Paper.'}),409
         payload=request.get_json(silent=True) or {}
         symbol=(str(payload.get('symbol') or 'AAPL').strip().upper())
         side=str(payload.get('side') or 'buy').strip().lower()
