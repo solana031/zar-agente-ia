@@ -13,7 +13,7 @@ import html as html_lib
 import uuid
 from functools import wraps
 from contextlib import contextmanager
-from . import stonks_lifecycle, stonks_preflight, stonks_agents, stonks_news, stonks_dataplane, stonks_selftest, stonks_stream, subagent_orchestrator, stonks_backtest, stonks_validation, stonks_shadow, stonks_learning, stonks_execution, stonks_readiness
+from . import stonks_lifecycle, stonks_preflight, stonks_agents, stonks_news, stonks_dataplane, stonks_selftest, stonks_stream, subagent_orchestrator, stonks_backtest, stonks_validation, stonks_shadow, stonks_learning, stonks_execution, stonks_readiness, stonks_profitability
 from datetime import datetime, timezone
 from .user_scope import set_current_user, get_current_user, anonymous_id, user_id_for_email
 from pathlib import Path
@@ -666,7 +666,15 @@ def _stonks_default():
         'paper_learning_journal_count': 0,
         'paper_learning': {},
         'paper_learning_last_update': None,
-        'paper_learning_enabled': True
+        'paper_learning_enabled': True,
+        'paper_profitability_enabled': True,
+        'paper_min_signal_quality': 55.0,
+        'paper_symbol_cooldown_minutes': 15,
+        'paper_max_entries_per_symbol_day': 4,
+        'paper_last_entry_at': {},
+        'paper_entry_counts': {},
+        'paper_quality_seen': {},
+        'paper_quality_stats': {}
     }
 def _stonks_read():
     p = _stonks_file()
@@ -1164,6 +1172,27 @@ def _stonks_engine_cycle(scope_id):
                         agent_trace.append({'agent':'shadow_validation','status':'observed','detail':f"{symbol}: {signal.get('signal')} · {_event.get('decision') or 'sin decisión'} · 0 órdenes",'data':_event,'timestamp':_event['timestamp']})
                         actions.append(f"{symbol}: SHADOW {signal.get('signal')} · {_event.get('decision') or 'sin acción'} · 0 órdenes")
                         continue
+                    # v32 Paper Quality Gate: reduce weak/repetitive autonomous entries.
+                    # This filter has no broker, sizing, Risk or Live authority.
+                    if d.get('paper_profitability_enabled', True):
+                        quality = stonks_profitability.evaluate(
+                            d, symbol, strategy, timeframe, signal,
+                            news_by_symbol.get(symbol) or {}, d.get('paper_learning') or {})
+                        latest_quality = _stonks_read()
+                        latest_quality['paper_quality_last'] = quality
+                        if not quality.get('ok'):
+                            stonks_profitability.note_block(latest_quality, quality)
+                            _stonks_write(latest_quality)
+                            agent_trace.append({'agent':'paper_quality','status':'blocked',
+                                'detail':f"{symbol}: calidad {quality.get('quality_score')} · entrada omitida · 0 tokens",
+                                'data':quality,'timestamp':quality.get('checked_at')})
+                            actions.append(f"{symbol}: QUALITY GATE · {quality.get('quality_score')}/100 · {quality.get('reasons',["entrada filtrada"])[0]}")
+                            continue
+                        stonks_profitability.note_candidate(latest_quality, quality)
+                        _stonks_write(latest_quality)
+                        agent_trace.append({'agent':'paper_quality','status':'pass',
+                            'detail':f"{symbol}: calidad {quality.get('quality_score')} · candidato Paper · 0 tokens",
+                            'data':quality,'timestamp':quality.get('checked_at')})
                     # Reuse the hardened Decision + Risk route so the autonomous Paper path
                     # has exactly the same server-side gates as manual/GUI execution.
                     def _agent_decision(sym, strat, tf, sig):
@@ -1181,6 +1210,9 @@ def _stonks_engine_cycle(scope_id):
                     agent_trace.append(execution_trace)
                     if data.get('order_created'):
                         order=data.get('order') or {}
+                        latest_entry = _stonks_read()
+                        stonks_profitability.note_entry(latest_entry, symbol)
+                        _stonks_write(latest_entry)
                         actions.append(f"{symbol}: {signal.get('signal')} · ORDEN {order.get('status','enviada')} · {order.get('id','—')}")
                     else:
                         actions.append(f"{symbol}: {signal.get('signal')} · {data.get('primary_reason') or data.get('reason') or data.get('decision') or 'sin acción'}")
@@ -1277,7 +1309,7 @@ def stonks_status_api():
         journal_verified = _stonks_learning_file().is_file() and len(_stonks_learning_read()['journal']) == int(d.get('paper_learning_journal_count') or 0)
     except (OSError, ValueError, KeyError, TypeError, RuntimeError):
         pass
-    return jsonify({'ok':True, **d, 'data_plane':data_plane, 'market_stream':market_stream, 'self_test':self_test, 'live_trading_enabled':False, 'readiness':stonks_readiness.evaluate(d, market_stream, self_test, journal_verified), 'lifecycle_test':stonks_lifecycle.test_view(d), 'engine_owner':_stonks_engine_owner_read(), 'engine_owned_by_current_user':_stonks_engine_owner_read()==_user_scope_id(), 'audit_count':len(_stonks_audit_read(200)), 'paper_configured': bool(pk and ps), 'crypto_configured': bool(os.environ.get('KRAKEN_API_KEY') and os.environ.get('KRAKEN_API_SECRET')), 'engine_position_count':len(d.get('engine_last_positions') or []), 'engine_open_order_count':len(d.get('engine_last_open_orders') or []), 'position_lifecycle_enabled':bool(d.get('position_lifecycle_enabled')), 'stop_loss_pct':d.get('stop_loss_pct',1.0), 'take_profit_pct':d.get('take_profit_pct',2.0), 'managed_position_count':sum(r.get('status')!='CERRADA' for r in (d.get('managed_positions') or {}).values()), 'lifecycle_last_action':d.get('lifecycle_last_action'), 'agents':stonks_agents.describe()})
+    return jsonify({'ok':True, **d, 'data_plane':data_plane, 'market_stream':market_stream, 'self_test':self_test, 'live_trading_enabled':False, 'readiness':stonks_readiness.evaluate(d, market_stream, self_test, journal_verified), 'paper_profitability':stonks_profitability.public_view(d), 'lifecycle_test':stonks_lifecycle.test_view(d), 'engine_owner':_stonks_engine_owner_read(), 'engine_owned_by_current_user':_stonks_engine_owner_read()==_user_scope_id(), 'audit_count':len(_stonks_audit_read(200)), 'paper_configured': bool(pk and ps), 'crypto_configured': bool(os.environ.get('KRAKEN_API_KEY') and os.environ.get('KRAKEN_API_SECRET')), 'engine_position_count':len(d.get('engine_last_positions') or []), 'engine_open_order_count':len(d.get('engine_last_open_orders') or []), 'position_lifecycle_enabled':bool(d.get('position_lifecycle_enabled')), 'stop_loss_pct':d.get('stop_loss_pct',1.0), 'take_profit_pct':d.get('take_profit_pct',2.0), 'managed_position_count':sum(r.get('status')!='CERRADA' for r in (d.get('managed_positions') or {}).values()), 'lifecycle_last_action':d.get('lifecycle_last_action'), 'agents':stonks_agents.describe()})
 
 @app.get('/api/stonks/agents')
 def stonks_agents_api():

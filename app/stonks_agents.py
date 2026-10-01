@@ -190,7 +190,7 @@ class StonksSupervisor:
     def describe(self):
         return {
             "architecture": "deterministic_multi_agent",
-            "phase": 8,
+            "phase": 9,
             "token_cost_router": 0,
             "paper_only": True,
             "execution_authority": "Decision + Risk server route",
@@ -208,6 +208,7 @@ class StonksSupervisor:
                 {"id":"shadow_validation","role":"Evalúa señales y Risk sin enviar órdenes en modo Shadow"},
                 {"id":"shadow_outcome","role":"Mide resultados posteriores de señales Shadow con barras reales; 0 órdenes"},
                 {"id":"paper_learning","role":"Aprende de operaciones Paper cerradas; estadísticas persistentes, 0 tokens y sin autoridad Risk/Live"},
+                {"id":"paper_quality","role":"Filtra entradas Paper débiles/repetidas con cooldown y evidencia Learning; 0 tokens, sin autoridad Risk/Live"},
                 {"id":"paper_execution","role":"Ejecuta únicamente por la ruta Paper endurecida"},
                 {"id":"position_manager","role":"Gestiona lifecycle, ownership, SL/TP y reconciliación"},
             ],

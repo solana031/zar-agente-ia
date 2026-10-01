@@ -5,7 +5,7 @@ const html=fs.readFileSync('app/templates/index.html','utf8');
 const matrix=[[1920,1080],[1600,900],[1440,900],[1366,768],[1180,820],[1024,768],[820,1180],[768,1024],[430,932],[412,915],[393,852],[375,812],[360,800]];
 const sizes=process.env.ZAR_AUDIT_SMOKE?[[1440,900],[360,800]]:matrix;
 const surfaces=['showConversations','showMemory','showFiles','showTasks','showContacts','showGmail','showWorkspace','showConnections','showMaps','showResearch','openLearning','showProvider','showVoice','showMobileCalendar','showMobileTime','showMobileWeather','showControlCenter','showMedia','showStonks','showSubagentOrchestration'];
-const fixtures={ok:true,version:'31.3.52',mode:'paper',execution_mode:'shadow',paused:true,revoked:false,
+const fixtures={ok:true,version:'32.0.0',mode:'paper',execution_mode:'shadow',paused:true,revoked:false,
  google:{account:'test@example.invalid',connected:false},services:[],models:[],files:[],folders:[],items:[],events:[],tasks:[],lists:[],contacts:[],messages:[],conversations:[],memories:[],learnings:[],recent:[],stats:{},insights:{by_type:[]},backups:[],projects:[],positions:[],orders:[],audit:[],signals:[],managed_positions:{},agents:[],edges:[],stonks_trace:[],queue:[],data:[],health:{},settings:{},status:'ready',
  max_trade_eur:25,max_daily_loss_eur:10,max_position_pct:20,stop_loss_pct:1,take_profit_pct:2};
 function agents(n){return [{id:'zar_supervisor',name:'ZAR Supervisor',domain:'core'}, {id:'stonks_supervisor',name:'Stonks Supervisor',domain:'finance'},...Array.from({length:n-2},(_,i)=>({id:(i%2?'stonks_':'general_')+i,name:'Agente de datos '+i,role:'Especialista determinista en datos públicos',domain:i%2?'finance':'general'}))];}

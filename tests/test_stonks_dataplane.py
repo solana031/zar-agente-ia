@@ -122,3 +122,17 @@ def test_runtime_maps_are_bounded():
     assert len(dp._runtime)==dp.MAX_SCOPES
     for i in range(dp.MAX_SYMBOLS+2): dp.route_event('u',str(i))
     assert len(dp._scope('u')['last_signal_signatures'])==dp.MAX_SYMBOLS
+
+
+def test_provider_specific_ai_telemetry_is_explicit():
+    dp=stonks_dataplane.PLANE
+    dp.begin_cycle('meter')
+    dp.record_ai_call('meter','gpt-5',estimated_cost_usd=0.0123)
+    dp.record_ai_call('meter','gemini-3')
+    dp.record_ai_call('meter','ollama',local=True)
+    status=dp.status('meter')
+    assert status['gpt_calls']==1
+    assert status['gemini_calls']==1
+    assert status['local_model_calls']==1
+    assert status['ai_calls']==2
+    assert status['estimated_ai_cost_usd']==0.0123

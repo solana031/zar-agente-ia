@@ -22,7 +22,7 @@ def run(state, agents_meta, data_plane):
     check('paper_only', state.get('mode') == 'paper', 'Modo operativo permanece Paper')
     check('router_zero_tokens', int(agents_meta.get('token_cost_router') or 0) == 0, 'Router determinista a 0 tokens')
     check('agent_ids_unique', len(ids) == len(set(ids)), 'IDs de subagentes sin duplicados')
-    required = {'supervisor','market_data','market_stream','analysis','news_sentiment','data_plane','event_router','ai_gate','self_test','risk','shadow_validation','shadow_outcome','paper_learning','paper_execution','position_manager'}
+    required = {'supervisor','market_data','market_stream','analysis','news_sentiment','data_plane','event_router','ai_gate','self_test','risk','shadow_validation','shadow_outcome','paper_learning','paper_quality','paper_execution','position_manager'}
     check('agents_complete', required.issubset(set(ids)), 'Especialistas críticos registrados')
     check('data_plane_zero_token', data_plane.get('architecture') == 'zero_token_data_plane', 'Data Plane determinista activo')
     check('ai_gate_closed', data_plane.get('ai_gate_enabled') is False, 'AI Gate cerrado por defecto')
@@ -47,6 +47,7 @@ def run(state, agents_meta, data_plane):
     check('learning_store_count', journal_count >= 0, 'Contador de journal Paper persistente válido')
     check('learning_no_risk_authority', learning.get('risk_authority') in (None, False), 'Learning no tiene autoridad sobre Risk')
     check('learning_no_live_authority', learning.get('live_authority') in (None, False), 'Learning no puede habilitar Live')
+    check('quality_gate_paper_only', bool(state.get('paper_profitability_enabled', True)) and float(state.get('paper_min_signal_quality', 55) or 0) >= 0, 'Quality Gate Paper activo y sin permisos Live/Risk')
     execution_mode = state.get('execution_mode')
     check('execution_mode_valid', execution_mode in ('decision','shadow','paper_auto'), f'Modo de ejecución válido: {execution_mode}')
     if execution_mode == 'paper_auto':

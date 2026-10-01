@@ -64,7 +64,10 @@ class ZeroTokenDataPlane:
                 'significant_events': 0,
                 'ai_candidates': 0,
                 'ai_calls': 0,
+                'gpt_calls': 0,
+                'gemini_calls': 0,
                 'local_model_calls': 0,
+                'estimated_ai_cost_usd': 0.0,
                 'last_event': None,
                 'last_cycle_at': None,
                 'last_cycle_zero_tokens': True,
@@ -80,7 +83,7 @@ class ZeroTokenDataPlane:
             if _safe_int(s.get('cycles_total')) == 0 and _safe_int(persisted.get('cycles_total')) > 0:
                 for key in ('started_at','cycles_total','zero_token_cycles','signal_cache_hits','signal_cache_misses',
                             'news_cache_hits','news_cache_misses','significant_events','ai_candidates','ai_calls',
-                            'local_model_calls','last_event','last_cycle_at','last_cycle_zero_tokens'):
+                            'gpt_calls','gemini_calls','local_model_calls','estimated_ai_cost_usd','last_event','last_cycle_at','last_cycle_zero_tokens'):
                     if key in persisted:
                         s[key] = deepcopy(persisted[key])
         return self.status(scope_id)
@@ -94,14 +97,25 @@ class ZeroTokenDataPlane:
             s['last_cycle_zero_tokens'] = True
         return self.status(scope_id)
 
-    def record_ai_call(self, scope_id, provider='unknown', local=False):
-        """Reserved for future on-demand AI integration."""
+    def record_ai_call(self, scope_id, provider='unknown', local=False, estimated_cost_usd=0.0):
+        """Record an on-demand model call for transparent Stonks telemetry.
+
+        The data plane never initiates model calls itself.  Callers may use this
+        hook if AI Gate is explicitly opened in a future release.
+        """
         s = self._scope(scope_id)
+        provider_name = str(provider or 'unknown').strip().lower()
         with self._lock:
             if local:
                 s['local_model_calls'] += 1
             else:
                 s['ai_calls'] += 1
+                if 'openai' in provider_name or 'gpt' in provider_name:
+                    s['gpt_calls'] += 1
+                elif 'gemini' in provider_name or 'google' in provider_name:
+                    s['gemini_calls'] += 1
+                s['estimated_ai_cost_usd'] = round(
+                    max(0.0, _safe_float(s.get('estimated_ai_cost_usd'))) + max(0.0, _safe_float(estimated_cost_usd)), 8)
                 # The current cycle is no longer zero-token if an API model was used.
                 if s['last_cycle_zero_tokens']:
                     s['zero_token_cycles'] = max(0, s['zero_token_cycles'] - 1)
