@@ -3394,6 +3394,98 @@ def _clear_pending_workspace_action():
         pass
 
 
+def _workspace_pending_from_marker(reply):
+    """Persist a structured WORKSPACE_ACTION marker and return the pending payload.
+
+    This is the canonical bridge between model tool-calling and the explicit
+    confirmation layer. It never executes the external action.
+    """
+    if not (isinstance(reply, str) and reply.startswith("WORKSPACE_ACTION::")):
+        return None
+    try:
+        data = json.loads(reply.split("::", 1)[1])
+        pending = {
+            "service": data.get("service", "Google Workspace"),
+            "action": data.get("action", "realizar una acción"),
+            "args": data.get("args") or {},
+        }
+        if not pending["args"]:
+            return None
+        _set_pending_workspace_action(pending)
+        set_task_state(
+            "google workspace",
+            (pending.get("service") or "workspace").lower(),
+            "",
+            pending.get("action", ""),
+            "high",
+            "awaiting_confirmation",
+            f"Preparado para {pending.get('action','acción')} en {pending.get('service','Google Workspace')}",
+        )
+        return pending
+    except Exception:
+        return None
+
+
+def _workspace_prepare_bridge(original_message):
+    """Force a textual Workspace plan to become a real pending action.
+
+    Models can occasionally answer with a polished plan and a confirmation
+    question without actually calling the write tool. That looks correct in the
+    UI but leaves nothing to execute on the next "sí". This bridge performs a
+    hidden, tool-only semantic pass and accepts only a WORKSPACE_ACTION marker.
+    """
+    text = (original_message or "").strip()
+    if not text:
+        return None
+    try:
+        from .agent import semantic_respond
+    except ImportError:
+        from agent import semantic_respond
+    internal = (
+        text
+        + "\n\n[INSTRUCCIÓN INTERNA DE ZAR — NO RESPONDAS CON UN PLAN EN TEXTO. "
+          "Debes PREPARAR AHORA la acción de Google Workspace usando la herramienta de escritura adecuada. "
+          "Si es una reorganización de un Google Sheets existente, localiza el archivo real si hace falta y usa "
+          "sheets_upgrade_workbook. No ejecutes la modificación todavía: la herramienta debe devolver el marcador "
+          "WORKSPACE_ACTION para que la aplicación solicite una única confirmación. No preguntes nada al usuario.]"
+    )
+    try:
+        marker = semantic_respond(internal)
+    except Exception:
+        return None
+    return _workspace_pending_from_marker(marker)
+
+
+def _looks_like_workspace_request(text):
+    return bool(re.search(
+        r"\b(workspace|google\s+(?:sheets|docs|slides|forms|drive)|sheets|hoja de c[aá]lculo|excel|docs?|documento|slides|presentaci[oó]n|formulario)\b",
+        text or "", re.I
+    ))
+
+
+def _looks_like_confirmation_plan(reply):
+    if not isinstance(reply, str):
+        return False
+    return bool(re.search(r"\b(confirmas|confirmaci[oó]n|autorizas|responde(?:\s+simplemente)?\s+[«\"']?s[ií])\b", reply, re.I))
+
+
+def _last_workspace_request_from_history():
+    """Recover the latest substantive Workspace request for confirmation repair."""
+    try:
+        items = conversation()[-30:] or history()[-30:]
+    except Exception:
+        items = []
+    for item in reversed(items):
+        if item.get("role") != "user":
+            continue
+        content = (item.get("content") or "").strip()
+        if not content or _looks_like_send(content) or _looks_like_cancel(content):
+            continue
+        if _looks_like_workspace_request(content):
+            return content
+    return ""
+
+
 def _execute_workspace_action(pending):
     service = pending.get("service")
     action = pending.get("action")
@@ -3483,8 +3575,30 @@ def _process_chat_message(msg):
     if _looks_like_send(msg):
         task=(ctx.get("task") or {})
         if task.get("status")=="awaiting_confirmation" and task.get("intent")=="google workspace" and not pending_workspace:
-            reply=("La confirmación de Workspace existe, pero el payload de la acción no está disponible. "
-                   "No voy a fingir que la ejecuté. Repite la orden de modificación y la dejaré preparada de nuevo con confirmación durable.")
+            # Recovery path: a previous model turn may have asked for confirmation
+            # without emitting WORKSPACE_ACTION. Reconstruct the last Workspace
+            # request and execute only after this explicit user confirmation.
+            original = _last_workspace_request_from_history()
+            recovered = _workspace_prepare_bridge(original) if original else None
+            if recovered:
+                try:
+                    result = _execute_workspace_action(recovered)
+                    _clear_pending_workspace_action()
+                    try:
+                        from .context import set_last_workspace
+                    except ImportError:
+                        from context import set_last_workspace
+                    workspace_obj = dict(result or {})
+                    workspace_obj.update({"service": recovered.get("service"), "action": recovered.get("action"), "requested_args": recovered.get("args") or {}})
+                    set_last_workspace(workspace_obj)
+                    set_task_state("google workspace", (recovered.get("service") or "workspace").lower(), result.get("id", result.get("documentId", result.get("spreadsheetId", result.get("presentationId", result.get("formId", ""))))), recovered.get("action", ""), "high", "completed", f"Acción realizada en {recovered.get('service')}")
+                    url = result.get("url") or result.get("htmlLink") or ""
+                    reply = f"✅ He realizado la acción en {recovered.get('service')}." + (f"\n{url}" if url else "")
+                except Exception as exc:
+                    reply = f"No he podido realizar la acción recuperada de Google Workspace: {exc}"
+                _remember_turn("user",msg); _remember_turn("assistant",reply); return reply
+            reply=("La confirmación de Workspace existe, pero no he podido reconstruir de forma segura la acción pendiente. "
+                   "No he modificado ningún archivo. Repite la orden completa y ZAR la preparará de nuevo antes de pedir confirmación.")
             _remember_turn("user",msg); _remember_turn("assistant",reply); return reply
 
     # Contexto natural: permite usar «guárdala», «hazlo más formal», «contéstale que…»
@@ -3706,28 +3820,29 @@ def _process_chat_message(msg):
                     # El agente semántico ha elegido una acción de Google Workspace.
                     # Nunca mostramos el marcador interno al usuario: convertimos la
                     # acción en una operación pendiente y pedimos confirmación explícita.
-                    import json as _json
-                    data = _json.loads(reply.split("::", 1)[1])
-                    pending = {
-                        "service": data.get("service", "Google Workspace"),
-                        "action": data.get("action", "realizar una acción"),
-                        "args": data.get("args") or {},
-                    }
-                    _set_pending_workspace_action(pending)
-                    set_task_state(
-                        "google workspace",
-                        (pending.get("service") or "workspace").lower(),
-                        "",
-                        pending.get("action", ""),
-                        "high",
-                        "awaiting_confirmation",
-                        f"Preparado para {pending.get('action','acción')} en {pending.get('service','Google Workspace')}"
-                    )
-                    reply = (
-                        f"⚠️ Voy a {pending.get('action','realizar esta acción')} en "
-                        f"{pending.get('service','Google Workspace')}.\n\n"
-                        "¿Confirmas? Responde «sí» para continuar o «cancelar» para detenerlo."
-                    )
+                    pending = _workspace_pending_from_marker(reply)
+                    if pending:
+                        reply = (
+                            f"⚠️ Voy a {pending.get('action','realizar esta acción')} en "
+                            f"{pending.get('service','Google Workspace')}.\n\n"
+                            "¿Confirmas? Responde «sí» para continuar o «cancelar» para detenerlo."
+                        )
+                elif _looks_like_workspace_request(msg) and _looks_like_confirmation_plan(reply):
+                    # Guard rail: a model may write a beautiful plan + confirmation
+                    # without actually calling the Workspace write tool. Force a
+                    # hidden tool-only pass before showing that confirmation.
+                    pending = _workspace_prepare_bridge(msg)
+                    if pending:
+                        reply = (
+                            f"⚠️ He preparado la acción real: {pending.get('action','realizar esta acción')} en "
+                            f"{pending.get('service','Google Workspace')}.\n\n"
+                            "¿Confirmas? Responde «sí» para continuar o «cancelar» para detenerlo."
+                        )
+                    else:
+                        reply = (
+                            "No he podido preparar de forma segura la acción de Google Workspace todavía. "
+                            "No he modificado ningún archivo. Vuelve a enviar la orden completa para que la prepare antes de pedirte confirmación."
+                        )
                 _remember_turn("assistant", reply)
                 return reply
         except Exception:
