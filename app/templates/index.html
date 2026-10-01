@@ -1602,6 +1602,11 @@ input:-webkit-autofill,textarea:-webkit-autofill,select:-webkit-autofill{
 #zarMapsQuery{min-width:0;max-width:100%;flex:1}
 @media(pointer:coarse){.zarStonksPanel .zsPills .zsPill{min-width:44px!important;min-height:44px!important;flex:0 0 44px}.zsChartHead,.zsPills{flex-wrap:wrap}}
 </style>
+
+<style id="zar-stonks-v32-0-6-paper-close-fix">
+#zarStonksApp .zsPaperClosePrimary{width:100%;min-height:46px;font-size:11px;margin-top:8px;border-color:rgba(239,68,68,.78)!important;background:linear-gradient(180deg,rgba(153,27,27,.58),rgba(92,18,18,.55))!important;color:#fff0f0!important}
+@media(max-width:720px){#zarStonksApp #zsPaperBlockingAction{display:block;margin-top:10px;padding:12px!important}#zarStonksApp .zsPaperClosePrimary{min-height:52px;font-size:12px;padding:10px 12px!important}}
+</style>
 </head>
 <body>
 <script>try{if(localStorage.getItem('zar_theme')==='light')document.body.classList.add('zar-light')}catch(e){}</script>
@@ -2364,6 +2369,34 @@ async function zsLoadPortfolio(){
     zsLoadOrphanTest();
     zsAnimateMoney('zsCapital',equity);
   }catch(e){const box=document.getElementById('zsDashPortfolio');if(box)box.innerHTML='<div class="zsPortfolioEmpty">⚠️ '+escHtml(e.message||'No se pudo cargar la cartera.')+'</div>';const pb=document.getElementById('zsPositionsBox');if(pb)pb.innerHTML='<div class="zsPortfolioEmpty">⚠️ '+escHtml(e.message||'No se pudo cargar la cartera.')+'</div>';}
+}
+
+function zsRenderBlockingPaperAction(positions){
+  const box=document.getElementById('zsPaperBlockingAction');
+  if(!box)return;
+  const rows=Array.isArray(positions)?positions:[];
+  if(rows.length!==1){box.style.display='none';box.innerHTML='';return;}
+  const p=rows[0]||{};
+  const symbol=String(p.symbol||'').trim().toUpperCase();
+  const qty=String(p.qty||'').trim();
+  if(!symbol||!qty){box.style.display='none';box.innerHTML='';return;}
+  box.style.display='block';
+  box.innerHTML='<b>⚠️ Posición Paper bloqueante detectada</b><p>'+escHtml(symbol)+' · '+escHtml(qty)+' acciones. Si es la única posición Paper y no hay órdenes abiertas, puedes cerrarla para liberar el motor autónomo.</p><button class="zsBtn danger zsPaperClosePrimary" onclick="zsCloseBlockingPaperPosition(\''+encodeURIComponent(symbol)+'\',\''+encodeURIComponent(qty)+'\')">✕ Cerrar posición Paper bloqueante</button><div class="zsCardNote" style="margin-top:7px">El servidor vuelve a verificar posición, cantidad y órdenes abiertas antes de enviar el cierre. Solo Alpaca Paper; LIVE permanece bloqueado.</div>';
+}
+async function zsCloseBlockingPaperPosition(symbolEnc,qtyEnc){
+  const symbol=decodeURIComponent(symbolEnc||'');
+  const qty=decodeURIComponent(qtyEnc||'');
+  const ok=await zsOpenConfirm('Vas a cerrar la única posición abierta de Alpaca Paper para liberar el motor autónomo. El servidor volverá a verificar que siga siendo la única posición y que no haya órdenes abiertas.','Cerrar posición Paper bloqueante',symbol+' · '+qty+' acciones','Sí, cerrar posición Paper','Cancelar','danger','✕','Esta acción solo afecta a la cuenta simulada Alpaca Paper. LIVE continúa bloqueado.');
+  if(!ok)return;
+  try{
+    const r=await fetch('/api/stonks/paper-position/close-single',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({confirm:true,symbol:symbol,qty:qty})});
+    const j=await r.json();
+    if(!r.ok||!j.ok)throw new Error(j.error||'No se pudo cerrar la posición Paper');
+    await zsOpenNotice('Cierre Paper enviado. Estado: '+(j.order?.status||'enviado')+'. Actualiza en unos segundos hasta que la posición desaparezca.','Posición Paper cerrándose','No se ha utilizado dinero real.','Entendido','✓','Cuando Posiciones Paper llegue a 0 podrás activar el motor autónomo.');
+    setTimeout(()=>{zsLoadPortfolio();zsRefreshStatus();},2200);
+  }catch(e){
+    await zsOpenNotice(e.message||'No se pudo cerrar la posición Paper.','Cierre no realizado','La posición no se ha modificado.','Entendido','⚠️','No se ha enviado ninguna orden real.');
+  }
 }
 
 async function zsLoadOrphanTest(){
