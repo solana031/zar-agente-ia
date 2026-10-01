@@ -435,6 +435,52 @@ def sheets_add_professional_table(spreadsheet_id, sheet_title, table_title, head
                 'fields':'userEnteredFormat(wrapStrategy,verticalAlignment,borders)',
             }
         })
+        # Alternate row shading keeps dense operational tables readable on mobile/desktop.
+        req.append({'addBanding': {'bandedRange': {
+            'range': data_range,
+            'rowProperties': {
+                'headerColor': {'red':0.18,'green':0.27,'blue':0.38},
+                'firstBandColor': {'red':1.0,'green':1.0,'blue':1.0},
+                'secondBandColor': {'red':0.965,'green':0.975,'blue':0.985},
+            }}}})
+        # Filter only the actual header+data block, never title/subtitle/summary rows.
+        req.append({'setBasicFilter': {'filter': {'range': {
+            'sheetId':sheet_id,'startRowIndex':hrow,'endRowIndex':hrow+1+len(clean_rows),
+            'startColumnIndex':c0-1,'endColumnIndex':end_col
+        }}}})
+    # Freeze through the header row so context remains visible while scrolling.
+    req.append({'updateSheetProperties': {'properties': {
+        'sheetId':sheet_id,'gridProperties':{'frozenRowCount':hrow+1}
+    }, 'fields':'gridProperties.frozenRowCount'}})
+    # Infer presentation formats from column names. Values remain untouched.
+    for idx, header in enumerate(headers):
+        name=str(header or '').strip().lower()
+        fmt=None
+        if any(k in name for k in ('importe','total','efectivo','tarjeta','precio','ventas','saldo','base','iva','coste','costo','ingreso','pago €','pendiente €')):
+            fmt={'type':'CURRENCY','pattern':'#,##0.00 [$€-es-ES]'}
+        elif any(k in name for k in ('porcentaje','%','margen','ratio')):
+            fmt={'type':'PERCENT','pattern':'0.00%'}
+        elif name in ('horas','horas trabajadas','horas pagadas','horas pendientes','duración','duracion'):
+            fmt={'type':'NUMBER','pattern':'0.00'}
+        elif 'fecha' in name:
+            fmt={'type':'DATE','pattern':'dd/mm/yyyy'}
+        elif name in ('hora','entrada','salida') or name.endswith(' hora'):
+            fmt={'type':'TIME','pattern':'hh:mm'}
+        if fmt and clean_rows:
+            req.append({'repeatCell': {'range': {
+                'sheetId':sheet_id,'startRowIndex':hrow+1,'endRowIndex':hrow+1+len(clean_rows),
+                'startColumnIndex':c0-1+idx,'endColumnIndex':c0+idx
+            }, 'cell': {'userEnteredFormat': {'numberFormat':fmt}}, 'fields':'userEnteredFormat.numberFormat'}})
+    # Summary block gets a quiet KPI treatment.
+    if summary:
+        summary_start = hrow + 1 + len(clean_rows) + 1
+        req.append({'repeatCell': {'range': {
+            'sheetId':sheet_id,'startRowIndex':summary_start,'endRowIndex':summary_start+len(summary),
+            'startColumnIndex':c0-1,'endColumnIndex':min(end_col,c0+1)
+        }, 'cell': {'userEnteredFormat': {
+            'backgroundColor': {'red':0.94,'green':0.95,'blue':0.97},
+            'textFormat': {'bold':True}
+        }}, 'fields':'userEnteredFormat(backgroundColor,textFormat)'}})
     req.append({'autoResizeDimensions': {'dimensions': {
         'sheetId':sheet_id,'dimension':'COLUMNS','startIndex':c0-1,'endIndex':end_col
     }}})

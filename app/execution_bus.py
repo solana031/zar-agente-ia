@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = Path(os.environ.get("ZAR_DATA_DIR", str(ROOT / "data")))
 
 READ_ONLY_PREFIXES = ("gmail_get", "gmail_recent", "gmail_search", "gmail_status", "drive_", "calendar_upcoming", "calendar_status", "contacts_get", "contacts_search", "contacts_status", "google_workspace_status", "maps_", "web_", "file_", "zar_get", "zar_memory", "get_local_time", "sheets_read", "forms_get")
-SENSITIVE = {"calendar_create_confirmed", "contacts_create", "contacts_update", "docs_create", "docs_append", "sheets_create", "sheets_write", "sheets_add_professional_table", "sheets_build_workbook", "slides_create", "slides_build_deck", "docs_build_report", "forms_create", "forms_add_question"}
+SENSITIVE = {"calendar_create_confirmed", "contacts_create", "contacts_update", "docs_create", "docs_append", "sheets_create", "sheets_write", "sheets_add_professional_table", "sheets_build_workbook", "sheets_upgrade_workbook", "slides_create", "slides_build_deck", "docs_build_report", "forms_create", "forms_add_question"}
 
 
 def _db_file():
