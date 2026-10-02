@@ -301,7 +301,7 @@ def _run_chat_job(job_id, msg, user_id, session_snapshot=None):
                     pass
             session['zar_user_id'] = user_id
             session.modified = True
-            reply = _process_chat_message(msg)
+            reply = _clean_model_ui_markup(_process_chat_message(msg))
             ctx_after = _ctx()
             action = (ctx_after.get("last_media") or None)
             confirmation = None
@@ -314,10 +314,6 @@ def _run_chat_job(job_id, msg, user_id, session_snapshot=None):
                 confirmation = {"required": True, "kind": "email", "title": "Gmail", "action": "enviar correo"}
             elif (ctx_after.get("pending_calendar") or {}).get("event"):
                 confirmation = {"required": True, "kind": "calendar", "title": "Google Calendar", "action": "crear evento"}
-            elif _looks_like_confirmation_plan(reply):
-                # Recovery UI: show buttons even when a model produced a natural
-                # confirmation sentence before the structured payload was persisted.
-                confirmation = {"required": True, "kind": "recover", "title": "Confirmación", "action": "continuar con la acción preparada"}
         _write_job(job_id, "done", reply=reply, confirmation=confirmation, action=( {"type":"open_url","url":action.get("url"),"platform":action.get("platform"),"query":action.get("query")} if action and action.get("url") else None ))
     except Exception as exc:
         _write_job(job_id, "error", error=str(exc))
@@ -3565,6 +3561,66 @@ def _last_workspace_request_from_history():
     return ""
 
 
+
+def _clean_model_ui_markup(text):
+    """Remove model-authored action HTML. Interactive controls belong to the trusted UI only."""
+    if not isinstance(text, str):
+        return text
+    out=text
+    # Remove blocks that contain model-authored buttons/scripts, including escaped-looking raw HTML.
+    out=re.sub(r'(?is)<div\b[^>]*>\s*(?:(?!</div>).)*?<button\b.*?</div>', '', out)
+    out=re.sub(r'(?is)<button\b[^>]*>.*?</button>', '', out)
+    out=re.sub(r'(?is)<script\b[^>]*>.*?</script>', '', out)
+    out=re.sub(r'(?im)^\s*</?div[^>]*>\s*$', '', out)
+    out=re.sub(r'\n{3,}', '\n\n', out).strip()
+    return out
+
+
+def _prepare_business_sync_pending(original_message, assistant_reply=''):
+    """Prepare Room/business evidence sync deterministically after an analyze-first turn.
+
+    This closes the unsafe gap where the model could ask '¿Quieres registrar estos datos?'
+    without having created a structured Workspace action.
+    """
+    text=((original_message or '')+'\n'+(assistant_reply or '')).lower()
+    if not re.search(r'\b(cierre|caja|room\s*108|control de cierres|evidencia)\b', text, re.I):
+        return None
+    if not _looks_like_confirmation_plan(assistant_reply):
+        return None
+    last=get_context().get('last_uploaded_file') or {}
+    file_id=last.get('id') if isinstance(last,dict) else None
+    if not file_id:
+        return None
+    # Prefer an explicit quoted spreadsheet name; otherwise use the established Room108 book.
+    name='Control de Cierres y Horas - Room108'
+    m=re.search(r'[«\"]([^»\"]*(?:cierres|room\s*108)[^»\"]*)[»\"]', original_message or '', re.I)
+    if m and m.group(1).strip():
+        name=m.group(1).strip()
+    try:
+        from . import google_workspace as gw
+    except ImportError:
+        import google_workspace as gw
+    try:
+        found=gw.drive_search(name,20)
+    except Exception:
+        found=[]
+    sheet=next((x for x in found if x.get('mimeType')=='application/vnd.google-apps.spreadsheet'),None)
+    if not sheet:
+        # More tolerant lookup for punctuation/name variants.
+        try:
+            found=gw.drive_search('Room108',30)+gw.drive_search('Room 108',30)
+            sheet=next((x for x in found if x.get('mimeType')=='application/vnd.google-apps.spreadsheet'),None)
+        except Exception:
+            sheet=None
+    if not sheet:
+        return None
+    pending={'service':'Google Sheets','action':'sincronizar control de negocio','args':{
+        'spreadsheet_id':sheet.get('id'),'business_name':'Room 108','file_ids':[str(file_id)]
+    }}
+    _set_pending_workspace_action(pending)
+    set_task_state('google workspace','google sheets',sheet.get('id',''),'sincronizar control de negocio','high','awaiting_confirmation',f'Preparado para registrar evidencia en {sheet.get("name") or name}')
+    return pending
+
 def _execute_workspace_action(pending):
     service = pending.get("service")
     action = pending.get("action")
@@ -3581,6 +3637,8 @@ def _execute_workspace_action(pending):
         if action == "crear hoja de cálculo": return gw.sheets_create(args["title"])
         if action == "crear libro profesional": return gw.sheets_build_workbook(args["title"], args.get("sheets") or [])
         if action == "reorganizar libro profesional": return gw.sheets_upgrade_workbook(args["spreadsheet_id"], args.get("tabs") or [], args.get("charts") or [])
+        if action == "sincronizar control de negocio": return gw.sheets_sync_business_control(args["spreadsheet_id"], args.get("file_ids") or [], args.get("business_name") or "Room 108")
+        if action == "modificar estilo visual": return gw.sheets_style_range(args["spreadsheet_id"], args["sheet_title"], args["range_a1"], args.get("style") or {})
         if action == "añadir tabla profesional": return gw.sheets_add_professional_table(args["spreadsheet_id"], args["sheet_title"], args["table_title"], args.get("headers") or [], args.get("rows") or [], args.get("start_cell") or "A1", args.get("subtitle") or "", args.get("summary") or [])
         return gw.sheets_write(args["spreadsheet_id"], args["range_a1"], args["values"])
     if service == "Google Slides":
@@ -3893,14 +3951,14 @@ def _process_chat_message(msg):
                 pending = {"service": data.get("service", "Google Workspace"), "action": data.get("action", "realizar una acción"), "args": data.get("args") or {}}
                 _set_pending_workspace_action(pending)
                 set_task_state("google workspace", (pending.get("service") or "workspace").lower(), "", pending.get("action", ""), "high", "awaiting_confirmation", f"Preparado para {pending.get('action','acción')} en {pending.get('service','Google Workspace')}")
-                reply = f"⚠️ La habilidad «{used_skill.get('name')}» ha preparado la acción: {pending.get('action','acción')} en {pending.get('service','Google Workspace')}.\n\n¿Confirmas? Responde «sí» o «cancelar»."
+                reply = f"⚠️ La habilidad «{used_skill.get('name')}» ha preparado la acción: {pending.get('action','acción')} en {pending.get('service','Google Workspace')}.\n\nUsa los botones Confirmar o Cancelar."
             elif isinstance(reply, str) and reply.startswith("CONTACT_ACTION::"):
                 data = json.loads(reply.split("::", 1)[1])
                 pending = {"action": data.get("action"), "args": data.get("args") or {}}
                 from .context import set_pending_contact
                 set_pending_contact(pending)
                 set_task_state("google contacts", "contact", "", pending.get("action", ""), "high", "awaiting_confirmation", f"Preparado para {pending.get('action','acción')}")
-                reply = f"⚠️ La habilidad «{used_skill.get('name')}» ha preparado una acción de Google Contacts.\n\n¿Confirmas? Responde «sí» o «cancelar»."
+                reply = f"⚠️ La habilidad «{used_skill.get('name')}» ha preparado una acción de Google Contacts.\n\nUsa los botones Confirmar o Cancelar."
             _remember_turn("user", msg)
             _remember_turn("assistant", reply)
             return reply
@@ -3926,7 +3984,7 @@ def _process_chat_message(msg):
             from .agent import semantic_respond
             semantic_reply = semantic_respond(msg)
             if semantic_reply and not (isinstance(semantic_reply, str) and semantic_reply.startswith("Error de Zar:")):
-                reply = semantic_reply
+                reply = _clean_model_ui_markup(semantic_reply)
                 if isinstance(reply, str) and reply.startswith("HE_EMAIL::"):
                     import json as _json
                     draft = _json.loads(reply.split("::",1)[1])
@@ -3941,7 +3999,7 @@ def _process_chat_message(msg):
                         reply = (
                             f"⚠️ Voy a {pending.get('action','realizar esta acción')} en "
                             f"{pending.get('service','Google Workspace')}.\n\n"
-                            "¿Confirmas? Responde «sí» para continuar o «cancelar» para detenerlo."
+                            "Usa los botones Confirmar o Cancelar para continuar."
                         )
                 elif _looks_like_workspace_write_request(msg) and not _workspace_requires_analysis_first(msg):
                     # Deterministic Workspace bridge: whenever a Workspace write
@@ -3954,13 +4012,19 @@ def _process_chat_message(msg):
                         reply = (
                             f"⚠️ He preparado la acción real: {pending.get('action','realizar esta acción')} en "
                             f"{pending.get('service','Google Workspace')}.\n\n"
-                            "¿Confirmas? Responde «sí» para continuar o «cancelar» para detenerlo."
+                            "Usa los botones Confirmar o Cancelar para continuar."
                         )
                     elif _looks_like_confirmation_plan(reply):
                         reply = (
                             "No he podido preparar de forma segura la acción de Google Workspace todavía. "
                             "No he modificado ningún archivo. Inténtalo de nuevo y ZAR preparará la acción antes de pedir confirmación."
                         )
+                elif _workspace_requires_analysis_first(msg) and _looks_like_confirmation_plan(reply):
+                    pending = _prepare_business_sync_pending(msg, reply)
+                    if pending:
+                        reply = _clean_model_ui_markup(reply)
+                    else:
+                        reply = _clean_model_ui_markup(reply)
                 _remember_turn("assistant", reply)
                 return reply
         except Exception:
@@ -4053,6 +4117,8 @@ def _process_chat_message(msg):
                     "sheets_add_professional_table": ("Google Sheets", "añadir tabla profesional"),
                     "sheets_build_workbook": ("Google Sheets", "crear libro profesional"),
                     "sheets_upgrade_workbook": ("Google Sheets", "reorganizar libro profesional"),
+                    "sheets_sync_business_control": ("Google Sheets", "sincronizar control de negocio"),
+                    "sheets_style_range": ("Google Sheets", "modificar estilo visual"),
                     "slides_create": ("Google Slides", "crear presentación"),
                     "slides_build_deck": ("Google Slides", "crear presentación profesional"),
                     "docs_build_report": ("Google Docs", "crear informe profesional"),
@@ -4065,7 +4131,7 @@ def _process_chat_message(msg):
                     pending = {"service": service, "action": action, "args": args}
                     _set_pending_workspace_action(pending)
                     set_task_state("google workspace", service.lower(), "", action, "high", "awaiting_confirmation", f"Preparado para {action} en {service}")
-                    reply = f"⚠️ Voy a {action} en {service}.\n\n¿Confirmas? Responde «sí» para continuar o «cancelar» para detenerlo."
+                    reply = f"⚠️ Voy a {action} en {service}.\n\nUsa los botones Confirmar o Cancelar para continuar."
         if isinstance(reply, str) and reply.startswith("CONTACT_EMAIL_MISSING::"):
             try:
                 data = json.loads(reply.split("::", 1)[1])
@@ -4095,7 +4161,7 @@ def _process_chat_message(msg):
                     detail = ""
                 reply = (
                     f"⚠️ Voy a {pending.get('action','realizar esta acción')} en Google Contacts.{detail}"
-                    "\n¿Confirmas? Responde «sí» para continuar o «cancelar» para detenerlo."
+                    "\nUsa los botones Confirmar o Cancelar para continuar."
                 )
             except Exception as exc:
                 reply = f"No he podido preparar la acción de Google Contacts: {exc}"
@@ -4105,7 +4171,7 @@ def _process_chat_message(msg):
                 pending = {k: data.get(k) for k in ("service", "action", "args")}
                 _set_pending_workspace_action(pending)
                 set_task_state("google workspace", (data.get("service") or "workspace").lower(), "", data.get("action", ""), "high", "awaiting_confirmation", f"Preparado para {data.get('action','acción')} en {data.get('service','Google Workspace')}")
-                reply = f"⚠️ Voy a {data.get('action','realizar esta acción')} en {data.get('service','Google Workspace')}.\n\n¿Confirmas? Responde «sí» para continuar o «cancelar» para detenerlo."
+                reply = f"⚠️ Voy a {data.get('action','realizar esta acción')} en {data.get('service','Google Workspace')}.\n\nUsa los botones Confirmar o Cancelar para continuar."
             except Exception as exc:
                 reply = f"No he podido preparar la acción de Google Workspace: {exc}"
     except Exception as exc:

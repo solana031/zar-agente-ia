@@ -456,16 +456,19 @@ def sheets_add_professional_table(spreadsheet_id, sheet_title, table_title, head
     for idx, header in enumerate(headers):
         name=str(header or '').strip().lower()
         fmt=None
-        if any(k in name for k in ('importe','total','efectivo','tarjeta','precio','ventas','saldo','base','iva','coste','costo','ingreso','pago €','pendiente €')):
-            fmt={'type':'CURRENCY','pattern':'#,##0.00 [$€-es-ES]'}
-        elif any(k in name for k in ('porcentaje','%','margen','ratio')):
-            fmt={'type':'PERCENT','pattern':'0.00%'}
-        elif name in ('horas','horas trabajadas','horas pagadas','horas pendientes','duración','duracion'):
-            fmt={'type':'NUMBER','pattern':'0.00'}
+        # Semantic unit wins over generic words such as "total". This prevents
+        # headers like "Horas Totales" from ever receiving a currency format.
+        if any(k in name for k in ('hora','horas','duración','duracion')) and not any(k in name for k in ('€/hora','precio hora','coste hora','costo hora')):
+            if name in ('hora','entrada','salida') or name.endswith(' hora') or 'hora entrada' in name or 'hora salida' in name:
+                fmt={'type':'TIME','pattern':'hh:mm'}
+            else:
+                fmt={'type':'NUMBER','pattern':'0.00'}
         elif 'fecha' in name:
             fmt={'type':'DATE','pattern':'dd/mm/yyyy'}
-        elif name in ('hora','entrada','salida') or name.endswith(' hora'):
-            fmt={'type':'TIME','pattern':'hh:mm'}
+        elif any(k in name for k in ('porcentaje','%','margen','ratio')):
+            fmt={'type':'PERCENT','pattern':'0.00%'}
+        elif any(k in name for k in ('importe','total','efectivo','tarjeta','precio','ventas','saldo','base','iva','coste','costo','ingreso','pago €','pendiente €','propina','descuadre','tpv','datáfono','datafono')):
+            fmt={'type':'CURRENCY','pattern':'#,##0.00 [$€-es-ES]'}
         if fmt and clean_rows:
             req.append({'repeatCell': {'range': {
                 'sheetId':sheet_id,'startRowIndex':hrow+1,'endRowIndex':hrow+1+len(clean_rows),
@@ -696,3 +699,75 @@ def slides_build_deck(title, subtitle, slides):
     return {"ok": True, "presentationId": pid, "url": f"https://docs.google.com/presentation/d/{pid}/edit",
             "slides": len(raw), "image_errors": image_errors}
 
+
+
+def sheets_style_range(spreadsheet_id, sheet_title, range_a1, style):
+    """Apply user-requested visual formatting to an existing range without changing values."""
+    import re
+    sid=_normalize_spreadsheet_id(spreadsheet_id)
+    meta=_sheet_metadata(sid); svc=sheets_service()
+    props=[x.get('properties') or {} for x in (meta.get('sheets') or [])]
+    target=next((x for x in props if x.get('title')==sheet_title),None)
+    if target is None: raise ValueError(f'No existe la pestaña {sheet_title}.')
+    def coln(x):
+        n=0
+        for ch in x.upper(): n=n*26+ord(ch)-64
+        return n
+    m=re.search(r'([A-Za-z]+)(\d+)(?::([A-Za-z]+)(\d+))?', str(range_a1 or 'A1'))
+    if not m: raise ValueError('Rango A1 no válido.')
+    c1,r1,c2,r2=m.groups(); c2=c2 or c1; r2=r2 or r1
+    grid={'sheetId':target['sheetId'],'startRowIndex':int(r1)-1,'endRowIndex':int(r2),'startColumnIndex':coln(c1)-1,'endColumnIndex':coln(c2)}
+    fmt={}; fields=[]
+    def rgb(v):
+        if isinstance(v,dict): return v
+        s=str(v or '').strip().lstrip('#')
+        if len(s)==6:
+            return {'red':int(s[0:2],16)/255,'green':int(s[2:4],16)/255,'blue':int(s[4:6],16)/255}
+        return None
+    if style.get('background_color'):
+        fmt['backgroundColor']=rgb(style['background_color']);fields.append('backgroundColor')
+    tf={}
+    if style.get('text_color'): tf['foregroundColor']=rgb(style['text_color'])
+    if 'bold' in style: tf['bold']=bool(style.get('bold'))
+    if style.get('font_size'): tf['fontSize']=int(style['font_size'])
+    if tf: fmt['textFormat']=tf;fields.append('textFormat')
+    if style.get('horizontal_alignment'): fmt['horizontalAlignment']=str(style['horizontal_alignment']).upper();fields.append('horizontalAlignment')
+    if 'wrap' in style: fmt['wrapStrategy']='WRAP' if style.get('wrap') else 'CLIP';fields.append('wrapStrategy')
+    requests=[]
+    if fields:
+        requests.append({'repeatCell':{'range':grid,'cell':{'userEnteredFormat':fmt},'fields':'userEnteredFormat('+','.join(fields)+')'}})
+    if style.get('number_format'):
+        requests.append({'repeatCell':{'range':grid,'cell':{'userEnteredFormat':{'numberFormat':{'type':'NUMBER','pattern':str(style['number_format'])}}},'fields':'userEnteredFormat.numberFormat'}})
+    if style.get('column_width'):
+        requests.append({'updateDimensionProperties':{'range':{'sheetId':target['sheetId'],'dimension':'COLUMNS','startIndex':coln(c1)-1,'endIndex':coln(c2)},'properties':{'pixelSize':int(style['column_width'])},'fields':'pixelSize'}})
+    if style.get('row_height'):
+        requests.append({'updateDimensionProperties':{'range':{'sheetId':target['sheetId'],'dimension':'ROWS','startIndex':int(r1)-1,'endIndex':int(r2)},'properties':{'pixelSize':int(style['row_height'])},'fields':'pixelSize'}})
+    if requests: svc.spreadsheets().batchUpdate(spreadsheetId=sid,body={'requests':requests}).execute()
+    return {'ok':True,'spreadsheetId':sid,'url':meta.get('spreadsheetUrl') or f'https://docs.google.com/spreadsheets/d/{sid}/edit','sheet':sheet_title,'range':range_a1}
+
+
+def sheets_sync_business_control(spreadsheet_id, file_ids=None, business_name='Room 108'):
+    """Build/update a business-control workbook from files ZAR actually analysed.
+
+    Existing unrelated tabs are preserved. Operational tabs owned by this sync are
+    refreshed from evidence so repeated runs are idempotent and corrections in file
+    analyses propagate cleanly.
+    """
+    from .business_workspace import collect_closures, monthly_closure_tabs, all_closures_tab, summary_tab, collect_shifts, monthly_shift_tabs
+    sid=_normalize_spreadsheet_id(spreadsheet_id)
+    records=collect_closures(file_ids=None)  # use the durable evidence library, not only the last upload
+    if not records:
+        raise RuntimeError('No hay cierres analizados con fecha suficiente para sincronizar.')
+    shifts=collect_shifts()
+    tabs=[summary_tab(records), all_closures_tab(records)] + monthly_closure_tabs(records) + monthly_shift_tabs(shifts)
+    charts=[]
+    # Global closures chart: date + total; source columns are Date, Month, Cash, Card, Total...
+    if len(records)>=2:
+        charts.append({'sheet_title':'Cierres de caja','title':'Evolución del cierre total','range_a1':f"A3:E{3+len(records)}",'chart_type':'LINE','anchor_cell':'N2'})
+    out=sheets_upgrade_workbook(sid,tabs,charts)
+    out['records_synced']=len(records)
+    out['monthly_tabs']=[x['name'] for x in tabs if x['name'].startswith('Cierres 20')]
+    out['business_name']=business_name
+    out['shift_records_synced']=len(shifts)
+    out['shift_monthly_tabs']=[x['name'] for x in tabs if x['name'].startswith('Turnos 20')]
+    return out

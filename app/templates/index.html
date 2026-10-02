@@ -3566,7 +3566,13 @@ function zarRenderEmailCard(payload){
   return '<section class="zarEmailCard">'+zarEmailHeader('message',p)+zarRenderEmailMeta(p)+'<div class="zarEmailSectionLabel">MENSAJE</div>'+zarRenderEmailBody(p.body||'')+'<div class="zarEmailFoot">Puedes decir «resúmelo», «respóndele…» o pedir una acción sobre este correo.</div></section>';
 }
 function zarRenderAssistantContent(value){
-  const text=String(value??'').trim();
+  let text=String(value??'').trim();
+  // Trusted UI owns interactive controls. Never render or display model-authored
+  // button/script markup as chat content, even if a provider emits it literally.
+  text=text.replace(/<div\b[^>]*>[\s\S]*?<button\b[\s\S]*?<\/div>/gi,'')
+           .replace(/<button\b[^>]*>[\s\S]*?<\/button>/gi,'')
+           .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi,'')
+           .replace(/^\s*<\/?div[^>]*>\s*$/gim,'').trim();
   if(text.startsWith('ZAR_EMAIL_CARD::')){
     try{return zarRenderEmailCard(JSON.parse(text.slice('ZAR_EMAIL_CARD::'.length)));}catch(e){}
   }
@@ -3603,7 +3609,10 @@ function addChatMessage(role,text,confirmation){
   } else div.textContent=value;
   chat.appendChild(div);
   document.getElementById('welcome').style.display='none';
-  if(!userPinnedChat)scrollChatBottom();
+  requestAnimationFrame(()=>{
+    try{window.zarLayoutMobileBottomStack&&window.zarLayoutMobileBottomStack();}catch(e){}
+    if(!userPinnedChat)scrollChatBottom();
+  });
   return div;
 }
 window.ZARAddChatMessage=addChatMessage;
@@ -5340,6 +5349,42 @@ body.zar-light .zarDockManagerCard{background:#fffaf4;color:#4a3828;border-color
 })();
 </script>
 
+
+<style id="zar-v32-1-12-confirmation-mobile-layout">
+@media(max-width:720px){
+  #chatContent .chat{padding-bottom:calc(var(--zar-mobile-bottom-stack,118px) + 18px)!important;scroll-padding-bottom:calc(var(--zar-mobile-bottom-stack,118px) + 18px)!important;}
+  #chatContent .zarConfirmActions{position:relative!important;z-index:2!important;margin-top:12px!important;margin-bottom:8px!important;display:grid!important;grid-template-columns:1fr 1fr!important;gap:8px!important;}
+  #chatContent .zarConfirmActions .zarConfirmState{grid-column:1/-1!important;font-size:8px!important;color:#9d8d7d!important;padding-top:2px!important;}
+  #chatContent .zarConfirmBtn{min-width:0!important;width:100%!important;height:46px!important;border-radius:13px!important;font-size:12px!important;}
+  #chatContent .msg.assistant{overflow:visible!important;}
+}
+</style>
+<script id="zar-v32-1-12-confirmation-mobile-layout-script">
+(function(){
+  function visibleRect(el){if(!el||el.hidden)return null;const cs=getComputedStyle(el);if(cs.display==='none'||cs.visibility==='hidden')return null;const r=el.getBoundingClientRect();return (r.height>1&&r.width>1)?r:null;}
+  function layout(){
+    if(window.innerWidth>720)return;
+    const root=document.getElementById('chatContent');
+    const chat=document.getElementById('chat')||root?.querySelector('.chat');
+    const main=root?.querySelector('.composerMain');
+    if(!root||!chat||!main)return;
+    const rects=[visibleRect(main),visibleRect(document.getElementById('zarActiveSkills')),visibleRect(document.getElementById('zarLearningActive')),visibleRect(document.getElementById('zarUploadPanel'))].filter(Boolean);
+    const top=rects.length?Math.min(...rects.map(r=>r.top)):main.getBoundingClientRect().top;
+    const stack=Math.max(86,Math.ceil(window.innerHeight-top+10));
+    root.style.setProperty('--zar-mobile-bottom-stack',stack+'px');
+  }
+  window.zarLayoutMobileBottomStack=layout;
+  const mo=new MutationObserver(()=>requestAnimationFrame(layout));
+  function init(){
+    ['zarUploadPanel','zarActiveSkills','zarLearningActive','chat'].forEach(id=>{const el=document.getElementById(id);if(el)mo.observe(el,{attributes:true,childList:true,subtree:true});});
+    window.addEventListener('resize',layout,{passive:true});
+    window.addEventListener('orientationchange',()=>setTimeout(layout,120),{passive:true});
+    document.addEventListener('focusin',()=>setTimeout(layout,80));
+    setTimeout(layout,80);
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init();
+})();
+</script>
 </body></html>
 
 <style id="zar-v30-10-16-floating-shell">

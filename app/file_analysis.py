@@ -53,7 +53,11 @@ def _prompt():
         "periodo, conceptos, devengos, deducciones, bases, impuestos y líquido. Para cualquier otro documento, "
         "extrae los campos específicos que sean visibles dentro de las claves genéricas. "
         "category debe ser una de: facturas, recibos, contratos, finanzas, documentos, personal, fotos, otros, sin_clasificar. "
-        "tags debe ser una lista corta de palabras."
+        "tags debe ser una lista corta de palabras. "
+        "Añade además business_records con exactamente dos listas: closures y shifts. "
+        "Si el documento es un cierre de caja/TPV, closures debe contener objetos con: date, time, cash, card, closing_total, tpv_total, operations, tips, discrepancy, notes. "
+        "Si el documento contiene turnos/horarios, shifts debe contener objetos con: employee, date, start_time, end_time, hours, paid_hours, pending_hours, notes. "
+        "Usa null cuando un campo no sea legible y no inventes valores. Si no aplica, usa listas vacías."
     )
 
 
@@ -150,6 +154,11 @@ def analyze_file(file_id: str):
     for key in ('dates','addresses','emails','phones','identifiers','amounts','line_items','people','entities','tables','taxes','tags'):
         if not isinstance(analysis.get(key), list):
             analysis[key] = []
+    if not isinstance(analysis.get('business_records'), dict):
+        analysis['business_records']={'closures':[],'shifts':[]}
+    for key in ('closures','shifts'):
+        if not isinstance(analysis['business_records'].get(key), list):
+            analysis['business_records'][key]=[]
 
     category = str(analysis.get('category') or item.get('category') or 'sin_clasificar').strip().lower()
     aliases = {'factura':'facturas','invoice':'facturas','recibo':'recibos','ticket':'recibos','contrato':'contratos','documento':'documentos','foto':'fotos'}
