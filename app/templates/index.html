@@ -3584,19 +3584,66 @@ function zarSpeakableText(value){
   return text.replace(/[*_`#]/g,'');
 }
 
-function addChatMessage(role,text){
+function addChatMessage(role,text,confirmation){
   const value=String(text||'').trim();
   if(!value)return;
   const div=document.createElement('div');
   div.className='msg '+(role==='user'?'user':'assistant');
-  if(role==='assistant')div.innerHTML=zarRenderAssistantContent(value);
-  else div.textContent=value;
+  if(role==='assistant'){
+    div.innerHTML=zarRenderAssistantContent(value);
+    if(confirmation&&confirmation.required){
+      const actions=document.createElement('div');
+      actions.className='zarConfirmActions';
+      actions.innerHTML='<button type="button" class="zarConfirmBtn confirm">✓ Confirmar</button><button type="button" class="zarConfirmBtn cancel">✕ Cancelar</button><div class="zarConfirmState">'+zarInlineRich((confirmation.title||'Acción')+' · '+(confirmation.action||'requiere confirmación'))+'</div>';
+      const buttons=actions.querySelectorAll('button');
+      buttons[0].addEventListener('click',()=>zarResolveConfirmation(actions,'confirm'));
+      buttons[1].addEventListener('click',()=>zarResolveConfirmation(actions,'cancel'));
+      div.appendChild(actions);
+    }
+  } else div.textContent=value;
   chat.appendChild(div);
   document.getElementById('welcome').style.display='none';
   if(!userPinnedChat)scrollChatBottom();
   return div;
 }
 window.ZARAddChatMessage=addChatMessage;
+
+async function zarResolveConfirmation(actions,decision){
+  if(!actions||actions.dataset.busy==='1')return;
+  actions.dataset.busy='1';
+  const buttons=actions.querySelectorAll('button');buttons.forEach(b=>b.disabled=true);
+  const state=actions.querySelector('.zarConfirmState');
+  if(state)state.textContent=decision==='confirm'?'Confirmando…':'Cancelando…';
+  const display=decision==='confirm'?'Confirmar':'Cancelar';
+  addChatMessage('user',display);
+  try{
+    const r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:decision==='confirm'?'__ZAR_CONFIRM__':'__ZAR_CANCEL__'})});
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok||!j.job_id)throw new Error(j.error||'No se pudo procesar la confirmación.');
+    const pending=addChatMessage('assistant','Zar está procesando la confirmación…');
+    for(let i=0;i<3600;i++){
+      await new Promise(resolve=>setTimeout(resolve,700));
+      const sr=await fetch('/api/jobs/'+encodeURIComponent(j.job_id)+'?_='+Date.now(),{cache:'no-store'});
+      const st=await sr.json().catch(()=>({}));
+      if(st.status==='done'){
+        pending?.remove();
+        actions.remove();
+        addChatMessage('assistant',st.reply||'Listo.',st.confirmation||null);
+        updateActiveSkillsUI(st.skills||[]);
+        if(st.action?.url){setTimeout(()=>{try{window.open(st.action.url,'_blank','noopener')}catch(e){}},80)}
+        speak(zarSpeakableText(st.reply||'Listo.'));
+        return;
+      }
+      if(st.status==='error')throw new Error(st.error||'Zar no pudo completar la confirmación.');
+    }
+    throw new Error('La confirmación sigue procesándose.');
+  }catch(e){
+    buttons.forEach(b=>b.disabled=false);actions.dataset.busy='0';
+    if(state)state.textContent='No se pudo procesar · vuelve a intentarlo';
+    addChatMessage('assistant','⚠️ '+(e.message||'No se pudo procesar la confirmación.'));
+  }
+}
+window.zarResolveConfirmation=zarResolveConfirmation;
 function updateActiveSkillsUI(active){
   const list=Array.isArray(active)?active:[];
   const el=document.getElementById('zarActiveSkills');
@@ -3714,7 +3761,7 @@ async function send(){
       }
       if(st.status==='done'){
         pending?.remove();
-        addChatMessage('assistant',st.reply||'Listo.');
+        addChatMessage('assistant',st.reply||'Listo.',st.confirmation||null);
         updateActiveSkillsUI(st.skills||[]);
         if(st.action?.url){setTimeout(()=>{try{window.open(st.action.url,'_blank','noopener')}catch(e){}},80)}
         speak(zarSpeakableText(st.reply||'Listo.'));
@@ -4271,6 +4318,14 @@ input,textarea,select,.field input,.field select,.vcSelect,.filesToolbar input,.
 @media(max-width:720px){.zarSettingsGrid{grid-template-columns:1fr}.app.menu-collapsed{grid-template-columns:1fr}.app.menu-collapsed .side{display:none}.zarOverlayCard{width:calc(100vw - 20px);max-height:82vh}.topActions .pill{display:none}}
 
 body.zar-light{background:#eee9e2!important;color:#221b16}body.zar-light .main,body.zar-light .top{background:#f4f0eb!important;color:#221b16}body.zar-light .side{background:#e6dfd6!important;border-color:#b9a894}body.zar-light .chat{background:#f4f0eb}body.zar-light .msg.assistant{background:#fffaf4;color:#241c17;border-color:#c8b6a2}body.zar-light .composer{background:linear-gradient(180deg,rgba(244,240,235,0),rgba(244,240,235,.96) 45%,#f4f0eb 100%)}body.zar-light .composerMain{background:#fffaf5}body.zar-light .zarOverlayCard,body.zar-light .zarSettingsSection{background:#fffaf5;color:#241c17}body.zar-light .zarOverlayHead{background:#f2e9df}body.zar-light .zarEmailItem{background:#fffdf9;color:#241c17}
+
+.zarConfirmActions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;padding-top:12px;border-top:1px solid rgba(101,70,42,.35)}
+.zarConfirmBtn{min-width:118px;height:40px;border-radius:11px;border:1px solid rgba(184,139,85,.55);font-weight:850;font-size:11px;cursor:pointer}
+.zarConfirmBtn.confirm{background:linear-gradient(180deg,#e1b971,#b78343);color:#17100b;border-color:#d4a866}
+.zarConfirmBtn.cancel{background:rgba(20,14,10,.86);color:#d9c4a6}
+.zarConfirmBtn:disabled{opacity:.5;cursor:default}
+.zarConfirmState{flex-basis:100%;font-size:8px;color:#9b8b7b;margin-top:2px}
+@media(max-width:720px){.zarConfirmActions{display:grid;grid-template-columns:1fr 1fr;gap:8px}.zarConfirmBtn{width:100%;min-width:0;height:42px}.zarConfirmState{grid-column:1/-1}}
 </style>
 <script id="zar-v2934-button-reliability-js">
 (function(){

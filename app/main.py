@@ -256,7 +256,7 @@ def _set_pending(draft):
 def _job_path(job_id):
     return JOB_DIR / f"{job_id}.json"
 
-def _write_job(job_id, status, reply=None, error=None, action=None, user_id=None, skills=None):
+def _write_job(job_id, status, reply=None, error=None, action=None, user_id=None, skills=None, confirmation=None):
     payload = {"status": status}
     if user_id: payload["user_id"] = user_id
     if action is not None:
@@ -267,6 +267,8 @@ def _write_job(job_id, status, reply=None, error=None, action=None, user_id=None
         payload["error"] = error
     if skills is not None:
         payload["skills"] = skills
+    if confirmation is not None:
+        payload["confirmation"] = confirmation
     path = _job_path(job_id)
     tmp = path.with_suffix(".tmp")
     tmp.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
@@ -300,8 +302,23 @@ def _run_chat_job(job_id, msg, user_id, session_snapshot=None):
             session['zar_user_id'] = user_id
             session.modified = True
             reply = _process_chat_message(msg)
-            action = (_ctx().get("last_media") or None)
-        _write_job(job_id, "done", reply=reply, action=( {"type":"open_url","url":action.get("url"),"platform":action.get("platform"),"query":action.get("query")} if action and action.get("url") else None ))
+            ctx_after = _ctx()
+            action = (ctx_after.get("last_media") or None)
+            confirmation = None
+            if ctx_after.get("pending_workspace"):
+                pw = ctx_after.get("pending_workspace") or {}
+                confirmation = {"required": True, "kind": "workspace", "title": pw.get("service") or "Google Workspace", "action": pw.get("action") or "acción pendiente"}
+            elif ctx_after.get("pending_contact"):
+                confirmation = {"required": True, "kind": "contact", "title": "Google Contacts", "action": (ctx_after.get("pending_contact") or {}).get("action") or "modificar contacto"}
+            elif ctx_after.get("pending_email"):
+                confirmation = {"required": True, "kind": "email", "title": "Gmail", "action": "enviar correo"}
+            elif (ctx_after.get("pending_calendar") or {}).get("event"):
+                confirmation = {"required": True, "kind": "calendar", "title": "Google Calendar", "action": "crear evento"}
+            elif _looks_like_confirmation_plan(reply):
+                # Recovery UI: show buttons even when a model produced a natural
+                # confirmation sentence before the structured payload was persisted.
+                confirmation = {"required": True, "kind": "recover", "title": "Confirmación", "action": "continuar con la acción preparada"}
+        _write_job(job_id, "done", reply=reply, confirmation=confirmation, action=( {"type":"open_url","url":action.get("url"),"platform":action.get("platform"),"query":action.get("query")} if action and action.get("url") else None ))
     except Exception as exc:
         _write_job(job_id, "error", error=str(exc))
 
@@ -3496,7 +3513,8 @@ def _looks_like_confirmation_plan(reply):
     # Do not depend on one exact phrase such as “¿Confirmas?”.
     return bool(re.search(
         r"\b(confirm(?:as|a|o|amos|aci[oó]n)?|autoriz(?:as|a|o|aci[oó]n)?|procedo|procedemos|"
-        r"responde(?:\s+simplemente)?\s+[«\"']?s[ií]|puedo\s+proceder|me\s+das\s+permiso)\b",
+        r"responde(?:\s+simplemente)?\s+[«\"']?s[ií]|puedo\s+proceder|me\s+das\s+permiso|"
+        r"quieres\s+(?:que\s+)?(?:lo\s+)?(?:registre|registrar|guarde|guardar|cree|crear|modifique|modificar|env[ií]e|enviar|a[nñ]ada|añadir|proceda|continuar))\b",
         reply, re.I
     ))
 
@@ -3578,10 +3596,35 @@ def _execute_workspace_action(pending):
 
 def _process_chat_message(msg):
     low = (msg or "").strip().lower()
+    # UI confirmation buttons use explicit internal decisions. They are mapped
+    # here, before any intent routing, so confirmation never depends on NLU.
+    if low == "__zar_confirm__":
+        msg = "sí"
+        low = "sí"
+    elif low == "__zar_cancel__":
+        msg = "cancelar"
+        low = "cancelar"
     ctx = _ctx()
     pending_email = ctx.get("pending_email")
     LAST_EMAIL = ctx.get("active_email")
     pending_contact = ctx.get("pending_contact")
+    pending_calendar = ctx.get("pending_calendar")
+    if pending_calendar and pending_calendar.get("event") and _looks_like_send(msg):
+        try:
+            event = pending_calendar.get("event") or {}
+            result = execute_tool("calendar_create_confirmed", event)
+            clear_pending_calendar()
+            clear_task_state()
+            reply = "✅ He creado el evento en Google Calendar."
+            if isinstance(result, dict) and result.get("htmlLink"):
+                reply += "\n" + result.get("htmlLink")
+        except Exception as exc:
+            reply = f"No he podido crear el evento en Google Calendar: {exc}"
+        _remember_turn("user", msg); _remember_turn("assistant", reply); return reply
+    if pending_calendar and _looks_like_cancel(msg):
+        clear_pending_calendar(); clear_task_state()
+        reply = "✅ He cancelado la creación del evento de Google Calendar."
+        _remember_turn("user", msg); _remember_turn("assistant", reply); return reply
     if pending_contact and _looks_like_send(msg):
         try:
             result = _execute_contact_action(pending_contact)
@@ -3664,6 +3707,15 @@ def _process_chat_message(msg):
             reply=("La confirmación de Workspace existe, pero no he podido reconstruir de forma segura la acción pendiente. "
                    "No he modificado ningún archivo. Repite la orden completa y ZAR la preparará de nuevo antes de pedir confirmación.")
             _remember_turn("user",msg); _remember_turn("assistant",reply); return reply
+
+    if _looks_like_cancel(msg) and _last_assistant_workspace_confirmation():
+        # A natural-language confirmation may exist even if the model failed to
+        # persist a structured payload. Cancellation is always safe: clear any
+        # partial confirmation state and do not execute anything.
+        _clear_pending_workspace_action()
+        clear_task_state()
+        reply = "✅ Acción cancelada. No he modificado ningún archivo ni servicio externo."
+        _remember_turn("user", msg); _remember_turn("assistant", reply); return reply
 
     # Contexto natural: permite usar «guárdala», «hazlo más formal», «contéstale que…»
     # y preguntas cortas sobre el correo actual sin repetir el objeto de la conversación.
