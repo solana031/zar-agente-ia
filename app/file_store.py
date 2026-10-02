@@ -5,6 +5,7 @@ import re
 import shutil
 import threading
 import uuid
+import secrets
 import hashlib
 from datetime import datetime, timezone
 from pathlib import Path
@@ -30,7 +31,7 @@ FILES_DIR = None
 def _meta_file():
     return _files_dir() / 'index.json'
 LOCK = threading.RLock()
-ALLOWED_CATEGORIES = {'sin_clasificar','facturas','finanzas','documentos','recibos','contratos','personal','fotos','otros'}
+ALLOWED_CATEGORIES = {'sin_clasificar','facturas','finanzas','documentos','recibos','contratos','personal','fotos','otros','cierres_caja','turnos'}
 MAX_BYTES = int(os.environ.get('ZAR_MAX_UPLOAD_BYTES', str(500 * 1024 * 1024)))
 
 class DuplicateFileError(ValueError):
@@ -116,6 +117,9 @@ def save_upload(file_storage, note=''):
         'created_at': now,
         'updated_at': now,
         'analysis': {},
+        'analysis_status': 'pending',
+        'analysis_error': '',
+        'evidence_token': secrets.token_urlsafe(24),
         'sha256': sha256,
         'indexing_status': 'pending',
         'indexing_error': '',
@@ -125,6 +129,44 @@ def save_upload(file_storage, note=''):
         all_items = _load(); all_items.append(item); _save(all_items)
     return item
 
+
+
+def ensure_evidence_token(file_id):
+    """Return a stable high-entropy token for unauthenticated evidence previews.
+
+    The token is only meant for embedding the user's own uploaded evidence inside
+    Google Sheets. Possession of the URL is required; file IDs alone are not enough.
+    """
+    data = _load()
+    changed = False
+    token = ''
+    for row in data:
+        if row.get('id') == file_id:
+            token = str(row.get('evidence_token') or '').strip()
+            if not token:
+                token = secrets.token_urlsafe(24)
+                row['evidence_token'] = token
+                row['updated_at'] = datetime.now(timezone.utc).isoformat()
+                changed = True
+            break
+    if changed:
+        _save(data)
+    return token
+
+
+def set_analysis_status(file_id, status, error=''):
+    data = _load()
+    target = None
+    for row in data:
+        if row.get('id') == file_id:
+            row['analysis_status'] = status
+            row['analysis_error'] = str(error or '')[:2000]
+            row['updated_at'] = datetime.now(timezone.utc).isoformat()
+            target = row
+            break
+    if target is not None:
+        _save(data)
+    return target
 
 def get_file(file_id):
     return next((x for x in _load() if x.get('id') == file_id), None)
@@ -214,4 +256,6 @@ def public_item(item):
     out['indexing_error'] = item.get('indexing_error') or ''
     out['indexed_at'] = item.get('indexed_at') or ''
     out['sha256'] = item.get('sha256') or ''
+    out['analysis_status'] = item.get('analysis_status') or ('analyzed' if item.get('analysis') else 'pending')
+    out['analysis_error'] = item.get('analysis_error') or ''
     return out
