@@ -5972,3 +5972,63 @@ window.zoRender=function(j){
 
 <link rel="stylesheet" href="/static/ui-polish.css?v=31.3.30">
 <script src="/static/ui-polish.js?v=31.3.24"></script>
+
+<style id="zar-v32-1-9-mobile-attachment-tray-fix">
+@media(max-width:720px){
+  /* One attachment surface on mobile: the progress tray. */
+  #chatContent #zarPendingFiles{display:none!important;}
+  #chatContent #zarUploadPanel{
+    display:none!important;
+    position:fixed!important;
+    left:12px!important;
+    right:12px!important;
+    bottom:auto!important;
+    top:auto!important;
+    z-index:1215!important;
+    margin:0!important;
+    max-height:88px!important;
+    overflow:auto!important;
+    padding:9px 10px!important;
+    border-radius:14px!important;
+    border:1px solid #6b4d2f!important;
+    background:rgba(17,13,10,.985)!important;
+    box-shadow:0 12px 30px rgba(0,0,0,.5)!important;
+    backdrop-filter:blur(16px)!important;
+  }
+  #chatContent #zarUploadPanel.open{display:block!important;}
+  #chatContent #uploadStatus{
+    display:none!important;
+  }
+  #chatContent .zarUploadRow{padding:0!important;}
+  #chatContent .zarUploadTrack{height:7px!important;margin-top:6px!important;}
+  #chatContent .zarUploadMeta{font-size:8px!important;margin-top:5px!important;}
+  #chatContent .zarUploadName{max-width:68vw!important;overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important;}
+}
+</style>
+<script id="zar-v32-1-9-mobile-attachment-tray-script">
+(function(){
+  function placeAttachmentTray(){
+    if(window.innerWidth>720) return;
+    const tray=document.getElementById('zarUploadPanel');
+    const composer=document.querySelector('#chatContent .composerMain');
+    if(!tray||!composer||!tray.classList.contains('open')) return;
+    const cr=composer.getBoundingClientRect();
+    // Measure after it is visible, then anchor directly above the real composer.
+    const h=Math.min(Math.max(tray.offsetHeight||64,48),88);
+    const top=Math.max(8, Math.round(cr.top-h-8));
+    tray.style.setProperty('top', top+'px', 'important');
+    tray.style.setProperty('bottom', 'auto', 'important');
+  }
+  window.zarPlaceAttachmentTray=placeAttachmentTray;
+  const observer=new MutationObserver(function(){requestAnimationFrame(placeAttachmentTray);});
+  function init(){
+    const tray=document.getElementById('zarUploadPanel');
+    if(tray) observer.observe(tray,{attributes:true,attributeFilter:['class'],childList:true,subtree:true});
+    window.addEventListener('resize',placeAttachmentTray,{passive:true});
+    window.addEventListener('orientationchange',function(){setTimeout(placeAttachmentTray,120);},{passive:true});
+    document.addEventListener('focusin',function(){setTimeout(placeAttachmentTray,80);});
+    setTimeout(placeAttachmentTray,50);
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',init); else init();
+})();
+</script>
