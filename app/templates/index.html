@@ -5153,6 +5153,66 @@ body.zar-light .zarDockManagerCard{background:#fffaf4;color:#4a3828;border-color
 @media(max-width:760px){.zoPanel{padding:10px}.zoHead{display:block}.zoActions{margin-top:8px}.zoStats{grid-template-columns:repeat(2,minmax(0,1fr))}.zoSceneWrap{height:780px}.zoViewport{padding:12px}.zoTimeline{margin-bottom:80px}.zoTraceRow{grid-template-columns:90px 60px minmax(0,1fr)}.zoToolbar{display:block}.zoZoomControls{margin-top:8px}.zoZoomRange{width:132px}}
 </style>
 
+
+<style id="zar-v32-1-8-mobile-attachment-loader-fix">
+@media(max-width:720px){
+  /* v32.1.8: attachment progress must remain visible on mobile.
+     Older mobile layers hid #uploadStatus and kept the upload panel inside
+     a composer area whose visible height only contained composerMain. */
+  #chatContent #uploadStatus{
+    display:block!important;
+    position:fixed!important;
+    left:16px!important;right:16px!important;
+    bottom:166px!important;
+    z-index:1213!important;
+    min-height:14px!important;
+    margin:0!important;
+    padding:0 4px!important;
+    font-size:9px!important;
+    line-height:1.35!important;
+    color:#c8b9a9!important;
+    pointer-events:none!important;
+    white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important;
+  }
+  #chatContent #zarUploadPanel{
+    display:none!important;
+    position:fixed!important;
+    left:12px!important;right:12px!important;
+    bottom:88px!important;
+    z-index:1212!important;
+    margin:0!important;
+    max-height:76px!important;
+    overflow:auto!important;
+    padding:8px 10px!important;
+    border-radius:13px!important;
+    border:1px solid #6b4d2f!important;
+    background:rgba(17,13,10,.98)!important;
+    box-shadow:0 14px 36px rgba(0,0,0,.55)!important;
+    backdrop-filter:blur(16px)!important;
+  }
+  #chatContent #zarUploadPanel.open{display:block!important;}
+  #chatContent #zarPendingFiles{
+    display:none!important;
+    position:fixed!important;
+    left:12px!important;right:12px!important;
+    bottom:168px!important;
+    z-index:1211!important;
+    margin:0!important;
+    max-height:72px!important;
+    overflow:auto!important;
+    padding:0 2px!important;
+  }
+  #chatContent #zarPendingFiles.open{display:flex!important;}
+  #chatContent .zarPendingChip{
+    background:rgba(24,17,12,.98)!important;
+    border-color:#6b4d2f!important;
+    box-shadow:0 8px 22px rgba(0,0,0,.35)!important;
+  }
+  #chatContent .zarUploadRow{padding:0!important;}
+  #chatContent .zarUploadTrack{height:8px!important;}
+  #chatContent .zarUploadMeta{font-size:8px!important;}
+}
+</style>
 </body></html>
 
 <style id="zar-v30-10-16-floating-shell">
