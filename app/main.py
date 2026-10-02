@@ -3623,13 +3623,23 @@ def _prepare_business_sync_pending(original_message, assistant_reply=''):
             sheet=next((x for x in found if x.get('mimeType')=='application/vnd.google-apps.spreadsheet'),None)
         except Exception:
             sheet=None
-    if not sheet:
-        return None
-    pending={'service':'Google Sheets','action':'sincronizar control de negocio','args':{
-        'spreadsheet_id':sheet.get('id'),'business_name':'Room 108','file_ids':[str(file_id)]
-    }}
+    if sheet:
+        pending={'service':'Google Sheets','action':'sincronizar control de negocio','args':{
+            'spreadsheet_id':sheet.get('id'),'business_name':'Room 108','file_ids':[str(file_id)]
+        }}
+        task_target=sheet.get('id','')
+        task_summary=f'Preparado para registrar evidencia en {sheet.get("name") or name}'
+    else:
+        # Confirmation must not depend on a pre-confirmation Drive lookup.  Keep a
+        # deterministic deferred action containing the evidence and intended book;
+        # the exact spreadsheet is resolved only after the user presses Confirmar.
+        pending={'service':'Google Sheets','action':'sincronizar control de negocio diferido','args':{
+            'spreadsheet_name':name,'business_name':'Room 108','file_ids':[str(file_id)]
+        }}
+        task_target=name
+        task_summary=f'Preparado para localizar {name} y registrar la evidencia al confirmar'
     _set_pending_workspace_action(pending)
-    set_task_state('google workspace','google sheets',sheet.get('id',''),'sincronizar control de negocio','high','awaiting_confirmation',f'Preparado para registrar evidencia en {sheet.get("name") or name}')
+    set_task_state('google workspace','google sheets',task_target,pending.get('action','sincronizar control de negocio'),'high','awaiting_confirmation',task_summary)
     return pending
 
 def _execute_workspace_action(pending):
@@ -3649,6 +3659,22 @@ def _execute_workspace_action(pending):
         if action == "crear libro profesional": return gw.sheets_build_workbook(args["title"], args.get("sheets") or [])
         if action == "reorganizar libro profesional": return gw.sheets_upgrade_workbook(args["spreadsheet_id"], args.get("tabs") or [], args.get("charts") or [])
         if action == "sincronizar control de negocio": return gw.sheets_sync_business_control(args["spreadsheet_id"], args.get("file_ids") or [], args.get("business_name") or "Room 108")
+        if action == "sincronizar control de negocio diferido":
+            wanted=(args.get("spreadsheet_name") or "Control de Cierres y Horas - Room108").strip()
+            candidates=[]
+            for query in (wanted, "Room108", "Room 108"):
+                try:
+                    candidates.extend(gw.drive_search(query,30) or [])
+                except Exception:
+                    continue
+            sheets=[x for x in candidates if x.get('mimeType')=='application/vnd.google-apps.spreadsheet']
+            if not sheets:
+                raise RuntimeError(f'No encuentro la hoja de Google Sheets «{wanted}». No se ha modificado ningún archivo.')
+            def _norm(v):
+                return re.sub(r'[^a-z0-9]+','',str(v or '').lower())
+            exact=next((x for x in sheets if _norm(x.get('name'))==_norm(wanted)),None)
+            chosen=exact or sheets[0]
+            return gw.sheets_sync_business_control(chosen["id"], args.get("file_ids") or [], args.get("business_name") or "Room 108")
         if action == "modificar estilo visual": return gw.sheets_style_range(args["spreadsheet_id"], args["sheet_title"], args["range_a1"], args.get("style") or {})
         if action == "añadir tabla profesional": return gw.sheets_add_professional_table(args["spreadsheet_id"], args["sheet_title"], args["table_title"], args.get("headers") or [], args.get("rows") or [], args.get("start_cell") or "A1", args.get("subtitle") or "", args.get("summary") or [])
         return gw.sheets_write(args["spreadsheet_id"], args["range_a1"], args["values"])
