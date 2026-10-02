@@ -5,9 +5,10 @@ import os
 import re
 from pathlib import Path
 import requests
+import time
 
 from .config import load
-from .file_store import get_file, update_file, files_dir, public_item, set_analysis_status
+from .file_store import get_file, update_file, files_dir, public_item
 
 
 def _gemini_root(base_url: str) -> str:
@@ -51,20 +52,7 @@ def _prompt():
         "subtotal, IVA/impuestos, descuentos, total y líneas. Para nóminas, reconoce empresa, trabajador, "
         "periodo, conceptos, devengos, deducciones, bases, impuestos y líquido. Para cualquier otro documento, "
         "extrae los campos específicos que sean visibles dentro de las claves genéricas. "
-        "Además, identifica si el archivo contiene información operativa de negocio. Incluye SIEMPRE estas claves adicionales: "
-        "record_kind, cash_closure, shift_records, source_confidence. "
-        "record_kind debe ser uno de: cash_closure, shift_roster, mixed, other. "
-        "cash_closure debe ser un objeto con: business_date, cash_amount, card_amount, total_amount, terminal_amount, "
-        "variance_amount, variance_note, operations_count, terminal_name, location, notes. Usa null cuando no sea legible. "
-        "IMPORTANTE: total_amount del cierre de caja es efectivo + tarjeta si ambos están explícitos; terminal_amount es el importe del datáfono/TPV. "
-        "No confundas el importe del datáfono con el cierre total del negocio. variance_amount debe representar un descuadre explícito o calculable, "
-        "y variance_note debe explicar de dónde sale sin inventar. "
-        "shift_records debe ser una lista de objetos con: employee, work_date, start_time, end_time, duration_hours, paid_hours, pending_hours, notes. "
-        "Cada turno debe ser una fila independiente. Si cruza medianoche, calcula duration_hours correctamente. No conviertas horas en euros. "
-        "No inventes fechas a partir de expresiones relativas si el documento no las permite resolver con seguridad; conserva la expresión en notes. "
-        "source_confidence debe ser high, medium o low según legibilidad y certeza. "
-        "category debe ser una de: facturas, recibos, cierres_caja, turnos, contratos, finanzas, documentos, personal, fotos, otros, sin_clasificar. "
-        "Usa cierres_caja para tickets/cierres de efectivo o datáfono y turnos para cuadrantes/registros de horas. "
+        "category debe ser una de: facturas, recibos, contratos, finanzas, documentos, personal, fotos, otros, sin_clasificar. "
         "tags debe ser una lista corta de palabras."
     )
 
@@ -97,7 +85,6 @@ def analyze_file(file_id: str):
     if not path.exists():
         raise FileNotFoundError('El archivo no está disponible en el almacenamiento.')
 
-    set_analysis_status(file_id, 'analyzing')
     cfg = load()
     if cfg.get('provider') == 'local':
         raise RuntimeError('El análisis visual de archivos en V21 requiere un proveedor Gemini/API.')
@@ -116,16 +103,43 @@ def analyze_file(file_id: str):
         {'text': _prompt()},
         {'inlineData': {'mimeType': mime, 'data': base64.b64encode(raw).decode('ascii')}}
     ]
-    try:
-        analysis = _native_gemini(parts, model, key, base_url)
-    except RuntimeError as exc:
-        detail = str(exc)
-        if 'HTTP 429' not in detail and 'RESOURCE_EXHAUSTED' not in detail:
-            raise
-        fallback_model = (os.environ.get('ZAR_GEMINI_FALLBACK_MODEL') or 'gemini-3.5-flash-lite').strip()
-        if not fallback_model or fallback_model == model:
-            raise
-        analysis = _native_gemini(parts, fallback_model, key, base_url)
+    models = [model]
+    fallback_model = (os.environ.get('ZAR_GEMINI_FALLBACK_MODEL') or 'gemini-3.5-flash-lite').strip()
+    if fallback_model and fallback_model not in models:
+        models.append(fallback_model)
+    last_exc = None
+    analysis = None
+    for model_name in models:
+        for attempt in range(3):
+            try:
+                analysis = _native_gemini(parts, model_name, key, base_url)
+                break
+            except RuntimeError as exc:
+                last_exc = exc
+                detail = str(exc)
+                transient = any(x in detail for x in ('HTTP 429','HTTP 500','HTTP 502','HTTP 503','HTTP 504','RESOURCE_EXHAUSTED','UNAVAILABLE'))
+                if not transient:
+                    raise
+                if attempt < 2:
+                    time.sleep(1.5 * (2 ** attempt))
+        if analysis is not None:
+            break
+    if analysis is None:
+        # Persist a retryable analysis state instead of losing the saved file.
+        try:
+            index_path = files_dir() / 'index.json'
+            data = json.loads(index_path.read_text(encoding='utf-8')) if index_path.exists() else []
+            for row in data:
+                if row.get('id') == file_id:
+                    row['analysis_status'] = 'pending_retry'
+                    row['analysis_error'] = str(last_exc or 'Proveedor visual no disponible temporalmente')[:1200]
+                    break
+            tmp = index_path.with_suffix('.tmp')
+            tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding='utf-8')
+            tmp.replace(index_path)
+        except Exception:
+            pass
+        raise RuntimeError('El archivo se ha guardado, pero el análisis visual está temporalmente saturado. ZAR lo ha dejado pendiente de reintento; puedes volver a pulsar Analizar más tarde.')
 
     # Mantener la ficha rica pero acotada para que el índice persistente no crezca sin control.
     if isinstance(analysis.get('full_text'), str):
@@ -137,24 +151,9 @@ def analyze_file(file_id: str):
         if not isinstance(analysis.get(key), list):
             analysis[key] = []
 
-    if not isinstance(analysis.get('shift_records'), list):
-        analysis['shift_records'] = []
-    if not isinstance(analysis.get('cash_closure'), dict):
-        analysis['cash_closure'] = {}
-    kind = str(analysis.get('record_kind') or 'other').strip().lower()
-    if kind not in {'cash_closure','shift_roster','mixed','other'}:
-        kind = 'other'
-    analysis['record_kind'] = kind
-    conf = str(analysis.get('source_confidence') or 'medium').strip().lower()
-    analysis['source_confidence'] = conf if conf in {'high','medium','low'} else 'medium'
-
     category = str(analysis.get('category') or item.get('category') or 'sin_clasificar').strip().lower()
-    aliases = {'factura':'facturas','invoice':'facturas','recibo':'recibos','ticket':'recibos','cierre':'cierres_caja','cierre_caja':'cierres_caja','turno':'turnos','turnos':'turnos','contrato':'contratos','documento':'documentos','foto':'fotos'}
+    aliases = {'factura':'facturas','invoice':'facturas','recibo':'recibos','ticket':'recibos','contrato':'contratos','documento':'documentos','foto':'fotos'}
     category = aliases.get(category, category)
-    if kind in {'cash_closure','mixed'} and category in {'fotos','recibos','sin_clasificar','otros'}:
-        category = 'cierres_caja'
-    elif kind == 'shift_roster' and category in {'fotos','documentos','sin_clasificar','otros'}:
-        category = 'turnos'
     note_bits = [x for x in [analysis.get('summary'), analysis.get('description'), analysis.get('vendor'), analysis.get('invoice_number'), analysis.get('document_date'), analysis.get('total_amount')] if x]
     note = ' · '.join(str(x) for x in note_bits)
     enriched = update_file(file_id, category=category, note=note)
@@ -174,5 +173,4 @@ def analyze_file(file_id: str):
         enriched['analysis'] = analysis
     except Exception:
         pass
-    set_analysis_status(file_id, 'analyzed')
     return {'ok': True, 'file': public_item(enriched), 'analysis': analysis}

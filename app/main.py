@@ -3280,7 +3280,7 @@ def contacts_api():
             from .google_contacts import search_contacts
         except ImportError:
             from google_contacts import search_contacts
-        return jsonify({"ok": True, "contacts": search_contacts(q, 20)})
+        return jsonify({"ok": True, "contacts": sorted(search_contacts(q, 500), key=lambda c: (c.get("name") or "").casefold())})
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc), "contacts": []}), 200
 
@@ -3445,9 +3445,8 @@ def _workspace_prepare_bridge(original_message):
         text
         + "\n\n[INSTRUCCIÓN INTERNA DE ZAR — NO RESPONDAS CON UN PLAN EN TEXTO. "
           "Debes PREPARAR AHORA la acción de Google Workspace usando la herramienta de escritura adecuada. "
-          "Si es una reorganización de un Google Sheets existente, localiza el archivo real si hace falta. Si la petición "
-          "depende de tickets, cierres, turnos, cuadrantes o archivos adjuntos usa sheets_sync_business_control; en los demás casos usa sheets_upgrade_workbook. "
-          "No ejecutes la modificación todavía: la herramienta debe devolver el marcador "
+          "Si es una reorganización de un Google Sheets existente, localiza el archivo real si hace falta y usa "
+          "sheets_upgrade_workbook. No ejecutes la modificación todavía: la herramienta debe devolver el marcador "
           "WORKSPACE_ACTION para que la aplicación solicite una única confirmación. No preguntes nada al usuario.]"
     )
     try:
@@ -3548,9 +3547,6 @@ def _execute_workspace_action(pending):
         if action == "crear hoja de cálculo": return gw.sheets_create(args["title"])
         if action == "crear libro profesional": return gw.sheets_build_workbook(args["title"], args.get("sheets") or [])
         if action == "reorganizar libro profesional": return gw.sheets_upgrade_workbook(args["spreadsheet_id"], args.get("tabs") or [], args.get("charts") or [])
-        if action == "sincronizar control operativo":
-            from .business_workspace import sync_business_control
-            return sync_business_control(args["spreadsheet_id"], args["year"], args["month"], args.get("business_name") or "Negocio", args.get("file_ids") or [], args.get("manual_shifts") or [], args.get("manual_closures") or [], args.get("staff_totals") or [])
         if action == "añadir tabla profesional": return gw.sheets_add_professional_table(args["spreadsheet_id"], args["sheet_title"], args["table_title"], args.get("headers") or [], args.get("rows") or [], args.get("start_cell") or "A1", args.get("subtitle") or "", args.get("summary") or [])
         return gw.sheets_write(args["spreadsheet_id"], args["range_a1"], args["values"])
     if service == "Google Slides":
@@ -3989,7 +3985,6 @@ def _process_chat_message(msg):
                     "sheets_add_professional_table": ("Google Sheets", "añadir tabla profesional"),
                     "sheets_build_workbook": ("Google Sheets", "crear libro profesional"),
                     "sheets_upgrade_workbook": ("Google Sheets", "reorganizar libro profesional"),
-                    "sheets_sync_business_control": ("Google Sheets", "sincronizar control operativo"),
                     "slides_create": ("Google Slides", "crear presentación"),
                     "slides_build_deck": ("Google Slides", "crear presentación profesional"),
                     "docs_build_report": ("Google Docs", "crear informe profesional"),
@@ -4792,17 +4787,6 @@ def upload_file():
                     _file_save(raw)
                 except Exception:
                     pass
-            # Every uploaded file is persisted first and then analyzed automatically.
-            # Analysis failure never discards the original evidence.
-            try:
-                from .file_analysis import analyze_file
-                analyze_file(item.get("id"))
-            except Exception as exc:
-                try:
-                    from .file_store import set_analysis_status
-                    set_analysis_status(item.get("id"), "error", str(exc))
-                except Exception:
-                    pass
             item = get_file(item.get("id")) or item
             saved.append(public_item(item))
             set_last_uploaded_file(item)
@@ -4915,21 +4899,6 @@ def preview_file(file_id):
         except Exception as exc:
             return jsonify({"ok":False,"error":"No se pudo generar la vista previa PPTX: "+str(exc)}), 200
     return send_file(path, mimetype=mime, as_attachment=False, download_name=item.get("name", "archivo"))
-
-@app.get("/api/files/<file_id>/evidence/<token>")
-def file_evidence(file_id, token):
-    """Tokenized public preview used by Google Sheets IMAGE() cells."""
-    item = get_file(file_id)
-    if not item or not token or token != str(item.get("evidence_token") or ""):
-        return jsonify({"error": "Evidencia no encontrada."}), 404
-    mime = item.get("mime") or "application/octet-stream"
-    if not str(mime).startswith("image/"):
-        return jsonify({"error": "La evidencia no es una imagen insertable."}), 415
-    path = files_dir() / item.get("category", "sin_clasificar") / item.get("stored_name", "")
-    if not path.exists():
-        return jsonify({"error": "La evidencia no está disponible."}), 404
-    return send_file(path, as_attachment=False, mimetype=mime, max_age=3600)
-
 
 @app.get("/api/files/<file_id>/download")
 def download_file(file_id):

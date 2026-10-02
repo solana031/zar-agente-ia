@@ -63,7 +63,7 @@ def list_connections(page_size=200):
 
 def search_contacts(query, limit=10):
     q = (query or '').strip().lower()
-    contacts = list_connections(max(100, limit * 5))
+    contacts = list_connections(min(500, max(100, limit)))
     if not q:
         return contacts[:limit]
     scored = []

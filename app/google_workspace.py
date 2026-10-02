@@ -456,14 +456,12 @@ def sheets_add_professional_table(spreadsheet_id, sheet_title, table_title, head
     for idx, header in enumerate(headers):
         name=str(header or '').strip().lower()
         fmt=None
-        # Unit semantics take precedence over generic words such as "total".
-        # Example: "Horas Totales" must never become currency.
-        if any(k in name for k in ('hora','horas','duración','duracion')) and not any(k in name for k in ('€/hora','euros/hora','precio hora','coste hora')):
-            fmt={'type':'NUMBER','pattern':'0.00'}
+        if any(k in name for k in ('importe','total','efectivo','tarjeta','precio','ventas','saldo','base','iva','coste','costo','ingreso','pago €','pendiente €')):
+            fmt={'type':'CURRENCY','pattern':'#,##0.00 [$€-es-ES]'}
         elif any(k in name for k in ('porcentaje','%','margen','ratio')):
             fmt={'type':'PERCENT','pattern':'0.00%'}
-        elif any(k in name for k in ('importe','efectivo','tarjeta','precio','ventas','saldo','base','iva','coste','costo','ingreso','pago €','pendiente €','cierre total','total caja','total €')):
-            fmt={'type':'CURRENCY','pattern':'#,##0.00 [$€-es-ES]'}
+        elif name in ('horas','horas trabajadas','horas pagadas','horas pendientes','duración','duracion'):
+            fmt={'type':'NUMBER','pattern':'0.00'}
         elif 'fecha' in name:
             fmt={'type':'DATE','pattern':'dd/mm/yyyy'}
         elif name in ('hora','entrada','salida') or name.endswith(' hora'):
@@ -473,16 +471,6 @@ def sheets_add_professional_table(spreadsheet_id, sheet_title, table_title, head
                 'sheetId':sheet_id,'startRowIndex':hrow+1,'endRowIndex':hrow+1+len(clean_rows),
                 'startColumnIndex':c0-1+idx,'endColumnIndex':c0+idx
             }, 'cell': {'userEnteredFormat': {'numberFormat':fmt}}, 'fields':'userEnteredFormat.numberFormat'}})
-    # Evidence images inserted with IMAGE() need enough row height to be useful on mobile.
-    evidence_rows=[]
-    for offset,row in enumerate(clean_rows):
-        if any(isinstance(v,str) and v.lstrip().upper().startswith('=IMAGE(') for v in row):
-            evidence_rows.append(hrow + 1 + offset)
-    for rr in evidence_rows:
-        req.append({'updateDimensionProperties': {'range': {
-            'sheetId':sheet_id,'dimension':'ROWS','startIndex':rr,'endIndex':rr+1
-        }, 'properties': {'pixelSize':110}, 'fields':'pixelSize'}})
-
     # Summary block gets a quiet KPI treatment.
     if summary:
         summary_start = hrow + 1 + len(clean_rows) + 1
