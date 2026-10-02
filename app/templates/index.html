@@ -3623,8 +3623,8 @@ async function zarResolveConfirmation(actions,decision){
   const buttons=actions.querySelectorAll('button');buttons.forEach(b=>b.disabled=true);
   const state=actions.querySelector('.zarConfirmState');
   if(state)state.textContent=decision==='confirm'?'Confirmando…':'Cancelando…';
-  const display=decision==='confirm'?'Confirmar':'Cancelar';
-  addChatMessage('user',display);
+  // Structured button decisions are UI actions, not natural-language chat turns.
+  // Do not add a fake user "Confirmar" bubble; the button state itself is enough.
   try{
     const r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:decision==='confirm'?'__ZAR_CONFIRM__':'__ZAR_CANCEL__'})});
     const j=await r.json().catch(()=>({}));

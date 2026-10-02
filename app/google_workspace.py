@@ -110,8 +110,21 @@ def _sheet_metadata(spreadsheet_id):
     svc = sheets_service()
     return svc.spreadsheets().get(
         spreadsheetId=spreadsheet_id,
-        fields='spreadsheetId,spreadsheetUrl,sheets(properties(sheetId,title,index))'
+        fields='spreadsheetId,spreadsheetUrl,sheets(properties(sheetId,title,index),bandedRanges(bandedRangeId,range))'
     ).execute()
+
+
+def _grid_ranges_overlap(a, b):
+    """Return True when two Sheets GridRange objects overlap on the same sheet."""
+    if not a or not b or a.get('sheetId') != b.get('sheetId'):
+        return False
+    def bounds(r):
+        return (
+            int(r.get('startRowIndex', 0)), int(r.get('endRowIndex', 10**9)),
+            int(r.get('startColumnIndex', 0)), int(r.get('endColumnIndex', 10**9)),
+        )
+    ar0, ar1, ac0, ac1 = bounds(a); br0, br1, bc0, bc1 = bounds(b)
+    return ar0 < br1 and br0 < ar1 and ac0 < bc1 and bc0 < ac1
 
 
 def sheets_write(spreadsheet_id, range_a1, values):
@@ -360,6 +373,11 @@ def sheets_add_professional_table(spreadsheet_id, sheet_title, table_title, head
         add = svc.spreadsheets().batchUpdate(spreadsheetId=sid, body={'requests':[{'addSheet':{'properties':{'title':sheet_title[:100] or 'Datos'}}}]}).execute()
         target = ((add.get('replies') or [{}])[0].get('addSheet') or {}).get('properties') or {}
     sheet_id = target['sheetId']
+    # Refresh metadata after a potential addSheet so we can safely manage existing
+    # banded ranges. Re-running professional formatting must be idempotent.
+    meta = _sheet_metadata(sid)
+    target_meta = next((x for x in (meta.get('sheets') or []) if (x.get('properties') or {}).get('sheetId') == sheet_id), {})
+    existing_bandings = target_meta.get('bandedRanges') or []
     _, r0, c0 = _parse_a1_start(start_cell)
     headers = [str(x) for x in (headers or [])]
     clean_rows = [[x if x is None or isinstance(x,(str,int,float,bool)) else str(x) for x in (row or [])] for row in (rows or [])]
@@ -435,7 +453,12 @@ def sheets_add_professional_table(spreadsheet_id, sheet_title, table_title, head
                 'fields':'userEnteredFormat(wrapStrategy,verticalAlignment,borders)',
             }
         })
-        # Alternate row shading keeps dense operational tables readable on mobile/desktop.
+        # Alternate row shading keeps dense operational tables readable. Google
+        # rejects addBanding when the target already has an overlapping banded
+        # range, so remove only overlapping bandings before recreating ours.
+        for band in existing_bandings:
+            if band.get('bandedRangeId') is not None and _grid_ranges_overlap(band.get('range') or {}, data_range):
+                req.append({'deleteBanding': {'bandedRangeId': band.get('bandedRangeId')}})
         req.append({'addBanding': {'bandedRange': {
             'range': data_range,
             'rowProperties': {

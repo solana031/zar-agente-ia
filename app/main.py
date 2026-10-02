@@ -302,7 +302,18 @@ def _run_chat_job(job_id, msg, user_id, session_snapshot=None):
             session['zar_user_id'] = user_id
             session.modified = True
             reply = _clean_model_ui_markup(_process_chat_message(msg))
+            # Final confirmation bridge: an analyze-first Workspace turn may end with
+            # a perfectly valid confirmation question after the structured file analysis,
+            # but without a pending payload visible to the job yet. Prepare the business
+            # sync here, before serialising the job result, so Confirmar/Cancelar appear
+            # in this very first response instead of requiring a second chat turn.
             ctx_after = _ctx()
+            if not ctx_after.get("pending_workspace") and _looks_like_confirmation_plan(reply):
+                try:
+                    _prepare_business_sync_pending(msg, reply)
+                except Exception:
+                    pass
+                ctx_after = _ctx()
             action = (ctx_after.get("last_media") or None)
             confirmation = None
             if ctx_after.get("pending_workspace"):
