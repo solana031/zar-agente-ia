@@ -5213,6 +5213,78 @@ body.zar-light .zarDockManagerCard{background:#fffaf4;color:#4a3828;border-color
   #chatContent .zarUploadMeta{font-size:8px!important;}
 }
 </style>
+
+<style id="zar-v32-1-10-mobile-composer-cleanup">
+@media(max-width:720px){
+  /* Mobile: remove redundant floating quick actions and keep only a compact learning strip. */
+  #chatContent .composer .quick{display:none!important;}
+  #chatContent .zarActiveSkills,#chatContent .zarLearningActive{
+    position:fixed!important;
+    left:12px!important;right:12px!important;
+    width:auto!important;max-width:none!important;
+    height:24px!important;min-height:24px!important;max-height:24px!important;
+    margin:0!important;padding:2px 8px!important;
+    border-radius:9px!important;
+    font-size:8px!important;line-height:18px!important;
+    white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important;
+    text-align:center!important;
+    transform:none!important;
+    background:rgba(12,9,7,.90)!important;
+    border:1px solid rgba(184,139,85,.28)!important;
+    box-shadow:0 5px 14px rgba(0,0,0,.24)!important;
+    backdrop-filter:blur(10px)!important;
+    z-index:1214!important;
+  }
+  #chatContent #zarUploadPanel{
+    max-height:70px!important;
+    padding:7px 9px!important;
+    border-radius:11px!important;
+  }
+  #chatContent .zarUploadTrack{height:6px!important;margin-top:4px!important;}
+  #chatContent .zarUploadMeta{font-size:7.5px!important;margin-top:3px!important;}
+  #chatContent .zarUploadName{font-size:9px!important;}
+}
+</style>
+<script id="zar-v32-1-10-mobile-composer-layout-script">
+(function(){
+  function layoutMobileComposerExtras(){
+    if(window.innerWidth>720) return;
+    const main=document.querySelector('#chatContent .composerMain');
+    const skills=document.getElementById('zarActiveSkills');
+    const learning=document.getElementById('zarLearningActive');
+    const tray=document.getElementById('zarUploadPanel');
+    if(!main) return;
+    const r=main.getBoundingClientRect();
+    const gap=6;
+    const stripH=24;
+    const stripTop=Math.max(8,Math.round(r.top-stripH-gap));
+    [skills,learning].forEach(el=>{if(el){
+      el.style.setProperty('top',stripTop+'px','important');
+      el.style.setProperty('bottom','auto','important');
+    }});
+    if(tray && tray.classList.contains('open')){
+      const h=Math.min(Math.max(tray.offsetHeight||54,44),70);
+      const top=Math.max(8,Math.round(stripTop-h-gap));
+      tray.style.setProperty('top',top+'px','important');
+      tray.style.setProperty('bottom','auto','important');
+    }
+  }
+  window.zarLayoutMobileComposerExtras=layoutMobileComposerExtras;
+  function init(){
+    const tray=document.getElementById('zarUploadPanel');
+    const skills=document.getElementById('zarActiveSkills');
+    const learning=document.getElementById('zarLearningActive');
+    const obs=new MutationObserver(()=>requestAnimationFrame(layoutMobileComposerExtras));
+    [tray,skills,learning].forEach(el=>{if(el)obs.observe(el,{attributes:true,childList:true,subtree:true});});
+    window.addEventListener('resize',layoutMobileComposerExtras,{passive:true});
+    window.addEventListener('orientationchange',()=>setTimeout(layoutMobileComposerExtras,120),{passive:true});
+    document.addEventListener('focusin',()=>setTimeout(layoutMobileComposerExtras,80));
+    setTimeout(layoutMobileComposerExtras,60);
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init();
+})();
+</script>
+
 </body></html>
 
 <style id="zar-v30-10-16-floating-shell">
