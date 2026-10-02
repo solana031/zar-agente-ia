@@ -3473,6 +3473,22 @@ def _looks_like_workspace_write_request(text):
     ))
 
 
+def _workspace_requires_analysis_first(text):
+    """True when the user explicitly wants evidence/file analysis before any Workspace write.
+
+    This prevents the confirmation bridge from preparing a Sheets mutation merely
+    because the same message mentions a later write step. The analysis/extraction
+    phase must finish and be shown to the user first.
+    """
+    t=(text or "").lower()
+    if not _looks_like_workspace_request(t):
+        return False
+    has_analysis=bool(re.search(r"\b(analiza|analizar|extrae|extraer|lee|leer|revisa|revisar|datos\s+extra[ií]dos|archivo\s+adjunt|foto\s+adjunt|ticket|evidencia)\b", t, re.I))
+    before_write=bool(re.search(r"(?:antes\s+de|primero|previamente).{0,120}(?:modificar|actualizar|escribir|guardar|google\s+sheets|hoja\s+de\s+c[aá]lculo)", t, re.I|re.S))
+    show_first=bool(re.search(r"(?:mu[eé]strame|dime|ens[eé][nñ]ame|resume).{0,100}(?:datos|extra[ií]do|an[aá]lisis|resultado)", t, re.I|re.S))
+    return has_analysis and (before_write or show_first)
+
+
 def _looks_like_confirmation_plan(reply):
     if not isinstance(reply, str):
         return False
@@ -3875,7 +3891,7 @@ def _process_chat_message(msg):
                             f"{pending.get('service','Google Workspace')}.\n\n"
                             "¿Confirmas? Responde «sí» para continuar o «cancelar» para detenerlo."
                         )
-                elif _looks_like_workspace_write_request(msg):
+                elif _looks_like_workspace_write_request(msg) and not _workspace_requires_analysis_first(msg):
                     # Deterministic Workspace bridge: whenever a Workspace write
                     # request returns prose instead of WORKSPACE_ACTION, attempt to
                     # create the structured pending action before returning to the
