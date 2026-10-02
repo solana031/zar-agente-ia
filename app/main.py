@@ -3463,10 +3463,55 @@ def _looks_like_workspace_request(text):
     ))
 
 
+def _looks_like_workspace_write_request(text):
+    if not _looks_like_workspace_request(text):
+        return False
+    return bool(re.search(
+        r"\b(crea(?:r|me)?|crear|haz|hacer|modifica(?:r)?|editar?|reorganiza(?:r)?|actualiza(?:r)?|"
+        r"añade|agrega|inserta|escribe|formatea|mejora|convierte|prepara|genera|diseña|ordena)\b",
+        text or "", re.I
+    ))
+
+
 def _looks_like_confirmation_plan(reply):
     if not isinstance(reply, str):
         return False
-    return bool(re.search(r"\b(confirmas|confirmaci[oó]n|autorizas|responde(?:\s+simplemente)?\s+[«\"']?s[ií])\b", reply, re.I))
+    # Accept natural variants the model may use when asking permission.
+    # Do not depend on one exact phrase such as “¿Confirmas?”.
+    return bool(re.search(
+        r"\b(confirm(?:as|a|o|amos|aci[oó]n)?|autoriz(?:as|a|o|aci[oó]n)?|procedo|procedemos|"
+        r"responde(?:\s+simplemente)?\s+[«\"']?s[ií]|puedo\s+proceder|me\s+das\s+permiso)\b",
+        reply, re.I
+    ))
+
+
+def _last_assistant_workspace_confirmation():
+    """Return True when the most recent assistant turn is a Workspace confirmation.
+
+    This intentionally relies on conversation evidence rather than volatile task
+    state so an explicit “Sí” can recover after a partial persistence failure.
+    """
+    try:
+        items = conversation()[-12:] or history()[-12:]
+    except Exception:
+        items = []
+    for item in reversed(items):
+        role = item.get("role")
+        content = (item.get("content") or "").strip()
+        if not content:
+            continue
+        if role == "assistant":
+            # The assistant may say only “¿Confirmo y procedo con la hoja?”
+            # without repeating “Google Sheets”. Confirmation evidence alone is
+            # enough here; the recovered user turn is separately required to be
+            # a genuine Workspace request before any action is reconstructed.
+            return _looks_like_confirmation_plan(content)
+        if role == "user":
+            # Stop at a substantive new user turn. A bare confirmation is allowed
+            # because this helper is evaluated while processing that same turn.
+            if not _looks_like_send(content):
+                return False
+    return False
 
 
 def _last_workspace_request_from_history():
@@ -3574,10 +3619,13 @@ def _process_chat_message(msg):
 
     if _looks_like_send(msg):
         task=(ctx.get("task") or {})
-        if task.get("status")=="awaiting_confirmation" and task.get("intent")=="google workspace" and not pending_workspace:
-            # Recovery path: a previous model turn may have asked for confirmation
-            # without emitting WORKSPACE_ACTION. Reconstruct the last Workspace
-            # request and execute only after this explicit user confirmation.
+        workspace_confirmation_evidence = (
+            task.get("status")=="awaiting_confirmation" and task.get("intent")=="google workspace"
+        ) or _last_assistant_workspace_confirmation()
+        if workspace_confirmation_evidence and not pending_workspace:
+            # Recovery path: if persistence was partial, reconstruct the latest
+            # Workspace request from history. The explicit user “Sí” is the
+            # authorization; never ask them to repeat the request.
             original = _last_workspace_request_from_history()
             recovered = _workspace_prepare_bridge(original) if original else None
             if recovered:
@@ -3827,10 +3875,12 @@ def _process_chat_message(msg):
                             f"{pending.get('service','Google Workspace')}.\n\n"
                             "¿Confirmas? Responde «sí» para continuar o «cancelar» para detenerlo."
                         )
-                elif _looks_like_workspace_request(msg) and _looks_like_confirmation_plan(reply):
-                    # Guard rail: a model may write a beautiful plan + confirmation
-                    # without actually calling the Workspace write tool. Force a
-                    # hidden tool-only pass before showing that confirmation.
+                elif _looks_like_workspace_write_request(msg):
+                    # Deterministic Workspace bridge: whenever a Workspace write
+                    # request returns prose instead of WORKSPACE_ACTION, attempt to
+                    # create the structured pending action before returning to the
+                    # user. This no longer depends on the exact wording of the
+                    # model's confirmation question (e.g. “¿Confirmo y procedo?”).
                     pending = _workspace_prepare_bridge(msg)
                     if pending:
                         reply = (
@@ -3838,10 +3888,10 @@ def _process_chat_message(msg):
                             f"{pending.get('service','Google Workspace')}.\n\n"
                             "¿Confirmas? Responde «sí» para continuar o «cancelar» para detenerlo."
                         )
-                    else:
+                    elif _looks_like_confirmation_plan(reply):
                         reply = (
                             "No he podido preparar de forma segura la acción de Google Workspace todavía. "
-                            "No he modificado ningún archivo. Vuelve a enviar la orden completa para que la prepare antes de pedirte confirmación."
+                            "No he modificado ningún archivo. Inténtalo de nuevo y ZAR preparará la acción antes de pedir confirmación."
                         )
                 _remember_turn("assistant", reply)
                 return reply
