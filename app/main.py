@@ -4410,6 +4410,37 @@ def job_status(job_id):
         return jsonify({"status":"not_found"}), 404
     return jsonify(job)
 
+@app.get("/api/confirmation-status")
+def confirmation_status():
+    """Return the current structured confirmation for the active user.
+
+    Background chat workers can persist the action after the job response object has
+    already been assembled.  This endpoint gives the browser a durable source of
+    truth so confirmation controls never depend on one transient job payload.
+    """
+    ctx = _ctx()
+    pending_workspace = ctx.get("pending_workspace") or session.get("zar_pending_workspace")
+    if pending_workspace:
+        return jsonify({
+            "required": True,
+            "kind": "workspace",
+            "title": pending_workspace.get("service") or "Google Workspace",
+            "action": pending_workspace.get("action") or "acción pendiente",
+        })
+    pending_contact = ctx.get("pending_contact")
+    if pending_contact:
+        return jsonify({
+            "required": True,
+            "kind": "contact",
+            "title": "Google Contacts",
+            "action": pending_contact.get("action") or "modificar contacto",
+        })
+    if ctx.get("pending_email"):
+        return jsonify({"required": True, "kind": "email", "title": "Gmail", "action": "enviar correo"})
+    if (ctx.get("pending_calendar") or {}).get("event"):
+        return jsonify({"required": True, "kind": "calendar", "title": "Google Calendar", "action": "crear evento"})
+    return jsonify({"required": False})
+
 @app.post("/api/studio/command")
 def studio_command():
     data=request.get_json(silent=True) or {}

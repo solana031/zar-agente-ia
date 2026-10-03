@@ -3590,6 +3590,19 @@ function zarSpeakableText(value){
   return text.replace(/[*_`#]/g,'');
 }
 
+async function zarGetPendingConfirmation(retries=4){
+  for(let i=0;i<retries;i++){
+    try{
+      const r=await fetch('/api/confirmation-status?_='+Date.now(),{cache:'no-store'});
+      const j=await r.json().catch(()=>({required:false}));
+      if(r.ok&&j&&j.required)return j;
+    }catch(e){}
+    if(i<retries-1)await new Promise(resolve=>setTimeout(resolve,160*(i+1)));
+  }
+  return null;
+}
+window.zarGetPendingConfirmation=zarGetPendingConfirmation;
+
 function addChatMessage(role,text,confirmation){
   const value=String(text||'').trim();
   if(!value)return;
@@ -3637,7 +3650,9 @@ async function zarResolveConfirmation(actions,decision){
       if(st.status==='done'){
         pending?.remove();
         actions.remove();
-        addChatMessage('assistant',st.reply||'Listo.',st.confirmation||null);
+        let resolvedConfirmation=st.confirmation||null;
+        if(!resolvedConfirmation){resolvedConfirmation=await zarGetPendingConfirmation();}
+        addChatMessage('assistant',st.reply||'Listo.',resolvedConfirmation);
         updateActiveSkillsUI(st.skills||[]);
         if(st.action?.url){setTimeout(()=>{try{window.open(st.action.url,'_blank','noopener')}catch(e){}},80)}
         speak(zarSpeakableText(st.reply||'Listo.'));
@@ -3770,7 +3785,9 @@ async function send(){
       }
       if(st.status==='done'){
         pending?.remove();
-        addChatMessage('assistant',st.reply||'Listo.',st.confirmation||null);
+        let resolvedConfirmation=st.confirmation||null;
+        if(!resolvedConfirmation){resolvedConfirmation=await zarGetPendingConfirmation();}
+        addChatMessage('assistant',st.reply||'Listo.',resolvedConfirmation);
         updateActiveSkillsUI(st.skills||[]);
         if(st.action?.url){setTimeout(()=>{try{window.open(st.action.url,'_blank','noopener')}catch(e){}},80)}
         speak(zarSpeakableText(st.reply||'Listo.'));
