@@ -11,9 +11,11 @@ import json
 import mimetypes
 import html as html_lib
 import uuid
+import base64
 from functools import wraps
 from contextlib import contextmanager
 from . import stonks_lifecycle, stonks_preflight, stonks_agents, stonks_news, stonks_dataplane, stonks_selftest, stonks_stream, subagent_orchestrator, stonks_backtest, stonks_validation, stonks_shadow, stonks_learning, stonks_automaton, stonks_execution, stonks_readiness, stonks_profitability
+from . import holdings, company_runtime, commerce_company, media_company, web_agency, jev_decision, social_publish, voice_pro
 from datetime import datetime, timezone
 from urllib.parse import quote as urlquote
 from .user_scope import set_current_user, get_current_user, anonymous_id, user_id_for_email
@@ -1646,6 +1648,157 @@ def stonks_news_api():
     force=request.args.get('force','0') in ('1','true','yes')
     data=stonks_news.get_context(symbol, force=force)
     return jsonify(data)
+
+# --- ZAR Holdings / subcompanies -------------------------------------------------
+@app.get('/api/holdings/state')
+def holdings_state_api():
+    scope=_user_scope_id()
+    view=holdings.public_view(scope)
+    try:
+        sd=_stonks_read(); sa=stonks_automaton.public_view(sd)
+        view['stonks']={
+            'paper_only':True,'automaton_state':sa.get('state'),'pnl_usd':sa.get('pnl_usd',0),
+            'trades':sa.get('trades',0),'win_rate':sa.get('win_rate',0),
+            'equity':(sd.get('account') or {}).get('equity') or (sd.get('engine_last_account') or {}).get('equity')
+        }
+    except Exception as exc:
+        view['stonks']={'paper_only':True,'error':str(exc)[:240]}
+    view['connectors']={
+        'jev':jev_decision.status(), 'voice':voice_pro.status(), 'commerce':commerce_company.status(),
+        'media':media_company.status(), 'agency':web_agency.status(), 'social':social_publish.status(),
+    }
+    return jsonify({'ok':True, **view})
+
+@app.post('/api/holdings/company/<company>/<action>')
+def holdings_company_action_api(company, action):
+    try:
+        d=holdings.set_company_state(_user_scope_id(), company, action)
+        return jsonify({'ok':True,'company':d['companies'][company]})
+    except Exception as exc:
+        return jsonify({'ok':False,'error':str(exc)}),400
+
+@app.post('/api/holdings/global-stop')
+def holdings_global_stop_api():
+    data=request.get_json(silent=True) or {}
+    try:
+        d=holdings.set_global_stop(_user_scope_id(), bool(data.get('enabled',True)), data.get('reason') or '')
+        return jsonify({'ok':True,'global_stop':d['global_stop'],'state':holdings.public_view(_user_scope_id())})
+    except Exception as exc:
+        return jsonify({'ok':False,'error':str(exc)}),400
+
+@app.post('/api/holdings/cycle')
+def holdings_cycle_api():
+    try: return jsonify(company_runtime.cycle_scope(_user_scope_id()))
+    except Exception as exc: return jsonify({'ok':False,'error':str(exc)}),400
+
+@app.post('/api/holdings/ledger')
+def holdings_ledger_api():
+    data=request.get_json(silent=True) or {}
+    try:
+        row=holdings.add_ledger(_user_scope_id(), data.get('company'), data.get('kind') or 'revenue', data.get('amount') or 0,
+            currency=data.get('currency') or 'EUR', status=data.get('status') or 'collected', source=data.get('source') or 'manual',
+            reference=data.get('reference') or '', note=data.get('note') or '', verified=bool(data.get('verified')))
+        return jsonify({'ok':True,'row':row,'state':holdings.public_view(_user_scope_id())})
+    except Exception as exc: return jsonify({'ok':False,'error':str(exc)}),400
+
+@app.post('/api/holdings/jev/test')
+def holdings_jev_test_api():
+    data=request.get_json(silent=True) or {}
+    state=data.get('state') or {'action':'Publicar una demo comercial y enviar un email','amount_eur':490}
+    try:
+        result=jev_decision.gate('Prueba ZAR Holdings',state,data.get('risk') or 'medium')
+        return jsonify({'ok':True,'result':result,'status':jev_decision.status()})
+    except Exception as exc: return jsonify({'ok':False,'error':str(exc)}),400
+
+@app.get('/api/holdings/voice/status')
+def holdings_voice_status_api(): return jsonify({'ok':True, **voice_pro.status()})
+
+@app.post('/api/holdings/commerce/sync')
+def holdings_commerce_sync_api():
+    try: return jsonify(commerce_company.sync_paid_orders(_user_scope_id()))
+    except Exception as exc: return jsonify({'ok':False,'error':str(exc)}),400
+
+@app.post('/api/holdings/commerce/scout')
+def holdings_commerce_scout_api():
+    data=request.get_json(silent=True) or {}
+    try: return jsonify(commerce_company.scout(_user_scope_id(),data.get('query'),data.get('sale_price') or 0))
+    except Exception as exc: return jsonify({'ok':False,'error':str(exc)}),400
+
+@app.post('/api/holdings/commerce/product')
+def holdings_commerce_product_api():
+    data=request.get_json(silent=True) or {}
+    try: return jsonify(commerce_company.create_draft_product(_user_scope_id(), data))
+    except Exception as exc: return jsonify({'ok':False,'error':str(exc)}),400
+
+@app.post('/api/holdings/commerce/supplier-order')
+def holdings_commerce_supplier_order_api():
+    data=request.get_json(silent=True) or {}
+    try: return jsonify(commerce_company.supplier_order(data.get('order') or {},confirmed=bool(data.get('confirmed'))))
+    except Exception as exc: return jsonify({'ok':False,'error':str(exc)}),400
+
+@app.post('/api/holdings/media/queue')
+def holdings_media_queue_api():
+    data=request.get_json(silent=True) or {}
+    try:
+        task=media_company.queue_story(_user_scope_id(),data.get('topic'),data.get('goal') or 'retención',data.get('platform') or 'tiktok')
+        return jsonify({'ok':True,'task':task})
+    except Exception as exc: return jsonify({'ok':False,'error':str(exc)}),400
+
+@app.post('/api/holdings/media/produce')
+def holdings_media_produce_api():
+    data=request.get_json(silent=True) or {}
+    try: return jsonify(media_company.produce_local(_user_scope_id(),data.get('task_id')))
+    except Exception as exc: return jsonify({'ok':False,'error':str(exc)}),400
+
+@app.post('/api/holdings/media/publish')
+def holdings_media_publish_api():
+    data=request.get_json(silent=True) or {}
+    try: return jsonify(media_company.publish(_user_scope_id(),data.get('task_id'),data.get('video_url'),data.get('platform'),data.get('caption') or '',confirmed=bool(data.get('confirmed'))))
+    except Exception as exc: return jsonify({'ok':False,'error':str(exc)}),400
+
+@app.post('/api/holdings/agency/discover')
+def holdings_agency_discover_api():
+    data=request.get_json(silent=True) or {}
+    try: return jsonify(web_agency.discover(_user_scope_id(),data.get('query'),data.get('max_results') or 10))
+    except Exception as exc: return jsonify({'ok':False,'error':str(exc)}),400
+
+@app.post('/api/holdings/agency/demo')
+def holdings_agency_demo_api():
+    data=request.get_json(silent=True) or {}
+    try: return jsonify({'ok':True,'demo':web_agency.build_demo(_user_scope_id(),data.get('lead') or {},data.get('price_eur') or 490)})
+    except Exception as exc: return jsonify({'ok':False,'error':str(exc)}),400
+
+@app.post('/api/holdings/agency/outreach')
+def holdings_agency_outreach_api():
+    data=request.get_json(silent=True) or {}
+    try: return jsonify(web_agency.prepare_outreach(_user_scope_id(),data.get('lead') or {},data.get('demo_url') or '',data.get('price_eur') or 490))
+    except Exception as exc: return jsonify({'ok':False,'error':str(exc)}),400
+
+@app.post('/api/holdings/agency/email')
+def holdings_agency_email_api():
+    data=request.get_json(silent=True) or {}
+    try: return jsonify(web_agency.find_contact_email(data.get('lead') or {}))
+    except Exception as exc: return jsonify({'ok':False,'error':str(exc)}),400
+
+@app.post('/api/holdings/agency/draft')
+def holdings_agency_draft_api():
+    data=request.get_json(silent=True) or {}
+    try: return jsonify(web_agency.create_outreach_draft(_user_scope_id(),data.get('lead') or {},data.get('demo_url') or '',data.get('email') or '',data.get('price_eur') or 490))
+    except Exception as exc: return jsonify({'ok':False,'error':str(exc)}),400
+
+@app.post('/api/holdings/agency/negotiate')
+def holdings_agency_negotiate_api():
+    data=request.get_json(silent=True) or {}
+    try: return jsonify({'ok':True, **web_agency.negotiate(data.get('current_price') or 490,data.get('message') or '',data.get('floor_price') or 350,data.get('max_discount_pct') or 15)})
+    except Exception as exc: return jsonify({'ok':False,'error':str(exc)}),400
+
+@app.get('/holdings/demo/<slug>/')
+def holdings_demo_page(slug):
+    safe=re.sub(r'[^a-zA-Z0-9_-]+','',slug)[:80]
+    if safe != slug: return 'Demo no válida',400
+    path=Path(os.environ.get('ZAR_DATA_DIR','/data'))/'holdings_public_demos'/safe/'index.html'
+    if not path.exists(): return 'Demo no encontrada',404
+    return send_file(path, mimetype='text/html')
 
 @app.get('/api/subagents/state')
 def subagents_state_api():
@@ -4517,7 +4670,7 @@ def voice_transcribe():
         f = request.files.get("audio")
         if not f:
             return jsonify({"ok": False, "error": "No se recibió audio."}), 400
-        result = transcribe_audio(f.stream, f.mimetype or "audio/webm", f.filename or "voz.webm")
+        result = voice_pro.transcribe(f.stream, f.mimetype or "audio/webm", f.filename or "voz.webm")
         return jsonify({"ok": True, "text": result.get("text", ""), "provider": result.get("provider", "Gemini")})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)[:900]}), 500
@@ -4531,8 +4684,8 @@ def voice_tts():
         language = str(data.get("language") or "es-ES").strip()
         if not text:
             return jsonify({"ok": False, "error": "Falta el texto."}), 400
-        audio, mime = synthesize(text, voice=voice, language=language)
-        return jsonify({"ok": True, "mime": mime, "audio_base64": base64.b64encode(audio).decode("ascii"), "provider": "Gemini 3.1 Flash TTS"})
+        audio, mime, voice_provider = voice_pro.synthesize(text, voice=voice, language=language)
+        return jsonify({"ok": True, "mime": mime, "audio_base64": base64.b64encode(audio).decode("ascii"), "provider": voice_provider})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)[:900]}), 500
 
@@ -5572,6 +5725,19 @@ def api_models():
 
 _stonks_engine_thread=threading.Thread(target=_stonks_engine_loop, name='zar-stonks-paper-engine', daemon=True)
 _stonks_engine_thread.start()
+
+def _holdings_engine_loop():
+    while True:
+        try:
+            if _stonks_process_owns_engine():
+                for _scope in holdings.active_scope_ids():
+                    company_runtime.cycle_scope(_scope)
+        except Exception:
+            pass
+        time.sleep(max(5, int(os.environ.get('ZAR_HOLDINGS_CYCLE_SECONDS','10'))))
+
+_holdings_engine_thread=threading.Thread(target=_holdings_engine_loop, name='zar-holdings-runtime', daemon=True)
+_holdings_engine_thread.start()
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT','8765')), debug=False)

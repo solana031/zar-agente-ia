@@ -32,6 +32,9 @@ DOMAINS = {
     "maps": {"maps_status", "maps_search", "maps_open_search", "maps_directions"},
     "studio": {"video_get_current_project", "video_edit_project", "video_viral_optimize", "video_transition_catalog", "music_reference_analyze"},
     "media": {"search_youtube", "search_spotify", "open_url"},
+    "commerce": {"web_search", "web_open", "file_search"},
+    "agency": {"maps_status", "maps_search", "web_search", "web_open", "gmail_prepare_email"},
+    "holdings": {"zar_get_context", "zar_set_task_state"},
 }
 
 PATTERNS = {
@@ -43,7 +46,10 @@ PATTERNS = {
     "research": r"\b(internet|web|investiga|investigación|investigacion|fuentes|busca online|buscar online)\b",
     "maps": r"\b(mapa|maps|ruta|dirección|direccion|distancia|cómo llegar|como llegar)\b",
     "studio": r"\b(studio|vídeo|video|audio|música|musica|timeline|transición|transicion|editar vídeo|editar video)\b",
-    "media": r"\b(youtube|spotify|canción|cancion|playlist)\b",
+    "media": r"\b(youtube|spotify|canción|cancion|playlist|tiktok|reels|shorts|dramaclaw)\b",
+    "commerce": r"\b(shopify|tienda|ecommerce|e-commerce|dropshipping|producto|proveedor)\b",
+    "agency": r"\b(agencia web|negocios sin web|captación|captacion|prospectos|lead|leads|cliente web)\b",
+    "holdings": r"\b(holdings|subempresa|subempresas|empresa autónoma|empresa autonoma)\b",
 }
 
 @dataclass(frozen=True)

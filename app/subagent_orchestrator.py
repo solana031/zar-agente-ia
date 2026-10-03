@@ -28,11 +28,16 @@ def describe_general_agents():
         {"id":"studio","name":"Studio Agent","icon":"▶","domain":"media","role":"Vídeo, imagen, audio y proyectos multimedia","status":"ready"},
         {"id":"voice","name":"Voice Agent","icon":"◌","domain":"voice","role":"Entrada de voz, transcripción y salida hablada","status":"ready"},
         {"id":"stonks_supervisor","name":"Stonks Supervisor","icon":"↗","domain":"finance","role":"Coordina especialistas Paper de ZAR Stonks","status":"ready"},
+        {"id":"holdings_supervisor","name":"ZAR Holdings","icon":"◆","domain":"business","role":"Runtime común para subempresas, métricas reales y STOP GLOBAL","status":"ready"},
+        {"id":"jev_decision","name":"Jev Decision Layer","icon":"◇","domain":"decision","role":"Decisiones tipadas, routing y guardrails; sin autoridad de ejecución","status":"ready"},
+        {"id":"commerce_agent","name":"Commerce Agent","icon":"🛒","domain":"business","role":"Shopify, margen, pedidos y proveedor bajo autorización","status":"ready"},
+        {"id":"media_agent","name":"Media Agent","icon":"🎬","domain":"business","role":"Historias visuales, voz, publicación y analytics","status":"ready"},
+        {"id":"agency_agent","name":"Web Agency Agent","icon":"🌐","domain":"business","role":"Discovery, demos web, outreach y negociación acotada","status":"ready"},
     ]
     edges = [
         ["zar_supervisor","workspace"],["zar_supervisor","memory"],["zar_supervisor","research"],
         ["zar_supervisor","files"],["zar_supervisor","studio"],["zar_supervisor","voice"],
-        ["zar_supervisor","stonks_supervisor"],["research","memory"],["files","memory"],
+        ["zar_supervisor","stonks_supervisor"],["zar_supervisor","holdings_supervisor"],["holdings_supervisor","jev_decision"],["holdings_supervisor","commerce_agent"],["holdings_supervisor","media_agent"],["holdings_supervisor","agency_agent"],["research","memory"],["files","memory"],
         ["workspace","workspace_supervisor"],
         ["workspace_supervisor","workspace_research"],["workspace_supervisor","workspace_visual"],
         ["workspace_supervisor","workspace_data"],["workspace_supervisor","workspace_sheets"],

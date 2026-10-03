@@ -1,0 +1,2 @@
+# Optional local speech-to-text. Do not add to the main Railway build unless needed.
+faster-whisper>=1.1,<2

@@ -79,6 +79,24 @@ def choose_brain(message: str, cfg) -> BrainRoute:
     low = text.lower()
     models = brain_models()
 
+    # Optional Jev System-One routing. It never removes the deterministic path:
+    # network/auth/model failures fall straight through to the legacy zero-token router.
+    if (os.environ.get("JEV_API_KEY") or os.environ.get("TYPESAFE_API_KEY")) and str(os.environ.get("ZAR_JEV_ROUTER", "1")).lower() not in {"0","false","off","no"}:
+        try:
+            from .jev_decision import decide
+            j = decide({"message": text[:6000], "length": len(text)}, {
+                "tier": {"type":"choice","instructions":"Elige el nivel mínimo de cerebro que pueda resolver bien esta petición.","criteria": {
+                    "economy":"conversación y tareas sencillas", "balanced":"herramientas o complejidad media",
+                    "strong":"código, análisis o planificación compleja", "max":"auditoría o razonamiento largo/de máxima exigencia"}},
+                "human_review": {"type":"noul","instructions":"¿La tarea implica una acción sensible que debería mantener confirmación humana?"}
+            }, timeout=3)
+            ans=j.get("answers") or {}; tier=(ans.get("tier") or {}).get("choice")
+            if tier in {"economy","balanced","strong","max"}:
+                item=models[tier]
+                return BrainRoute(tier, item["provider"], item["model"], f"Jev Decision Layer · {tier}")
+        except Exception:
+            pass
+
     # Explicit overrides are useful for testing and expert users.
     if _contains(low, [r"\b(usa|utiliza)\s+(el\s+)?(pc|ollama|modelo local|cerebro local)\b"]):
         if local_available(cfg):

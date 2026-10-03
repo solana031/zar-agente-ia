@@ -25,7 +25,7 @@ def maps_search_text(query, max_results=5, cfg=None):
     headers = {
         "Content-Type": "application/json",
         "X-Goog-Api-Key": k,
-        "X-Goog-FieldMask": "places.id,places.displayName,places.formattedAddress,places.googleMapsUri,places.location,places.rating,places.userRatingCount",
+        "X-Goog-FieldMask": "places.id,places.displayName,places.formattedAddress,places.googleMapsUri,places.location,places.rating,places.userRatingCount,places.websiteUri,places.nationalPhoneNumber,places.internationalPhoneNumber,places.businessStatus,places.types",
     }
     r = requests.post(PLACES_URL, json=body, headers=headers, timeout=30)
     if not r.ok:
@@ -42,6 +42,10 @@ def maps_search_text(query, max_results=5, cfg=None):
             "lng": loc.get("longitude"),
             "rating": p.get("rating"),
             "reviews": p.get("userRatingCount"),
+            "website": p.get("websiteUri", ""),
+            "phone": p.get("internationalPhoneNumber") or p.get("nationalPhoneNumber") or "",
+            "business_status": p.get("businessStatus", ""),
+            "types": p.get("types") or [],
         })
     return {"ok": True, "query": query, "places": places}
 
