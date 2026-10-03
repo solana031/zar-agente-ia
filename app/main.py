@@ -15,7 +15,7 @@ import base64
 from functools import wraps
 from contextlib import contextmanager
 from . import stonks_lifecycle, stonks_preflight, stonks_agents, stonks_news, stonks_dataplane, stonks_selftest, stonks_stream, subagent_orchestrator, stonks_backtest, stonks_validation, stonks_shadow, stonks_learning, stonks_automaton, stonks_execution, stonks_readiness, stonks_profitability
-from . import holdings, company_runtime, commerce_company, media_company, web_agency, jev_decision, social_publish, voice_pro
+from . import holdings, company_runtime, commerce_company, media_company, web_agency, sites_company, jev_decision, social_publish, voice_pro
 from datetime import datetime, timezone
 from urllib.parse import quote as urlquote
 from .user_scope import set_current_user, get_current_user, anonymous_id, user_id_for_email
@@ -1665,7 +1665,7 @@ def holdings_state_api():
         view['stonks']={'paper_only':True,'error':str(exc)[:240]}
     view['connectors']={
         'jev':jev_decision.status(), 'voice':voice_pro.status(), 'commerce':commerce_company.status(),
-        'media':media_company.status(), 'agency':web_agency.status(), 'social':social_publish.status(),
+        'media':media_company.status(), 'agency':web_agency.status(), 'sites':sites_company.status(), 'social':social_publish.status(),
     }
     return jsonify({'ok':True, **view})
 
@@ -1792,6 +1792,83 @@ def holdings_agency_negotiate_api():
     try: return jsonify({'ok':True, **web_agency.negotiate(data.get('current_price') or 490,data.get('message') or '',data.get('floor_price') or 350,data.get('max_discount_pct') or 15)})
     except Exception as exc: return jsonify({'ok':False,'error':str(exc)}),400
 
+@app.get('/api/holdings/sites')
+def holdings_sites_list_api():
+    try: return jsonify({'ok':True,'sites':sites_company.list_sites(_user_scope_id()),'status':sites_company.status()})
+    except Exception as exc: return jsonify({'ok':False,'error':str(exc)}),400
+
+@app.post('/api/holdings/sites/ideas')
+def holdings_sites_ideas_api():
+    data=request.get_json(silent=True) or {}
+    try: return jsonify(sites_company.scout_ideas(data.get('seed') or data.get('topic') or 'ideas útiles España',data.get('limit') or 6))
+    except Exception as exc: return jsonify({'ok':False,'error':str(exc)}),400
+
+@app.post('/api/holdings/sites/create')
+def holdings_sites_create_api():
+    data=request.get_json(silent=True) or {}
+    try:
+        if data.get('queue'):
+            task=sites_company.queue_site(_user_scope_id(),data.get('topic'),data.get('name') or '')
+            return jsonify({'ok':True,'queued':True,'task':task})
+        return jsonify({'ok':True,'site':sites_company.build_site(_user_scope_id(),data.get('topic'),data.get('name') or '',queue_promotion=bool(data.get('queue_promotion',True)))})
+    except Exception as exc: return jsonify({'ok':False,'error':str(exc)}),400
+
+@app.post('/api/holdings/sites/deploy')
+def holdings_sites_deploy_api():
+    data=request.get_json(silent=True) or {}
+    try: return jsonify(sites_company.deploy_vercel(_user_scope_id(),data.get('slug') or ''))
+    except Exception as exc: return jsonify({'ok':False,'error':str(exc)}),400
+
+@app.post('/api/holdings/sites/domains/search')
+def holdings_sites_domain_search_api():
+    data=request.get_json(silent=True) or {}
+    names=data.get('domains') or ([data.get('domain')] if data.get('domain') else [])
+    try: return jsonify(sites_company.search_domains(names))
+    except Exception as exc: return jsonify({'ok':False,'error':str(exc)}),400
+
+@app.post('/api/holdings/sites/domains/policy')
+def holdings_sites_domain_policy_api():
+    data=request.get_json(silent=True) or {}
+    try:
+        d=sites_company.configure_policy(
+            _user_scope_id(),
+            allow_domain_reinvestment=data.get('allow_domain_reinvestment'),
+            max_domain_eur=data.get('max_domain_eur'),
+            auto_domain_purchase=data.get('auto_domain_purchase'),
+            domain_daily_budget_eur=data.get('domain_daily_budget_eur'),
+        )
+        return jsonify({'ok':True,'company':d['companies']['sites']})
+    except Exception as exc: return jsonify({'ok':False,'error':str(exc)}),400
+
+@app.post('/api/holdings/sites/network')
+def holdings_sites_network_api():
+    data=request.get_json(silent=True) or {}
+    try:
+        d=sites_company.configure_network(
+            _user_scope_id(),
+            enabled=bool(data.get('enabled', True)),
+            seed_topic=data.get('seed_topic'),
+            max_sites=data.get('max_sites', 12),
+            auto_deploy_vercel=data.get('auto_deploy_vercel', True),
+            allow_domain_reinvestment=data.get('allow_domain_reinvestment', False),
+            auto_domain_purchase=data.get('auto_domain_purchase', False),
+            max_domain_eur=data.get('max_domain_eur', 20),
+            domain_daily_budget_eur=data.get('domain_daily_budget_eur', 40),
+        )
+        return jsonify({'ok':True,'company':d['companies']['sites'],'sites':sites_company.list_sites(_user_scope_id())})
+    except Exception as exc: return jsonify({'ok':False,'error':str(exc)}),400
+
+@app.post('/api/holdings/sites/domains/buy')
+def holdings_sites_domain_buy_api():
+    data=request.get_json(silent=True) or {}
+    try: return jsonify(sites_company.buy_domain(_user_scope_id(),data.get('slug') or '',data.get('domain') or '',data.get('expected_price') or 0,confirmed=bool(data.get('confirmed'))))
+    except Exception as exc: return jsonify({'ok':False,'error':str(exc)}),400
+
+@app.post('/api/holdings/sites/adsense/sync')
+def holdings_sites_adsense_sync_api():
+    try: return jsonify(sites_company.sync_adsense(_user_scope_id()))
+    except Exception as exc: return jsonify({'ok':False,'error':str(exc)}),400
+
 @app.get('/holdings/demo/<slug>/')
 def holdings_demo_page(slug):
     safe=re.sub(r'[^a-zA-Z0-9_-]+','',slug)[:80]
@@ -1799,6 +1876,24 @@ def holdings_demo_page(slug):
     path=Path(os.environ.get('ZAR_DATA_DIR','/data'))/'holdings_public_demos'/safe/'index.html'
     if not path.exists(): return 'Demo no encontrada',404
     return send_file(path, mimetype='text/html')
+
+@app.get('/holdings/site/<slug>/')
+def holdings_site_page(slug):
+    safe=re.sub(r'[^a-zA-Z0-9_-]+','',slug)[:80]
+    if safe != slug: return 'Sitio no válido',400
+    path=Path(os.environ.get('ZAR_DATA_DIR','/data'))/'holdings_public_sites'/safe/'index.html'
+    if not path.exists(): return 'Sitio no encontrado',404
+    return send_file(path,mimetype='text/html')
+
+@app.get('/holdings/site/<slug>/<path:filename>')
+def holdings_site_asset(slug,filename):
+    safe=re.sub(r'[^a-zA-Z0-9_-]+','',slug)[:80]
+    if safe != slug or '..' in filename or filename.startswith('/') or '\\' in filename: return 'Ruta no válida',400
+    root=(Path(os.environ.get('ZAR_DATA_DIR','/data'))/'holdings_public_sites'/safe).resolve()
+    path=(root/filename).resolve()
+    if root not in path.parents and path != root: return 'Ruta no válida',400
+    if not path.exists() or not path.is_file(): return 'Archivo no encontrado',404
+    return send_file(path)
 
 @app.get('/api/subagents/state')
 def subagents_state_api():

@@ -1,7 +1,7 @@
 """Background runtime for ZAR Holdings companies."""
 from __future__ import annotations
 import time
-from . import holdings, commerce_company, media_company
+from . import holdings, commerce_company, media_company, sites_company
 
 
 def cycle_scope(scope_id):
@@ -9,7 +9,7 @@ def cycle_scope(scope_id):
     if d.get("global_stop"):
         return {"ok":True,"stopped":True}
     results={}
-    for key in ("commerce","media","web_agency"):
+    for key in ("commerce","media","web_agency","sites"):
         c=d.get("companies",{}).get(key) or {}
         if c.get("state") != "RUNNING":
             continue
@@ -20,6 +20,15 @@ def cycle_scope(scope_id):
                     r=commerce_company.sync_paid_orders(scope_id); action=f"Commerce: Shopify sincronizado ({r.get('ledger_added',0)} nuevos)."
                 else: action="Commerce: heartbeat · esperando catálogo/pedidos autorizados."
             elif key=="media": action=media_company.process_one(scope_id)
+            elif key=="sites":
+                action=sites_company.process_one(scope_id)
+                # Read-only revenue sync is sparse and never manufactures revenue.
+                if sites_company.status().get("adsense_reporting_configured") and int(c.get("cycles") or 0) % 30 == 0:
+                    try:
+                        r=sites_company.sync_adsense(scope_id)
+                        action += f" · AdSense {r.get('page_views_30d',0)} vistas/30d"
+                    except Exception as exc:
+                        action += f" · AdSense pendiente: {str(exc)[:180]}"
             else: action="Web Agency: heartbeat · esperando discovery/demo/outreach autorizados."
             holdings.complete_cycle(scope_id,key,action); results[key]={"ok":True,"action":action}
         except Exception as exc:

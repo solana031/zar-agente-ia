@@ -67,3 +67,57 @@ def test_commerce_scout_without_purchase(monkeypatch, tmp_path):
     assert r['ok'] and r['purchase_authority'] is False
     assert r['candidates'][0]['cost']==12.50
     assert r['candidates'][0]['margin']['profit']>0
+
+
+def test_sites_builds_public_assets(monkeypatch, tmp_path):
+    monkeypatch.setenv('ZAR_DATA_DIR', str(tmp_path))
+    monkeypatch.setenv('GOOGLE_ADSENSE_PUBLISHER_ID', 'ca-pub-1234567890123456')
+    from app import sites_company
+    monkeypatch.setattr(sites_company, 'public_search_results', lambda q, limit=8: {
+        'ok': True, 'provider': 'test', 'results': [
+            {'title': 'Fuente útil', 'snippet': 'Información comprobable y útil.', 'url': 'https://example.invalid/a'}
+        ]
+    })
+    site = sites_company.build_site('sites-user', 'ahorrar en la factura de luz', queue_promotion=False)
+    root = tmp_path / 'holdings_public_sites' / site['slug']
+    assert (root / 'index.html').exists()
+    assert (root / 'privacy.html').exists()
+    assert (root / 'robots.txt').exists()
+    assert (root / 'sitemap.xml').exists()
+    assert (root / 'ads.txt').read_text(encoding='utf-8').startswith('google.com, pub-1234567890123456')
+    assert site['relative_url'].startswith('/holdings/site/')
+    assert site['organic_only'] is True
+
+
+def test_sites_network_starts_and_queues_first_site(monkeypatch, tmp_path):
+    monkeypatch.setenv('ZAR_DATA_DIR', str(tmp_path))
+    from app import holdings, sites_company
+    d = sites_company.configure_network(
+        'network-user', enabled=True, seed_topic='recetas rápidas mediterráneas', max_sites=4,
+        auto_deploy_vercel=False, allow_domain_reinvestment=False, auto_domain_purchase=False,
+    )
+    c = d['companies']['sites']
+    assert c['state'] == 'RUNNING'
+    assert c['config']['auto_expand'] is True
+    assert c['config']['max_sites'] == 4
+    task = holdings.next_task('network-user', 'sites')
+    assert task and task['kind'] == 'build_site'
+
+
+def test_sites_domain_reinvestment_never_spends_without_realized_profit(monkeypatch, tmp_path):
+    monkeypatch.setenv('ZAR_DATA_DIR', str(tmp_path))
+    from app import sites_company
+    # No network call is reached: profit gate must stop it first.
+    sites_company.configure_policy('budget-user', allow_domain_reinvestment=True, auto_domain_purchase=True, max_domain_eur=20, domain_daily_budget_eur=40)
+    result = sites_company.buy_domain('budget-user', 'missing-slug', 'ejemplo.com', 12, confirmed=True)
+    assert result['ok'] is False
+    assert result['requires_review'] is True
+    assert 'beneficio realizado' in result['message'].lower()
+
+
+def test_holdings_entry_is_visible_in_template():
+    template = (Path(__file__).parents[1] / 'app' / 'templates' / 'index.html').read_text(encoding='utf-8')
+    assert '.side .workspaceNavItem.holdingsNavBtn' in template
+    assert "['holdings','🏢','ZAR Holdings'" in template
+    assert 'onclick="showHoldings()"' in template
+    assert 'zhActivateSitesNetwork()' in template

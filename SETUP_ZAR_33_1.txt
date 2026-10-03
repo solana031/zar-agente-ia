@@ -1,0 +1,18 @@
+ZAR 33.1.0 · PRUEBA RÁPIDA
+
+1) Despliega el ZIP y abre ZAR. Debes ver «🏢 ZAR Holdings» en menú lateral y escritorio.
+2) Holdings → «Probar decisión» valida Jev/fallback sin credenciales.
+3) Media → Encender → escribe tema → Crear historia → Ciclo ahora → Producir MP4.
+4) Web Agency → configura ZAR_MAPS_API_KEY → Buscar negocios → Crear demo → Buscar email → Guardar borrador Gmail.
+5) Commerce → Buscar margen funciona sin Shopify. Para tienda real: SHOPIFY_SHOP_DOMAIN + SHOPIFY_ADMIN_ACCESS_TOKEN. Para dropshipping: ZAR_SUPPLIER_CATALOG_URL + ZAR_SUPPLIER_ORDER_WEBHOOK (+ ZAR_SUPPLIER_API_TOKEN).
+6) Sites → escribe nicho → «Activar red Sites» → Ciclo ahora. Sin Vercel crea previews ZAR; con VERCEL_TOKEN los despliega automáticamente.
+7) AdSense publisher: GOOGLE_ADSENSE_PUBLISHER_ID. Métricas/pagos: GOOGLE_ADSENSE_ACCESS_TOKEN + GOOGLE_ADSENSE_ACCOUNT. Cada sitio debe ser aprobado por AdSense antes de servir anuncios.
+8) Dominios automáticos: VERCEL_TOKEN + ZAR_DOMAIN_REGISTRANT_JSON. Al activar la red, autoriza si quieres reinvertir SOLO beneficio realizado, máx. 20 EUR equivalentes por dominio y 40 EUR/día. Sin autorización no compra dominios.
+9) Voz ElevenLabs: ELEVENLABS_API_KEY + ELEVENLABS_VOICE_ID. STT opcional: ZAR_STT_PROVIDER=faster-whisper y dependencia instalada.
+10) Publicación social opcional: TIKTOK_ACCESS_TOKEN o INSTAGRAM_ACCESS_TOKEN + INSTAGRAM_IG_USER_ID. ZAR pide confirmación para publicar.
+
+SEGURIDAD
+- Stonks sigue Paper-only / Live bloqueado.
+- STOP GLOBAL pausa nuevas acciones Holdings.
+- Sites no genera tráfico ni clics artificiales.
+- Estimaciones AdSense no se cuentan como dinero cobrado; solo pagos acreditados vía API entran como ingresos verificados.

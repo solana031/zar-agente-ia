@@ -25,6 +25,7 @@ COMPANIES = {
     "commerce": {"name": "ZAR Commerce", "icon": "🛒"},
     "media": {"name": "ZAR Media", "icon": "🎬"},
     "web_agency": {"name": "ZAR Web Agency", "icon": "🌐"},
+    "sites": {"name": "ZAR Sites", "icon": "📰"},
 }
 
 
@@ -68,6 +69,17 @@ def _company_default(key):
             "autonomous": False,
             "allow_external_write": False,
             "daily_action_limit": 5,
+            **({
+                "allow_domain_reinvestment": False,
+                "auto_domain_purchase": False,
+                "max_domain_eur": 20.0,
+                "domain_daily_budget_eur": 40.0,
+                "auto_expand": False,
+                "auto_deploy_vercel": True,
+                "seed_topic": "guías útiles para ahorrar dinero en España",
+                "max_sites": 12,
+                "growth_cycle_interval": 360,
+            } if key == "sites" else {}),
         },
         "queue": [],
         "journal": [],
@@ -77,7 +89,7 @@ def _company_default(key):
 def default_state():
     return {
         "schema": 1,
-        "version": "33.0.0",
+        "version": "33.1.0",
         "global_stop": False,
         "global_stop_reason": "",
         "updated_at": _now(),
