@@ -33,19 +33,18 @@ def test_jev_fallback_is_typed(monkeypatch):
     assert r['decision']['fallback'] is True
 
 
-def test_media_queue_and_plan(monkeypatch, tmp_path):
-    monkeypatch.setenv('ZAR_DATA_DIR',str(tmp_path))
+def test_media_queue_requires_explicit_direct_production(monkeypatch, tmp_path):
+    monkeypatch.setenv('ZAR_DATA_DIR', str(tmp_path))
+    monkeypatch.delenv('DRAMACLAW_API_URL', raising=False)
     from app import holdings, media_company
-    scope='media-user'
-    holdings.set_company_state(scope,'media','start')
-    task=media_company.queue_story(scope,'un restaurante que cambia de menú cada día',platform='tiktok')
-    text=media_company.process_one(scope)
-    assert 'preparado' in text.lower()
-    d=holdings.read(scope)
-    t=next(x for x in d['companies']['media']['queue'] if x['id']==task['id'])
-    assert t['status']=='READY_FOR_PRODUCTION'
-    assert t['result']['format']=='9:16'
-    assert t['result']['aigc'] is True
+    holdings.set_company_state('media-user', 'media', 'start')
+    task = media_company.queue_story('media-user', 'Historia completa')
+    assert 'autorizada' in media_company.process_one('media-user')
+    assert holdings.next_task('media-user', 'media')['status'] == 'QUEUED'
+    import pytest
+    with pytest.raises(ValueError, match='no conectado'):
+        media_company.produce_local('media-user', task['id'])
+    assert not list(tmp_path.rglob('*.mp4'))
 
 
 def test_web_demo_is_shareable_path(monkeypatch, tmp_path):

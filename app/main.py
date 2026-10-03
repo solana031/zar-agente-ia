@@ -495,7 +495,7 @@ def _authorized():
 
 @app.before_request
 def _guard():
-    allowed = {"login","health","oauth2callback","connect_google","connect_gmail"}
+    allowed = {"login","health","oauth2callback","connect_google","connect_gmail","holdings_media_public_video_api"}
     if request.endpoint in allowed or request.path.startswith("/static/"):
         return None
     if _auth_enabled() and not _authorized():
@@ -1736,6 +1736,32 @@ def holdings_commerce_supplier_order_api():
     try: return jsonify(commerce_company.supplier_order(data.get('order') or {},confirmed=bool(data.get('confirmed'))))
     except Exception as exc: return jsonify({'ok':False,'error':str(exc)}),400
 
+@app.get('/api/holdings/media/jobs')
+def holdings_media_jobs_api():
+    return jsonify(media_company.jobs(_user_scope_id()))
+
+@app.get('/api/holdings/media/video/<task_id>')
+def holdings_media_video_api(task_id):
+    try:
+        path = media_company.video_path(_user_scope_id(), task_id)
+        return send_file(path, mimetype='video/mp4', conditional=True, max_age=0)
+    except ValueError as exc:
+        return jsonify({'ok': False, 'error': str(exc)}), 404
+
+@app.get('/media-public/<token>.mp4')
+def holdings_media_public_video_api(token):
+    # Narrow bearer link for platform ingestion; no DramaClaw credential reaches a browser.
+    from itsdangerous import URLSafeTimedSerializer, BadSignature
+    try:
+        data = URLSafeTimedSerializer(app.secret_key, salt='media-export-v1').loads(token, max_age=86400)
+        record = media_company._read(data['scope'], data['task'])
+        if (record.get('checkpoint') or {}).get('project_id') != data['project']:
+            raise ValueError('Export caducado')
+        path = media_company.video_path(data['scope'], data['task'])
+        return send_file(path, mimetype='video/mp4', conditional=True, max_age=0)
+    except (BadSignature, ValueError, KeyError, TypeError):
+        return jsonify({'ok': False, 'error': 'Export no disponible.'}), 404
+
 @app.post('/api/holdings/media/queue')
 def holdings_media_queue_api():
     data=request.get_json(silent=True) or {}
@@ -1759,8 +1785,23 @@ def holdings_media_edit_api():
 @app.post('/api/holdings/media/publish')
 def holdings_media_publish_api():
     data=request.get_json(silent=True) or {}
-    try: return jsonify(media_company.publish(_user_scope_id(),data.get('task_id'),data.get('video_url'),data.get('platform'),data.get('caption') or '',confirmed=bool(data.get('confirmed'))))
-    except Exception as exc: return jsonify({'ok':False,'error':str(exc)}),400
+    try:
+        from itsdangerous import URLSafeTimedSerializer
+        from flask import url_for
+        scope = _user_scope_id()
+        task_id = data.get('task_id')
+        confirmed = data.get('confirmed') is True
+        video_url = ''
+        if confirmed:
+            media_company.video_path(scope, task_id)
+            record = media_company._read(scope, task_id)
+            token = URLSafeTimedSerializer(app.secret_key, salt='media-export-v1').dumps({
+                'scope': scope, 'task': task_id, 'project': record['checkpoint']['project_id']})
+            video_url = url_for('holdings_media_public_video_api', token=token, _external=True)
+        return jsonify(media_company.publish(scope, task_id, video_url, data.get('platform'),
+                       data.get('caption') or '', confirmed=confirmed))
+    except (ValueError, KeyError) as exc: return jsonify({'ok':False,'error':str(exc)}),400
+    except Exception: return jsonify({'ok':False,'error':'Publicación Media no disponible.'}),400
 
 @app.post('/api/holdings/agency/discover')
 def holdings_agency_discover_api():

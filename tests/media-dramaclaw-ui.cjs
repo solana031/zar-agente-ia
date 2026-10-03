@@ -1,0 +1,35 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
+const {chromium}=require('playwright');
+const html=fs.readFileSync('app/templates/index.html','utf8');
+for(const [i,m] of [...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)].entries())new vm.Script(m[1],{filename:'inline-'+i});
+for(const f of fs.readdirSync('app/static').filter(f=>f.endsWith('.js')))new vm.Script(fs.readFileSync('app/static/'+f,'utf8'),{filename:f});
+const a=html.indexOf('let zhTimer='),b=html.indexOf('\nfunction ',html.indexOf('async function zhCreateAgencyDraft',a));
+const end=html.indexOf('\nfunction ',html.indexOf('async function zh',a));
+// The actual Holdings/Media functions, bounded before the next unrelated component.
+const source=html.slice(a,html.indexOf('function zsGetWorkspaceBounds()',a));
+(async()=>{const browser=await chromium.launch({headless:true,executablePath:process.env.ZAR_TEST_BROWSER});
+try{const page=await browser.newPage(); const errors=[],posts=[];page.on('pageerror',e=>errors.push(e.message));
+let job={id:'abc123',status:'PRODUCING',created_at:'2026-10-03T10:00:00Z',payload:{master_brief:'Historia íntegra'},result:{project_id:'project-1',stage:'script',stage_label:'guion',progress:25,brief_chars:16}};
+await page.route('**/*',r=>{const path=new URL(r.request().url()).pathname;
+let result={ok:true};if(path==='/api/holdings/state')result={ok:true,totals:{},companies:{media:{name:'Media',state:'RUNNING',metrics:{}}},connectors:{},ledger:[]};
+if(path==='/api/holdings/media/jobs')result={ok:true,tasks:[job],connector:{ready:true,label:'DramaClaw DIRECT · LISTO'}};
+if(r.request().method()==='POST'){const data=r.request().postDataJSON();posts.push({path,data});if(path.endsWith('/queue')){job={...job,status:'QUEUED',payload:{master_brief:data.topic},result:{}};result={ok:true,task:job}}if(path.endsWith('/produce')){job={...job,status:'PRODUCING',result:{stage:'project',progress:1}};result={ok:true,status:'PRODUCING'}}if(path.endsWith('/edit')){job={...job,status:'QUEUED',result:{}};result={ok:true,status:'QUEUED'}}}
+return r.fulfill({contentType:'application/json',body:JSON.stringify(result)});});
+await page.goto('https://zar.test/');
+await page.setContent('<div id="panel"><div id="panelBody"></div></div>');
+await page.addScriptTag({content:`const panel=document.getElementById('panel'),body=document.getElementById('panelBody');function openPanel(){}function closePanel(){}function zsStopLiveSync(){}\n${source}`});
+await page.evaluate(()=>showHoldings());await page.waitForFunction(()=>document.getElementById('zhMediaJobStatus')?.textContent.includes('guion'));
+assert.equal(await page.inputValue('#zhMediaTopic'),'Historia íntegra');
+assert.equal(await page.locator('#zhMediaVideo').count(),0);
+await page.fill('#zhMediaTopic','Cambios sin guardar');await page.evaluate(()=>zhRefresh());assert.equal(await page.inputValue('#zhMediaTopic'),'Cambios sin guardar');
+job={...job,status:'PRODUCED',result:{...job.result,stage:'done',progress:100,preview_url:'/api/holdings/media/video/abc123',editor_url:'https://editor.invalid/projects/p/episodes'}};
+await page.evaluate(()=>zhRefresh());assert.equal(await page.locator('#zhMediaVideo').count(),1);
+await page.evaluate(()=>{window.savedVideo=document.getElementById('zhMediaVideo')});await page.evaluate(()=>zhRefresh());assert.equal(await page.evaluate(()=>window.savedVideo===document.getElementById('zhMediaVideo')),true);
+assert.match(await page.locator('#zhMediaLinks').textContent(),/DramaClaw/);
+page.once('dialog',d=>d.dismiss());await page.evaluate(()=>zhPublishLastMedia('tiktok'));assert.equal(posts.filter(x=>x.path.endsWith('/publish')).length,0);
+page.once('dialog',d=>d.accept());await page.evaluate(()=>zhPublishLastMedia('tiktok'));assert.equal(posts.at(-1).data.confirmed,true);
+const brief='  Inicio\n'+'Detalle á\n'.repeat(1600)+'FIN  ';await page.fill('#zhMediaTopic',brief);await page.evaluate(()=>zhQueueMedia());assert.equal(posts.findLast(x=>x.path.endsWith('/queue')).data.topic,brief);
+job={...job,status:'PRODUCED'};await page.evaluate(()=>zhRefresh());page.once('dialog',d=>d.accept('Nuevo final'));await page.evaluate(()=>zhEditLastMedia());assert.deepEqual(posts.slice(-2).map(x=>x.path),['/api/holdings/media/edit','/api/holdings/media/produce']);
+const duplicates=await page.evaluate(()=>{const ids=[...document.querySelectorAll('[id]')].map(x=>x.id);return ids.filter((id,i)=>ids.indexOf(id)!==i)});assert.deepEqual(duplicates,[]);assert.deepEqual(errors,[]);
+await page.evaluate(()=>closeHoldings());console.log('PASS: inline/static JS; Holdings/Media DOM; full brief; persisted refresh; progress; stable MP4; edit; explicit publication confirmation; IDs');
+}finally{await browser.close()}})().catch(e=>{console.error(e);process.exit(1)});
