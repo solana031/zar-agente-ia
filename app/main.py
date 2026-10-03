@@ -13,7 +13,7 @@ import html as html_lib
 import uuid
 from functools import wraps
 from contextlib import contextmanager
-from . import stonks_lifecycle, stonks_preflight, stonks_agents, stonks_news, stonks_dataplane, stonks_selftest, stonks_stream, subagent_orchestrator, stonks_backtest, stonks_validation, stonks_shadow, stonks_learning, stonks_execution, stonks_readiness, stonks_profitability
+from . import stonks_lifecycle, stonks_preflight, stonks_agents, stonks_news, stonks_dataplane, stonks_selftest, stonks_stream, subagent_orchestrator, stonks_backtest, stonks_validation, stonks_shadow, stonks_learning, stonks_automaton, stonks_execution, stonks_readiness, stonks_profitability
 from datetime import datetime, timezone
 from urllib.parse import quote as urlquote
 from .user_scope import set_current_user, get_current_user, anonymous_id, user_id_for_email
@@ -721,7 +721,8 @@ def _stonks_default():
         'paper_last_entry_at': {},
         'paper_entry_counts': {},
         'paper_quality_seen': {},
-        'paper_quality_stats': {}
+        'paper_quality_stats': {},
+        'automaton': stonks_automaton.default_state()
     }
 def _stonks_read():
     p = _stonks_file()
@@ -1250,6 +1251,10 @@ def _stonks_engine_cycle(scope_id):
     with app.test_request_context('/api/stonks/engine/cycle', method='POST'):
         session['zar_user_id']=scope_id
         d=_stonks_read()
+        _automaton=stonks_automaton.ensure(d)
+        if _automaton.get('state') in ('RUNNING','PAUSED'):
+            stonks_automaton.heartbeat(d, 'THINK' if _automaton.get('state')=='RUNNING' else 'PAUSED', detail='Heartbeat del ciclo servidor')
+            _stonks_write(d)
         stonks_dataplane.PLANE.hydrate(scope_id, d.get('data_plane_telemetry'))
         stonks_dataplane.PLANE.begin_cycle(scope_id)
         _stream_status=_stonks_stream_plan(d, activate=True)
@@ -1297,6 +1302,16 @@ def _stonks_engine_cycle(scope_id):
             })
             risk_ok, risk_trace = stonks_agents.SUPERVISOR.risk.precheck(d, clock)
             agent_trace.append(risk_trace)
+            _auto_state=stonks_automaton.ensure(d).get('state')
+            if _auto_state == 'PAUSED':
+                _cycle_now=datetime.now(timezone.utc).isoformat()
+                d['engine_last_run']=_cycle_now
+                d['engine_last_action']='AUTOMATON PAUSADO · reconciliación/learning activos · sin nuevas entradas'
+                d['agent_last_trace']=agent_trace[-30:]
+                stonks_automaton.heartbeat(d,'PAUSED',detail=d['engine_last_action'])
+                d['market_stream_snapshot']=_stream_status
+                _stonks_write(d)
+                return {'status':'idle','reason':'Automaton pausado','automaton':True}
             # Shadow is an observation layer, not an execution mode.  In Paper Auto it
             # runs in parallel with the real Paper decision path, but never submits orders.
             # Legacy execution_mode='shadow' remains supported as a shadow-only mode.
@@ -1499,6 +1514,8 @@ def _stonks_engine_cycle(scope_id):
             d['agent_last_trace'].append({'agent':'market_stream','status':'ok' if _connected else 'idle','detail':f'Stream market data · {_connected} feed(s) conectado(s) · {_subs} suscripciones · 0 tokens','data':_stream_status,'timestamp':_cycle_now})
             d['agent_last_trace'].append({'agent':'self_test','status':'ok' if _health.get('ok') else 'blocked','detail':f"Self-Test {_health.get('passed')}/{_health.get('total')} · 0 tokens",'data':_health,'timestamp':_cycle_now})
             d['agent_last_trace']=d['agent_last_trace'][-30:]
+            if stonks_automaton.ensure(d).get('state') == 'RUNNING':
+                stonks_automaton.complete_cycle(d, action=action, trace=d['agent_last_trace'], learning=d.get('paper_learning') or {})
             _stonks_write(d)
             return {'status':'ok','action':action,'shadow':shadow_observe}
         except Exception as exc:
@@ -1568,7 +1585,7 @@ def stonks_status_api():
         journal_verified = _stonks_learning_file().is_file() and len(_stonks_learning_read()['journal']) == int(d.get('paper_learning_journal_count') or 0)
     except (OSError, ValueError, KeyError, TypeError, RuntimeError):
         pass
-    return jsonify({'ok':True, **d, 'data_plane':data_plane, 'market_stream':market_stream, 'self_test':self_test, 'live_trading_enabled':False, 'readiness':stonks_readiness.evaluate(d, market_stream, self_test, journal_verified), 'paper_profitability':stonks_profitability.public_view(d), 'lifecycle_test':stonks_lifecycle.test_view(d), 'engine_owner':_stonks_engine_owner_read(), 'engine_owned_by_current_user':_stonks_engine_owner_read()==_user_scope_id(), 'audit_count':len(_stonks_audit_read(200)), 'paper_configured': bool(pk and ps), 'crypto_configured': bool(os.environ.get('KRAKEN_API_KEY') and os.environ.get('KRAKEN_API_SECRET')), 'engine_position_count':len(d.get('engine_last_positions') or []), 'engine_open_order_count':len(d.get('engine_last_open_orders') or []), 'position_lifecycle_enabled':bool(d.get('position_lifecycle_enabled')), 'stop_loss_pct':d.get('stop_loss_pct',1.0), 'take_profit_pct':d.get('take_profit_pct',2.0), 'managed_position_count':sum(r.get('status')!='CERRADA' for r in (d.get('managed_positions') or {}).values()), 'lifecycle_last_action':d.get('lifecycle_last_action'), 'agents':stonks_agents.describe()})
+    return jsonify({'ok':True, **d, 'data_plane':data_plane, 'market_stream':market_stream, 'self_test':self_test, 'live_trading_enabled':False, 'readiness':stonks_readiness.evaluate(d, market_stream, self_test, journal_verified), 'paper_profitability':stonks_profitability.public_view(d), 'lifecycle_test':stonks_lifecycle.test_view(d), 'engine_owner':_stonks_engine_owner_read(), 'engine_owned_by_current_user':_stonks_engine_owner_read()==_user_scope_id(), 'audit_count':len(_stonks_audit_read(200)), 'paper_configured': bool(pk and ps), 'crypto_configured': bool(os.environ.get('KRAKEN_API_KEY') and os.environ.get('KRAKEN_API_SECRET')), 'engine_position_count':len(d.get('engine_last_positions') or []), 'engine_open_order_count':len(d.get('engine_last_open_orders') or []), 'position_lifecycle_enabled':bool(d.get('position_lifecycle_enabled')), 'stop_loss_pct':d.get('stop_loss_pct',1.0), 'take_profit_pct':d.get('take_profit_pct',2.0), 'managed_position_count':sum(r.get('status')!='CERRADA' for r in (d.get('managed_positions') or {}).values()), 'lifecycle_last_action':d.get('lifecycle_last_action'), 'agents':stonks_agents.describe(), 'automaton':stonks_automaton.public_view(d)})
 
 @app.get('/api/stonks/agents')
 def stonks_agents_api():
@@ -2854,6 +2871,41 @@ def stonks_engine_api():
     # Retain owner for read-only reconciliation while disabled/revoked.
     _stonks_audit_append('MOTOR AUTÓNOMO',{'decision':'DESACTIVADO'})
     return jsonify({'ok':True,**d,'engine_owner':_stonks_engine_owner_read()})
+
+@app.post('/api/stonks/automaton')
+@_stonks_serialized
+def stonks_automaton_api():
+    payload=request.get_json(silent=True) or {}
+    action=str(payload.get('action') or '').strip().lower()
+    if action not in ('start','pause','stop'):
+        return jsonify({'ok':False,'error':'Acción Automaton no válida.'}),400
+    d=_stonks_read()
+    if action=='start':
+        if d.get('mode')!='paper':
+            return jsonify({'ok':False,'error':'Automaton solo puede funcionar en modo Paper.'}),409
+        if d.get('revoked'):
+            return jsonify({'ok':False,'error':'El kill switch está revocado. Restaura primero el control de ZAR Stonks.'}),409
+        # Automaton is an orchestrator over the existing Paper engine, never a new order path.
+        d['execution_mode']='paper_auto'
+        d['autonomous_engine']=True
+        d['paused']=False
+        stonks_automaton.start(d)
+        _stonks_write(d)
+        _stonks_engine_owner_write(_user_scope_id())
+        _stonks_audit_append('AUTOMATON',{'decision':'ENCENDIDO','paper_only':True,'execution_mode':'paper_auto'})
+    elif action=='pause':
+        stonks_automaton.pause(d)
+        _stonks_write(d)
+        _stonks_audit_append('AUTOMATON',{'decision':'PAUSADO','paper_only':True})
+    else:
+        stonks_automaton.stop(d)
+        d['autonomous_engine']=False
+        _stonks_write(d)
+        _stonks_audit_append('AUTOMATON',{'decision':'APAGADO','paper_only':True})
+    return jsonify({'ok':True,'automaton':stonks_automaton.public_view(d),
+                    'autonomous_engine':bool(d.get('autonomous_engine')),
+                    'execution_mode':d.get('execution_mode'),'paused':bool(d.get('paused')),
+                    'revoked':bool(d.get('revoked'))})
 
 @app.get("/api/maps/search")
 def maps_search_endpoint():
