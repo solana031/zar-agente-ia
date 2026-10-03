@@ -89,7 +89,7 @@ def _company_default(key):
 def default_state():
     return {
         "schema": 1,
-        "version": "33.1.0",
+        "version": "33.1.1",
         "global_stop": False,
         "global_stop_reason": "",
         "updated_at": _now(),
