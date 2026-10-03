@@ -1750,6 +1750,12 @@ def holdings_media_produce_api():
     try: return jsonify(media_company.produce_local(_user_scope_id(),data.get('task_id')))
     except Exception as exc: return jsonify({'ok':False,'error':str(exc)}),400
 
+@app.post('/api/holdings/media/edit')
+def holdings_media_edit_api():
+    data=request.get_json(silent=True) or {}
+    try: return jsonify(media_company.edit_story(_user_scope_id(),data.get('task_id'),data.get('notes') or ''))
+    except Exception as exc: return jsonify({'ok':False,'error':str(exc)}),400
+
 @app.post('/api/holdings/media/publish')
 def holdings_media_publish_api():
     data=request.get_json(silent=True) or {}

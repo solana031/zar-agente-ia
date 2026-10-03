@@ -36,17 +36,54 @@ def _dramaclaw_create_url():
     return os.environ.get("DRAMACLAW_CREATE_URL", "").strip()
 
 
+def _dramaclaw_web_url():
+    return os.environ.get("DRAMACLAW_WEB_URL", "").strip().rstrip("/")
+
+
+def _direct_only():
+    return os.environ.get("ZAR_MEDIA_DIRECT_ONLY", "1").strip().lower() not in {"0", "false", "no"}
+
+
+def _dramaclaw_candidate_create_urls():
+    explicit = _dramaclaw_create_url()
+    if explicit:
+        return [explicit]
+    base = _dramaclaw_base()
+    if not base:
+        return []
+    seen = []
+    for cand in [
+        base,
+        base + '/api/projects/create',
+        base + '/api/project/create',
+        base + '/api/video/create',
+        base + '/api/videos/create',
+        base + '/api/series/create',
+        base + '/api/series/from-manuscript',
+        base + '/api/v1/projects/create',
+        base + '/api/v1/video/create',
+        base + '/api/v1/series/create',
+    ]:
+        if cand not in seen:
+            seen.append(cand)
+    return seen
+
+
 def status():
     base = _dramaclaw_base()
     create = _dramaclaw_create_url()
+    web = _dramaclaw_web_url()
+    direct = bool(create or base)
     return {
-        "dramaclaw_bridge_configured": bool(create or base),
-        "dramaclaw_direct_configured": bool(create),
+        "dramaclaw_bridge_configured": direct,
+        "dramaclaw_direct_configured": direct,
         "dramaclaw_api_url": base,
         "dramaclaw_create_url": create,
-        "attribution_required": bool(create or base),
-        "visual_fallback": "Gemini Image → Wikimedia Commons → graphic card",
-        "preferred_provider": "DramaClaw Direct" if create else "ZAR Native Visual",
+        "dramaclaw_web_url": web,
+        "direct_only": _direct_only(),
+        "attribution_required": direct,
+        "visual_fallback": "desactivado" if _direct_only() else "Gemini Image → Wikimedia Commons → graphic card",
+        "preferred_provider": "DramaClaw Direct" if direct else ("DramaClaw pendiente" if _direct_only() else "ZAR Native Visual"),
         "social": social_status(),
         "pipeline": ["MASTER_BRIEF", "SCRIPT", "BEATS", "STORYBOARD", "VISUALS", "VOICE", "EDIT", "QA", "PUBLISH", "ANALYTICS"],
     }
@@ -209,10 +246,17 @@ def _find_video_url(obj):
     return None
 
 
+def _suggest_dramaclaw_env_error():
+    return (
+        "DramaClaw Direct no está conectado. Configura en Railway al menos DRAMACLAW_API_URL o DRAMACLAW_CREATE_URL, "
+        "y opcionalmente DRAMACLAW_WEB_URL. En v33.1.2 Media trabaja en modo DIRECT_ONLY y no usa el fallback visual de ZAR."
+    )
+
+
 def _submit_dramaclaw(master_brief, platform, plan, prior_job=None):
-    create_url = _dramaclaw_create_url()
-    if not create_url:
-        return None
+    candidates = _dramaclaw_candidate_create_urls()
+    if not candidates:
+        return {"ok": False, "error": _suggest_dramaclaw_env_error(), "provider": "DramaClaw Direct"}
     payload = {
         "source": "ZAR Media",
         "powered_by": "DramaClaw",
@@ -227,41 +271,48 @@ def _submit_dramaclaw(master_brief, platform, plan, prior_job=None):
     }
     if prior_job:
         payload["prior_job"] = prior_job
-    try:
-        r = requests.post(create_url, json=payload, headers=_headers_for_dramaclaw(), timeout=120)
-        if not r.ok:
-            return {"ok": False, "error": f"DramaClaw HTTP {r.status_code}: {r.text[:800]}"}
+    last_error = None
+    for create_url in candidates:
         try:
-            data = r.json()
-        except ValueError:
-            data = {"response": r.text[:4000]}
-        result = {"ok": True, "job": data, "provider": "DramaClaw Direct"}
-        direct = _find_video_url(data)
-        if direct:
-            result["video_url"] = direct
+            r = requests.post(create_url, json=payload, headers=_headers_for_dramaclaw(), timeout=120)
+            if not r.ok:
+                last_error = f"{create_url} → HTTP {r.status_code}: {r.text[:500]}"
+                continue
+            try:
+                data = r.json()
+            except ValueError:
+                data = {"response": r.text[:4000]}
+            result = {"ok": True, "job": data, "provider": "DramaClaw Direct", "create_url": create_url}
+            direct = _find_video_url(data)
+            if direct:
+                result["video_url"] = direct
+                result["editor_url"] = _dramaclaw_web_url() or data.get("editor_url") or data.get("project_url") or data.get("web_url")
+                return result
+            status_url = data.get("status_url") if isinstance(data, dict) else None
+            if isinstance(status_url, str) and status_url.startswith(("http://", "https://")):
+                for _ in range(14):
+                    time.sleep(2.5)
+                    sr = requests.get(status_url, headers=_headers_for_dramaclaw(), timeout=30)
+                    if not sr.ok:
+                        break
+                    try:
+                        sd = sr.json()
+                    except ValueError:
+                        break
+                    direct = _find_video_url(sd)
+                    if direct:
+                        result["job"] = sd
+                        result["video_url"] = direct
+                        result["editor_url"] = _dramaclaw_web_url() or sd.get("editor_url") or sd.get("project_url") or sd.get("web_url")
+                        return result
+                    if str(sd.get("status") or "").lower() in {"failed", "error", "cancelled"}:
+                        result["error"] = str(sd.get("error") or "DramaClaw falló")[:800]
+                        return result
+            result["editor_url"] = _dramaclaw_web_url() or (data.get("editor_url") if isinstance(data, dict) else None) or (data.get("project_url") if isinstance(data, dict) else None)
             return result
-        status_url = data.get("status_url") if isinstance(data, dict) else None
-        if isinstance(status_url, str) and status_url.startswith(("http://", "https://")):
-            for _ in range(8):
-                time.sleep(2.5)
-                sr = requests.get(status_url, headers=_headers_for_dramaclaw(), timeout=30)
-                if not sr.ok:
-                    break
-                try:
-                    sd = sr.json()
-                except ValueError:
-                    break
-                direct = _find_video_url(sd)
-                if direct:
-                    result["job"] = sd
-                    result["video_url"] = direct
-                    return result
-                if str(sd.get("status") or "").lower() in {"failed", "error", "cancelled"}:
-                    result["error"] = str(sd.get("error") or "DramaClaw falló")[:800]
-                    break
-        return result
-    except requests.RequestException as exc:
-        return {"ok": False, "error": str(exc)[:800], "provider": "DramaClaw Direct"}
+        except requests.RequestException as exc:
+            last_error = f"{create_url} → {str(exc)[:500]}"
+    return {"ok": False, "error": last_error or _suggest_dramaclaw_env_error(), "provider": "DramaClaw Direct"}
 
 
 def process_one(scope_id):
@@ -278,9 +329,31 @@ def process_one(scope_id):
         if dc.get("video_url"):
             plan["production_provider"] = "DramaClaw Direct"
             plan["preview_url"] = dc["video_url"]
+            plan["editor_url"] = dc.get("editor_url")
     holdings.update_task(scope_id, "media", task["id"], status="READY_FOR_PRODUCTION", result=plan)
+    if dc and not dc.get("ok"):
+        return f"Media: briefing preparado, pero DramaClaw aún no está operativo ({dc.get('error','error')[:180]})."
     return f"Media: plan preparado; briefing íntegro conservado ({len(master_brief)} caracteres); {len(plan.get('beats') or [])} escenas preparadas."
 
+
+
+def edit_story(scope_id, task_id, notes):
+    d = holdings.read(scope_id)
+    task = next((x for x in d["companies"]["media"].get("queue", []) if x.get("id") == task_id), None)
+    if not task:
+        raise KeyError("Tarea Media no encontrada.")
+    notes = str(notes or "").strip()
+    if not notes:
+        raise ValueError("Faltan instrucciones de edición.")
+    payload = dict(task.get("payload") or {})
+    payload["edit_notes"] = notes
+    base = str(payload.get("master_brief") or payload.get("topic") or "").strip()
+    merged = base + "\n\nEDICIONES SOLICITADAS POR EL USUARIO:\n" + notes
+    payload["master_brief"] = merged
+    payload["topic"] = merged
+    holdings.update_task(scope_id, "media", task_id, status="QUEUED", payload=payload, result=None, error=None)
+    holdings.update_company(scope_id, "media", action="Edición solicitada para DramaClaw", event="EDIT", event_detail=notes[:1000])
+    return {"ok": True, "task_id": task_id, "message": "Edición enviada. Pulsa 'Producir último MP4' para relanzar DramaClaw.", "notes": notes}
 
 def publish(scope_id, task_id, video_url, platform, caption="", confirmed=False):
     d = holdings.read(scope_id); task = next((x for x in d["companies"]["media"].get("queue", []) if x.get("id") == task_id), None)
@@ -418,16 +491,20 @@ def produce_local(scope_id, task_id):
     plan = task.get("result") or _ai_plan(master_brief, platform)
 
     # If process_one got a completed DramaClaw film, use it directly.
+    if _direct_only() and not _dramaclaw_candidate_create_urls():
+        raise RuntimeError(_suggest_dramaclaw_env_error())
     dc = plan.get("dramaclaw") if isinstance(plan, dict) else None
-    if not (isinstance(dc, dict) and dc.get("video_url")) and _dramaclaw_create_url():
+    if not (isinstance(dc, dict) and dc.get("video_url")) and _dramaclaw_candidate_create_urls():
         dc = _submit_dramaclaw(master_brief, platform, plan, prior_job=(dc or {}).get("job") if isinstance(dc, dict) else None)
         if dc:
             plan["dramaclaw"] = dc
     if isinstance(dc, dict) and dc.get("video_url"):
-        result = {**plan, "production_provider": "DramaClaw Direct", "preview_url": dc["video_url"], "download_url": dc["video_url"], "voice_provider": "DramaClaw", "visual_providers": ["DramaClaw Direct"]}
+        result = {**plan, "production_provider": "DramaClaw Direct", "preview_url": dc["video_url"], "download_url": dc["video_url"], "editor_url": dc.get("editor_url"), "voice_provider": "DramaClaw", "visual_providers": ["DramaClaw Direct"]}
         holdings.update_task(scope_id, "media", task_id, status="PRODUCED", result=result)
         holdings.update_company(scope_id, "media", action="MP4 producido por DramaClaw Direct", event="PRODUCE", event_detail=dc["video_url"])
-        return {"ok": True, "task_id": task_id, "preview_url": dc["video_url"], "download_url": dc["video_url"], "caption": plan.get("caption") or "", "voice_provider": "DramaClaw", "visual_provider": "DramaClaw Direct", "production_provider": "DramaClaw Direct", "brief_chars": len(master_brief)}
+        return {"ok": True, "task_id": task_id, "preview_url": dc["video_url"], "download_url": dc["video_url"], "editor_url": dc.get("editor_url"), "caption": plan.get("caption") or "", "voice_provider": "DramaClaw", "visual_provider": "DramaClaw Direct", "production_provider": "DramaClaw Direct", "brief_chars": len(master_brief)}
+    if _direct_only():
+        raise RuntimeError((dc or {}).get("error") or _suggest_dramaclaw_env_error())
 
     from .video_creator import create_project, get_project, save_project, MEDIA_DIR, render_project, _normalize_media_item
     from .voice_pro import synthesize
