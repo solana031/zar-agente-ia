@@ -1,0 +1,4 @@
+-r requirements.txt
+# cryptography 50 lacks a compatible Intel wheel on this Mac; avoid native builds.
+cryptography>=46,<47
+pytest>=8,<10

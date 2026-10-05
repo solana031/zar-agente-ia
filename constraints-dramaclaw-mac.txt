@@ -1,0 +1,5 @@
+# Supported upstream ranges, Intel wheels; isolated DramaClaw env only.
+cryptography>=46,<47
+lancedb==0.24.0
+pylance==0.22.0
+cbor2==5.8.0

@@ -7,6 +7,7 @@ The decision layer never executes tools: it only returns typed judgments.
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import time
@@ -23,7 +24,26 @@ def _key():
 
 
 def status():
-    return {"configured": bool(_key()), "provider": "TypeSafe Jev" if _key() else "ZAR deterministic fallback", "model": MODEL, "base": BASE, "execution_authority": False}
+    return {"configured": bool(_key()), "state": "CONFIGURED_UNVERIFIED" if _key() else "NOT_CONFIGURED", "provider": "TypeSafe Jev" if _key() else "ZAR deterministic fallback", "model": MODEL, "base": BASE, "execution_authority": False}
+
+
+def _validated(data, questions):
+    if not isinstance(data, dict) or not isinstance(data.get('answers'), dict):
+        raise ValueError('Invalid Jev response')
+    for qid, question in questions.items():
+        answer = data['answers'].get(qid)
+        kind = question.get('type', 'noul')
+        if not isinstance(answer, dict) or answer.get('type') != kind:
+            raise ValueError('Missing or mismatched Jev answer')
+        if kind == 'choice':
+            if answer.get('choice') not in question.get('criteria', {}):
+                raise ValueError('Unknown Jev choice')
+        else:
+            value = answer.get(kind)
+            maximum = 1 if kind == 'noul' else max(0, len(question.get('criteria', [])) - 1)
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or not 0 <= value <= maximum:
+                raise ValueError('Invalid Jev numeric answer')
+    return data
 
 
 def _fallback(state, questions):
@@ -55,7 +75,7 @@ def _fallback(state, questions):
         else:
             yes = risky or any(x in instructions for x in ("human", "humano", "review", "revisión", "riesgo")) and risky
             answers[qid] = {"type":"noul","noul":0.9 if yes else 0.15,"fallback":True}
-    return {"model":"zar-deterministic-fallback","answers":answers,"usage":{"input_tokens":0,"output_tokens":0},"fallback":True}
+    return {"model":"zar-deterministic-fallback","answers":answers,"usage":{"input_tokens":0,"output_tokens":0},"fallback":True,"state":"NOT_CONFIGURED"}
 
 
 def decide(state, questions, timeout=10):
@@ -69,16 +89,17 @@ def decide(state, questions, timeout=10):
             r = requests.post(
                 BASE + "/v1/systemone",
                 headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
-                json=payload, timeout=timeout,
+                json=payload, timeout=timeout, allow_redirects=False,
             )
             if r.ok:
-                data = r.json(); data["fallback"] = False; return data
-            last = RuntimeError(f"Jev HTTP {r.status_code}: {r.text[:600]}")
+                data = _validated(r.json(), questions); data["fallback"] = False; data['state'] = 'ONLINE'; return data
+            last = RuntimeError(f"Jev HTTP {r.status_code}")
             if r.status_code not in {429,500,502,503,504}: break
         except (requests.RequestException, ValueError) as exc:
-            last = exc
+            last = RuntimeError(type(exc).__name__)
         time.sleep(0.4)
     result = _fallback(state, questions)
+    result['state'] = 'DEGRADED'
     result["provider_error"] = str(last)[:500] if last else "Jev no disponible"
     return result
 
