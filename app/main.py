@@ -2658,14 +2658,11 @@ def stonks_orphan_test_close_api():
     account=_alpaca_paper_request('/v2/account')
     if account.get('status')!='ACTIVE' or account.get('trading_blocked') or account.get('account_blocked'):
         return jsonify({'ok':False,'error':'La cuenta Alpaca Paper no está operativa.'}),409
-    key,secret=_alpaca_paper_credentials()
-    import requests as _requests
     cid=('zar-orphan-test-close-'+uuid.uuid4().hex[:18])[:48]
     body={'symbol':_stonks_symbol_key(snap['symbol']),'qty':str(snap['qty']),'side':'sell','type':'market','time_in_force':'gtc' if _stonks_is_crypto(snap['symbol']) else 'day','client_order_id':cid}
-    r=_requests.post('https://paper-api.alpaca.markets/v2/orders',headers={'APCA-API-KEY-ID':key,'APCA-API-SECRET-KEY':secret},json=body,timeout=12)
-    try: data=r.json()
-    except Exception: data={}
-    if not r.ok or not isinstance(data,dict) or not data.get('id'):
+    try:
+        data=_stonks_submit_paper_order(body)
+    except (RuntimeError, requests.RequestException, ValueError):
         return jsonify({'ok':False,'error':'Alpaca Paper no confirmó el cierre de la prueba.'}),502
     _stonks_audit_append('ORPHAN_TEST_CLOSE',{'paper':True,'symbol':snap['symbol'],'qty':snap['qty'],'order_id':data.get('id'),'owner_previous':snap.get('owner')})
     return jsonify({'ok':True,'paper':True,'order':{'id':data.get('id'),'status':data.get('status'),'symbol':data.get('symbol'),'qty':data.get('qty')}}),202
@@ -2709,14 +2706,11 @@ def stonks_close_single_paper_position_api():
     account=_alpaca_paper_request('/v2/account')
     if account.get('status')!='ACTIVE' or account.get('trading_blocked') or account.get('account_blocked'):
         return jsonify({'ok':False,'error':'La cuenta Alpaca Paper no está operativa.'}),409
-    key,secret=_alpaca_paper_credentials()
-    import requests as _requests
     cid=('zar-paper-recovery-close-'+uuid.uuid4().hex[:16])[:48]
     body={'symbol':symbol,'qty':qty,'side':'sell','type':'market','time_in_force':'gtc' if _stonks_is_crypto(symbol) else 'day','client_order_id':cid}
-    r=_requests.post('https://paper-api.alpaca.markets/v2/orders',headers={'APCA-API-KEY-ID':key,'APCA-API-SECRET-KEY':secret},json=body,timeout=12)
-    try: data=r.json()
-    except Exception: data={}
-    if not r.ok or not isinstance(data,dict) or not data.get('id'):
+    try:
+        data=_stonks_submit_paper_order(body)
+    except (RuntimeError, requests.RequestException, ValueError):
         return jsonify({'ok':False,'error':'Alpaca Paper no confirmó el cierre de la posición.'}),502
     _stonks_audit_append('PAPER_BLOCKING_POSITION_CLOSE',{'paper':True,'symbol':symbol,'qty':qty,'order_id':data.get('id')})
     return jsonify({'ok':True,'paper':True,'order':{'id':data.get('id'),'status':data.get('status'),'symbol':data.get('symbol'),'qty':data.get('qty')}}),202

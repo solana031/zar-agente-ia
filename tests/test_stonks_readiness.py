@@ -112,6 +112,50 @@ def test_all_broker_order_posts_use_guarded_adapter():
     assert adapter.count('https://paper-api.alpaca.markets/v2/orders')==1
 
 
+@pytest.mark.parametrize('endpoint', ['stonks_orphan_test_close_api', 'stonks_close_single_paper_position_api'])
+@pytest.mark.parametrize('flags', [{}, {'paused':True}, {'revoked':True}, {'mode':'live'},
+                                 {'execution_mode':'shadow'}, {'max_trade_eur':0},
+                                 {'max_daily_loss_eur':0}, {'max_position_pct':'NaN'}])
+def test_recovery_closes_use_final_paper_guard(tmp_path, endpoint, flags):
+    ns=control_plane(tmp_path)
+    state=ns['_stonks_default']();state.update(safe_state());state.update(flags)
+    position={'symbol':'AAPL','qty':'0.1'}
+    ns['_alpaca_paper_credentials']=lambda:('fixture-key','fixture-secret')
+    ns['_alpaca_paper_request']=Mock(side_effect=lambda path, **kw:
+        [position] if path=='/v2/positions' else [] if path=='/v2/orders' else
+        {'status':'ACTIVE','trading_blocked':False,'account_blocked':False})
+    ns['_stonks_orphan_test_snapshot']=Mock(return_value={
+        'available':True,'symbol':'AAPL','qty':'0.1','owner':'previous'})
+    response=ns['requests'].post.return_value
+    response.ok=True;response.json.return_value={'id':'fixture-order','status':'new'}
+    with ns['app'].test_request_context('/',method='POST',json={'confirm':True}):
+        ns['session']['zar_user_id']='test-owner'
+        ns['_stonks_write'](state)
+        result,status=ns[endpoint]()
+    if flags:
+        assert status==502 and result.get_json()['ok'] is False
+        ns['requests'].post.assert_not_called()
+    else:
+        assert status==202 and result.get_json()['paper'] is True
+        ns['requests'].post.assert_called_once()
+        args,kwargs=ns['requests'].post.call_args
+        assert args[0]=='https://paper-api.alpaca.markets/v2/orders'
+        assert kwargs['json']['symbol']=='AAPL'
+        assert kwargs['json']['qty']=='0.1'
+        assert kwargs['json']['side']=='sell'
+
+
+@pytest.mark.parametrize('endpoint', ['stonks_orphan_test_close_api', 'stonks_close_single_paper_position_api'])
+def test_recovery_close_requires_confirmation_before_broker_reads(tmp_path, endpoint):
+    ns=control_plane(tmp_path)
+    ns['_alpaca_paper_request']=Mock(side_effect=AssertionError('must not read broker'))
+    ns['_stonks_orphan_test_snapshot']=Mock(side_effect=AssertionError('must not inspect'))
+    with ns['app'].test_request_context('/',method='POST',json={}):
+        _,status=ns[endpoint]()
+    assert status==400
+    ns['requests'].post.assert_not_called()
+
+
 def test_nonowner_process_cannot_inherit_stream_authority(tmp_path):
     import os, subprocess, sys
     code = "from test_stonks_multiprocess import load_stream_plan; import os; ns=load_stream_plan(); ns['_STONKS_ENGINE_OWNER_PID']="+str(os.getpid())+"; ns['_stonks_stream_plan']({},activate=True); assert not ns['stonks_stream'].MANAGER.configures"

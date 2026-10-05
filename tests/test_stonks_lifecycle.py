@@ -18,6 +18,8 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 import uuid
 from flask import Flask, session, request, jsonify
+from urllib.parse import quote as urlquote
+import requests as http_requests
 
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location('lifecycle', ROOT / 'app/stonks_lifecycle.py')
@@ -37,13 +39,14 @@ def control_plane(directory):
               contextmanager=contextmanager, uuid=uuid, datetime=datetime, timezone=timezone,
               stonks_lifecycle=lifecycle, stonks_preflight=preflight, session=session, request=request, jsonify=jsonify,
               _STONKS_DIR=Path(directory), _STONKS_LOCK=threading.RLock(),
-              _STONKS_LOCK_DEPTH=threading.local(), requests=Mock())
-    from app import stonks_agents, stonks_dataplane, stonks_learning, stonks_selftest, stonks_shadow, stonks_execution, stonks_readiness
+              _STONKS_LOCK_DEPTH=threading.local(), requests=Mock(RequestException=http_requests.RequestException))
+    from app import stonks_agents, stonks_dataplane, stonks_learning, stonks_selftest, stonks_shadow, stonks_execution, stonks_readiness, stonks_automaton, stonks_profitability
     from types import SimpleNamespace
     ns.update(stonks_agents=stonks_agents, stonks_dataplane=stonks_dataplane,
               stonks_learning=stonks_learning, stonks_selftest=stonks_selftest,
               stonks_shadow=stonks_shadow, stonks_execution=stonks_execution,
-              stonks_readiness=stonks_readiness, _STONKS_ENGINE_OWNER_PID=None,
+              stonks_readiness=stonks_readiness, stonks_automaton=stonks_automaton,
+              stonks_profitability=stonks_profitability, urlquote=urlquote, _STONKS_ENGINE_OWNER_PID=None,
               stonks_news=SimpleNamespace(get_context=Mock(return_value={})))
     stonks_dataplane.PLANE.reset_runtime()
     tree = ast.parse((ROOT / 'app/main.py').read_text(encoding='utf-8-sig'))
@@ -66,7 +69,8 @@ class LifecycleTests(unittest.TestCase):
         self.state = self.api['_stonks_default']()
         self.state.update(paused=False, revoked=False, autonomous_engine=True,
                           position_lifecycle_enabled=True, execution_mode='paper_auto',
-                          max_trade_eur=1000, max_position_pct=100, max_daily_loss_eur=10)
+                          max_trade_eur=1000, max_position_pct=100, max_daily_loss_eur=10,
+                          engine_auto_universe=False, engine_symbols=['AAPL'])
         self.orders = {}
         self.positions = []
         self.events = []
@@ -312,7 +316,9 @@ class LifecycleTests(unittest.TestCase):
     def configure_worker(self, signal='BUY'):
         self.save(self.state)
         self.api['_stonks_engine_owner_write']('test-owner')
-        self.api['_stonks_current_signal'] = Mock(return_value=({'signal':signal,'bar_time':'2026-09-28T10:00:00Z'},self.clock))
+        self.api['_stonks_current_signal'] = Mock(return_value=({
+            'signal':signal, 'bar_time':'2026-09-28T10:00:00Z', 'strategy':'trend',
+            'indicators':{'rsi14':56, 'atr_pct':0.5, 'regime':'tendencia_alcista'}}, self.clock))
         self.api['_alpaca_market_request'] = Mock(return_value={'trade':{'p':100,'t':datetime.now(timezone.utc).isoformat()}})
         def broker(path, **kwargs):
             if path=='/v2/positions':return self.positions

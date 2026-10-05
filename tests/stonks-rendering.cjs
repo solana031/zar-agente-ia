@@ -158,9 +158,13 @@ console.log(`PASS: ${scripts} inline scripts, static JavaScript and three versio
       });
       assert.equal(stable,true,'Sync must update cells without replacing rows or reloading');
       for(const status of ['ABIERTA','CERRANDO_SL','CERRANDO_TP','CERRADA','ERROR']){
-        await page.evaluate(status=>zsRenderManagedPositions({AAPL:{symbol:'AAPL',direction:'SHORT',client_order_id:'zar-e-test',status,strategy:'<script>bad</script>'}}),status);
-        assert.match(await page.locator('#zsManagedPositionsBody').textContent(),new RegExp(status));
-        assert.equal(await page.locator('#zsManagedPositionsBody script').count(),0);
+        const snapshot=await page.evaluate(status=>{
+          zsRenderManagedPositions({AAPL:{symbol:'AAPL',direction:'SHORT',client_order_id:'zar-e-test',status,strategy:'<script>bad</script>'}});
+          const body=document.getElementById('zsManagedPositionsBody');
+          return {text:body.textContent,scripts:body.querySelectorAll('script').length};
+        },status);
+        assert.match(snapshot.text,new RegExp(status));
+        assert.equal(snapshot.scripts,0);
       }
       await page.evaluate(()=>zsRefreshStatus());
       assert.equal(await page.locator('#stonksStopLoss').inputValue(), '1.5');

@@ -2,6 +2,81 @@ from app import jev_decision, conway_adapter, coding_capability
 import pytest
 
 
+@pytest.mark.parametrize('answer', [
+    {'type':'choice','choice':'allow'},
+    {'type':'choice','choice':[]},
+    {'type':'choice','choice':{}},
+    {'type':'choice','choice':None},
+    {'type':'choice'},
+    {'type':'choice','choice':True},
+    {'type':'choice','choice':1},
+    {'type':'choice','choice':'unknown'},
+    {'type':'noul','noul':0.5},
+    None, [], 'allow',
+])
+def test_jev_choice_validation_degrades_safely(monkeypatch, answer):
+    monkeypatch.setenv('JEV_API_KEY', 'fixture-key')
+    monkeypatch.setattr(jev_decision.time, 'sleep', lambda _: None)
+    data = {'model':'jev-latest', 'answers':{'route':answer}}
+    class Response:
+        ok = True
+        def json(self): return data
+    monkeypatch.setattr(jev_decision.requests, 'post', lambda *a, **k: Response())
+    result = jev_decision.decide('test', {
+        'route':{'type':'choice','criteria':{'allow':'Allowed','deny':'Denied'}}})
+    valid = answer == {'type':'choice','choice':'allow'}
+    assert result['fallback'] is not valid
+    assert result['state'] == ('ONLINE' if valid else 'DEGRADED')
+    if valid:
+        assert result is data
+        assert result['answers']['route'] == answer
+    else:
+        assert result['model'] == 'zar-deterministic-fallback'
+
+
+@pytest.mark.parametrize('body', [None, [], 'invalid', {}, {'answers':None},
+                                     {'answers':[]}, {'answers':{}}])
+def test_jev_invalid_api_body_degrades(monkeypatch, body):
+    monkeypatch.setenv('JEV_API_KEY', 'fixture-key')
+    monkeypatch.setattr(jev_decision.time, 'sleep', lambda _: None)
+    class Response:
+        ok = True
+        def json(self): return body
+    monkeypatch.setattr(jev_decision.requests, 'post', lambda *a, **k: Response())
+    assert jev_decision.decide('test', {'route':{'type':'choice','criteria':{'allow':'yes'}}})['state'] == 'DEGRADED'
+
+
+@pytest.mark.parametrize('failure', ['json', 'http', 'transport', 'programming'])
+def test_jev_api_failures_and_programming_errors(monkeypatch, failure):
+    monkeypatch.setenv('JEV_API_KEY', 'fixture-key')
+    monkeypatch.setattr(jev_decision.time, 'sleep', lambda _: None)
+    class Response:
+        ok = failure != 'http'
+        status_code = 503
+        def json(self): raise ValueError('invalid JSON')
+    def post(*args, **kwargs):
+        if failure == 'transport': raise jev_decision.requests.Timeout('fixture')
+        if failure == 'programming': raise TypeError('unrelated bug')
+        return Response()
+    monkeypatch.setattr(jev_decision.requests, 'post', post)
+    if failure == 'programming':
+        with pytest.raises(TypeError, match='unrelated bug'):
+            jev_decision.decide('test', {})
+    else:
+        assert jev_decision.decide('test', {})['state'] == 'DEGRADED'
+
+
+@pytest.mark.parametrize('value', [[], {}, '0.5', None, True, float('nan'), float('inf'), 10**400])
+def test_jev_unexpected_numeric_types_degrade(monkeypatch, value):
+    monkeypatch.setenv('JEV_API_KEY', 'fixture-key')
+    monkeypatch.setattr(jev_decision.time, 'sleep', lambda _: None)
+    class Response:
+        ok = True
+        def json(self): return {'answers':{'review':{'type':'noul','noul':value}}}
+    monkeypatch.setattr(jev_decision.requests, 'post', lambda *a, **k: Response())
+    assert jev_decision.decide('test', {'review':{'type':'noul'}})['state'] == 'DEGRADED'
+
+
 def test_jev_real_contract_and_malformed_fallback(monkeypatch):
     monkeypatch.setenv('JEV_API_KEY', 'fixture-key')
     monkeypatch.setattr(jev_decision.time, 'sleep', lambda _: None)

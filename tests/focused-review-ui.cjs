@@ -64,6 +64,7 @@ function agents(general=6,outer=9){
     await page.waitForTimeout(100);
     assert.equal(await page.locator('.zoSceneWrap').evaluate(el=>el.getBoundingClientRect().height),600);
     await page.evaluate(()=>exitSubagentOrchestration());
+    assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('zarOrchestrationMapWindowV1')).height),600);
   }
   await page.evaluate(()=>showSubagentOrchestration());
   assert.equal(await page.locator('.zoSceneWrap').evaluate(el=>el.getBoundingClientRect().height),600);

@@ -36,12 +36,13 @@ def _validated(data, questions):
         if not isinstance(answer, dict) or answer.get('type') != kind:
             raise ValueError('Missing or mismatched Jev answer')
         if kind == 'choice':
-            if answer.get('choice') not in question.get('criteria', {}):
+            choice = answer.get('choice')
+            if not isinstance(choice, str) or choice not in question.get('criteria', {}):
                 raise ValueError('Unknown Jev choice')
         else:
             value = answer.get(kind)
             maximum = 1 if kind == 'noul' else max(0, len(question.get('criteria', [])) - 1)
-            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or not 0 <= value <= maximum:
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not 0 <= value <= maximum or not math.isfinite(value):
                 raise ValueError('Invalid Jev numeric answer')
     return data
 

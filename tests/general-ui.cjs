@@ -28,7 +28,9 @@ const project={id:'mock-video',name:'Proyecto de prueba',preset:'youtube',media:
  async function home(){
  await globalWidth();await bounds('.top');await bounds('.composerMain');
  assert.equal(await page.locator('#editorBackBtn').isVisible(),false);
- assert.equal(await page.locator('.zarDockItem:visible').count(),10);
+ // Holdings is part of the canonical default dock since v33.
+ assert.deepEqual(await page.locator('.zarDockItem:visible').evaluateAll(items=>items.map(e=>e.dataset.dockId)),
+   ['calendar','files','weather','studio','memory','tasks','control','research','learning','orchestration','holdings']);
  for(const b of await page.locator('.zarDockItem').all()){await b.scrollIntoViewIfNeeded();await bounds(`[data-dock-id="${await b.getAttribute('data-dock-id')}"]`,false)}
  for(const id of ['#attachBtn','#mic','#speakBtn','.composerMain button:last-child']){await bounds(id);assert.equal(await page.locator(id).isVisible(),true)}
  await page.locator('#input').fill('Borrador conservado');
