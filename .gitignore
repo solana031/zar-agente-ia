@@ -15,3 +15,11 @@ video_creator/
 *.sqlite3
 *.sqlite
 *.db
+.venv/
+.bootstrap-venv/
+.local/
+.env.local
+.vite/
+
+.env.local.*
+!.env.local.example

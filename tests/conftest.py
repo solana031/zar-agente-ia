@@ -8,6 +8,8 @@ import requests
 
 _runtime = tempfile.TemporaryDirectory(prefix='zar-tests-')
 os.environ['ZAR_DATA_DIR'] = _runtime.name
+os.environ['ZAR_JOB_DIR'] = os.path.join(_runtime.name, 'jobs')
+os.environ['ZAR_CONFIG_PATH'] = os.path.join(_runtime.name, 'config.json')
 atexit.register(_runtime.cleanup)
 
 @pytest.fixture(autouse=True)

@@ -495,7 +495,7 @@ def _authorized():
 
 @app.before_request
 def _guard():
-    allowed = {"login","health","oauth2callback","connect_google","connect_gmail","holdings_media_public_video_api"}
+    allowed = {"login","health","oauth2callback","connect_google","connect_gmail","holdings_media_public_video_api","distributed_nodes.poll","distributed_nodes.claim","distributed_nodes.health"}
     if request.endpoint in allowed or request.path.startswith("/static/"):
         return None
     if _auth_enabled() and not _authorized():
@@ -503,9 +503,12 @@ def _guard():
             return jsonify({"error":"No autenticado"}), 401
         return redirect("/login")
 
+from .node_coordinator import register as register_node_coordinator
+register_node_coordinator(app)
+
 @app.get("/health")
 def health():
-    return jsonify({"ok": True, "service": "zar"})
+    return jsonify({"ok": True, "service": "zar", "version": (Path(__file__).parent / "VERSION.txt").read_text().strip()})
 
 @app.route("/login", methods=["GET","POST"])
 def login():
