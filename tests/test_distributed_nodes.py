@@ -109,6 +109,8 @@ def test_timeout_disconnect_and_no_arbitrary_jobs(system,monkeypatch):
 
 
 def test_real_handler_transport_contract_and_restart(tmp_path,monkeypatch):
+    # Protocol tests isolate scheduling inputs; overload rejection is tested separately.
+    monkeypatch.setattr('app.node_worker.resources',lambda:{'os':'Darwin','architecture':'x86_64','cpu_count':4,'ram_bytes':8589934592,'load':[0]})
     worker = Worker(tmp_path/'worker'); nid = worker.identity()['id']; token = secrets.token_urlsafe(32)
     app = create_app(tmp_path/'cloud',nid,token,'test-admin')
     client = app.test_client(); admin = {'Authorization':'Bearer test-admin'}

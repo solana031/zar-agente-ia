@@ -495,7 +495,7 @@ def _authorized():
 
 @app.before_request
 def _guard():
-    allowed = {"login","health","oauth2callback","connect_google","connect_gmail","holdings_media_public_video_api","distributed_nodes.poll","distributed_nodes.claim","distributed_nodes.health"}
+    allowed = {"login","health","oauth2callback","connect_google","connect_gmail","holdings_media_public_video_api","distributed_nodes.poll","distributed_nodes.claim","distributed_nodes.health","distributed_nodes.inference"}
     if request.endpoint in allowed or request.path.startswith("/static/"):
         return None
     if _auth_enabled() and not _authorized():
@@ -3628,7 +3628,11 @@ def ai_router_status():
         from .smart_router import catalog as smart_catalog
     except ImportError:
         from smart_router import catalog as smart_catalog
-    return jsonify({"ok": True, **smart_catalog(load())})
+    result = {"ok": True, **smart_catalog(load())}
+    from . import node_inference
+    if node_inference.enabled():
+        result["gateway"] = node_inference.status()
+    return jsonify(result)
 
 @app.get("/api/ollama")
 def ollama_status():
@@ -3740,6 +3744,10 @@ def update_config():
 def test():
     try:
         reply = respond("Di únicamente: conexión correcta.")
+        from . import node_inference
+        if node_inference.enabled():
+            status = node_inference.status()
+            return jsonify({"ok":status["state"]=="ONLINE" or status.get("provider")=="local", "reply":reply, **status})
         return jsonify({"ok":True,"reply":reply})
     except Exception as exc:
         return jsonify({"ok":False,"reply":str(exc)})

@@ -52,6 +52,8 @@ def test_files_policy_and_running_cancellation(tmp_path, monkeypatch):
 
 
 def test_outbound_protocol_auth_idempotency_restart(tmp_path, monkeypatch):
+    # Protocol tests isolate scheduling inputs; overload rejection is tested separately.
+    monkeypatch.setattr('app.node_worker.resources',lambda:{'os':'Darwin','architecture':'x86_64','cpu_count':4,'ram_bytes':8589934592,'load':[0]})
     worker = Worker(tmp_path / 'worker')
     nid = worker.identity()['id']
     app = create_app(tmp_path / 'cloud', nid, 'n'*43, 'a'*43)

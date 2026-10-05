@@ -664,6 +664,9 @@ def semantic_respond(message):
     antes del modelo; esto evita exponer marcadores internos como DIRECT_GMAIL::.
     """
     cfg = load()
+    from . import node_inference
+    if node_inference.enabled():
+        return node_inference.respond(message,cfg)
     provider = cfg.get("provider")
     if provider == "auto":
         return smart_agent(message, cfg)
@@ -738,6 +741,9 @@ def respond(message):
         return "DEEP_RESEARCH::" + json.dumps({"query": message}, ensure_ascii=False)
 
     cfg = load()
+    from . import node_inference
+    if node_inference.enabled():
+        return node_inference.respond(message,cfg)
     provider = cfg.get("provider")
     if provider == "auto": return smart_agent(message, cfg)
     if provider == "api": return api_agent(message, cfg)

@@ -43,6 +43,9 @@ class Coordinator:
                 CREATE TABLE IF NOT EXISTS distributed_events (
                     id INTEGER PRIMARY KEY, job TEXT, state TEXT, timestamp REAL);
             ''')
+        from .inference_gateway import schema
+        with self.connect() as con:
+            schema(con)
         os.chmod(self.db, 0o600)
 
     @contextmanager
@@ -262,6 +265,21 @@ def blueprint(store, admin_check):
             return jsonify(store.poll(nid,body,enroll=request.path.endswith('/enroll')))
         except (TypeError,ValueError,OverflowError):
             abort(400)
+
+    @bp.post('/v1/nodes/inference')
+    def inference():
+        body = request.get_json()
+        nid = node_auth(body)
+        from .inference_gateway import infer
+        return infer(store,nid,body,request.headers['Authorization'][7:])
+
+    @bp.get('/api/node-inference/status')
+    def local_inference_status():
+        from . import node_inference
+        if not node_inference.enabled():
+            abort(404)
+        admin()
+        return jsonify(node=node_inference.context(),inference=node_inference.status())
 
     @bp.post('/v1/jobs/<jid>/claim')
     def claim(jid):

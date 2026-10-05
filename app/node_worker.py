@@ -17,6 +17,7 @@ import uuid
 from urllib.parse import urlparse
 
 import requests
+from .scoped_http import BearerAuth
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKER_VERSION = '1.0.0'
@@ -269,11 +270,13 @@ class Worker:
         url = urlparse(base)
         if url.scheme != 'https' and not (url.scheme == 'http' and url.hostname in {'127.0.0.1', 'localhost'}):
             raise ValueError('Cloud requires HTTPS; HTTP allowed only on loopback')
+        if url.username or url.password or url.query or url.fragment or url.path not in {'','/'}:
+            raise ValueError('Cloud URL must be an origin without credentials')
         with self.connect() as con:
             pending = [r['id'] for r in con.execute('SELECT id FROM jobs WHERE reported=0 AND remote=1 ORDER BY rowid DESC LIMIT 100')]
         reports = [{key:self.get(jid)[key] for key in ('id','state','progress','result')} for jid in pending]
         response = requests.post(base + '/v1/nodes/poll',
-                                 headers={'Authorization': 'Bearer ' + token},
+                                 headers={'Authorization': 'Bearer ' + token},auth=BearerAuth(token),
                                  json={'heartbeat': self.heartbeat(), 'reports': reports},
                                  timeout=(5, 15), allow_redirects=False)
         if response.status_code in {401,403}:
@@ -295,7 +298,7 @@ class Worker:
             jid = self.enqueue(job, remote=True)
             if not self.paused and self.get(jid)['state']=='QUEUED':
                 claim = requests.post(base + '/v1/jobs/'+jid+'/claim',
-                                      headers={'Authorization':'Bearer '+token},
+                                      headers={'Authorization':'Bearer '+token},auth=BearerAuth(token),
                                       json={'heartbeat':{'id':self.identity()['id']}},
                                       timeout=(5,15),allow_redirects=False)
                 if claim.status_code==200:
