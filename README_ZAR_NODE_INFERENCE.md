@@ -31,6 +31,9 @@ OpenAI. En los modos manuales API/OpenRouter respeta el modelo elegido en Cloud.
 Solo texto: máximo 6000 caracteres de entrada, 512 tokens de salida, dos
 intentos/proveedores, 5 peticiones/minuto y 100/24 h por nodo, una simultánea.
 Son límites técnicos de solicitudes/tokens, no un presupuesto monetario exacto.
+Gemini 3 Flash usa thinking mínimo para conservar salida útil dentro de 512
+tokens; una respuesta truncada no se presenta como éxito. Parámetro oficial:
+[OpenAI compatibility de Gemini](https://ai.google.dev/gemini-api/docs/openai#thinking).
 HTTPS verifica certificados y rechaza redirects en nodo y proveedor. La
 autenticación bearer explícita impide heredar credenciales de `.netrc`. El gateway
 no ejecuta herramientas ni usa memoria/cuentas de usuarios Cloud.

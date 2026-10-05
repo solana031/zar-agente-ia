@@ -1,8 +1,11 @@
 # Nodos distribuidos de ZAR
 
-Entrega local preparada y validada; no hay conexión REAL con producción todavía.
-Railway CLI responde `Unauthorized`. Sin push ni deployment. Versión conservada:
-33.1.3; 33.2.0 queda pendiente de validar Cloud → NODE-02.
+Versión 33.2.0. Coordinador desplegado en el servicio `web` de
+`energetic-charisma`; NODE-02 enrolado con identidad persistente y token
+individual. Heartbeat y job `node-info` validados contra Cloud real.
+El gateway usa los proveedores existentes exclusivamente dentro de Cloud.
+La publicación GitHub requiere credenciales de escritura de Git independientes
+de la autenticación Railway; conservar los commits locales hasta completar push.
 
 ## Contrato y seguridad
 

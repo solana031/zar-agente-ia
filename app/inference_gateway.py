@@ -92,13 +92,20 @@ def infer(store,nid,body,request_token):
                 continue
             payload = {'model':model,'messages':[{'role':'system','content':system},{'role':'user','content':prompt}]}
             payload['max_completion_tokens' if label.startswith('OpenAI') else 'max_tokens'] = 512
+            # Gemini counts thinking against the same bounded output budget.
+            # Keep simple node chat usable without increasing that budget.
+            if url.hostname=='generativelanguage.googleapis.com' and model.startswith('gemini-3.') and 'flash' in model:
+                payload['extra_body'] = {'google':{'thinking_config':{'thinking_level':'minimal'}}}
             try:
                 response = requests.post(base+'/chat/completions',headers={'Authorization':'Bearer '+key},auth=BearerAuth(key),
                     json=payload,timeout=(5,25),allow_redirects=False)
                 if response.status_code!=200:
                     continue
                 data = response.json()
-                message = (data.get('choices') or [{}])[0].get('message') or {}
+                choice = (data.get('choices') or [{}])[0]
+                if choice.get('finish_reason')=='length':
+                    continue
+                message = choice.get('message') or {}
                 if message.get('tool_calls') or not isinstance(message.get('content'),str):
                     continue
                 text = message['content'].strip()

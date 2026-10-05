@@ -219,3 +219,24 @@ def test_bearer_auth_never_borrows_netrc_credentials(monkeypatch):
     assert request.headers['Authorization']=='Bearer isolated-test-token'
     assert 'isolated-test-token' not in repr(BearerAuth('isolated-test-token'))
     session.close()
+
+
+def test_gemini_minimal_thinking_keeps_budget_and_rejects_partial_output(gateway,monkeypatch):
+    app,store,client,nid,token=gateway
+    from app import agent,config
+    monkeypatch.setattr(config,'load',lambda:{'provider':'api'})
+    monkeypatch.setattr(agent,'_api_profiles',lambda *args:[('https://generativelanguage.googleapis.com/v1beta/openai','fixture-key-only','gemini-3.6-flash','Gemini/API')])
+    class Response:
+        status_code=200
+        finish='length'
+        def json(self):return {'choices':[{'finish_reason':self.finish,'message':{'content':'A complete fixture answer.'}}]}
+    def send(url,**kwargs):
+        body=kwargs['json']
+        assert body['max_tokens']==512
+        assert body['extra_body']=={'google':{'thinking_config':{'thinking_level':'minimal'}}}
+        return Response()
+    monkeypatch.setattr('app.inference_gateway.requests.post',send)
+    assert call(client,nid,token).json=={'state':'DEGRADED','code':'PROVIDER_UNAVAILABLE'}
+    Response.finish='stop'
+    response=call(client,nid,token)
+    assert response.status_code==200 and response.json['text']=='A complete fixture answer.'
