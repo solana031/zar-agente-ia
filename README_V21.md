@@ -9,4 +9,4 @@ V21 conserva la interfaz estable de V20.3 y añade análisis visual de archivos 
 - Si OpenRouter está agotado, el archivo sigue guardado y puede analizarse con Gemini sin volver a adjuntarlo.
 
 
-V21.2: Gemini permanece como proveedor principal. El fallback automático a OpenRouter está desactivado por defecto para evitar que el límite gratuito 429 de OpenRouter interrumpa el uso de Gemini. Para activarlo explícitamente, crea en Railway ZAR_ALLOW_OPENROUTER_FALLBACK=true.
+V21.2: Gemini permanece como proveedor principal. El fallback automático a OpenRouter está desactivado por defecto para evitar que el límite gratuito 429 de OpenRouter interrumpa el uso de Gemini. Para activarlo explícitamente, crea en Railway ZAR_ALLOW_OPENROUTER_FALLBACK=true
