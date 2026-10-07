@@ -10,8 +10,11 @@ from .youtube_auth import get_credentials, status as youtube_auth_status
 YOUTUBE_SCOPE = 'https://www.googleapis.com/auth/youtube.upload'
 
 
-def _service():
-    creds = get_credentials(auto_refresh=True)
+def _service(user_id=None):
+    if user_id:
+        from .cloud_auth import get_credentials as google_credentials,youtube_user_id
+        creds=google_credentials(user_id=youtube_user_id(user_id)) or google_credentials(user_id=user_id)
+    else:creds = get_credentials(auto_refresh=True)
     if not creds:
         raise RuntimeError('YouTube no está conectado. Pulsa «Conectar YouTube» y autoriza el permiso de YouTube.')
     scopes = set(creds.scopes or [])
@@ -58,11 +61,11 @@ def _rfc3339(value):
     return dt.astimezone(timezone.utc).isoformat().replace('+00:00','Z')
 
 
-def upload(video_path, title, description='', tags=None, privacy='public', publish_at=None, category_id='22', made_for_kids=False):
+def upload(video_path, title, description='', tags=None, privacy='public', publish_at=None, category_id='22', made_for_kids=False, user_id=None):
     path = Path(video_path)
     if not path.exists() or path.stat().st_size == 0:
         raise FileNotFoundError('El vídeo renderizado no existe o está vacío.')
-    yt = _service()
+    yt = _service(user_id=user_id)
     status_body = {'privacyStatus': 'private' if publish_at else (privacy or 'public'), 'selfDeclaredMadeForKids': bool(made_for_kids)}
     if publish_at:
         status_body['publishAt'] = _rfc3339(publish_at)

@@ -34,7 +34,7 @@ class ArchitectureTests(unittest.TestCase):
         end=template.index('</section>',start)
         self.assertIn('zsAutomatonCard',template[start:end])
         self.assertIn('KILL SWITCH',template[start:end])
-        self.assertIn('v33.3.6</h2>',template[start:end])
+        self.assertIn('v33.3.7</h2>',template[start:end])
         self.assertIn('SHADOW',template[start:end])
         for name in ('business-orchestration.js','commerce-agency.js'):
             self.assertNotIn('registro Automaton',(root/'app/static'/name).read_text(encoding='utf-8'))

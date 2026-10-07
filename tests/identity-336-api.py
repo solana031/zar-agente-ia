@@ -35,7 +35,7 @@ try:
   with patch.object(main,'finish_oauth',side_effect=AssertionError('Invalid callback must not exchange tokens')):
    assert client.get('/oauth2callback?state=invalid&code=offline').status_code==400
   assert client.get('/connect/google?purpose=zar&service=unknown&email=zar.offline%40gmail.com').status_code==400
-  assert client.get('/health').json['version']=='33.3.6'
-  print('PASS real Flask Identity CSRF, OAuth PKCE/pending email, invalid callback and 33.3.6')
+  assert client.get('/health').json['version']=='33.3.7'
+  print('PASS real Flask Identity CSRF, OAuth PKCE/pending email, invalid callback and 33.3.7')
 finally:
  assert temp.resolve().is_relative_to(root);shutil.rmtree(temp)

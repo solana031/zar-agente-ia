@@ -33,7 +33,7 @@ def queue(state,service,action,reason,url,instructions,plan_id=None):
     old=next((a for a in state['human_actions'] if a['service']==service and a['action']==action and a.get('plan_id')==plan_id and a['status']!='DONE'),None)
     if old:return old
     row={'id':secrets.token_hex(12),'service':service,'action':action,'reason':reason,'url':url,
-         'instructions':instructions,'status':'ACTION_REQUIRED','plan_id':plan_id,'created_at':holdings._now()}
+         'instructions':instructions,'title':service+' · '+action,'status':'ACTION_REQUIRED','plan_id':plan_id,'created_at':holdings._now()}
     state['human_actions'].append(row);return row
 
 def connect_url(address,service='core'):
@@ -96,9 +96,12 @@ def _probe(name,creds):
             if not result['email']:result.update(status='ERROR',reason='Gmail no confirmó identidad')
         if name=='YOUTUBE':
             rows=data.get('items',[]);result.update(status='CONNECTED' if rows else 'NOT_ELIGIBLE',channel_ids=[r['id'] for r in rows],reason=None if rows else 'No existe canal; crearlo personalmente en YouTube')
+            result.update(channels=[{'id':r['id'],'title':r.get('snippet',{}).get('title'),'handle':r.get('snippet',{}).get('customUrl')} for r in rows],
+                upload_capability=bool(rows and PREFIX+'youtube.upload' in granted),
+                publish_capability='AUTHORIZED_NOT_TESTED' if rows and PREFIX+'youtube.upload' in granted else 'BLOCKED')
         if name=='ADSENSE':
             rows=data.get('accounts',[]);states=[a.get('state','UNKNOWN') for a in rows]
-            result.update(status='CONNECTED' if rows else 'NOT_ELIGIBLE',account_state='NO_ACCOUNT' if not rows else 'ACTIVE' if all(x=='READY' for x in states) else 'PENDING',accounts=[{'name':a.get('name'),'state':a.get('state')} for a in rows])
+            result.update(status='CONNECTED' if rows else 'NOT_ELIGIBLE',account_state='NO_ACCOUNT' if not rows else 'ACTIVE' if all(x=='READY' for x in states) else 'REJECTED' if any(x in {'REJECTED','DISAPPROVED'} for x in states) else 'PENDING_APPROVAL',accounts=[{'name':a.get('name'),'state':a.get('state')} for a in rows])
         return result
     except Exception:return {'status':'ERROR','reason':'La API no confirmó acceso; no se han realizado escrituras','last_verified':holdings._now()}
 
@@ -120,6 +123,9 @@ def verify_google(scope,services=None):
                        'reason':'Comprobar con un documento autorizado; todavía no se ha creado ninguno','last_verified':None}
     with holdings.transaction(scope):
         d=holdings.read(scope);s=ensure(d);s['capabilities'].update(results)
+        if 'ADSENSE' in results:
+            cap=results['ADSENSE'];s['adsense_onboarding']={'state':'SIGNUP_REQUIRED' if cap.get('account_state')=='NO_ACCOUNT' else cap.get('account_state','ERROR'),
+                'account_state':cap.get('account_state','ERROR'),'email':expected,'url':'https://www.google.com/adsense/start/','last_verified':cap.get('last_verified')}
         s['google'].update(status='ACTIVE',last_verified=holdings._now(),capabilities=[n for n,r in s['capabilities'].items() if r['status']=='CONNECTED'])
         for plan in s['plans']:
             capability=results.get(plan['service'])
@@ -132,6 +138,7 @@ def verify_google(scope,services=None):
                 elif plan['service']=='ADSENSE' and capability.get('account_state')=='NO_ACCOUNT':
                     action.update(reason='OAuth y API verificados; Google confirma NO_ACCOUNT',instructions=['Abrir AdSense con '+expected,'Completar alta, sitio real, país y términos con datos confirmados por Pablo','Esperar la aprobación de Google; OAuth no acredita monetización','CONTINUAR verificará la cuenta y su estado real'])
         d.setdefault('identity_provisioning',{})['base_identity']=expected
+        _setup_actions(s)
         from .business_orchestration import ensure as account_store
         for a in account_store(d)['accounts']:
             if a.get('provider')=='GOOGLE' and a.get('identity')==expected:a.update(s['google'],state='LISTO')
@@ -174,6 +181,7 @@ def provider_plan(scope,service):
         if status!='ACTIVE':queue(s,service,'SETUP','No hay cuenta verificada; comprobar la existente antes de registrar otra',urls[service],
             ['Usar '+address,'Comprobar si ya existe cuenta; no duplicarla','Completar personalmente CAPTCHA, SMS, KYC, términos, plan/pago y datos fiscales cuando aparezcan',
              'Configurar OAuth o secret references en el servicio Railway principal','CONTINUAR verifica configuración; no supone aprobación'],p['id'])
+        _setup_actions(s)
         from .business_orchestration import ensure as control
         agents=control(d)['agents'];aid='AccountProvisioningAgent:'+service
         agents[aid]={'id':aid,'name':aid,'domain':'identity','parent':'Identity:'+service,'state':status,'function':'account_provisioning',
@@ -187,9 +195,23 @@ def natural_request(scope,text):
     if not names:raise ValueError('Indica un proveedor: Shopify, Stripe, YouTube, AdSense, Instagram, TikTok, Vercel, DOMAIN, SUPPLIER, MEDIA o PHONE.')
     return [provider_plan(scope,n) for n in names]
 
+def _setup_actions(s):
+    address=s['google'].get('email') or 'la cuenta Google de ZAR'
+    guides={
+      'YOUTUBE':('Crear canal YouTube','https://www.youtube.com/account',['Iniciar sesión con '+address,'Crear canal: nombre ZAR Agente IA; handle @zaragente031 si está disponible','Aceptar términos personalmente o con confirmación explícita; volver y pulsar CONTINUAR']),
+      'ADSENSE':('CREAR / ACTIVAR ADSENSE','https://www.google.com/adsense/start/',['Usar '+address,'Completar sitio real, términos, datos fiscales y verificación personalmente','CONTINUAR consulta accounts por API; esperar aprobación']),
+      'SHOPIFY':('CONFIGURAR SHOPIFY','https://admin.shopify.com',['Configurar SHOPIFY_SHOP_DOMAIN y SHOPIFY_ADMIN_ACCESS_TOKEN únicamente en Railway principal','Pulsar CONTINUAR / VERIFICAR']),
+      'STRIPE':('CONFIGURAR STRIPE','https://dashboard.stripe.com/apikeys',['Configurar STRIPE_SECRET_KEY y STRIPE_WEBHOOK_SECRET únicamente en Railway principal','Pulsar CONTINUAR / VERIFICAR'])}
+    for a in s['human_actions']:
+        if a['service'] not in guides or a['status']=='DONE':continue
+        title,url,instructions=guides[a['service']]
+        a.update(title=title,url=url,instructions=instructions)
+        if a['service']=='YOUTUBE':a.update(suggested_name='ZAR Agente IA',suggested_handle='@zaragente031')
+        a['status']='HUMAN_ACTION_REQUIRED'
+
 def view(scope):
     from .business_connectors import inventory
-    d=holdings.read(scope);s=deepcopy(ensure(d));nodes=inventory(d)
+    d=holdings.read(scope);s=deepcopy(ensure(d));_setup_actions(s);nodes=inventory(d)
     s['onboarding']=[{'service':'GOOGLE','status':'CONNECTED' if s['google']['status']=='ACTIVE' else 'ACTION_REQUIRED','account_exists':True,'email':s['google'].get('email')}]
     for name in SERVICES[1:]:
         cap=s['capabilities'].get(name,{});plan=next((p for p in s['plans'] if p['service']==name),{})
@@ -205,6 +227,9 @@ def operate(scope,action,data):
     if action=='verify':return verify_google(scope)
     if action=='request':return natural_request(scope,data.get('request'))
     if action=='prepare':return provider_plan(scope,data.get('service'))
+    if action=='youtube_validate':
+        from .media_adapters import PublishingAdapter
+        return PublishingAdapter().prepare_youtube(scope,title=data.get('title','Historia ZAR'),description=data.get('description',''),privacy=data.get('privacy','private'))
     if action=='refresh':
         from .cloud_auth import get_credentials
         get_credentials(user_id=scope);return verify_google(scope)

@@ -73,6 +73,9 @@ class AdSenseAdapter:
 
     def snapshot(self, account=None, domain=None):
         accounts = self.accounts()
+        if not accounts:
+            return {'state':'SIGNUP_REQUIRED','account_state':'NO_ACCOUNT','accounts':[],'sites':[],'metrics':None,'payments':[],
+                'url':'https://www.google.com/adsense/start/','updated_at':holdings._now(),'source':'Google AdSense API'}
         if not account:
             if len(accounts) != 1:
                 raise ValueError('Selecciona GOOGLE_ADSENSE_ACCOUNT: no se elige una cuenta arbitraria.')
@@ -135,7 +138,7 @@ def sync(scope, account=None, domain=None):
                 p.update(received[p['reference']])
         d['adsense'] = result
         d.setdefault('adsense_history',[]).append(result)
-        d.setdefault('verified_connectors',{})['AdSense'] = verification('AdSense','LISTO','accounts, report and payments read')
+        d.setdefault('verified_connectors',{})['AdSense'] = verification('AdSense','LISTO' if result['state']=='LISTO' else 'POR CONFIGURAR','accounts, report and payments read' if result['state']=='LISTO' else 'NO_ACCOUNT: signup required; no reports requested')
         holdings.write(scope,d)
         from . import sites_company
         projects=sites_company._read_registry(scope)

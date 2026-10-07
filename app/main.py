@@ -3331,6 +3331,26 @@ def automaton_capital_move():
 def automaton_preflight_api():
     return jsonify(ok=True,preflight=_automaton_preflight(_stonks_read()))
 
+@app.post('/api/stonks/automaton/reset-paper')
+@_stonks_serialized
+def automaton_reset_paper_api():
+    import secrets
+    payload=request.get_json(silent=True) or {}
+    token=session.get('business_csrf')
+    if not token or not secrets.compare_digest(token,request.headers.get('X-ZAR-Business-CSRF','')):return jsonify(ok=False,error='CSRF: recarga Automaton.'),403
+    if payload.get('confirmed') is not True or payload.get('mode')!='PAPER':return jsonify(ok=False,error='Confirma RESTABLECER PAPER.'),400
+    d=_stonks_read()
+    if d.get('mode')!='paper':return jsonify(ok=False,error='Solo revocación Paper; LIVE no se modifica.'),409
+    previous_revoked=bool(d.get('revoked'))
+    candidate=dict(d,revoked=False)
+    preflight=_automaton_preflight(candidate)
+    if preflight.get('ready_to_start') is not True:return jsonify(ok=False,error='Preflight Paper bloqueado; revocación conservada.',preflight=preflight),409
+    d.update(revoked=False,paused=True,autonomous_engine=False)
+    stonks_automaton.stop(d)
+    _stonks_write(d)
+    _stonks_audit_append('RESTABLECER PAPER',{'decision':'REVOCATION_CLEARED','paper_only':True,'previous_revoked':previous_revoked,'checks':preflight.get('checks'),'orders_sent':0})
+    return jsonify(ok=True,revoked=False,paused=True,autonomous_engine=False,mode='paper',preflight=preflight)
+
 @app.post('/api/stonks/alpaca/verify')
 @_stonks_serialized
 def alpaca_verify_api():

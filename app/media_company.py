@@ -346,6 +346,10 @@ def publish(scope_id, task_id, video_url, platform, caption="", confirmed=False)
         prior=next((p for p in record.get('publications',[]) if p.get('platform')==platform and p.get('revision')==len(record.get('history',[]))),None)
         if prior: return dict(prior)
         video_path(scope_id, task_id)
+        if platform=='youtube':
+            from .media_adapters import PublishingAdapter
+            readiness=PublishingAdapter().prepare_youtube(scope_id,(record.get('project') or {}).get('title') or 'Historia ZAR',caption)
+            if not readiness['upload_capability']:return readiness
         # This URL is minted by our authenticated route, never supplied by the browser.
         record["publish"] = {"ok": False, "pending_publish": True,
                              "platform":platform,"timestamp":holdings._now(),"status":"PENDING","url":None,"metrics":None,
@@ -355,7 +359,7 @@ def publish(scope_id, task_id, video_url, platform, caption="", confirmed=False)
             if platform == 'youtube':
                 from .media_adapters import PublishingAdapter
                 safe = PublishingAdapter().youtube(video_path(scope_id,task_id),
-                    (record.get('project') or {}).get('title') or 'Historia ZAR', caption)
+                    (record.get('project') or {}).get('title') or 'Historia ZAR', caption,scope_id=scope_id)
                 record.update(publish=safe,status='PUBLISHED')
                 record.setdefault('publications',[]).append(dict(safe,revision=len(record.get('history',[]))))
                 _save(scope_id,task_id,record);_mirror(scope_id,_task(scope_id,task_id),record)
