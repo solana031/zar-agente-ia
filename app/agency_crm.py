@@ -155,6 +155,8 @@ def operate(scope,action,data):
                 draft={'id':uuid.uuid4().hex,'to':lead.get('email'),'subject':'Propuesta web ZAR para '+lead['name'],
                     'body':body,'state':'DRAFT','sent':False,'timestamp':holdings._now()};lead['emails'].append(draft);result=draft
             elif action=='gmail_draft':
+                from .identity_center import require_mail
+                require_mail(scope)
                 if lead['state']=='DO_NOT_CONTACT' or data.get('confirmed') is not True:raise ValueError('Confirma borrador externo y revisa baja.')
                 draft=find(lead['emails'],data['draft_id'])
                 if draft.get('gmail_intent'):return draft

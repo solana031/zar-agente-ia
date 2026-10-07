@@ -1,29 +1,49 @@
-/* Public metadata only. Signup and interactive checks remain on official providers. */
+/* Existing ZAR Google account. Tokens never enter the frontend. */
 (()=>{
- let csrf='',snapshot,signature='';
+ let csrf='',state,signature='';
  const esc=x=>String(x??'—').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
- const input=(name,label,value='')=>`<label>${label}<input name="${name}" value="${esc(value)}"></label>`;
- async function post(action,data){const r=await fetch('/api/holdings/workflows/identity_provision_'+action,{method:'POST',headers:{'Content-Type':'application/json','X-ZAR-Business-CSRF':csrf},body:JSON.stringify(data)});const j=await r.json();if(!r.ok||!j.ok)throw Error(j.error||'Identidad no verificada');return j.result;}
+ const pre=x=>`<pre style="white-space:pre-wrap;overflow-wrap:anywhere">${esc(JSON.stringify(x,null,2))}</pre>`;
+ const input=(n,l,v='')=>`<label>${l}<input name="${n}" value="${esc(v)}"></label>`;
+ const link=(email,service='core')=>'/connect/google?'+new URLSearchParams({purpose:'zar',force:'1',email,service});
+ async function post(action,data){const r=await fetch('/api/holdings/workflows/'+action,{method:'POST',headers:{'Content-Type':'application/json','X-ZAR-Business-CSRF':csrf},body:JSON.stringify(data)});const j=await r.json();if(!r.ok||!j.ok)throw Error(j.error||'Proveedor no confirmó');return j.result;}
  function render(j){
-  const parent=document.getElementById('orchestrationWorkspaceInner');if(!parent||!j.identity)return;csrf=j.csrf;snapshot=j.identity;
-  let host=document.getElementById('zarIdentityCenter');if(!host){host=document.createElement('section');host.id='zarIdentityCenter';host.className='workspaceCard';parent.append(host);}
-  if(host.dataset.editing)return;const next=JSON.stringify(snapshot);if(next===signature&&host.innerHTML)return;signature=next;
-  host.innerHTML=`<h2>CUENTAS DE ZAR · Identidad</h2><p>Identidad base verificada: ${esc(snapshot.base_identity||'POR CONFIGURAR')}</p><p>Nombre sugerido no significa disponible. Contraseñas, CAPTCHA, SMS, recuperación y términos se completan exclusivamente en el proveedor.</p>
-  <form data-identity-prepare><h3>CREAR NUEVA CUENTA PARA ZAR</h3><label>Servicio<select name="service">${['GOOGLE','SHOPIFY','STRIPE','YOUTUBE','INSTAGRAM','TIKTOK','ADSENSE','VERCEL'].map(x=>`<option>${x}</option>`).join('')}</select></label>${input('objective','Objetivo')}${input('identity','Email ZAR existente o propuesto',snapshot.base_identity||'')}${input('desired_name','Nombre deseado')}${input('display_name','Nombre público','ZAR')}${input('notes','Notas públicas; nunca contraseñas/tokens')}<button class="zoBtn">Preparar cuenta</button><button type="button" class="zoBtn" data-identity-suggest>Generar alternativas Gmail</button><div id="zarIdentitySuggestions"></div></form>
-  <p id="zarIdentityNotice" role="status"></p>${snapshot.plans.map(p=>`<article><h3>${esc(p.service)} · ${esc(p.identity||p.desired_name)}</h3><p>${esc(p.status)} · OAuth ${esc(p.oauth_state)} · Verificado ${esc(p.last_verified)} · ${esc(p.capabilities.join(', '))}</p><p>${esc(p.notice||p.human_step)}</p><ol>${p.steps.map(x=>`<li>${esc(x)}</li>`).join('')}</ol><a class="zoBtn" href="${esc(p.url)}" target="_blank" rel="noopener">ABRIR registro oficial</a><button type="button" class="zoBtn" data-identity-op="start" data-id="${esc(p.id)}">CREAR CUENTA</button><a class="zoBtn" href="/connect/google?force=1">CONECTAR / REAUTENTICAR Google</a><button type="button" class="zoBtn" data-identity-op="verify" data-id="${esc(p.id)}">VERIFICAR</button><button type="button" class="zoBtn" data-identity-op="disconnect" data-id="${esc(p.id)}">DESCONECTAR</button><form data-identity-complete><input type="hidden" name="id" value="${esc(p.id)}">${input('identity','Email creado realmente',p.identity)}<label>Recovery<select name="recovery_status"><option>UNKNOWN</option><option>USER_CONFIRMED_CONFIGURED</option></select></label><button class="zoBtn">He completado la creación; continuar a OAuth</button></form></article>`).join('')}`;
+  const parent=document.getElementById('orchestrationWorkspaceInner');if(!parent||!j.identity_center)return;csrf=j.csrf;state=j.identity_center;
+  let h=document.getElementById('zarIdentityCenter');if(!h){h=document.createElement('section');h.id='zarIdentityCenter';h.className='workspaceCard';parent.append(h);}
+  if(h.dataset.editing)return;const next=JSON.stringify(state);if(next===signature&&h.innerHTML)return;signature=next;const address=state.google.email||'';
+  h.innerHTML=`<style>#zarIdentityCenter form{display:flex;flex-wrap:wrap;gap:10px;padding:12px 0}#zarIdentityCenter label{display:flex;flex-direction:column;flex:1 1 160px;min-width:0}#zarIdentityCenter input,#zarIdentityCenter textarea,#zarIdentityCenter select{max-width:100%;padding:8px;background:#101b2d;color:#eee;border:1px solid #456;border-radius:5px}#zarIdentityCenter textarea{min-height:110px}#zarIdentityCenter article{padding:10px;border-bottom:1px solid #345}#zarIdentityCenter .identityGrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px}#zarIdentityCenter a{overflow-wrap:anywhere}</style>
+   <h2>ACTIVAR ZAR · Identidad y cuentas</h2><p>La cuenta Google/Gmail propia de ZAR ya existe. Registra su email y conecta esa cuenta; no se crea otra.</p>
+   <form data-identity-register>${input('email','Email real de ZAR',address)}<button class="zoBtn">Registrar cuenta existente</button></form>
+   <p>Google: ${esc(state.google.status)} · ${esc(address||'Email pendiente de registrar')} · Verificado ${esc(state.google.last_verified)}</p>
+   ${address?`<a class="zoBtn" href="${esc(link(address))}">CONECTAR CUENTA GOOGLE DE ZAR</a><a class="zoBtn" href="${esc(link(address))}">REAUTENTICAR</a>`:''}
+   <button type="button" class="zoBtn" data-center="verify">VERIFICAR Google y capacidades</button><button type="button" class="zoBtn" data-center="refresh">REFRESH</button><button type="button" class="zoBtn" data-center="revoke">REVOCAR / DESCONECTAR</button><p id="zarIdentityNotice" role="status"></p>
+   <div class="identityGrid">${state.onboarding.map(n=>`<article><b>${esc(n.service)}</b><p>${esc(n.status)} · ${esc(n.capability_status||'Cuenta creada')}</p>${address&&['DOCS','SHEETS','SLIDES','TASKS','YOUTUBE','ADSENSE'].includes(n.service)?`<a href="${esc(link(address,n.service.toLowerCase()))}">CONECTAR permiso específico</a>`:''}</article>`).join('')}</div>
+   <details><summary>Capacidades y evidencias reales</summary>${pre(state.capabilities)}<p>Gmail no acredita una organización Workspace administrada.</p></details>
+   <h3>AccountProvisioningAgent</h3><form data-identity-request>${input('request','Petición: Necesito Shopify, Stripe o TikTok para ZAR')}<button class="zoBtn">Preparar cuentas</button></form>
+   ${state.plans.map(p=>`<article><b>${esc(p.service)}</b> · ${esc(p.identity)} · ${esc(p.status)}${p.url?` · <a href="${esc(p.url)}" target="_blank" rel="noopener">ABRIR proveedor oficial</a>`:''}<details><summary>CONFIGURAR en Railway principal</summary>${pre(p.configuration)}<p>web-production-a9565 · No copiar secretos a secundaria.</p></details></article>`).join('')}
+   <h3>HUMAN ACTIONS</h3>${state.human_actions.filter(a=>a.status!=='DONE').map(a=>`<article><b>${esc(a.service)} · ${esc(a.action)}</b> · ${esc(a.status)}<p>${esc(a.reason)}</p><ol>${a.instructions.map(t=>`<li>${esc(t)}</li>`).join('')}</ol>${a.url?`<a class="zoBtn" href="${esc(a.url)}" target="_blank" rel="noopener">ABRIR</a>`:''}<button type="button" class="zoBtn" data-human="${esc(a.id)}">CONTINUAR / VERIFICAR</button></article>`).join('')||'<p>Sin acciones pendientes registradas.</p>'}
+   <h3>ZAR Mail · Gmail existente</h3><div>${['inbox','unread','labels','drafts'].map(a=>`<button type="button" class="zoBtn" data-mail="${a}">${a.toUpperCase()}</button>`).join('')}</div>
+   <form data-mail-query><select name="action"><option>search</option><option>message</option><option>thread</option><option>attachment</option></select>${input('query','Consulta Gmail')}${input('id','Message ID / Thread ID')}${input('attachment_id','Attachment ID')}<button class="zoBtn">Consultar</button></form>
+   <form data-mail-compose><select name="action">${['draft','send','reply','forward','archive'].map(a=>`<option>${a}</option>`).join('')}</select>${input('to','Destinatario')}${input('subject','Asunto')}<label>Texto<textarea name="body"></textarea></label>${input('id','ID original si reply/forward/archive')}${input('client','Cliente')}${input('business','Negocio')}${input('agent','Agente','Pablo')}<label>Adjuntos<input name="files" type="file" multiple></label><input name="transaction_id" type="hidden" value="${crypto.randomUUID()}"><button class="zoBtn">Revisar y confirmar</button></form>
+   <div id="zarMailResult"></div><details><summary>Auditoría Mail</summary>${pre(state.mail_audit)}</details>`;
  }
  window.addEventListener('zar-workflow-state',e=>render(e.detail));
- document.addEventListener('input',e=>{const host=e.target.closest('#zarIdentityCenter');if(host)host.dataset.editing='true';});
- document.addEventListener('click',async e=>{
-  const b=e.target.closest('#zarIdentityCenter button');if(!b||b.type==='submit')return;
-  try{
-   if(b.hasAttribute('data-identity-suggest')){const r=await post('suggest',{desired_name:b.closest('form').elements.desired_name.value});document.getElementById('zarIdentitySuggestions').textContent=r.alternatives.map(x=>x.email+' · disponibilidad no verificada').join('\n');return;}
-   if(b.dataset.identityOp){const data={id:b.dataset.id};if(b.dataset.identityOp==='disconnect'){if(!confirm('Desconectar OAuth local de esta identidad y suspenderla en el inventario; sus módulos Google dejarán de acceder.'))return;data.confirmed=true;}const r=await post(b.dataset.identityOp,data);document.getElementById('zarIdentityCenter').dataset.editing='';signature='';await window.zarWorkflowRefresh?.();document.getElementById('zarIdentityNotice').textContent=r.status+' · '+(r.human_step||'');}
-  }catch(err){document.getElementById('zarIdentityNotice').textContent=err.message;}
+ document.addEventListener('input',e=>{const h=e.target.closest('#zarIdentityCenter');if(h)h.dataset.editing='true';});
+ async function update(){const h=document.getElementById('zarIdentityCenter');if(h)delete h.dataset.editing;signature='';await window.zarWorkflowRefresh?.();}
+ document.addEventListener('click',async e=>{const b=e.target.closest('#zarIdentityCenter button[type=button]');if(!b)return;b.disabled=true;
+  try{let r;if(b.dataset.mail){r=await post('identity_mail_'+b.dataset.mail,{});document.getElementById('zarMailResult').innerHTML=pre(r);return;}
+   if(b.dataset.center==='revoke'&&!confirm('Revocar OAuth de esta cuenta en Google. Gmail y sus módulos dejarán de acceder.'))return;
+   r=await post('identity_center_'+(b.dataset.human?'continue':b.dataset.center),b.dataset.human?{id:b.dataset.human}:{confirmed:true});await update();document.getElementById('zarIdentityNotice').textContent='Resultado confirmado: '+(r.status||'ver evidencias');
+  }catch(err){document.getElementById('zarIdentityNotice').textContent=err.message;}finally{b.disabled=false;}
  });
- document.addEventListener('submit',async e=>{
-  const f=e.target;if(!f.matches('#zarIdentityCenter form'))return;e.preventDefault();const data=Object.fromEntries(new FormData(f));
-  try{const action=f.hasAttribute('data-identity-complete')?'human_completed':'prepare';if(action==='human_completed'){if(!confirm('Confirmas que esta cuenta fue creada realmente. ZAR todavía comprobará OAuth e identidad.'))return;data.confirmed=true;}await post(action,data);document.getElementById('zarIdentityCenter').dataset.editing='';signature='';await window.zarWorkflowRefresh?.();}
-  catch(err){document.getElementById('zarIdentityNotice').textContent=err.message;}
+ document.addEventListener('submit',async e=>{const f=e.target;if(!f.matches('#zarIdentityCenter form'))return;e.preventDefault();const b=f.querySelector('button');b.disabled=true;const data=Object.fromEntries(new FormData(f));delete data.files;
+  try{
+   if(f.hasAttribute('data-mail-compose')){
+    if(!confirm(`${data.action.toUpperCase()} · ${data.to||data.id}\n${data.subject}\n${data.body}\nCuenta: ${state.google.email}`))return;
+    data.attachments=[];for(const file of f.elements.files.files){if(file.size>15*1024*1024)throw Error('Máximo 15 MB de adjuntos');const bytes=new Uint8Array(await file.arrayBuffer());let encoded='';for(let i=0;i<bytes.length;i+=8192)encoded+=String.fromCharCode(...bytes.subarray(i,i+8192));data.attachments.push({filename:file.name,mime:file.type||'application/octet-stream',data:btoa(encoded)});}
+    data.confirmed=true;const r=await post('identity_mail_'+data.action,data);document.getElementById('zarMailResult').innerHTML=pre(r);if(r.status==='CONFIRMED')f.elements.transaction_id.value=crypto.randomUUID();return;
+   }
+   if(f.hasAttribute('data-mail-query')){document.getElementById('zarMailResult').innerHTML=pre(await post('identity_mail_'+data.action,data));return;}
+   await post('identity_center_'+(f.hasAttribute('data-identity-register')?'register':'request'),data);await update();
+  }catch(err){document.getElementById('zarIdentityNotice').textContent=err.message;}finally{b.disabled=false;}
  });
 })();

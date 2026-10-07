@@ -35,6 +35,8 @@ def verify(scope):
 
 def send(scope,data):
     from . import gmail
+    from .identity_center import require_mail
+    require_mail(scope)
     if data.get('confirmed') is not True:raise ValueError('Confirma el envío del destinatario, asunto y texto revisados.')
     if not gmail.is_connected():raise ValueError('POR CONFIGURAR: conecta Gmail/OAuth real antes de enviar.')
     with holdings.transaction(scope):
@@ -61,6 +63,10 @@ def send(scope,data):
             draft['send_intent']='REVIEW_REQUIRED';holdings.write(scope,d)
             raise ValueError('Envío ambiguo: revisa Gmail; no se reenviará automáticamente.') from None
         draft.update(send_intent='CONFIRMED',sent=True,provider_id=result['id'],thread_id=result.get('threadId'),sent_at=holdings._now())
+        from .identity_center import ensure as identity_state
+        identity_state(d)['mail_audit'].append({'transaction_id':'agency:'+draft['id'],'message_id':result['id'],'thread_id':result.get('threadId'),
+            'sender':identity,'recipient':draft['to'],'subject':draft['subject'],'agent':'SalesOutreachAgent','business':'web_agency',
+            'client':lead['id'],'timestamp':holdings._now(),'status':'CONFIRMED','action':'send'})
         lead['thread_id']=result.get('threadId') or lead.get('thread_id')
         if lead['state'] not in {'REPLIED','NEGOTIATING','WON','DELIVERED'}:
             agency_crm.transition(lead,'CONTACTED',{'confirmed':True,'evidence':'Gmail confirmed message '+result['id']})
@@ -68,6 +74,8 @@ def send(scope,data):
 
 def sync_inbound(scope,data):
     from . import gmail,agency_events
+    from .identity_center import require_mail
+    require_mail(scope)
     if not gmail.is_connected():raise ValueError('POR CONFIGURAR: Gmail/OAuth no conectado.')
     lead=agency_crm.find(agency_crm.ensure(holdings.read(scope))['leads'],data['lead_id'])
     address=lead.get('email','')

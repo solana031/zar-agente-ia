@@ -25,12 +25,22 @@ def view(scope):
     from .commerce_workspace import view as commerce_view
     from .agency_crm import view as agency_view
     from .identity_provisioning import view as identity_view
-    return {'identity':identity_view(scope),'jev':d.get('jev_decisions',[])[-100:][::-1], 'media':media[-50:][::-1], 'commerce':commerce_view(scope),'agency':agency_view(scope),
+    from .identity_center import view as identity_center_view
+    return {'identity_center':identity_center_view(scope),'identity':identity_view(scope),'jev':d.get('jev_decisions',[])[-100:][::-1], 'media':media[-50:][::-1], 'commerce':commerce_view(scope),'agency':agency_view(scope),
         'sites':sites_company.list_sites(scope), 'adsense':d.get('adsense',{'state':'POR CONFIGURAR','metrics':None,'payments':[]}),
         'connectors':{k:{x:v.get(x) for x in ('state','checked_at','verification_scope')} for k,v in d.get('verified_connectors',{}).items()}}
 
 
 def operate(scope, action, data):
+    if action.startswith('identity_workspace_'):
+        from .identity_workspace import operate as workspace
+        return workspace(scope,action.removeprefix('identity_workspace_'),data)
+    if action.startswith('identity_mail_'):
+        from .identity_mail import operate as mail
+        return mail(scope,action.removeprefix('identity_mail_'),data)
+    if action.startswith('identity_center_'):
+        from .identity_center import operate as center
+        return center(scope,action.removeprefix('identity_center_'),data)
     if action.startswith('identity_provision_'):
         from .identity_provisioning import operate as provision
         return provision(scope,action.removeprefix('identity_provision_'),data)

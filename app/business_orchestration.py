@@ -17,7 +17,7 @@ TOOLS = {
     "AccountManagerAgent": ("identity", "account_inventory"),
     "ZARIdentityAgent": ("identity", "account_inventory"),
     "GoogleAccountAgent": ("identity", "account_inventory"),
-    "AccountProvisioningAgent": ("identity", "account_inventory"),
+    "AccountProvisioningAgent": ("identity", "provisioning_request"),
     "SiteResearchAgent": ("sites", "workflow_status"),
     "SiteBuilderAgent": ("sites", "workflow_status"),
     "ContentAgent": ("sites", "workflow_status"),
@@ -95,7 +95,7 @@ def ensure(d):
             "last_heartbeat": None, "costs": None, "attributed_revenue": None,
             "logs": [], "permissions": ["local_read"], "dependencies": [],
         })
-    for name, tool in [('SiteBuilderAgent','site_build'),('SEOAgent','site_analyze'),
+    for name, tool in [('AccountProvisioningAgent','provisioning_request'),('SiteBuilderAgent','site_build'),('SEOAgent','site_analyze'),
                        ('OptimizationAgent','project_review'),('AnalyticsAgent','project_review'),('ContentAgent','project_review')]:
         a=o['agents'][name]
         if tool not in a['tools']: a['tools'].append(tool);a['capabilities'].append(tool)
@@ -328,6 +328,12 @@ def tick(scope):
                     result = wallet(d)
                 elif t["tool"] == "account_inventory":
                     result = {"accounts": o["accounts"], "state": "POR CONFIGURAR" if not o["accounts"] else "INVENTARIO LOCAL"}
+                elif t['tool']=='provisioning_request':
+                    from .identity_center import natural_request
+                    result=natural_request(scope,t.get('payload',{}).get('request'))
+                    fresh=holdings.read(scope);d['identity_center']=fresh['identity_center']
+                    for aid,agent in fresh['orchestration']['agents'].items():
+                        if aid not in o['agents']:o['agents'][aid]=agent
                 elif t["tool"] == "profitability_review":
                     balances = wallet(d)["balances"]
                     reviews = {}

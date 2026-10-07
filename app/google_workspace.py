@@ -51,6 +51,37 @@ def drive_search(name, max_results=20):
     q = f"name contains '{escaped}' and trashed = false"
     return drive_list(q, max_results)
 
+def drive_folder(name,parent=None):
+    body={'name':name,'mimeType':'application/vnd.google-apps.folder'}
+    if parent:body['parents']=[parent]
+    return drive_service().files().create(body=body,fields='id,name,webViewLink').execute()
+
+def drive_upload(name,data,mime='application/octet-stream',parent=None):
+    import io,base64
+    from googleapiclient.http import MediaIoBaseUpload
+    content=base64.b64decode(data,validate=True)
+    if len(content)>15*1024*1024:raise ValueError('Máximo 15 MB por subida.')
+    body={'name':name}
+    if parent:body['parents']=[parent]
+    return drive_service().files().create(body=body,media_body=MediaIoBaseUpload(io.BytesIO(content),mimetype=mime),fields='id,name,webViewLink').execute()
+
+def drive_download(file_id):
+    import io,base64
+    from googleapiclient.http import MediaIoBaseDownload
+    content=io.BytesIO();transfer=MediaIoBaseDownload(content,drive_service().files().get_media(fileId=file_id));done=False
+    while not done:
+        _,done=transfer.next_chunk()
+        if content.tell()>20*1024*1024:raise ValueError('Descarga limitada a 20 MB.')
+    return {'id':file_id,'data':base64.b64encode(content.getvalue()).decode()}
+
+def drive_move(file_id,parent):
+    svc=drive_service();old=svc.files().get(fileId=file_id,fields='parents').execute()
+    return svc.files().update(fileId=file_id,addParents=parent,removeParents=','.join(old.get('parents',[])),fields='id,parents').execute()
+
+def drive_share(file_id,address,role='reader'):
+    if role not in {'reader','writer'}:raise ValueError('Rol de compartir no permitido.')
+    return drive_service().permissions().create(fileId=file_id,body={'type':'user','role':role,'emailAddress':address},sendNotificationEmail=True,fields='id').execute()
+
 
 def docs_create(title, text=''):
     svc = docs_service()

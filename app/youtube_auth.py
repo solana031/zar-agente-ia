@@ -47,6 +47,12 @@ def _save_credentials(creds):
 def get_credentials(auto_refresh=True):
     global _LAST_ERROR
     with _LOCK:
+        from .cloud_auth import get_credentials as google_credentials
+        from .user_scope import get_current_user
+        from . import holdings
+        if holdings.read(get_current_user()).get('identity_center',{}).get('google',{}).get('email'):
+            creds=google_credentials(auto_refresh=auto_refresh)
+            return creds if creds and YOUTUBE_SCOPE in set(creds.scopes or []) else None
         if not TOKEN_FILE.exists():
             return None
         try:

@@ -32,6 +32,13 @@ class AdSenseAdapter:
 
     def get(self, path, params=None):
         token = os.environ.get('GOOGLE_ADSENSE_ACCESS_TOKEN', '').strip()
+        from .user_scope import get_current_user
+        principal=holdings.read(get_current_user()).get('identity_center',{}).get('google',{}).get('email')
+        if principal:token=''
+        if not token:
+            from .cloud_auth import get_credentials
+            creds=get_credentials()
+            if creds and 'https://www.googleapis.com/auth/adsense.readonly' in set(creds.scopes or []):token=creds.token
         if not token:
             raise ValueError('POR CONFIGURAR: GOOGLE_ADSENSE_ACCESS_TOKEN con scope adsense.readonly.')
         if not re.fullmatch(r'accounts(?:/[^/?#]+(?:/(?:sites|payments|reports:generate))?)?', path):

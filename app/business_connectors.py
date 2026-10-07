@@ -94,4 +94,24 @@ def inventory(state=None):
             'expected':'https://paper-api.alpaca.markets' if name=='ALPACA_BASE_URL' else 'Valor del proveedor; secreto solo en servidor' if any(x in name for x in ('KEY','SECRET','TOKEN')) else 'Identificador/URL real del proveedor',
             'obtain_at':row.get('provider_url') or 'Panel/documentación del proveedor conectado',
             'paste_at':'Railway → proyecto existente → servicio web → Variables → Deploy'} for name in variables]
+    center=(state or {}).get('identity_center',{})
+    account=center.get('google',{})
+    for row in rows:
+        row['account']=next((p.get('identity') for p in center.get('plans',[]) if p['service']=={'Payment':'STRIPE','Dominio':'DOMAIN','Proveedor':'SUPPLIER'}.get(row['name'],row['name'].upper())),None)
+        if row['name'] in {'Google Identity','ZAR Mail','YouTube','AdSense'}:
+            row['account']=account.get('email')
+        if row['name']=='Google Identity':
+            row.update(provider_url='https://myaccount.google.com',missing_requirements=[] if account.get('status')=='ACTIVE' else ['Cuenta creada: registrar email y autorizar OAuth'],
+                       next_step='Cuenta Google de ZAR ya creada. Abrir ACTIVAR ZAR para registrar email, conectar OAuth y verificar capacidades.')
+    for name in ('GMAIL','DRIVE','DOCS','SHEETS','SLIDES','CALENDAR','CONTACTS','TASKS'):
+        cap=center.get('capabilities',{}).get(name,{})
+        rows.append({'name':'Google '+name.title(),'provider':'GOOGLE','account':account.get('email'),'group':'GOOGLE',
+            'state':'LISTO' if cap.get('status')=='CONNECTED' else 'ERROR' if cap.get('status')=='ERROR' else 'POR CONFIGURAR',
+            'status':cap.get('status','NOT_CONNECTED'),'capabilities':[name.lower()],
+            'missing':[cap.get('reason','Autorizar OAuth y verificar acceso real')],
+            'missing_requirements':[] if cap.get('status')=='CONNECTED' else [cap.get('reason','Autorizar OAuth y verificar acceso real')],
+            'verified_at':cap.get('last_verified'),'last_verified':cap.get('last_verified'),'configuration':[],
+            'next_step':'ACTIVAR ZAR → CONECTAR → VERIFICAR; permisos adicionales solo al necesitar el servicio.',
+            'provider_url':'https://myaccount.google.com/permissions',
+            'verify':{'path':'/api/holdings/workflows/identity_center_verify','action':None}})
     return rows

@@ -153,7 +153,7 @@ def _canonical_redirect_if_needed():
 
 _OAUTH_PENDING_FILE = Path(os.environ.get('ZAR_DATA_DIR', '/data')) / 'oauth_pending.json'
 
-def _save_oauth_pending(provider, state, verifier, redirect_uri=None):
+def _save_oauth_pending(provider, state, verifier, redirect_uri=None, expected_email=None, purpose=None):
     """Persist OAuth transactions independently of the browser session.
 
     A user can have several Zar tabs/windows open, and Railway may route the
@@ -172,7 +172,7 @@ def _save_oauth_pending(provider, state, verifier, redirect_uri=None):
                 data = {}
         if not isinstance(data, dict):
             data = {}
-        data[state] = {'provider': provider, 'state': state, 'verifier': verifier, 'redirect_uri': redirect_uri, 'user_id': get_current_user(), 'created_at': time.time()}
+        data[state] = {'provider': provider, 'state': state, 'verifier': verifier, 'redirect_uri': redirect_uri, 'user_id': get_current_user(), 'created_at': time.time(),'expected_email':expected_email,'purpose':purpose}
         # Keep only recent transactions.
         cutoff = time.time() - 15 * 60
         data = {k: v for k, v in data.items() if isinstance(v, dict) and float(v.get('created_at', 0) or 0) >= cutoff}
@@ -552,7 +552,7 @@ def oauth2callback():
             session.pop("oauth_state", None)
             session.pop("oauth_code_verifier", None)
             return _oauth_success_page('youtube')
-        finish_oauth(state, code, verifier, pending.get('redirect_uri'), user_id=pending.get('user_id') or get_current_user())
+        finish_oauth(state, code, verifier, pending.get('redirect_uri'), user_id=pending.get('user_id') or get_current_user(),expected_email=pending.get('expected_email'))
         # Vincula esta sesión al correo Google real y mueve su token al espacio aislado por cuenta.
         try:
             from .cloud_auth import get_account_email, get_credentials, _token_file
@@ -571,6 +571,11 @@ def oauth2callback():
                 set_current_user(new_uid)
                 from .identity_provisioning import link_oauth_plan
                 link_oauth_plan(old_uid,new_uid,google_email)
+                if pending.get('purpose')=='zar':
+                    from .identity_center import register_google,verify_google,link_identity
+                    link_identity(old_uid,new_uid,google_email)
+                    register_google(new_uid,google_email)
+                    verify_google(new_uid,services=['GMAIL'])
         except Exception:
             pass
         # v30.2.8: una conexión/reautorización de Google NO inicia una copia automáticamente.
@@ -3447,6 +3452,14 @@ def state():
 def connect_google():
     try:
         force = request.args.get("force", "0") == "1"
+        purpose=request.args.get('purpose')
+        service=request.args.get('service','core') if purpose=='zar' else None
+        expected_email=request.args.get('email','').strip().lower() if purpose=='zar' else None
+        if purpose=='zar':
+            import re
+            from .cloud_auth import SERVICE_SCOPES
+            if service not in SERVICE_SCOPES or not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+',expected_email or ''):
+                return 'Selecciona servicio y correo real de ZAR.',400
         if not force and connected():
             return "<script>window.close();</script><h2>Google ya está conectado</h2><p>Zar ha conservado tus credenciales. No necesitas volver a autorizarlo.</p>"
         session.pop("oauth_provider", None)
@@ -3456,11 +3469,11 @@ def connect_google():
         # Railway alias mismatches. Persist the same URI with the transaction
         # so the code exchange uses exactly the URI used for authorization.
         redirect_uri = _google_redirect_uri()
-        url, state, verifier = authorization_url(force=force, redirect_uri=redirect_uri)
+        url, state, verifier = authorization_url(force=force, redirect_uri=redirect_uri,service=service,expected_email=expected_email)
         session["oauth_provider"] = "google"
         session["oauth_state"] = state
         session["oauth_code_verifier"] = verifier
-        _save_oauth_pending('google', state, verifier, redirect_uri)
+        _save_oauth_pending('google', state, verifier, redirect_uri,expected_email,purpose)
         return redirect(url)
     except Exception as exc:
         return f"<h2>No se pudo iniciar Google OAuth</h2><pre>{exc}</pre>", 500

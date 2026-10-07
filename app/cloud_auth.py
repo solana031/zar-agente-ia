@@ -40,6 +40,14 @@ SCOPES = [
     # permisos de escritura innecesarios.
     'https://www.googleapis.com/auth/tasks.readonly',
 ]
+CORE_SCOPES=['openid','email','https://www.googleapis.com/auth/gmail.modify',
+             'https://www.googleapis.com/auth/drive.file','https://www.googleapis.com/auth/drive.readonly',
+             'https://www.googleapis.com/auth/calendar','https://www.googleapis.com/auth/contacts']
+SERVICE_SCOPES={'core':CORE_SCOPES,'docs':['https://www.googleapis.com/auth/documents'],
+ 'sheets':['https://www.googleapis.com/auth/spreadsheets'],'slides':['https://www.googleapis.com/auth/presentations'],
+ 'tasks':['https://www.googleapis.com/auth/tasks.readonly'],
+ 'youtube':['https://www.googleapis.com/auth/youtube.readonly','https://www.googleapis.com/auth/youtube.upload'],
+ 'adsense':['https://www.googleapis.com/auth/adsense.readonly']}
 
 _LOCK = threading.RLock()
 _LAST_ERROR = ''
@@ -88,7 +96,7 @@ def get_credentials(auto_refresh=True, user_id=None):
             from .oauth_vault import decode
             raw=path.read_text(encoding='utf-8')
             info=decode(raw,DATA_DIR)
-            creds = Credentials.from_authorized_user_info(info, SCOPES)
+            creds = Credentials.from_authorized_user_info(info, info.get('scopes') or [])
             if json.loads(raw).get('format')!='ZAR_OAUTH_ENCRYPTED_V1':
                 from .oauth_vault import persist
                 persist(path,creds.to_json(),DATA_DIR)
@@ -120,7 +128,9 @@ def _missing_scopes(creds):
     # Some credential files do not expose scopes. In that case rely on the token
     # itself and let Google API return a precise permission error when needed.
     if not granted:
-        return []
+        return list(SCOPES)
+    if 'https://www.googleapis.com/auth/gmail.modify' in granted:
+        granted.update(['https://www.googleapis.com/auth/gmail.readonly','https://www.googleapis.com/auth/gmail.compose'])
     return [scope for scope in SCOPES if scope not in granted]
 
 
@@ -140,7 +150,8 @@ def auth_status():
         'has_refresh_token': bool(creds and creds.refresh_token),
         'missing_scopes': missing,
         'expires_at': expires_at,
-        'needs_reauth': bool((creds is None and (_token_file().exists() or TOKEN_FILE.exists())) or missing),
+        'needs_reauth': bool((creds is None and (_token_file().exists() or TOKEN_FILE.exists())) or
+                             (creds and not set(CORE_SCOPES).issubset(set(creds.scopes or [])))),
         'error': _LAST_ERROR if not connected_ok else '',
     }
 
@@ -159,7 +170,7 @@ def _oauth_client():
     return client_id, client_secret
 
 
-def authorization_url(force=False, redirect_uri=None):
+def authorization_url(force=False, redirect_uri=None, service=None, expected_email=None):
     """Build Google's OAuth authorization URL explicitly.
 
     This intentionally avoids delegating the authorization-request construction
@@ -186,7 +197,7 @@ def authorization_url(force=False, redirect_uri=None):
         'client_id': client_id,
         'redirect_uri': redirect,
         'response_type': 'code',
-        'scope': ' '.join(SCOPES),
+        'scope': ' '.join((['openid','email']+SERVICE_SCOPES[service]) if service else SCOPES),
         'state': state,
         'access_type': 'offline',
         'code_challenge': code_challenge,
@@ -195,12 +206,13 @@ def authorization_url(force=False, redirect_uri=None):
     }
     if force:
         params['prompt'] = 'consent select_account'
+    if expected_email:params['login_hint']=expected_email
 
     url = 'https://accounts.google.com/o/oauth2/v2/auth?' + urlencode(params)
     return url, state, code_verifier
 
 
-def finish_oauth(state, code, code_verifier, redirect_uri=None, user_id=None):
+def finish_oauth(state, code, code_verifier, redirect_uri=None, user_id=None, expected_email=None):
     """Exchange the authorization code for Google user credentials."""
     if not code_verifier:
         raise ValueError('Falta el verificador PKCE de la sesión OAuth.')
@@ -241,9 +253,18 @@ def finish_oauth(state, code, code_verifier, redirect_uri=None, user_id=None):
         token_uri='https://oauth2.googleapis.com/token',
         client_id=client_id,
         client_secret=client_secret,
-        scopes=payload.get('scope', '').split() or list(SCOPES),
+        scopes=payload.get('scope', '').split(),
         expiry=expiry,
     )
+    if expected_email and get_account_email(creds)!=expected_email.strip().lower():
+        raise ValueError('La identidad OAuth no coincide con la cuenta ZAR seleccionada. No se han sustituido tokens.')
+    if not creds.refresh_token:
+        previous=get_credentials(auto_refresh=False,user_id=user_id)
+        if previous and previous.refresh_token and previous.client_id==creds.client_id:
+            new_email=get_account_email(creds)
+            if new_email and get_account_email(previous)==new_email:
+                creds=Credentials(token=creds.token,refresh_token=previous.refresh_token,token_uri=creds.token_uri,
+                    client_id=creds.client_id,client_secret=creds.client_secret,scopes=creds.scopes,expiry=creds.expiry)
     _save_credentials(creds, user_id=user_id)
     return creds
 

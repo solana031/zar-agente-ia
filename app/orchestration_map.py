@@ -15,6 +15,17 @@ def graph(base,d):
             base['agents'].append({'id':name,'name':name,'domain':domain,'parent':'zar_supervisor' if domain in {'business','identity','jev'} else 'BusinessOrchestrator',
                                    'type':'orchestrator','role':'Trading aislado' if domain=='business' else domain,'status':control['mode']})
             base['edges'].append(['zar_supervisor' if domain in {'business','identity','jev'} else 'BusinessOrchestrator',name]);seen.add(name)
+    from .identity_center import ensure as identity
+    state=identity(d)
+    for name in ('GOOGLE','GMAIL','WORKSPACE','YOUTUBE','SHOPIFY','STRIPE','INSTAGRAM','TIKTOK','ADSENSE','VERCEL','DOMAIN','PHONE','SUPPLIER','MEDIA'):
+        aid='Identity:'+name
+        if aid in seen:continue
+        capability=state['capabilities'].get(name,{})
+        plan=next((p for p in state['plans'] if p['service']==name),{})
+        base['agents'].append({'id':aid,'name':name.title(),'domain':'identity','parent':'IDENTITY','type':'orchestrator',
+            'status':state['google']['status'] if name=='GOOGLE' else capability.get('status',plan.get('status','NOT_CONNECTED')),
+            'account':state['google'].get('email'),'capabilities':capability})
+        base['edges'].append(['IDENTITY',aid]);seen.add(aid)
     for key,a in control['agents'].items():
         aid=str(a.get('id') or key)
         if aid in seen:continue

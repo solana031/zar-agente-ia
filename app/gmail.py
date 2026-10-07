@@ -65,6 +65,43 @@ def _raw(to,subject,body,reply_to_message_id=None):
     msg.set_content(body)
     return base64.urlsafe_b64encode(msg.as_bytes()).decode('utf-8')
 
+def thread(thread_id):
+    result=service().users().threads().get(userId='me',id=thread_id,format='full').execute()
+    return {'id':result.get('id'),'messages':[{'id':m['id'],'threadId':m.get('threadId'),'headers':_headers(m),'text':extract_plain_text(m),'parts':attachment_metadata(m)} for m in result.get('messages',[])]}
+
+def attachment_metadata(message):
+    rows=[]
+    def walk(part):
+        if part.get('filename'):rows.append({'filename':part['filename'],'mimeType':part.get('mimeType'),'attachment_id':part.get('body',{}).get('attachmentId'),'size':part.get('body',{}).get('size')})
+        for child in part.get('parts',[]):walk(child)
+    walk(message.get('payload',{}));return rows
+
+def attachment(message_id,attachment_id):
+    return service().users().messages().attachments().get(userId='me',messageId=message_id,id=attachment_id).execute()
+
+def labels():return service().users().labels().list(userId='me').execute().get('labels',[])
+
+def archive(message_id):
+    return service().users().messages().modify(userId='me',id=message_id,body={'removeLabelIds':['INBOX']}).execute()
+
+def list_drafts():return service().users().drafts().list(userId='me',maxResults=30).execute().get('drafts',[])
+
+def send_with_attachments(to,subject,body,attachments=None,thread_id=None,reply_to_message_id=None,draft=False):
+    from email.message import EmailMessage
+    msg=EmailMessage();msg['To']=to;msg['Subject']=subject;msg.set_content(body)
+    if reply_to_message_id:msg['In-Reply-To']=reply_to_message_id;msg['References']=reply_to_message_id
+    total=0
+    for item in attachments or []:
+        content=base64.b64decode(item['data'],validate=True);total+=len(content)
+        if total>15*1024*1024:raise ValueError('Adjuntos limitados a 15 MB.')
+        mime=str(item.get('mime','application/octet-stream')).split('/',1)
+        if len(mime)!=2:raise ValueError('MIME no válido.')
+        msg.add_attachment(content,maintype=mime[0],subtype=mime[1],filename=str(item.get('filename','attachment'))[:200])
+    payload={'raw':base64.urlsafe_b64encode(msg.as_bytes()).decode()}
+    if thread_id:payload['threadId']=thread_id
+    svc=service().users()
+    return svc.drafts().create(userId='me',body={'message':payload}).execute() if draft else svc.messages().send(userId='me',body=payload).execute()
+
 def send_message(to,subject,body,reply_to_message_id=None,thread_id=None):
     res={'raw':_raw(to,subject,body,reply_to_message_id)}
     if thread_id: res['threadId']=thread_id
