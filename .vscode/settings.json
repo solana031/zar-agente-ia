@@ -1,0 +1,17 @@
+{
+  "kilo-code.new.language": "es",
+  "kilo-code.new.languageCommitMessage": "es",
+  "kilo-code.new.model.providerID": "ollama",
+  "kilo-code.new.model.modelID": "zar-local:16k",
+  "kilo-code.new.autocomplete.enableAutoTrigger": false,
+  "kilo-code.new.autocomplete.enableChatAutocomplete": false,
+  "kilo-code.new.autocomplete.provider": "ollama",
+  "kilo-code.new.autocomplete.model": "zar-local:16k",
+  "kilo-code.new.autoApprove.enabled": false,
+  "kilo-code.new.agentManager.autoBranchNaming": false,
+  "kilo-code.new.agentManager.worktreePool": false,
+  "kilo-code.new.agentManager.pushFixes": false,
+  "kilo-code.new.browserAutomation.enabled": true,
+  "kilo-code.new.browserAutomation.useSystemChrome": true,
+  "kilo-code.new.claudeCodeCompat": false
+}
