@@ -48,6 +48,25 @@ class IdentityTests(unittest.TestCase):
   creds=SimpleNamespace(token='offline',scopes=[center.PREFIX+'calendar'])
   with patch.object(center.requests,'get',return_value=Mock(ok=False,status_code=403)):
    self.assertEqual(center._probe('CALENDAR',creds)['status'],'ERROR')
+ def test_sites_exposes_verified_no_adsense_account_without_wallet_credit(self):
+  from app.business_workflows import view
+  d=holdings.read(self.scope);center.ensure(d)['capabilities']['ADSENSE']={'status':'NOT_ELIGIBLE','account_state':'NO_ACCOUNT','accounts':[]}
+  holdings.write(self.scope,d);before=holdings.read(self.scope).get('ledger',[])
+  self.assertEqual(view(self.scope)['adsense']['account_state'],'NO_ACCOUNT')
+  self.assertEqual(holdings.read(self.scope).get('ledger',[]),before)
+ def test_adsense_pending_cannot_complete_human_queue(self):
+  plan=center.provider_plan(self.scope,'ADSENSE');action=next(a for a in center.view(self.scope)['human_actions'] if a.get('plan_id')==plan['id'])
+  with patch.object(center,'verify_google',return_value={'capabilities':{'ADSENSE':{'status':'CONNECTED','account_state':'PENDING'}}}),patch('app.business_connectors.inventory',return_value=[{'name':'AdSense','state':'LISTO'}]):
+   result=center.operate(self.scope,'continue',{'id':action['id']})
+  self.assertEqual(result['status'],'ACTION_REQUIRED');self.assertNotEqual(center.view(self.scope)['plans'][0]['status'],'ACTIVE')
+ def test_verified_youtube_is_registered_once_with_channel_reference(self):
+  plan=center.provider_plan(self.scope,'YOUTUBE');action=next(a for a in center.view(self.scope)['human_actions'] if a.get('plan_id')==plan['id'])
+  with patch.object(center,'verify_google',return_value={'capabilities':{'YOUTUBE':{'status':'CONNECTED','channel_ids':['offline-channel']}}}),patch('app.business_connectors.inventory',return_value=[{'name':'YouTube','state':'LISTO'}]):
+   self.assertEqual(center.operate(self.scope,'continue',{'id':action['id']})['status'],'DONE')
+   center.operate(self.scope,'continue',{'id':action['id']})
+  accounts=[a for a in holdings.read(self.scope)['orchestration']['accounts'] if a['provider']=='YOUTUBE']
+  self.assertEqual(len(accounts),1);self.assertEqual(accounts[0]['channel_ids'],['offline-channel'])
+  self.assertEqual(holdings.read(self.scope)['orchestration']['agents']['AccountProvisioningAgent:YOUTUBE']['state'],'ACTIVE')
  def test_public_plans_dedup_and_dynamic_hierarchy(self):
   rows=center.natural_request(self.scope,'Necesito TikTok e Instagram para ZAR')
   self.assertEqual(len(rows),2);self.assertEqual(rows[0]['identity'],self.address)

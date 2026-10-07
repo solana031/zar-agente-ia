@@ -26,8 +26,12 @@ def view(scope):
     from .agency_crm import view as agency_view
     from .identity_provisioning import view as identity_view
     from .identity_center import view as identity_center_view
-    return {'identity_center':identity_center_view(scope),'identity':identity_view(scope),'jev':d.get('jev_decisions',[])[-100:][::-1], 'media':media[-50:][::-1], 'commerce':commerce_view(scope),'agency':agency_view(scope),
-        'sites':sites_company.list_sites(scope), 'adsense':d.get('adsense',{'state':'POR CONFIGURAR','metrics':None,'payments':[]}),
+    center=identity_center_view(scope)
+    adsense={**d.get('adsense',{'state':'POR CONFIGURAR','metrics':None,'payments':[]})}
+    capability=center['capabilities'].get('ADSENSE',{})
+    adsense.update(account_state=capability.get('account_state','ERROR' if capability.get('status')=='ERROR' else 'NOT_VERIFIED'),oauth_capability=capability.get('status','NOT_CONNECTED'))
+    return {'identity_center':center,'identity':identity_view(scope),'jev':d.get('jev_decisions',[])[-100:][::-1], 'media':media[-50:][::-1], 'commerce':commerce_view(scope),'agency':agency_view(scope),
+        'sites':sites_company.list_sites(scope), 'adsense':adsense,
         'connectors':{k:{x:v.get(x) for x in ('state','checked_at','verification_scope')} for k,v in d.get('verified_connectors',{}).items()}}
 
 

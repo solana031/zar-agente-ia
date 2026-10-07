@@ -121,6 +121,16 @@ def verify_google(scope,services=None):
     with holdings.transaction(scope):
         d=holdings.read(scope);s=ensure(d);s['capabilities'].update(results)
         s['google'].update(status='ACTIVE',last_verified=holdings._now(),capabilities=[n for n,r in s['capabilities'].items() if r['status']=='CONNECTED'])
+        for plan in s['plans']:
+            capability=results.get(plan['service'])
+            if not capability:continue
+            for action in s['human_actions']:
+                if action.get('plan_id')!=plan['id'] or action['status']=='DONE':continue
+                action['last_checked']=holdings._now()
+                if plan['service']=='YOUTUBE' and capability['status']=='NOT_ELIGIBLE':
+                    action.update(reason=capability['reason'],instructions=['Abrir YouTube con '+expected,'Crear un canal de ZAR con un nombre permitido; aceptar los términos personalmente o mediante confirmación explícita','CONTINUAR comprobará el canal por API antes de activar el plan'])
+                elif plan['service']=='ADSENSE' and capability.get('account_state')=='NO_ACCOUNT':
+                    action.update(reason='OAuth y API verificados; Google confirma NO_ACCOUNT',instructions=['Abrir AdSense con '+expected,'Completar alta, sitio real, país y términos con datos confirmados por Pablo','Esperar la aprobación de Google; OAuth no acredita monetización','CONTINUAR verificará la cuenta y su estado real'])
         d.setdefault('identity_provisioning',{})['base_identity']=expected
         from .business_orchestration import ensure as account_store
         for a in account_store(d)['accounts']:
@@ -233,10 +243,18 @@ def operate(scope,action,data):
         from .business_connectors import inventory
         name={'SHOPIFY':'Shopify','STRIPE':'Payment','YOUTUBE':'YouTube','ADSENSE':'AdSense'}.get(service)
         verified=bool(name and next(n for n in inventory(holdings.read(scope)) if n['name']==name)['state']=='LISTO')
+        if service=='ADSENSE':verified=verified and result.get('account_state')=='ACTIVE'
         with holdings.transaction(scope):
             d=holdings.read(scope);s=ensure(d);a=next(x for x in s['human_actions'] if x['id']==data['id']);a.update(status='DONE' if verified else 'ACTION_REQUIRED',last_checked=holdings._now())
             plan=next((p for p in s['plans'] if p['id']==plan_id),None)
             if plan:plan.update(status='ACTIVE' if verified else 'API_CONFIG');plan['events'].append('VERIFY')
+            if verified and plan:
+                accounts=d.get('orchestration',{}).setdefault('accounts',[])
+                account=next((x for x in accounts if x.get('provider')==service and x.get('identity')==plan['identity']),None)
+                fields={'provider':service,'type':service,'identity':plan['identity'],'display_name':'ZAR','status':'ACTIVE','state':'LISTO','last_verified':holdings._now(),'secret_ref':'SCOPED_YOUTUBE_OAUTH' if service=='YOUTUBE' else service+'_SERVER_CONFIGURATION'}
+                if service=='YOUTUBE':fields['channel_ids']=result.get('channel_ids',[])
+                if account:account.update(fields)
+                else:accounts.append({'id':secrets.token_hex(12),**fields})
             agent=d.get('orchestration',{}).get('agents',{}).get('AccountProvisioningAgent:'+service)
             if agent:agent.update(state='ACTIVE' if verified else 'ACTION_REQUIRED',last_heartbeat=holdings._now())
             holdings.write(scope,d);return deepcopy(a)
