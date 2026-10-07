@@ -2,6 +2,13 @@ from app import jev_decision, conway_adapter, coding_capability
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def isolated_mock_provider(monkeypatch, tmp_path):
+    # These contract tests use fake responses, never a real paid provider.
+    monkeypatch.setenv('ZAR_DATA_DIR', str(tmp_path))
+    monkeypatch.setattr(jev_decision.control, 'paid_call', lambda *args: 'mock-reservation')
+
+
 @pytest.mark.parametrize('answer', [
     {'type':'choice','choice':'allow'},
     {'type':'choice','choice':[]},

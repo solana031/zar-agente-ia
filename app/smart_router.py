@@ -91,7 +91,7 @@ def choose_brain(message: str, cfg) -> BrainRoute:
                 "human_review": {"type":"noul","instructions":"¿La tarea implica una acción sensible que debería mantener confirmación humana?"}
             }, timeout=3)
             ans=j.get("answers") or {}; tier=(ans.get("tier") or {}).get("choice")
-            if tier in {"economy","balanced","strong","max"}:
+            if not j.get('fallback',True) and tier in {"economy","balanced","strong","max"}:
                 item=models[tier]
                 return BrainRoute(tier, item["provider"], item["model"], f"Jev Decision Layer · {tier}")
         except Exception:

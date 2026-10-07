@@ -36,7 +36,10 @@ def evaluate(state, symbol, snapshots, configured, owner, now=None):
     check('MARKET', 'Mercado abierto', flag(clock, 'is_open', True))
     check('ENGINE', 'Motor servidor activado', flag(state, 'autonomous_engine', True))
     try:
-        age = (now - datetime.fromisoformat(state['engine_last_run'].replace('Z','+00:00'))).total_seconds()
+        last_run = state['engine_last_run']
+        if not isinstance(last_run, str):
+            raise ValueError('Unverified engine heartbeat')
+        age = (now - datetime.fromisoformat(last_run.replace('Z','+00:00'))).total_seconds()
         alive = 0 <= age <= 90
     except (KeyError, TypeError, ValueError):
         alive = None

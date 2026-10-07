@@ -1,4 +1,4 @@
-"""Independent pull worker. Only bounded, read-only handlers accept cloud jobs."""
+"""Independent pull worker; coding additionally requires one-use local approval."""
 from contextlib import contextmanager
 import argparse
 from datetime import datetime, timezone
@@ -18,10 +18,11 @@ from urllib.parse import urlparse
 
 import requests
 from .scoped_http import BearerAuth
+from .automation_control import policy as automation_policy
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKER_VERSION = '1.0.0'
-HANDLERS = {'node-info': 'python', 'diagnostics': 'python', 'file-sha256': 'filesystem', 'workspace-summary': 'workspace-processing'}
+HANDLERS = {'node-info': 'python', 'diagnostics': 'python', 'file-sha256': 'filesystem', 'workspace-summary': 'workspace-processing', 'coding-task':'coding-agent-local'}
 
 
 @lru_cache(maxsize=1)
@@ -67,7 +68,7 @@ def resources():
             ram = status.total
     return {'os': platform.system(), 'architecture': platform.machine(), 'cpu_count': os.cpu_count() or 1,
             'ram_bytes': ram, 'load': list(os.getloadavg()) if hasattr(os, 'getloadavg') else [0],
-            'codex_installed': bool(shutil.which('codex')), 'coding_agent_enabled': False}
+            'codex_installed': bool(shutil.which('codex')), 'coding_agent_enabled': automation_policy()['coding_mode'] != 'DISABLED'}
 
 
 class Worker:
@@ -145,6 +146,8 @@ class Worker:
         except ImportError:
             optional['conway-runtime'] = {'state':'NOT_CONFIGURED','runtime_running':False}
         row['optional_capabilities'] = optional
+        if optional['coding-agent'].get('mode') in {'READ_ONLY','PATCH','FULL'} and optional['coding-agent'].get('installed') and optional['coding-agent'].get('sandbox_available') and optional['coding-agent'].get('local_model_configured'):
+            row['capabilities'].append('coding-agent-local')
         with self.connect() as con:
             con.execute('INSERT OR REPLACE INTO heartbeat VALUES (1,?)', (json.dumps(row),))
         return row
@@ -161,6 +164,9 @@ class Worker:
             raise ValueError('This action accepts no arguments')
         if kind in {'file-sha256','workspace-summary'} and (set(payload) != {'path'} or not isinstance(payload['path'],str)):
             raise ValueError('Only an input file path is accepted')
+        if kind=='coding-task':
+            from .coding_runner import validate
+            validate(payload)
         deadline = job.get('deadline')
         if remote and (isinstance(deadline,bool) or not isinstance(deadline,(int,float)) or not 0 < deadline <= time.time()+630):
             raise ValueError('Remote job requires a bounded deadline')
@@ -226,6 +232,19 @@ class Worker:
                           'timestamp': datetime.now(timezone.utc).isoformat()}
             elif job['kind'] == 'diagnostics':
                 result = {'resources': resources(), 'capabilities': capabilities()}
+            elif job['kind']=='coding-task':
+                from .coding_runner import run_task
+                next_poll = time.monotonic()+2
+                def coding_cancelled():
+                    nonlocal next_poll
+                    if job['remote'] and time.monotonic() >= next_poll:
+                        next_poll = time.monotonic()+2
+                        try:
+                            self.sync()  # Observe coordinator cancel/pause/revoke during execution.
+                        except requests.RequestException:
+                            return True  # Lost authority/contact: stop rather than keep editing.
+                    return self.revoked or self.paused or self.get(jid)['state']!='RUNNING' or bool(job['deadline'] and time.time()>=job['deadline'])
+                result=run_task(job['payload'],cancelled=coding_cancelled)
             else:
                 path = self.safe_file(job['payload'].get('path', ''))
                 digest = hashlib.sha256()
@@ -248,7 +267,7 @@ class Worker:
                 if job['kind'] == 'workspace-summary':
                     with path.open('rb') as source:
                         result['lines'] = sum(1 for _ in source)
-            state = 'SUCCEEDED'
+            state = result.get('state','FAILED') if job['kind']=='coding-task' else 'SUCCEEDED'
         except (ValueError, OSError, subprocess.SubprocessError, requests.RequestException) as exc:
             result, state = {'error': type(exc).__name__}, 'FAILED'
         if job['deadline'] and time.time()>=job['deadline']:
@@ -275,6 +294,12 @@ class Worker:
         with self.connect() as con:
             pending = [r['id'] for r in con.execute('SELECT id FROM jobs WHERE reported=0 AND remote=1 ORDER BY rowid DESC LIMIT 100')]
         reports = [{key:self.get(jid)[key] for key in ('id','state','progress','result')} for jid in pending]
+        for report in reports:
+            result = report.get('result')
+            if isinstance(result,dict) and len(json.dumps(result)) > 14000 and self.get(report['id'])['kind']=='coding-task':
+                # Full result remains persisted on NODE-02, not silently lost.
+                report['result'] = {k:result[k] for k in ('id','state','branch','mode','exit_code','log','commit_push_deploy') if k in result}
+                report['result'].update(full_result_local=True, result_sha256=hashlib.sha256(json.dumps(result,sort_keys=True).encode()).hexdigest())
         response = requests.post(base + '/v1/nodes/poll',
                                  headers={'Authorization': 'Bearer ' + token},auth=BearerAuth(token),
                                  json={'heartbeat': self.heartbeat(), 'reports': reports},

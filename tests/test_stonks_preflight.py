@@ -19,6 +19,19 @@ class PreflightTests(unittest.TestCase):
         self.assertEqual(self.posts,[])
         self.assertEqual(self.state_on_disk(),before)
 
+    def test_null_or_malformed_heartbeat_never_authorizes_entry(self):
+        initial=self.state_on_disk()
+        for value in [None, True, 1, [], {}, '']:
+            with self.subTest(value=value):
+                self.api['_stonks_write']({**initial,'engine_last_run':value})
+                result=self.preflight()
+                self.assertEqual(result['status'],'UNVERIFIED')
+                heartbeat=next(c for c in result['checks'] if c['code']=='HEARTBEAT')
+                self.assertEqual(heartbeat['status'],'UNVERIFIED')
+                self.assertEqual(self.start()[1],409)
+                self.assertEqual(self.posts,[])
+                self.assertEqual(self.state_on_disk()['position_ledger'],{})
+
     def test_local_blocks(self):
         initial=self.state_on_disk()
         for change in [{'paused':True},{'revoked':True},{'autonomous_engine':False},

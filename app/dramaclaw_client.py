@@ -57,6 +57,8 @@ class DramaClawClient:
         self.public_url = _origin_url(public_url or base_url)
         self.timeout = min(max(float(timeout), 1), 120)
         self.session = session or requests.Session()
+        if session is None:
+            self.session.trust_env = False
         self.headers = {"Accept": "application/json"}
         if token:
             self.headers["Authorization"] = "Bearer " + str(token)
@@ -64,6 +66,11 @@ class DramaClawClient:
     def _request(self, method, path, *, timeout=None, **kwargs):
         if not path.startswith("/") or path.startswith("//") or ".." in path.split("/"):
             raise DramaClawError("contract", "Ruta de DramaClaw no válida.")
+        if method != 'GET':
+            # Every upstream mutation can enqueue provider work. Fail closed
+            # until a verifiable cost ceiling is available, including edits.
+            from app.automation_control import paid_call
+            paid_call('dramaclaw', {'path': path})
         try:
             response = self.session.request(method, self.base_url + path,
                 headers=self.headers, timeout=timeout or (min(self.timeout, 10), self.timeout),

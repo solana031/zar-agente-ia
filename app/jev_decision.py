@@ -14,6 +14,9 @@ import time
 from datetime import datetime, timezone
 
 import requests
+from . import automation_control as control
+from urllib.parse import urlparse
+from .scoped_http import BearerAuth
 
 BASE = os.environ.get("JEV_API_BASE", "https://api.typesafe.ai").rstrip("/")
 MODEL = os.environ.get("JEV_MODEL", "jev-latest")
@@ -24,7 +27,26 @@ def _key():
 
 
 def status():
-    return {"configured": bool(_key()), "state": "CONFIGURED_UNVERIFIED" if _key() else "NOT_CONFIGURED", "provider": "TypeSafe Jev" if _key() else "ZAR deterministic fallback", "model": MODEL, "base": BASE, "execution_authority": False}
+    with control.connection() as con:
+        row = con.execute('SELECT * FROM circuits WHERE id=?', (_circuit_id(),)).fetchone()
+    circuit = dict(row) if row else {'failures':0,'opened':0,'success':0}
+    state = 'NOT_CONFIGURED' if not _key() else 'DEGRADED' if not circuit['success'] or circuit['opened'] and time.time()-circuit['opened']<60 else 'ONLINE'
+    return {"configured": bool(_key()), "state": state, "provider": "TypeSafe Jev" if _key() else "ZAR deterministic fallback", "model": MODEL, "base": 'https://api.typesafe.ai', "execution_authority": False,
+            'last_heartbeat':circuit['success'] or None,'circuit_open':bool(circuit['opened'] and time.time()-circuit['opened']<60),
+            'missing':[] if _key() else ['TYPESAFE_API_KEY'], 'paid_calls_blocked':True}
+
+
+def _circuit_id():
+    return control.digest([BASE,MODEL,_key()])
+
+
+def _circuit_result(success):
+    with control.connection() as con:
+        con.execute('BEGIN IMMEDIATE')
+        row=con.execute('SELECT failures FROM circuits WHERE id=?',(_circuit_id(),)).fetchone()
+        failures=0 if success else (row['failures'] if row else 0)+1
+        con.execute('INSERT OR REPLACE INTO circuits VALUES (?,?,?,?)',
+                    (_circuit_id(),failures,time.time() if failures>=3 else 0,time.time() if success else 0))
 
 
 def _validated(data, questions):
@@ -35,6 +57,8 @@ def _validated(data, questions):
         kind = question.get('type', 'noul')
         if not isinstance(answer, dict) or answer.get('type') != kind:
             raise ValueError('Missing or mismatched Jev answer')
+        if kind not in {'choice','score','noul'}:
+            raise ValueError('Unknown Jev primitive')
         if kind == 'choice':
             choice = answer.get('choice')
             if not isinstance(choice, str) or choice not in question.get('criteria', {}):
@@ -44,6 +68,9 @@ def _validated(data, questions):
             maximum = 1 if kind == 'noul' else max(0, len(question.get('criteria', [])) - 1)
             if isinstance(value, bool) or not isinstance(value, (int, float)) or not 0 <= value <= maximum or not math.isfinite(value):
                 raise ValueError('Invalid Jev numeric answer')
+        for value in [answer.get('confidence'), *(answer.get('probabilities') or {}).values()] if isinstance(answer.get('probabilities',{}),dict) else [False]:
+            if value is not None and (isinstance(value,bool) or not isinstance(value,(int,float)) or not 0<=value<=1):
+                raise ValueError('Invalid Jev probability')
     return data
 
 
@@ -83,25 +110,40 @@ def decide(state, questions, timeout=10):
     key = _key()
     if not key:
         return _fallback(state, questions)
+    if status()['circuit_open']:
+        result=_fallback(state,questions);result.update(state='DEGRADED',provider_error='JEV_CIRCUIT_OPEN');return result
+    parsed=urlparse(BASE)
+    if parsed.scheme!='https' or parsed.netloc!='api.typesafe.ai' or parsed.path not in {'','/'} or parsed.query or parsed.fragment:
+        result=_fallback(state,questions);result.update(state='DEGRADED',provider_error='INVALID_OFFICIAL_ENDPOINT');return result
+    try:
+        control.paid_call('jev',state)
+    except PermissionError:
+        result=_fallback(state,questions);result.update(state='DEGRADED',provider_error='BUDGET_BLOCKED')
+        control.audit('jev','BLOCKED',state,{'state':'DEGRADED','fallback':True});return result
     payload = {"model": MODEL, "state": state, "questions": questions}
     last = None
-    for attempt in range(2):
+    for attempt in range(1):
         try:
             r = requests.post(
                 BASE + "/v1/systemone",
                 headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
-                json=payload, timeout=timeout, allow_redirects=False,
+                auth=BearerAuth(key),
+                json=payload, timeout=max(.1,min(float(timeout),10)), allow_redirects=False,
             )
             if r.ok:
-                data = _validated(r.json(), questions); data["fallback"] = False; data['state'] = 'ONLINE'; return data
+                data = _validated(r.json(), questions); data["fallback"] = False; data['state'] = 'ONLINE'
+                _circuit_result(True)
+                control.audit('jev','RECOMMENDED',data,{'state':'ONLINE','fallback':False,'tier':(data['answers'].get('tier') or {}).get('choice')})
+                return data
             last = RuntimeError(f"Jev HTTP {r.status_code}")
             if r.status_code not in {429,500,502,503,504}: break
         except (requests.RequestException, ValueError) as exc:
             last = RuntimeError(type(exc).__name__)
-        time.sleep(0.4)
+    _circuit_result(False)
     result = _fallback(state, questions)
     result['state'] = 'DEGRADED'
     result["provider_error"] = str(last)[:500] if last else "Jev no disponible"
+    control.audit('jev','FALLBACK',state,{'state':'DEGRADED','fallback':True})
     return result
 
 

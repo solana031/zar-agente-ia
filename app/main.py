@@ -15,7 +15,7 @@ import base64
 from functools import wraps
 from contextlib import contextmanager
 from . import stonks_lifecycle, stonks_preflight, stonks_agents, stonks_news, stonks_dataplane, stonks_selftest, stonks_stream, subagent_orchestrator, stonks_backtest, stonks_validation, stonks_shadow, stonks_learning, stonks_automaton, stonks_execution, stonks_readiness, stonks_profitability
-from . import holdings, company_runtime, commerce_company, media_company, web_agency, sites_company, jev_decision, social_publish, voice_pro
+from . import holdings, company_runtime, commerce_company, media_company, web_agency, sites_company, jev_decision, social_publish, voice_pro, resell
 from datetime import datetime, timezone
 from urllib.parse import quote as urlquote
 from .user_scope import set_current_user, get_current_user, anonymous_id, user_id_for_email
@@ -48,6 +48,22 @@ from app.youtube_publish import register_youtube
 
 app = Flask(__name__)
 register_youtube(app)
+
+@app.get("/api/resell/state")
+def resell_state():
+    return jsonify({"ok": True, **resell.state()})
+
+@app.post("/api/resell/events/<event_id>/action")
+def resell_event_action(event_id):
+    payload = request.get_json(silent=True) or {}
+    try:
+        return jsonify(resell.act(event_id, str(payload.get("action") or ""), payload.get("amount")))
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+
+@app.post("/api/resell/demo/reset")
+def resell_demo_reset():
+    return jsonify({"ok": True, **resell.reset_demo()})
 
 # Clave de sesión estable: si Railway reinicia el proceso durante un OAuth,
 # la sesión y el estado PKCE no se invalidan. Si no hay variable de entorno,
@@ -505,6 +521,8 @@ def _guard():
 
 from .node_coordinator import register as register_node_coordinator
 register_node_coordinator(app)
+from .integrations import register as register_integrations
+register_integrations(app)
 
 @app.get("/health")
 def health():

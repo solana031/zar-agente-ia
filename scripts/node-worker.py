@@ -5,7 +5,7 @@ from pathlib import Path
 import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
-allowed = {'ZAR_CLOUD_URL','ZAR_NODE_TOKEN','ZAR_NODE_NAME','DRAMACLAW_API_URL'}
+allowed = {'ZAR_CLOUD_URL','ZAR_NODE_TOKEN','ZAR_NODE_NAME','DRAMACLAW_API_URL','ZAR_CODING_LOCAL_MODEL'}
 for key in allowed:
     os.environ.pop(key,None)
 env = ROOT / '.env.local'

@@ -4,6 +4,7 @@ import hashlib
 import json
 import math
 import os
+import re
 from pathlib import Path
 import secrets
 import sqlite3
@@ -16,7 +17,7 @@ from .node_scheduling import choose_node
 
 TERMINAL = {'SUCCEEDED', 'FAILED', 'CANCELLED', 'TIMED_OUT', 'INTERRUPTED'}
 CAPABILITIES = {'python', 'node', 'git', 'filesystem', 'browser', 'workspace-processing',
-                'media-processing', 'dramaclaw-local'}
+                'media-processing', 'dramaclaw-local','coding-agent-local'}
 
 
 def token_hash(token):
@@ -123,6 +124,12 @@ class Coordinator:
         if len(json.dumps(body)) > 8192 or set(body) - {'kind','payload','priority','timeout','max_cost_per_job'}:
             raise ValueError('Invalid job schema')
         kind, payload = body['kind'], body.get('payload', {})
+        if kind=='coding-task':
+            from .coding_runner import validate
+            from .automation_control import policy
+            if policy()['kill_switch']:
+                raise ValueError('AI automation kill switch active')
+            validate(payload)  # Local approval is consumed only on NODE-02, never here.
         if kind in {'node-info', 'diagnostics'} and payload:
             raise ValueError('This action has no arguments')
         if kind in {'file-sha256', 'workspace-summary'} and (set(payload) != {'path'} or not isinstance(payload['path'], str)):
@@ -173,6 +180,23 @@ class Coordinator:
                    'version': str(heartbeat.get('version',''))[:32], 'worker_version':str(heartbeat.get('worker_version',''))[:32],
                    'uptime':max(0,min(315360000,float(heartbeat.get('uptime',0)))), 'max_concurrency':1,
                    'cost': {'currency':'EUR','per_job':None}}
+        # Authenticated observation only; no raw settings, argv, secrets or
+        # execution authority are accepted from a heartbeat.
+        observed=heartbeat.get('optional_capabilities') or {}
+        clean={}
+        if isinstance(observed,dict):
+            for name in ['coding-agent','conway-runtime']:
+                source=observed.get(name)
+                if not isinstance(source,dict):continue
+                state=source.get('state')
+                mode=source.get('mode')
+                version=source.get('version')
+                clean[name]={'state':state if isinstance(state,str) and state in {'ONLINE','OFFLINE','NOT_CONFIGURED','DISABLED','DEGRADED'} else 'DEGRADED',
+                             'mode':mode if isinstance(mode,str) and mode in {'OFF','OBSERVE','PROPOSE','DISABLED','READ_ONLY','PATCH','FULL'} else None,
+                             'version':version if isinstance(version,str) and re.fullmatch(r'\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?',version) else None}
+                for field in ['installed','upstream_installed','sandbox_available','local_model_configured']:
+                    clean[name][field]=source.get(field) is True
+        payload['optional_capabilities']=clean
         ack, cancel, jobs = [], [], []
         with self.connect() as con:
             con.execute('BEGIN IMMEDIATE')
@@ -180,6 +204,11 @@ class Coordinator:
             if not enrolled or enrolled['revoked']:
                 abort(403)
             self.expire(con,time.time())
+            from .automation_control import policy
+            if policy()['kill_switch']:
+                for task in con.execute("SELECT id,body FROM distributed_jobs WHERE state IN ('QUEUED','ASSIGNED','RUNNING')").fetchall():
+                    if json.loads(task['body']).get('kind')=='coding-task':
+                        self.transition(con,task['id'],'CANCELLED')
             con.execute('UPDATE distributed_nodes SET seen=?,payload=? WHERE id=?', (time.time(),json.dumps(payload),nid))
             self.expire(con,time.time())
             reports = body.get('reports',[])
@@ -212,7 +241,10 @@ class Coordinator:
                 candidates = [n for n in nodes if n['state']=='ONLINE']
                 for row in con.execute("SELECT * FROM distributed_jobs WHERE state='QUEUED' ORDER BY priority DESC,created LIMIT 100").fetchall():
                     job = json.loads(row['body'])
-                    if choose_node(candidates,HANDLERS[job['kind']],time.time(),job.get('max_cost_per_job'))==nid:
+                    # This handler has no paid provider or model shell commands.
+                    # Other handlers keep their existing unknown-cost semantics.
+                    eligible = [{**n,'cost':{'currency':'EUR','per_job':0}} for n in candidates] if job['kind']=='coding-task' else candidates
+                    if choose_node(eligible,HANDLERS[job['kind']],time.time(),job.get('max_cost_per_job'))==nid:
                         con.execute("UPDATE distributed_jobs SET node=?,state='ASSIGNED',assigned=? WHERE id=?", (nid,time.time(),row['id']))
                         break
             if node['state'] != 'PAUSED':

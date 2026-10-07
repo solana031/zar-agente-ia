@@ -9,6 +9,13 @@ import unittest
 from urllib.parse import urlsplit
 
 import requests
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def fake_provider_budget(monkeypatch):
+    from app import automation_control
+    monkeypatch.setattr(automation_control, 'paid_call', lambda *args: 'mock-reservation')
 
 _spec = importlib.util.spec_from_file_location("zar_dramaclaw_client", Path(__file__).resolve().parents[1] / "app" / "dramaclaw_client.py")
 _module = importlib.util.module_from_spec(_spec)

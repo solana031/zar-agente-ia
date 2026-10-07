@@ -45,10 +45,12 @@ def status():
     check = _HEALTH[key][1]
     ready = bool(check.get("ready"))
     configured = bool(os.environ.get("DRAMACLAW_API_URL", "").strip())
-    return {"ready": ready, "label": "DramaClaw DIRECT · LISTO" if ready else "DramaClaw DIRECT · NO DISPONIBLE",
+    return {"ready": ready, "label": "DramaClaw DIRECT · API ACCESIBLE · GENERACIÓN NO VALIDADA" if ready else "DramaClaw DIRECT · NO DISPONIBLE",
             "error": check.get("error") if not ready else None, "message": check.get("message"),
             "dramaclaw_direct_configured": configured, "dramaclaw_bridge_configured": configured,
             "direct_only": True, "visual_fallback": "desactivado", "attribution_required": True,
+            "generation_allowed": False, "paid_calls_blocked": True,
+            "generation_blocked_reason": "Coste del pipeline no acotado; AI/Automation Budget bloquea la generación.",
             "preferred_provider": "DramaClaw Direct", "social": social_status()}
 
 
@@ -164,7 +166,9 @@ def queue_story(scope_id, topic, goal="retención", platform="tiktok"):
 def produce_local(scope_id, task_id):
     """Compatibility entrypoint: authorizes asynchronous DIRECT work, never local video."""
     task = _task(scope_id, task_id)
-    _client()  # Validate configuration before starting the existing worker.
+    _client()  # Validate configuration; does not contact or start the runtime.
+    from .automation_control import paid_call
+    paid_call('dramaclaw', {'task_id': task_id})
     if holdings.read(scope_id).get("global_stop"):
         raise ValueError("Holdings está detenido; reanúdalo antes de producir.")
     with _job_lock(scope_id, task_id) as locked:
@@ -180,13 +184,14 @@ def produce_local(scope_id, task_id):
 
 
 def _narrator():
-    from . import voice_pro
-    if not voice_pro._eleven_configured():
-        return None
-    return voice_pro.synthesize("Esta es la voz del narrador. Una historia comienza con una idea y cobra vida en cada escena.")
+    from .media_narrator import sample
+    return sample()
 
 
 def process_one(scope_id):
+    from .automation_control import policy
+    if policy()['kill_switch']:
+        return 'Media: automatización detenida por kill switch.'
     state = holdings.read(scope_id)
     if state.get("global_stop") or state["companies"]["media"].get("state") != "RUNNING":
         return "Media: pausado."
@@ -212,6 +217,8 @@ def process_one(scope_id):
                 record["checkpoint"] = cp
                 _save(scope_id, task["id"], record)
             try:
+                from .automation_control import paid_call
+                paid_call('dramaclaw', {'task_id': task['id']})
                 client = _client()
                 cp = client.advance(record.get("checkpoint") or {}, record["payload"]["master_brief"], persist,
                                     narrator=_narrator)
