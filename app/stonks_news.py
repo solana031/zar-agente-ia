@@ -14,6 +14,8 @@ from .web_search import public_search_results
 _CACHE = {}
 _LOCK = threading.RLock()
 _TTL = 300
+_PENDING = set()
+_SLOTS = threading.BoundedSemaphore(2)
 
 _POS = {
     'beat','beats','upgrade','upgraded','growth','record','surge','surges','rally','rallies',
@@ -93,3 +95,25 @@ def get_context(symbol, force=False, limit=8):
     }
     with _LOCK: _CACHE[key]={'ts':now,'data':data}
     return data
+
+
+def cached_context(symbol):
+    """Nonblocking research for trading. Safety/lifecycle never waits on search."""
+    key=re.sub(r'[^A-Z0-9.\-]','',str(symbol or '').upper())[:16]
+    now=time.time()
+    with _LOCK:
+        cached=_CACHE.get(key)
+        stale=not cached or now-cached['ts']>=_TTL
+        if key and stale and key not in _PENDING and _SLOTS.acquire(blocking=False):
+            _PENDING.add(key)
+            def refresh():
+                try:get_context(key,force=True)
+                except Exception:pass
+                finally:
+                    with _LOCK:_PENDING.discard(key)
+                    _SLOTS.release()
+            threading.Thread(target=refresh,name='zar-trading-research',daemon=True).start()
+        out=dict(cached['data']) if cached else {'ok':False,'symbol':key,'items':[],'sentiment':None,'sentiment_score':None}
+        out.update(cached=True,refresh_pending=key in _PENDING,freshness='STALE' if cached and stale else 'CACHED' if cached else 'PENDING',
+                   public_only=True,order_authority=False,evidence=[{'url':x['url'],'title':x['title']} for x in out.get('items',[])])
+        return out

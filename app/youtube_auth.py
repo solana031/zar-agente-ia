@@ -39,10 +39,8 @@ def _redirect_uri():
 
 def _save_credentials(creds):
     global _LAST_ERROR
-    TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
-    tmp = TOKEN_FILE.with_suffix('.tmp')
-    tmp.write_text(creds.to_json(), encoding='utf-8')
-    tmp.replace(TOKEN_FILE)
+    from .oauth_vault import persist
+    persist(TOKEN_FILE,creds.to_json(),DATA_DIR)
     _LAST_ERROR = ''
 
 
@@ -52,7 +50,10 @@ def get_credentials(auto_refresh=True):
         if not TOKEN_FILE.exists():
             return None
         try:
-            creds = Credentials.from_authorized_user_file(str(TOKEN_FILE), [YOUTUBE_SCOPE])
+            from .oauth_vault import decode
+            raw=TOKEN_FILE.read_text(encoding='utf-8')
+            creds=Credentials.from_authorized_user_info(decode(raw,DATA_DIR),[YOUTUBE_SCOPE])
+            if json.loads(raw).get('format')!='ZAR_OAUTH_ENCRYPTED_V1':_save_credentials(creds)
         except Exception as exc:
             _LAST_ERROR = str(exc)
             return None

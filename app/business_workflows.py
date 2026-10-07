@@ -24,12 +24,16 @@ def view(scope):
             'voice_assets':record.get('voice_assets',{})})
     from .commerce_workspace import view as commerce_view
     from .agency_crm import view as agency_view
-    return {'jev':d.get('jev_decisions',[])[-100:][::-1], 'media':media[-50:][::-1], 'commerce':commerce_view(scope),'agency':agency_view(scope),
+    from .identity_provisioning import view as identity_view
+    return {'identity':identity_view(scope),'jev':d.get('jev_decisions',[])[-100:][::-1], 'media':media[-50:][::-1], 'commerce':commerce_view(scope),'agency':agency_view(scope),
         'sites':sites_company.list_sites(scope), 'adsense':d.get('adsense',{'state':'POR CONFIGURAR','metrics':None,'payments':[]}),
         'connectors':{k:{x:v.get(x) for x in ('state','checked_at','verification_scope')} for k,v in d.get('verified_connectors',{}).items()}}
 
 
 def operate(scope, action, data):
+    if action.startswith('identity_provision_'):
+        from .identity_provisioning import operate as provision
+        return provision(scope,action.removeprefix('identity_provision_'),data)
     if action in {'identity_email_verify','agency_send','agency_inbound_sync'}:
         from .agency_mail import verify,send,sync_inbound
         return verify(scope) if action=='identity_email_verify' else send(scope,data) if action=='agency_send' else sync_inbound(scope,data)

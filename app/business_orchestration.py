@@ -15,6 +15,9 @@ TOOLS = {
     "RevenueAgent": ("business", "wallet_snapshot"),
     "OptimizationAgent": ("business", "profitability_review"),
     "AccountManagerAgent": ("identity", "account_inventory"),
+    "ZARIdentityAgent": ("identity", "account_inventory"),
+    "GoogleAccountAgent": ("identity", "account_inventory"),
+    "AccountProvisioningAgent": ("identity", "account_inventory"),
     "SiteResearchAgent": ("sites", "workflow_status"),
     "SiteBuilderAgent": ("sites", "workflow_status"),
     "ContentAgent": ("sites", "workflow_status"),
@@ -43,7 +46,7 @@ TOOLS = {
 }
 ORCHESTRATORS = {'business':'BusinessOrchestrator','commerce':'CommerceOrchestrator',
                  'web_agency':'AgencyOrchestrator','sites':'SitesOrchestrator','media':'MediaOrchestrator'}
-ACCOUNT_TYPES = {'EMAIL','GOOGLE','SHOPIFY','STRIPE','YOUTUBE','INSTAGRAM','TIKTOK','ADSENSE','VERCEL','SUPPLIER','DOMAIN','PHONE','OTHER'}
+ACCOUNT_TYPES = {'EMAIL','GOOGLE','SHOPIFY','STRIPE','YOUTUBE','INSTAGRAM','TIKTOK','ADSENSE','VERCEL','SUPPLIER','DOMAIN','PHONE','BROKER','OTHER'}
 MODES = {"OFF", "SHADOW", "SUPERVISED", "ACTIVE"}
 
 def note_verified_account(d,provider,identity,secret_ref,verification_scope):
@@ -143,6 +146,11 @@ def wallet(d):
     for b in currencies.values():
         b["profit"] = b["revenue"] - b["expenses"]
         b["available"] = b["manual_funding"] + b["profit"] - b["committed"] - b["pending_payments"]
+    from .trading_capital import assigned
+    if d.get('trading_capital'):
+        b=currencies.setdefault('USD',{k:Decimal(0) for k in ('manual_funding','revenue','expenses','pending_income','pending_payments','committed','profit','available')})
+        b['trading_reserved']=assigned(d)
+        b['available']-=b['trading_reserved']
     return {"state": "REGISTRO LOCAL" if currencies else "NO CONECTADO",
             "bank_state": "NO CONECTADO", "balances": {c: {k: str(v) for k, v in b.items()} for c, b in currencies.items()},
             "note": "Saldos contables declarados/importados; no verifican saldo bancario. Sin conversión entre monedas."}

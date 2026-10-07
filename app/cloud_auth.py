@@ -68,10 +68,8 @@ def _redirect_uri():
 def _save_credentials(creds, user_id=None):
     global _LAST_ERROR
     path = _token_file(user_id)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix('.tmp')
-    tmp.write_text(creds.to_json(), encoding='utf-8')
-    tmp.replace(path)
+    from .oauth_vault import persist
+    persist(path,creds.to_json(),DATA_DIR)
     _LAST_ERROR = ''
 
 
@@ -87,7 +85,14 @@ def get_credentials(auto_refresh=True, user_id=None):
             else:
                 return None
         try:
-            creds = Credentials.from_authorized_user_file(str(path), SCOPES)
+            from .oauth_vault import decode
+            raw=path.read_text(encoding='utf-8')
+            info=decode(raw,DATA_DIR)
+            creds = Credentials.from_authorized_user_info(info, SCOPES)
+            if json.loads(raw).get('format')!='ZAR_OAUTH_ENCRYPTED_V1':
+                from .oauth_vault import persist
+                persist(path,creds.to_json(),DATA_DIR)
+                _save_credentials(creds,user_id=user_id)
         except Exception as exc:
             _LAST_ERROR = str(exc)
             return None
@@ -189,7 +194,7 @@ def authorization_url(force=False, redirect_uri=None):
         'include_granted_scopes': 'true',
     }
     if force:
-        params['prompt'] = 'consent'
+        params['prompt'] = 'consent select_account'
 
     url = 'https://accounts.google.com/o/oauth2/v2/auth?' + urlencode(params)
     return url, state, code_verifier

@@ -569,6 +569,8 @@ def oauth2callback():
                 session['zar_user_id'] = new_uid
                 session['google_account_email'] = google_email
                 set_current_user(new_uid)
+                from .identity_provisioning import link_oauth_plan
+                link_oauth_plan(old_uid,new_uid,google_email)
         except Exception:
             pass
         # v30.2.8: una conexión/reautorización de Google NO inicia una copia automáticamente.
@@ -856,6 +858,18 @@ def _stonks_reconcile_paper_state(scope_id, symbols=None, emit_audit=True):
     d['engine_last_positions'] = positions
     d['engine_last_open_orders'] = orders
     d['engine_last_reconcile'] = datetime.now(timezone.utc).isoformat()
+    if account.get('equity') is not None:
+        try:
+            equity=float(account['equity']);old=d.get('paper_account_metrics') or {}
+            if not __import__('math').isfinite(equity) or equity<=0:raise ValueError('Equity no valida')
+            baseline=float(old.get('baseline_equity') or equity);peak=max(equity,float(old.get('peak_equity') or equity))
+            d['paper_account_metrics']={'source':'Alpaca Paper account','timestamp':d['engine_last_reconcile'],
+                'baseline_equity':baseline,'peak_equity':peak,'equity':equity,
+                'daily_pnl':equity-float(account.get('last_equity') or equity),
+                'unrealized_pnl':sum(float(p.get('unrealized_pl') or 0) for p in positions),
+                'total_return_pct':(equity/baseline-1)*100,'drawdown_pct':(peak-equity)/peak*100}
+        except (ValueError,TypeError):pass
+
     signature = json.dumps({'positions':positions, 'orders':orders}, sort_keys=True)
     changed = signature != d.get('engine_last_state_signature')
     d['engine_last_state_signature'] = signature
@@ -873,8 +887,28 @@ def _stonks_lookup_order(cid):
 def _stonks_submit_paper_order(body):
     from .alpaca_configuration import validate_environment
     validate_environment()
-    return stonks_execution.PaperExecutionAdapter(requests.post).submit(
-        body, _stonks_read(), _alpaca_paper_credentials())
+    from . import trading_capital
+    scope=_user_scope_id()
+    state=_stonks_read()
+    cid=body.get('client_order_id')
+    known_exit=any(x.get('client_order_id')==cid and cid for record in state.get('position_ledger',{}).values() for x in record.get('exits',[]))
+    try:
+        age=(datetime.now(timezone.utc)-datetime.fromisoformat(str(state.get('engine_last_reconcile')).replace('Z','+00:00'))).total_seconds()
+        reducing=known_exit and 0<=age<=10 and any(p.get('symbol')==body.get('symbol') and
+            ((float(p.get('qty') or 0)>0 and body.get('side')=='sell') or (float(p.get('qty') or 0)<0 and body.get('side')=='buy')) and
+            0<float(body.get('qty') or 0)<=abs(float(p.get('qty') or 0)) for p in state.get('engine_last_positions') or [])
+    except (ValueError,TypeError):reducing=False
+    if reducing:
+        return stonks_execution.PaperExecutionAdapter(requests.post).submit(body,state,_alpaca_paper_credentials())
+    with holdings.transaction(scope):
+        book=holdings.read(scope)
+        if trading_capital.ensure(book)['enabled']:
+            positions=_alpaca_paper_request('/v2/positions')
+            orders=_alpaca_paper_request('/v2/orders',params={'status':'open'})
+            quote,_=_stonks_latest_price(body['symbol'])
+            trading_capital.check_order(book,body,positions,orders,quote.get('p'))
+        return stonks_execution.PaperExecutionAdapter(requests.post).submit(body,state,_alpaca_paper_credentials())
+
 
 
 def _stonks_manage_positions(scope_id, recon, clock=None):
@@ -1277,6 +1311,10 @@ def _stonks_engine_cycle(scope_id):
             recon, clock, market_trace = stonks_agents.SUPERVISOR.market.snapshot(
                 scope_id, _stonks_reconcile_paper_state, lambda: _alpaca_paper_request('/v2/clock'))
             agent_trace.append(market_trace)
+            d=_stonks_read()
+            if stonks_automaton.ensure(d)['state'] in {'STARTING','ACTIVE','PAUSED'} and not d.get('paper_connected'):
+                stonks_automaton.fail(d,'Cuenta Paper no verificada; nuevas entradas bloqueadas')
+                _stonks_write(d)
             if stonks_automaton.ensure(d)['state'] in {'STARTING','ACTIVE','PAUSED'}:
                 stonks_automaton.heartbeat(d, 'PAUSED' if d.get('paused') else 'THINK',detail='Snapshot y heartbeat del motor servidor')
                 _stonks_write(d)
@@ -1285,13 +1323,14 @@ def _stonks_engine_cycle(scope_id):
             for _sym in symbols[:8]:
                 try:
                     news_ctx, news_cache = stonks_dataplane.PLANE.news(
-                        scope_id, _sym, lambda sym=_sym: stonks_news.get_context(sym), ttl=300.0)
+                        scope_id, _sym, lambda sym=_sym: stonks_news.cached_context(sym), ttl=5.0)
                     news_by_symbol[_sym] = news_ctx
                     agent_trace.append({
                         'agent':'news_sentiment','status':'ok' if news_ctx.get('ok') else 'idle',
                         'detail':f"{_sym}: {news_ctx.get('sentiment','neutral')} · {'cache' if news_cache.get('cached') else 'actualizado'} · 0 tokens",
                         'data':{'symbol':_sym,'sentiment':news_ctx.get('sentiment'),'sentiment_score':news_ctx.get('sentiment_score'),
                                 'source_count':len(news_ctx.get('items') or []),'cached':bool(news_cache.get('cached')),
+                                'evidence':news_ctx.get('evidence',[]),'freshness':news_ctx.get('freshness'),
                                 'public_only':True,'order_authority':False},
                         'timestamp':datetime.now(timezone.utc).isoformat()})
                 except Exception as _news_exc:
@@ -1962,6 +2001,22 @@ def holdings_site_asset(slug,filename):
     if not path.exists() or not path.is_file(): return 'Archivo no encontrado',404
     return site_projects_preview(send_file(path))
 
+@app.get('/api/subagents/view')
+def subagents_map_view():
+    import secrets
+    token=session.setdefault('business_csrf',secrets.token_urlsafe(32))
+    return jsonify(ok=True,csrf=token,view=holdings.read(_user_scope_id()).get('map_view',{}))
+
+@app.post('/api/subagents/view')
+def subagents_map_save():
+    import secrets
+    from .orchestration_map import save
+    token=session.get('business_csrf')
+    if not token or not secrets.compare_digest(token,request.headers.get('X-ZAR-Business-CSRF','')):
+        return jsonify(ok=False,error='CSRF: recarga el mapa.'),403
+    try:return jsonify(ok=True,view=save(_user_scope_id(),request.get_json(silent=True) or {}))
+    except (ValueError,TypeError):return jsonify(ok=False,error='Vista no válida.'),400
+
 @app.get('/api/subagents/state')
 def subagents_state_api():
     base=subagent_orchestrator.describe_general_agents()
@@ -2010,6 +2065,8 @@ def subagents_state_api():
         if a['id'] not in seen: base['agents'].append(a)
     for a in financial:
         if a['id']!='stonks_supervisor': base['edges'].append(['stonks_supervisor',a['id']])
+    from .orchestration_map import graph
+    base=graph(base,holdings.read(_user_scope_id()))
     base.update({
         'ok':True,
         'stonks_trace':trace,
@@ -3220,6 +3277,34 @@ def _automaton_preflight(d):
         return preflight(d,account,feed,_stonks_engine_owner_read()==_user_scope_id(),_clock)
     except Exception:
         return {'state':'ERROR','ready_to_start':False,'error':'Alpaca Paper/market feed no verificados. Revisa claves Paper y base URL; no se han enviado órdenes.'}
+
+@app.get('/api/stonks/automaton/capital')
+def automaton_capital_view():
+    from . import trading_capital
+    import secrets
+    token=session.setdefault('business_csrf',secrets.token_urlsafe(32))
+    return jsonify(ok=True,csrf=token,capital=trading_capital.view(_user_scope_id()))
+
+@app.post('/api/stonks/automaton/capital')
+@_stonks_serialized
+def automaton_capital_move():
+    from . import trading_capital
+    from .alpaca_configuration import validate_environment
+    import secrets
+    token=session.get('business_csrf')
+    if not token or not secrets.compare_digest(token,request.headers.get('X-ZAR-Business-CSRF','')):
+        return jsonify(ok=False,error='CSRF: recarga Automaton.'),403
+    try:
+        validate_environment()
+        def snapshot():
+            return (_alpaca_paper_request('/v2/account'),_alpaca_paper_request('/v2/positions'),
+                    _alpaca_paper_request('/v2/orders',params={'status':'open'}))
+        result=trading_capital.move(_user_scope_id(),request.get_json(silent=True) or {},snapshot)
+        return jsonify(ok=True,transaction=result,capital=trading_capital.view(_user_scope_id()))
+    except (ValueError,ArithmeticError,KeyError) as exc:
+        return jsonify(ok=False,error=str(exc)),409
+    except Exception:
+        return jsonify(ok=False,error='Broker Paper no verificado; movimiento no confirmado.'),409
 
 @app.get('/api/stonks/automaton/preflight')
 def automaton_preflight_api():

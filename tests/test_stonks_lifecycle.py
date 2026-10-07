@@ -14,7 +14,7 @@ import threading
 import unittest
 from unittest.mock import Mock
 from functools import wraps
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from datetime import datetime, timezone
 import uuid
 from flask import Flask, session, request, jsonify
@@ -35,7 +35,7 @@ spec_pf.loader.exec_module(preflight)
 def control_plane(directory):
     app = Flask('lifecycle-test')
     app.secret_key = 'test-only'
-    ns = dict(app=app, Path=Path, os=os, json=json, threading=threading, wraps=wraps,
+    ns = dict(__name__='app.main',__package__='app',app=app, Path=Path, os=os, json=json, threading=threading, wraps=wraps,
               contextmanager=contextmanager, uuid=uuid, datetime=datetime, timezone=timezone,
               stonks_lifecycle=lifecycle, stonks_preflight=preflight, session=session, request=request, jsonify=jsonify,
               _STONKS_DIR=Path(directory), _STONKS_LOCK=threading.RLock(),
@@ -47,7 +47,8 @@ def control_plane(directory):
               stonks_shadow=stonks_shadow, stonks_execution=stonks_execution,
               stonks_readiness=stonks_readiness, stonks_automaton=stonks_automaton,
               stonks_profitability=stonks_profitability, urlquote=urlquote, _STONKS_ENGINE_OWNER_PID=None,
-              stonks_news=SimpleNamespace(get_context=Mock(return_value={})))
+              stonks_news=SimpleNamespace(get_context=Mock(return_value={}),cached_context=Mock(return_value={})),
+              holdings=SimpleNamespace(transaction=lambda scope:nullcontext(),read=lambda scope:{}))
     stonks_dataplane.PLANE.reset_runtime()
     tree = ast.parse((ROOT / 'app/main.py').read_text(encoding='utf-8-sig'))
     nodes = [n for n in tree.body if isinstance(n, ast.FunctionDef) and

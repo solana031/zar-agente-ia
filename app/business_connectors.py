@@ -53,6 +53,8 @@ def inventory(state=None):
                 else 'Configuración presente, conexión no verificada en este inventario. Probar el conector existente.',
             'verified_at': None})
     rows.extend([
+        {'name':'Google Identity','state':'POR CONFIGURAR','missing':['Cuenta ZAR creada y OAuth de esa identidad verificado'],'variables':[],
+         'next_step':'Abrir CUENTAS DE ZAR, preparar Google, completar alta humana y verificar OAuth del buzón elegido.','provider_url':'https://accounts.google.com/signup','verified_at':None},
         {'name': 'faster-whisper', 'state': 'POR CONFIGURAR', 'missing': [], 'variables': ['ZAR_STT_PROVIDER'],
          'next_step': 'Usar el estado de Voice para comprobar runtime y modelo; inventario sin prueba de inferencia.', 'provider_url': None, 'verified_at': None},
         {'name': 'YouTube', 'state': 'POR CONFIGURAR', 'missing': ['OAuth de YouTube con permiso de publicación'],
@@ -70,12 +72,13 @@ def inventory(state=None):
             age=(datetime.now(timezone.utc)-datetime.fromisoformat(check.get('checked_at',''))).total_seconds()
             if 0<=age<600 and check.get('fingerprint')==fingerprint(row['name']) and check.get('state') in {'LISTO','POR CONFIGURAR','ERROR','NO DISPONIBLE'}:
                 row['state']=check['state'];row['verified_at']=check['checked_at']
+                if row['state']=='LISTO':row['missing']=[]
                 row['next_step']='Verificado: '+check.get('verification_scope','respuesta del proveedor')+'. Revalidar tras cambiar configuración.'
         except (TypeError,ValueError): pass
     groups={'Alpaca Paper':'TRADING','JEV':'INFRA','ElevenLabs':'MEDIA','F5-TTS':'MEDIA','DramaClaw DIRECT':'MEDIA',
             'Shopify':'COMMERCE','Proveedor':'COMMERCE','Payment':'PAYMENTS','Stripe Webhook':'PAYMENTS',
             'AdSense':'ADS','Google Maps':'INFRA','Vercel':'INFRA','Dominio':'IDENTITY','YouTube':'SOCIAL',
-            'Instagram':'SOCIAL','TikTok':'SOCIAL','ZAR Mail':'IDENTITY','ZAR Phone':'IDENTITY','faster-whisper':'MEDIA'}
+            'Instagram':'SOCIAL','TikTok':'SOCIAL','ZAR Mail':'GOOGLE','ZAR Phone':'IDENTITY','faster-whisper':'MEDIA','Google Identity':'GOOGLE'}
     operations={'Alpaca Paper':{'path':'/api/stonks/alpaca/verify','action':None},
                 'Shopify':{'path':'/api/holdings/workflows/commerce_shopify_sync','action':None},
                 'Payment':{'path':'/api/holdings/workflows/agency_payment_probe','action':None},
@@ -83,7 +86,7 @@ def inventory(state=None):
                 'ElevenLabs':{'path':'/api/holdings/workflows/probe','action':'ElevenLabs'},
                 'ZAR Mail':{'path':'/api/holdings/workflows/identity_email_verify','action':None}}
     for row in rows:
-        row.update(provider=row['name'],group=groups.get(row['name'],'INFRA'),status=row['state'],
+        row.update(capabilities={'Alpaca Paper':['paper_account','paper_feed','paper_portfolio'],'ZAR Mail':['profile','inbox','send','reply','threads'],'Google Identity':['human_signup_workflow','oauth_identity_verification'],'Shopify':['shop','products','orders'],'Proveedor':['catalog','quote','order','tracking'],'DramaClaw DIRECT':['health','preview','generation_requires_credentials'],'ZAR Phone':['configuration_pending']}.get(row['name'],['configuration','provider_verification_in_module']),provider=row['name'],group=groups.get(row['name'],'INFRA'),status=row['state'],
                    last_verified=row['verified_at'],missing_requirements=row['missing'],verify=operations.get(row['name']))
         variables=list(row['variables'])
         if row['name']=='Alpaca Paper':variables.append('ALPACA_BASE_URL')
