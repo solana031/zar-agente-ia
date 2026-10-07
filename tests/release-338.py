@@ -49,7 +49,7 @@ class Release338(unittest.TestCase):
  def test_pipeline_review_and_resume(self):
   task=tasks.create(self.scope,'Investiga ayudas y después haz un informe y mándaselo a Belloso.')
   contact={'contact_id':'people/fixture','display_name':'Belloso','emails':['fixture@example.test'],'phones':[],'aliases':[],'source':'FIXTURE','confidence':1}
-  with patch('app.web_search.google_web_search',return_value={'ok':True,'text':'# Hallazgos\nDatos fixture verificados','sources':[{'title':'Fixture','url':'https://example.test'}]}) as research,patch.object(contact_resolver,'resolve',return_value={'status':'RESOLVED','contact':contact}),patch.object(identity_mail,'operate',return_value={'status':'CONFIRMED','message_id':'fixture-message'}) as send:
+  with patch('app.web_search.google_web_search',return_value={'ok':True,'provider':'Google Search grounding','text':'# Hallazgos\nDatos fixture verificados','sources':[{'title':'Fixture','url':'https://example.test'}]}) as research,patch.object(contact_resolver,'resolve',return_value={'status':'RESOLVED','contact':contact}),patch.object(identity_mail,'operate',return_value={'status':'CONFIRMED','message_id':'fixture-message'}) as send:
    first=tasks.run(self.scope,task['id']);self.assertEqual(first['status'],'WAITING');send.assert_not_called();artifact=first['outputs']['CREATE_REPORT']['artifact_id'];self.assertTrue(self.store.path(artifact).is_file())
    last=tasks.run(self.scope,task['id'],confirmed=True);self.assertEqual(last['status'],'DONE');research.assert_called_once();send.assert_called_once();self.assertEqual(send.call_args.args[2]['artifact_ids'],[artifact])
  def test_mail_attachments_and_cc_bcc(self):
@@ -71,6 +71,12 @@ class Release338(unittest.TestCase):
    with self.assertRaises(RuntimeError):artifact_engine.workspace_export(artifact['artifact_id'],'docs',True)
    with self.assertRaises(ValueError):artifact_engine.workspace_export(artifact['artifact_id'],'docs',True)
    self.assertEqual(create.call_count,1);self.assertEqual(self.store.metadata(artifact['artifact_id'])['workspace_exports']['docs']['status'],'CREATED')
+ def test_research_fallback_reads_evidence(self):
+  from app.research_agent import investigate
+  with patch('app.web_search.google_web_search',return_value={'ok':True,'provider':'DuckDuckGo','text':'Search links only','sources':[{'title':'Fixture','url':'https://example.test'}]}),patch('app.web_search.fetch_webpage',return_value={'ok':True,'text':'Persistent volumes retain their files between application restarts and deployments, according to this fixture.'}) as read:
+   result=investigate('Persistent volumes');self.assertIn('Extracto verificado',result['text']);self.assertIn('retain their files',result['text']);self.assertEqual(read.call_count,1)
+  with patch('app.web_search.google_web_search',return_value={'ok':True,'sources':[{'title':'Fixture','url':'https://example.test'}]}),patch('app.web_search.fetch_webpage',return_value={'ok':False}):
+   with self.assertRaises(ValueError):investigate('Unreadable sources')
  def test_canva_and_identity_policy(self):
   identity_center.register_google(self.scope,'zaragente031@gmail.com');p=identity_center.provider_plan(self.scope,'CANVA');self.assertEqual(p['identity'],'zaragente031@gmail.com');self.assertNotEqual(p['status'],'ACTIVE')
   policy=business_orchestration.ensure({});d=holdings.read(self.scope);self.assertEqual(d['account_identity_policy']['official_github_owner'],'solana031@gmail.com');self.assertEqual(d['account_identity_policy']['official_railway_owner'],'solana031@gmail.com')

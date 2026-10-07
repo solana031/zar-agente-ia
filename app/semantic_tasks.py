@@ -84,7 +84,8 @@ def run(scope,identifier,confirmed=False,selected_email=None):
             kind=step['kind'];output=None
             if holdings.read(scope).get('global_stop'):raise ValueError('STOP GLOBAL activo; tarea conservada.')
             if kind=='RESEARCH':
-                output=web_search.google_web_search(task['topic'],'Contrasta fuentes, fechas y requisitos. Distingue hechos, opiniones y fechas no verificadas. Incluye resumen ejecutivo, contexto, hallazgos, comparativa, recomendaciones y próximos pasos. No inventes fuentes.')
+                from .research_agent import investigate
+                output=investigate(task['topic'])
                 if not output.get('ok') or not output.get('sources'):raise ValueError('Investigación no confirmó fuentes web; se conserva la tarea sin inventar resultados.')
                 output.update(retrieved_at=holdings._now(),subquestions=['¿Qué fuentes primarias respaldan el tema?','¿Qué requisitos y fechas siguen vigentes?','¿Qué diferencias y próximos pasos hay?'],date_verification='Solo fechas respaldadas en el texto citado; las restantes no verificadas')
             elif kind=='CREATE_REPORT':
