@@ -289,7 +289,7 @@ def operate(scope,action,data):
             record=find(c['listings'],data['listing_id'])
             if data.get('confirmed') is not True:raise ValueError('Confirma escritura externa en Shopify.')
             if control.ensure(d)['agents'].get('ListingAgent',{}).get('state') in {'OFF','PAUSED'}:raise ValueError('ListingAgent pausado/apagado.')
-            if d.get('global_stop') or control.ensure(d)['mode'] in {'OFF','SHADOW'}:raise ValueError('Operación bloqueada por STOP/modo Automaton.')
+            if d.get('global_stop') or control.ensure(d)['mode'] in {'OFF','SHADOW'}:raise ValueError('Operación bloqueada por STOP/modo BusinessOrchestrator.')
             product=find(c['products'],record['product_id'])
             if product['state'] not in {'DRAFT_LISTING','PUBLISHED','ACTIVE'}:raise ValueError('Candidato no aprobado para catálogo.')
             key=action+':'+record['id']+(':'+text(data.get('publication_id'),150) if action=='shopify_publish' else '')

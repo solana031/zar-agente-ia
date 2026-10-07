@@ -51,7 +51,7 @@ def operate(scope, action, data):
         if project.get('state')=='BUILDING': raise ValueError('Construcción ya en curso.')
         task=business_orchestration.mutate(scope,'task',{'agent':'SiteBuilderAgent','tool':'site_build',
             'request_id':data.get('request_id') or 'site-build:'+project['id'],'project_id':project['id']})
-        return {'queued':True,'mode':task['mode'],'note':'Automaton debe estar SUPERVISED/ACTIVE; SHADOW conserva la tarea sin ejecutar.'}
+        return {'queued':True,'mode':task['mode'],'note':'BusinessOrchestrator debe estar SUPERVISED/ACTIVE; SHADOW conserva la tarea sin ejecutar.'}
     if action=='adsense_sync': return adsense_adapter.sync(scope,data.get('account'),data.get('domain'))
     if action=='adsense_received': return adsense_adapter.confirm_received(scope,data.get('reference'),data.get('bank_reference'),data.get('confirmed'))
     if action=='media_create':
