@@ -29,7 +29,7 @@ def recent_messages(query='in:inbox', max_results=10):
     svc=service(); result=svc.users().messages().list(userId='me',q=query,maxResults=max_results,includeSpamTrash=False).execute(); out=[]
     for item in result.get('messages',[]):
         msg=svc.users().messages().get(userId='me',id=item['id'],format='metadata',metadataHeaders=['From','To','Subject','Date']).execute(); h=_headers(msg); labels=msg.get('labelIds',[])
-        out.append({'id':msg.get('id'),'threadId':msg.get('threadId'),'from':h.get('from',''),'to':h.get('to',''),'subject':h.get('subject',''),'date':h.get('date',''),'snippet':msg.get('snippet',''),'unread':'UNREAD' in labels})
+        out.append({'id':msg.get('id'),'rfc_message_id':h.get('message-id'),'threadId':msg.get('threadId'),'from':h.get('from',''),'to':h.get('to',''),'subject':h.get('subject',''),'date':h.get('date',''),'snippet':msg.get('snippet',''),'unread':'UNREAD' in labels})
     return out
 
 def search_messages(query,max_results=10): return recent_messages(query,max_results)
@@ -50,7 +50,7 @@ def extract_plain_text(message):
 
 def get_message(message_id):
     msg=service().users().messages().get(userId='me',id=message_id,format='full').execute(); h=_headers(msg)
-    return {'id':msg.get('id'),'threadId':msg.get('threadId'),'from':h.get('from',''),'to':h.get('to',''),'subject':h.get('subject',''),'date':h.get('date',''),'snippet':msg.get('snippet',''),'text':extract_plain_text(msg)[:30000],'labels':msg.get('labelIds',[])}
+    return {'id':msg.get('id'),'rfc_message_id':h.get('message-id'),'threadId':msg.get('threadId'),'from':h.get('from',''),'to':h.get('to',''),'subject':h.get('subject',''),'date':h.get('date',''),'snippet':msg.get('snippet',''),'text':extract_plain_text(msg)[:30000],'labels':msg.get('labelIds',[])}
 
 def get_latest():
     msgs=recent_messages('in:inbox',1); return get_message(msgs[0]['id']) if msgs else None

@@ -871,6 +871,8 @@ def _stonks_lookup_order(cid):
 
 
 def _stonks_submit_paper_order(body):
+    from .alpaca_configuration import validate_environment
+    validate_environment()
     return stonks_execution.PaperExecutionAdapter(requests.post).submit(
         body, _stonks_read(), _alpaca_paper_credentials())
 
@@ -907,14 +909,17 @@ def _stonks_audit_append(event, details=None):
     return rows[-1]
 
 def _alpaca_paper_credentials():
-    return (os.environ.get('ALPACA_PAPER_API_KEY','').strip(), os.environ.get('ALPACA_PAPER_API_SECRET','').strip())
+    from .alpaca_configuration import credentials
+    return credentials()
 
 def _alpaca_paper_request(path, method='GET', params=None, missing_ok=False):
+    from .alpaca_configuration import validate_environment
+    validate_environment()
     if method.upper() not in ('GET', 'DELETE'):
         raise RuntimeError('Usar el adapter Paper para enviar ordenes')
     key, secret = _alpaca_paper_credentials()
     if not key or not secret:
-        raise RuntimeError('Faltan ALPACA_PAPER_API_KEY y ALPACA_PAPER_API_SECRET en Railway.')
+        raise RuntimeError('Faltan ALPACA_API_KEY y ALPACA_API_SECRET en Railway (o la pareja legacy ALPACA_PAPER_API_KEY / ALPACA_PAPER_API_SECRET).')
     import requests as _requests
     base='https://paper-api.alpaca.markets'
     r=_requests.request(method, base+path, headers={'APCA-API-KEY-ID':key,'APCA-API-SECRET-KEY':secret,'Accept':'application/json'}, params=params, timeout=12)
@@ -966,7 +971,7 @@ def _stonks_market_clock_snapshot():
 def _alpaca_market_request(path, method='GET', params=None):
     key, secret = _alpaca_paper_credentials()
     if not key or not secret:
-        raise RuntimeError('Faltan ALPACA_PAPER_API_KEY y ALPACA_PAPER_API_SECRET en Railway.')
+        raise RuntimeError('Faltan ALPACA_API_KEY y ALPACA_API_SECRET en Railway (o la pareja legacy ALPACA_PAPER_API_KEY / ALPACA_PAPER_API_SECRET).')
     import requests as _requests
     base='https://data.alpaca.markets'
     r=_requests.request(method, base+path, headers={'APCA-API-KEY-ID':key,'APCA-API-SECRET-KEY':secret,'Accept':'application/json'}, params=params, timeout=12)
@@ -1257,9 +1262,10 @@ def _stonks_engine_cycle(scope_id):
         session['zar_user_id']=scope_id
         d=_stonks_read()
         _automaton=stonks_automaton.ensure(d)
-        if _automaton.get('state') in ('RUNNING','PAUSED'):
-            stonks_automaton.heartbeat(d, 'THINK' if _automaton.get('state')=='RUNNING' else 'PAUSED', detail='Heartbeat del ciclo servidor')
+        if stonks_automaton.public_view(d)['state']=='ERROR' and _automaton['state'] in {'STARTING','ACTIVE','PAUSED'}:
+            stonks_automaton.fail(d,'Heartbeat caducado; requiere preflight')
             _stonks_write(d)
+        # Activation is acknowledged only after the real broker snapshot succeeds.
         stonks_dataplane.PLANE.hydrate(scope_id, d.get('data_plane_telemetry'))
         stonks_dataplane.PLANE.begin_cycle(scope_id)
         _stream_status=_stonks_stream_plan(d, activate=True)
@@ -1271,6 +1277,9 @@ def _stonks_engine_cycle(scope_id):
             recon, clock, market_trace = stonks_agents.SUPERVISOR.market.snapshot(
                 scope_id, _stonks_reconcile_paper_state, lambda: _alpaca_paper_request('/v2/clock'))
             agent_trace.append(market_trace)
+            if stonks_automaton.ensure(d)['state'] in {'STARTING','ACTIVE','PAUSED'}:
+                stonks_automaton.heartbeat(d, 'PAUSED' if d.get('paused') else 'THINK',detail='Snapshot y heartbeat del motor servidor')
+                _stonks_write(d)
             # Zero-token Data Plane: news is refreshed on its own TTL, not every 5-second cycle.
             news_by_symbol = {}
             for _sym in symbols[:8]:
@@ -1519,12 +1528,12 @@ def _stonks_engine_cycle(scope_id):
             d['agent_last_trace'].append({'agent':'market_stream','status':'ok' if _connected else 'idle','detail':f'Stream market data · {_connected} feed(s) conectado(s) · {_subs} suscripciones · 0 tokens','data':_stream_status,'timestamp':_cycle_now})
             d['agent_last_trace'].append({'agent':'self_test','status':'ok' if _health.get('ok') else 'blocked','detail':f"Self-Test {_health.get('passed')}/{_health.get('total')} · 0 tokens",'data':_health,'timestamp':_cycle_now})
             d['agent_last_trace']=d['agent_last_trace'][-30:]
-            if stonks_automaton.ensure(d).get('state') == 'RUNNING':
+            if stonks_automaton.ensure(d).get('state') == 'ACTIVE':
                 stonks_automaton.complete_cycle(d, action=action, trace=d['agent_last_trace'], learning=d.get('paper_learning') or {})
             _stonks_write(d)
             return {'status':'ok','action':action,'shadow':shadow_observe}
         except Exception as exc:
-            d=_stonks_read(); _cycle_now=datetime.now(timezone.utc).isoformat(); d['paper_connected']=False; d['engine_last_run']=_cycle_now; d['engine_last_action']='ERROR · reconciliación Paper no disponible; sin órdenes'
+            d=_stonks_read(); stonks_automaton.fail(d,'Reconciliación Paper no disponible; entradas bloqueadas'); _cycle_now=datetime.now(timezone.utc).isoformat(); d['paper_connected']=False; d['engine_last_run']=_cycle_now; d['engine_last_action']='ERROR · reconciliación Paper no disponible; sin órdenes'
             if d.get('execution_mode') in ('shadow','paper_auto') and d.get('mode') == 'paper' and d.get('autonomous_engine'):
                 d['shadow_cycle_total'] = int(d.get('shadow_cycle_total') or 0) + 1
                 d['shadow_last_cycle'] = _cycle_now
@@ -2220,6 +2229,19 @@ def _stonks_current_signal(symbol, strategy='trend', timeframe='1Min', feed='iex
                 data_freshness={'source':'Alpaca crypto' if crypto else 'Alpaca '+feed,
                                 'state':'DELAYED' if age is not None else 'UNKNOWN',
                                 'last_update':bar_time,'age_seconds':age,'note':'Completed historical bars; not a realtime quote'})
+    config=_stonks_read()
+    price=item.get('price');side=item['signal']
+    stop_pct=float(config.get('stop_loss_pct') or 0)/100
+    take_pct=float(config.get('take_profit_pct') or 0)/100
+    risk=price*stop_pct if price and stop_pct>0 and side in {'BUY','SELL'} else None
+    reward=price*take_pct if price and take_pct>0 and side in {'BUY','SELL'} else None
+    sign=1 if side=='BUY' else -1
+    item.update(side=side,stop_loss=round(price-sign*risk,6) if risk else None,
+                take_profit=round(price+sign*reward,6) if reward else None,
+                risk=risk,reward=reward,rr_ratio=reward/risk if risk and reward else None,
+                expected_risk=risk,expected_reward=reward,risk_reward_ratio=reward/risk if risk and reward else None,
+                freshness=item['data_freshness'],source=item['data_freshness']['source'],
+                levels_status='PROPOSED_REQUIRE_RISK',confidence_status='UNKNOWN_NOT_CALIBRATED')
     return item, clock
 
 @app.get('/api/stonks/signals')
@@ -3183,6 +3205,32 @@ def stonks_engine_api():
     _stonks_audit_append('MOTOR AUTÓNOMO',{'decision':'DESACTIVADO'})
     return jsonify({'ok':True,**d,'engine_owner':_stonks_engine_owner_read()})
 
+def _automaton_preflight(d):
+    from .alpaca_configuration import preflight,validate_environment
+    try:
+        validate_environment()
+        key,secret=_alpaca_paper_credentials()
+        if not key or not secret:return {'state':'POR CONFIGURAR','ready_to_start':False,'missing':['ALPACA_API_KEY','ALPACA_API_SECRET']}
+        account=_alpaca_paper_request('/v2/account')
+        feed,_clock=_stonks_latest_price('AAPL')
+        return preflight(d,account,feed,_stonks_engine_owner_read()==_user_scope_id(),_clock)
+    except Exception:
+        return {'state':'ERROR','ready_to_start':False,'error':'Alpaca Paper/market feed no verificados. Revisa claves Paper y base URL; no se han enviado órdenes.'}
+
+@app.get('/api/stonks/automaton/preflight')
+def automaton_preflight_api():
+    return jsonify(ok=True,preflight=_automaton_preflight(_stonks_read()))
+
+@app.post('/api/stonks/alpaca/verify')
+@_stonks_serialized
+def alpaca_verify_api():
+    from .business_connectors import verification
+    result=_automaton_preflight(_stonks_read())
+    with holdings.transaction(_user_scope_id()):
+        d=holdings.read(_user_scope_id());d.setdefault('verified_connectors',{})['Alpaca Paper']=verification('Alpaca Paper',result['state'],'Account, buying power, IEX feed and fixed Paper environment; zero orders')
+        holdings.write(_user_scope_id(),d)
+    return jsonify(ok=True,**result)
+
 @app.post('/api/stonks/automaton')
 @_stonks_serialized
 def stonks_automaton_api():
@@ -3200,6 +3248,9 @@ def stonks_automaton_api():
         requested_mode=str(payload.get('automaton_mode') or 'PAPER').upper()
         if requested_mode not in ('SHADOW','PAPER'):
             return jsonify({'ok':False,'error':'LIVE desconectado; selecciona SHADOW o PAPER.'}),409
+        preflight=_automaton_preflight(d)
+        if not preflight.get('ready_to_start'):
+            return jsonify({'ok':False,'error':'Preflight Automaton bloqueado. Verifica Alpaca, feed, capital y Risk.','preflight':preflight}),409
         d['execution_mode']='shadow' if requested_mode=='SHADOW' else 'paper_auto'
         d['autonomous_engine']=True
         d['paused']=False
@@ -3208,6 +3259,8 @@ def stonks_automaton_api():
         _stonks_engine_owner_write(_user_scope_id())
         _stonks_audit_append('AUTOMATON',{'decision':'ENCENDIDO','paper_only':True,'execution_mode':d['execution_mode']})
     elif action=='pause':
+        if stonks_automaton.ensure(d)['state'] not in {'STARTING','ACTIVE','PAUSED'}:
+            return jsonify(ok=False,error='Automaton no está activo.'),409
         d['paused']=True
         stonks_automaton.pause(d)
         _stonks_write(d)
@@ -3215,8 +3268,10 @@ def stonks_automaton_api():
     else:
         if action=='kill':
             d['paused']=True;d['revoked']=True;d['mode']='paper'
-        stonks_automaton.stop(d)
+        stonks_automaton.stopping(d)
         d['autonomous_engine']=False
+        _stonks_write(d)
+        stonks_automaton.stop(d)
         _stonks_write(d)
         _stonks_audit_append('AUTOMATON',{'decision':'KILL_SWITCH' if action=='kill' else 'APAGADO','paper_only':True})
     return jsonify({'ok':True,'automaton':stonks_automaton.public_view(d),

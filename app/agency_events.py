@@ -15,7 +15,8 @@ def inbound(scope, data):
     """Import a real mailbox message; classification is explicitly reviewed."""
     from . import gmail
     message = gmail.get_message(data['message_id'])
-    classification = data.get('classification', 'OTHER')
+    from .agency_mail import classify,auto_negotiate
+    classification = classify(message.get('text','')) if data.get('auto_classify') is True else data.get('classification', 'OTHER')
     if classification not in CLASSIFICATIONS:
         raise ValueError('Clasificación no válida.')
     with holdings.transaction(scope):
@@ -26,14 +27,15 @@ def inbound(scope, data):
         rows = lead.setdefault('inbound', [])
         old = next((x for x in rows if x['id']==message['id']), None)
         if old: return old
-        row = {k:message.get(k) for k in ('id','threadId','from','to','subject','date','text')}
-        row.update(classification=classification, timestamp=holdings._now(), source='Gmail')
+        row = {k:message.get(k) for k in ('id','threadId','from','to','subject','date','text','rfc_message_id')}
+        row.update(classification=classification, timestamp=holdings._now(), source='Gmail',classification_source='RULE_BASED' if data.get('auto_classify') is True else 'HUMAN_REVIEWED')
         rows.append(row)
         lead['thread_id'] = message.get('threadId')
         if classification == 'DO_NOT_CONTACT':
             agency_crm.transition(lead, 'DO_NOT_CONTACT', {})
-        elif lead['state'] != 'DO_NOT_CONTACT':
-            agency_crm.transition(lead, 'LOST' if classification=='NOT_INTERESTED' else 'REPLIED', {})
+        elif lead['state'] not in {'DO_NOT_CONTACT','WON','DELIVERED'}:
+            agency_crm.transition(lead, 'LOST' if classification=='NOT_INTERESTED' else 'REPLIED', {'confirmed':True,'evidence':'Gmail message '+message['id']})
+        if data.get('auto_classify') is True:auto_negotiate(lead,row)
         holdings.write(scope,d)
         return row
 

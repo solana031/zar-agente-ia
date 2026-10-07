@@ -6,7 +6,10 @@ def test_start_pause_stop_and_metrics_delta():
         'paper_learning': {'overall': {'trades': 10, 'wins': 6, 'losses': 4, 'realized_pnl': 2.5}},
     }
     auto=stonks_automaton.start(state)
-    assert auto['state']=='RUNNING'
+    assert auto['state']=='STARTING'
+    assert auto['last_heartbeat'] is None
+    auto=stonks_automaton.heartbeat(state)
+    assert auto['state']=='ACTIVE'
     assert auto['baseline_trades']==10
     state['paper_learning']={'overall': {'trades': 12, 'wins': 7, 'losses': 5, 'realized_pnl': 3.1}, 'groups': []}
     stonks_automaton.complete_cycle(state, action='AAPL: esperar', learning=state['paper_learning'])

@@ -4,11 +4,12 @@ import hashlib
 import json
 
 SPECS = {
+    "Alpaca Paper": (["ALPACA_API_KEY","ALPACA_API_SECRET"], "https://app.alpaca.markets"),
     "JEV": (["JEV_API_KEY"], "https://typesafe.ai"),
     "ElevenLabs": (["ELEVENLABS_API_KEY", "ELEVENLABS_VOICE_ID"], "https://elevenlabs.io"),
     "F5-TTS": (["F5_TTS_API_URL"], None),
     "Shopify": (["SHOPIFY_SHOP_DOMAIN", "SHOPIFY_ADMIN_ACCESS_TOKEN"], "https://partners.shopify.com"),
-    "Proveedor": (["ZAR_SUPPLIER_ORDER_WEBHOOK"], None),
+    "Proveedor": (["ZAR_SUPPLIER_ORDER_WEBHOOK","ZAR_SUPPLIER_CATALOG_URL","ZAR_SUPPLIER_QUOTE_URL","ZAR_SUPPLIER_TRACKING_URL","ZAR_SUPPLIER_API_TOKEN"], None),
     "Stripe Webhook": (["STRIPE_WEBHOOK_SECRET"], "https://dashboard.stripe.com/webhooks"),
     "Payment": (["STRIPE_SECRET_KEY","ZAR_CHECKOUT_SUCCESS_URL","ZAR_CHECKOUT_CANCEL_URL"], "https://dashboard.stripe.com/apikeys"),
     "Google Maps": (["ZAR_MAPS_API_KEY"], "https://console.cloud.google.com"),
@@ -28,7 +29,7 @@ def verification(name,state,scope='API response'):
 
 def fingerprint(name):
     variables=SPECS.get(name,([],None))[0]
-    extra={'Shopify':['SHOPIFY_API_VERSION'],'Proveedor':['ZAR_SUPPLIER_CATALOG_URL','ZAR_SUPPLIER_QUOTE_URL','ZAR_SUPPLIER_TRACKING_URL','ZAR_SUPPLIER_API_TOKEN'],
+    extra={'Alpaca Paper':['ALPACA_BASE_URL','ALPACA_PAPER_API_KEY','ALPACA_PAPER_API_SECRET'],'Shopify':['SHOPIFY_API_VERSION'],'Proveedor':['ZAR_SUPPLIER_CATALOG_URL','ZAR_SUPPLIER_QUOTE_URL','ZAR_SUPPLIER_TRACKING_URL','ZAR_SUPPLIER_API_TOKEN'],
            'JEV':['TYPESAFE_API_KEY','JEV_API_BASE','JEV_MODEL'], 'DramaClaw DIRECT':['DRAMACLAW_API_TOKEN'],
            'AdSense':['ADSENSE_PUBLISHER_ID']}.get(name,[])
     return hashlib.sha256(json.dumps([os.environ.get(x,'') for x in variables+extra]).encode()).hexdigest()
@@ -38,6 +39,10 @@ def inventory(state=None):
     rows = []
     for name, (variables, url) in SPECS.items():
         missing = [var for var in variables if not os.environ.get(var, '').strip()]
+        if name=='Alpaca Paper':
+            from .alpaca_configuration import credentials
+            key,secret=credentials()
+            missing=[] if key and secret else ['ALPACA_API_KEY','ALPACA_API_SECRET']
         if name == 'JEV' and os.environ.get('TYPESAFE_API_KEY', '').strip():
             missing = []
         if name == 'AdSense' and (os.environ.get('ADSENSE_PUBLISHER_ID', '').strip()):
@@ -67,4 +72,23 @@ def inventory(state=None):
                 row['state']=check['state'];row['verified_at']=check['checked_at']
                 row['next_step']='Verificado: '+check.get('verification_scope','respuesta del proveedor')+'. Revalidar tras cambiar configuración.'
         except (TypeError,ValueError): pass
+    groups={'Alpaca Paper':'TRADING','JEV':'INFRA','ElevenLabs':'MEDIA','F5-TTS':'MEDIA','DramaClaw DIRECT':'MEDIA',
+            'Shopify':'COMMERCE','Proveedor':'COMMERCE','Payment':'PAYMENTS','Stripe Webhook':'PAYMENTS',
+            'AdSense':'ADS','Google Maps':'INFRA','Vercel':'INFRA','Dominio':'IDENTITY','YouTube':'SOCIAL',
+            'Instagram':'SOCIAL','TikTok':'SOCIAL','ZAR Mail':'IDENTITY','ZAR Phone':'IDENTITY','faster-whisper':'MEDIA'}
+    operations={'Alpaca Paper':{'path':'/api/stonks/alpaca/verify','action':None},
+                'Shopify':{'path':'/api/holdings/workflows/commerce_shopify_sync','action':None},
+                'Payment':{'path':'/api/holdings/workflows/agency_payment_probe','action':None},
+                'DramaClaw DIRECT':{'path':'/api/holdings/workflows/probe','action':'DramaClaw DIRECT'},
+                'ElevenLabs':{'path':'/api/holdings/workflows/probe','action':'ElevenLabs'},
+                'ZAR Mail':{'path':'/api/holdings/workflows/identity_email_verify','action':None}}
+    for row in rows:
+        row.update(provider=row['name'],group=groups.get(row['name'],'INFRA'),status=row['state'],
+                   last_verified=row['verified_at'],missing_requirements=row['missing'],verify=operations.get(row['name']))
+        variables=list(row['variables'])
+        if row['name']=='Alpaca Paper':variables.append('ALPACA_BASE_URL')
+        row['configuration']=[{'variable':name,
+            'expected':'https://paper-api.alpaca.markets' if name=='ALPACA_BASE_URL' else 'Valor del proveedor; secreto solo en servidor' if any(x in name for x in ('KEY','SECRET','TOKEN')) else 'Identificador/URL real del proveedor',
+            'obtain_at':row.get('provider_url') or 'Panel/documentación del proveedor conectado',
+            'paste_at':'Railway → proyecto existente → servicio web → Variables → Deploy'} for name in variables]
     return rows

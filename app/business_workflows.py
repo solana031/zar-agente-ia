@@ -30,6 +30,9 @@ def view(scope):
 
 
 def operate(scope, action, data):
+    if action in {'identity_email_verify','agency_send','agency_inbound_sync'}:
+        from .agency_mail import verify,send,sync_inbound
+        return verify(scope) if action=='identity_email_verify' else send(scope,data) if action=='agency_send' else sync_inbound(scope,data)
     if action=='agency_inbound':
         from .agency_events import inbound
         return inbound(scope,data)

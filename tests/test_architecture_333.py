@@ -20,6 +20,7 @@ class ArchitectureTests(unittest.TestCase):
     def test_automaton_does_not_touch_wallet_or_business(self):
         state={'ledger':[{'amount':'10'}],'orchestration':{'mode':'OFF'}}
         stonks_automaton.start(state)
+        stonks_automaton.heartbeat(state)
         stonks_automaton.pause(state)
         stonks_automaton.stop(state)
         self.assertEqual(state['ledger'],[{'amount':'10'}])
@@ -33,7 +34,7 @@ class ArchitectureTests(unittest.TestCase):
         end=template.index('</section>',start)
         self.assertIn('zsAutomatonCard',template[start:end])
         self.assertIn('KILL SWITCH',template[start:end])
-        self.assertIn('v33.3.3</h2>',template[start:end])
+        self.assertIn('v33.3.4</h2>',template[start:end])
         self.assertIn('SHADOW',template[start:end])
         for name in ('business-orchestration.js','commerce-agency.js'):
             self.assertNotIn('registro Automaton',(root/'app/static'/name).read_text(encoding='utf-8'))

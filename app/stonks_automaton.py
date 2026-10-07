@@ -11,6 +11,7 @@ from copy import deepcopy
 from datetime import datetime, timezone
 
 MAX_JOURNAL = 80
+STATES = {'OFF','STARTING','ACTIVE','PAUSED','STOPPING','ERROR'}
 
 
 def _now():
@@ -19,7 +20,7 @@ def _now():
 
 def default_state():
     return {
-        "state": "OFF",  # OFF | RUNNING | PAUSED
+        "state": "OFF",
         "phase": "IDLE",
         "cycles": 0,
         "last_heartbeat": None,
@@ -52,7 +53,9 @@ def ensure(container):
     base = default_state()
     if isinstance(current, dict):
         base.update(current)
-    if base.get("state") not in {"OFF", "RUNNING", "PAUSED"}:
+    if base.get('state') == 'RUNNING':
+        base['state'] = 'ACTIVE'  # persisted pre-33.3.4 state
+    if base.get("state") not in STATES:
         base["state"] = "OFF"
     if not isinstance(base.get("journal"), list):
         base["journal"] = []
@@ -71,6 +74,10 @@ def _event(auto, event, detail, **extra):
 
 def start(container):
     auto = ensure(container)
+    if auto['state'] in {'STARTING','ACTIVE'}:
+        return auto
+    if auto['state']=='STOPPING':
+        raise ValueError('Espera al apagado antes de encender.')
     now = _now()
     if auto.get("state") == "OFF":
         overall = ((container.get("paper_learning") or {}).get("overall") or {})
@@ -80,16 +87,18 @@ def start(container):
         auto["baseline_pnl_usd"] = float(overall.get("realized_pnl") or 0.0)
         auto["trades"] = auto["wins"] = auto["losses"] = 0
         auto["win_rate"] = auto["pnl_usd"] = 0.0
-    auto.update(state="RUNNING", phase="THINK", started_at=now, paused_at=None,
-                last_heartbeat=now, last_action="Automaton arrancado; esperando ciclo de servidor.")
+    auto.update(state="STARTING", phase="PREFLIGHT", started_at=now, paused_at=None,
+                last_heartbeat=None, error=None, last_action="Esperando heartbeat real del motor.")
     _event(auto, "START", "Automaton Mode encendido · Paper-only")
     return auto
 
 
 def pause(container):
     auto = ensure(container)
+    if auto['state'] not in {'ACTIVE','STARTING','PAUSED'}:
+        raise ValueError('Automaton no está activo.')
     now = _now()
-    auto.update(state="PAUSED", phase="PAUSED", paused_at=now, last_heartbeat=now,
+    auto.update(state="PAUSED", phase="PAUSED", paused_at=now,
                 last_action="Automaton pausado; no se abrirán nuevas acciones autónomas.")
     _event(auto, "PAUSE", "Automaton pausado; estado y aprendizaje conservados")
     return auto
@@ -98,15 +107,33 @@ def pause(container):
 def stop(container):
     auto = ensure(container)
     now = _now()
-    auto.update(state="OFF", phase="IDLE", stopped_at=now, last_heartbeat=now,
+    auto.update(state="OFF", phase="IDLE", stopped_at=now,
                 last_action="Automaton apagado; estado persistido.")
     _event(auto, "STOP", "Automaton apagado; no iniciará nuevas acciones")
+    return auto
+
+def stopping(container):
+    auto=ensure(container)
+    if auto['state']!='OFF':
+        auto.update(state='STOPPING',phase='STOPPING')
+        _event(auto,'STOPPING','Entradas desactivadas; finalizando control del motor')
+    return auto
+
+def fail(container, reason):
+    auto=ensure(container)
+    if auto['state'] in {'STARTING','ACTIVE','PAUSED'}:
+        auto.update(state='ERROR',phase='ERROR',error=str(reason)[:300])
+        container['paused']=True
+        _event(auto,'ERROR',reason)
     return auto
 
 
 def heartbeat(container, phase="THINK", asset=None, detail=None):
     auto = ensure(container)
     auto["last_heartbeat"] = _now()
+    if auto['state']=='STARTING':
+        auto['state']='ACTIVE'
+        _event(auto,'ACTIVE','Ciclo real del motor recibido; preflight superado')
     auto["phase"] = phase
     if asset:
         auto["last_asset"] = asset
@@ -117,7 +144,7 @@ def heartbeat(container, phase="THINK", asset=None, detail=None):
 
 def complete_cycle(container, *, action="Sin señales.", trace=None, learning=None):
     auto = ensure(container)
-    if auto.get("state") != "RUNNING":
+    if auto.get("state") != "ACTIVE":
         return auto
     auto["cycles"] = int(auto.get("cycles") or 0) + 1
     auto["phase"] = "REPEAT"
@@ -154,5 +181,15 @@ def complete_cycle(container, *, action="Sin señales.", trace=None, learning=No
 
 def public_view(container):
     auto = deepcopy(ensure(container))
+    if auto['state'] in {'STARTING','ACTIVE','PAUSED'}:
+        stamp=auto.get('last_heartbeat') or auto.get('started_at')
+        try:
+            age=(datetime.now(timezone.utc)-datetime.fromisoformat(stamp)).total_seconds()
+        except (TypeError,ValueError):
+            age=None
+        auto['heartbeat_age_seconds']=age
+        auto['heartbeat_verified']=bool(auto.get('last_heartbeat') and age is not None and 0<=age<=90)
+        if age is None or age>90:
+            auto.update(state='ERROR',error='Heartbeat del motor ausente/caducado; verificar antes de reanudar.')
     auto["journal"] = auto.get("journal", [])[-20:][::-1]
     return auto

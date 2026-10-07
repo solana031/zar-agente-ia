@@ -160,7 +160,9 @@ class MarketStreamManager:
                 t.start()
 
     def _credentials(self):
-        return (os.environ.get('ALPACA_PAPER_API_KEY', '').strip(), os.environ.get('ALPACA_PAPER_API_SECRET', '').strip())
+        from .alpaca_configuration import credentials,validate_environment
+        validate_environment()
+        return credentials()
 
     def _stream_url(self, kind):
         if kind == 'equities':
@@ -185,9 +187,9 @@ class MarketStreamManager:
                     self._status[kind].update(connected=False, authenticated=False)
                     return
                 wake.clear()
-            key, secret = self._credentials()
             started = time.monotonic()
             try:
+                key, secret = self._credentials()
                 if not key or not secret:
                     raise RuntimeError('Credenciales Alpaca no configuradas')
                 if kind == 'options':
