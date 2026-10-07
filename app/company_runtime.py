@@ -1,13 +1,17 @@
 """Background runtime for ZAR Holdings companies."""
 from __future__ import annotations
 import time
-from . import holdings, commerce_company, media_company, sites_company
+from . import holdings, commerce_company, media_company, sites_company, business_orchestration
 
 
 def cycle_scope(scope_id):
     d=holdings.read(scope_id)
     if d.get("global_stop"):
         return {"ok":True,"stopped":True}
+    business_orchestration.tick(scope_id)
+    # SHADOW cannot invoke company handlers (they may write externally).
+    if d.get("orchestration", {}).get("mode") == "SHADOW":
+        return {"ok":True,"shadow":True,"external_actions":False}
     results={}
     for key in ("commerce","media","web_agency","sites"):
         c=d.get("companies",{}).get(key) or {}
@@ -19,7 +23,9 @@ def cycle_scope(scope_id):
                 if commerce_company.status().get("shopify_configured") and int(c.get("cycles") or 0) % 30 == 0:
                     r=commerce_company.sync_paid_orders(scope_id); action=f"Commerce: Shopify sincronizado ({r.get('ledger_added',0)} nuevos)."
                 else: action="Commerce: heartbeat · esperando catálogo/pedidos autorizados."
-            elif key=="media": action=media_company.process_one(scope_id)
+            elif key=="media":
+                from .business_dispatch import BusinessOrchestrator
+                action=BusinessOrchestrator.execute("media",scope_id,{})
             elif key=="sites":
                 action=sites_company.process_one(scope_id)
                 # Read-only revenue sync is sparse and never manufactures revenue.

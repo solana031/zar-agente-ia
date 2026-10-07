@@ -35,42 +35,21 @@ def status():
 
 
 def _graphql(query, variables=None, timeout=35):
-    if not _shop() or not _token():
-        raise RuntimeError("Faltan SHOPIFY_SHOP_DOMAIN y SHOPIFY_ADMIN_ACCESS_TOKEN.")
-    url = f"https://{_shop()}/admin/api/{API_VERSION}/graphql.json"
-    r = requests.post(url, headers={"X-Shopify-Access-Token": _token(), "Content-Type":"application/json"}, json={"query":query,"variables":variables or {}}, timeout=timeout)
-    if not r.ok:
-        raise RuntimeError(f"Shopify HTTP {r.status_code}: {r.text[:700]}")
-    data = r.json()
-    if data.get("errors"):
-        raise RuntimeError("Shopify GraphQL: " + str(data["errors"])[:900])
-    return data.get("data") or {}
+    from .commerce_adapters import ShopifyAdapter
+    return ShopifyAdapter().graphql(query,variables)
 
 
 def sync_paid_orders(scope_id):
-    query = """query ZAROrders($first:Int!){orders(first:$first,sortKey:CREATED_AT,reverse:true){nodes{id name createdAt displayFinancialStatus displayFulfillmentStatus totalPriceSet{shopMoney{amount currencyCode}}}}}"""
-    data = _graphql(query, {"first": 50})
-    rows = (data.get("orders") or {}).get("nodes") or []
-    added = 0
-    for o in rows:
-        status_name = str(o.get("displayFinancialStatus") or "").upper()
-        if status_name not in {"PAID", "PARTIALLY_REFUNDED"}:
-            continue
-        money = ((o.get("totalPriceSet") or {}).get("shopMoney") or {})
-        amount = float(money.get("amount") or 0)
-        ref = str(o.get("id") or o.get("name") or "")
-        before = len(holdings.read(scope_id).get("ledger") or [])
-        holdings.add_ledger(scope_id, "commerce", "revenue", amount, currency=money.get("currencyCode") or "EUR", status="collected", source="shopify", reference=ref, note=o.get("name") or "", verified=True)
-        after = len(holdings.read(scope_id).get("ledger") or [])
-        added += int(after > before)
-    holdings.update_company(scope_id, "commerce", action=f"Shopify sincronizado · {len(rows)} pedidos revisados · {added} ingreso(s) nuevo(s)", event="SYNC", event_detail="Ingresos Shopify sincronizados")
-    return {"ok": True, "orders_checked": len(rows), "ledger_added": added}
+    from .commerce_workspace import operate
+    return {'ok':True, **operate(scope_id,'shopify_sync',{})}
 
 
 def create_draft_product(scope_id, product):
     title = str((product or {}).get("title") or "").strip()
     if not title:
         raise ValueError("Falta title.")
+    if (product or {}).get("confirmed") is not True or holdings.read(scope_id).get("global_stop"):
+        return {"ok":False,"requires_review":True,"message":"Confirma escritura externa y revisa STOP GLOBAL."}
     decision = gate("Crear producto en Shopify", {"product": product, "company":"commerce"}, "medium")
     if decision["requires_review"] and not bool((product or {}).get("confirmed")):
         return {"ok": False, "requires_review": True, "decision": decision, "message": "Jev/política exige confirmación antes de escribir en Shopify."}
@@ -87,30 +66,20 @@ def create_draft_product(scope_id, product):
     return {"ok": True, "product": p, "decision": decision}
 
 
-def margin(source_cost, sale_price, fees=0, shipping=0):
-    source_cost=float(source_cost or 0); sale_price=float(sale_price or 0); fees=float(fees or 0); shipping=float(shipping or 0)
-    profit=sale_price-source_cost-fees-shipping
-    return {"source_cost":source_cost,"sale_price":sale_price,"fees":fees,"shipping":shipping,"profit":round(profit,2),"margin_pct":round((profit/sale_price*100),2) if sale_price else 0.0}
+def margin(source_cost, sale_price, fees=None, shipping=None):
+    from .commerce_pricing import number,fmt
+    cost=number(source_cost);sale=number(sale_price);fee=number(fees);ship=number(shipping)
+    profit=None if any(x is None for x in (cost,sale,fee,ship)) else sale-cost-fee-ship
+    return {'source_cost':fmt(cost),'sale_price':fmt(sale),'fees':fmt(fee),'shipping':fmt(ship),
+        'profit':fmt(profit),'margin_pct':fmt(profit/sale*100) if profit is not None and sale else None,
+        'classification':'ESTIMADA','note':'Cálculo parcial; pricing completo en Commerce. Desconocidos no equivalen a cero.'}
 
 
 def supplier_order(order, confirmed=False):
-    url = os.environ.get("ZAR_SUPPLIER_ORDER_WEBHOOK", "").strip()
-    if not url:
-        return {"ok":False,"configured":False,"requires_review":True,"message":"Configura ZAR_SUPPLIER_ORDER_WEBHOOK para enviar pedidos directamente al proveedor."}
-    decision = gate("Comprar al proveedor y enviar directamente al cliente", {"order":order}, "high")
-    if not confirmed:
-        return {"ok":False,"requires_review":True,"decision":decision,"message":"La compra al proveedor requiere confirmación explícita."}
-    token=os.environ.get("ZAR_SUPPLIER_API_TOKEN","").strip()
-    headers={"Content-Type":"application/json"}
-    if token: headers["Authorization"]="Bearer "+token
-    r=requests.post(url,headers=headers,json=order,timeout=45)
-    if not r.ok: raise RuntimeError(f"Proveedor HTTP {r.status_code}: {r.text[:700]}")
-    try: payload=r.json()
-    except ValueError: payload={"text":r.text[:1000]}
-    return {"ok":True,"provider_result":payload,"decision":decision}
+    return {'ok':False,'requires_review':True,'message':'Usa Commerce: quote verificable, reserva Wallet, aprobación vinculada y ejecución idempotente. confirmed genérico no autoriza una compra.'}
 
 
-_PRICE_RE = re.compile(r"(?:€|EUR\s*)?\s*(\d{1,5}(?:[.,]\d{1,2})?)\s*(?:€|EUR)?", re.I)
+_PRICE_RE = re.compile(r"(?:€|EUR\s*)\s*(\d{1,5}(?:[.,]\d{1,2})?)|(?:(\d{1,5}(?:[.,]\d{1,2})?)\s*(?:€|EUR))", re.I)
 
 def scout(scope_id, query, sale_price=0):
     """Research supplier candidates. Structured catalogs are preferred; web hits stay unverified."""
@@ -128,11 +97,11 @@ def scout(scope_id, query, sale_price=0):
                     cost=x.get("cost",x.get("price",x.get("unit_price")))
                     try: cost=float(str(cost).replace(",","."))
                     except Exception: cost=None
-                    row={"title":x.get("title") or x.get("name") or x.get("sku") or "Producto","cost":cost,"currency":x.get("currency") or "EUR","url":x.get("url") or x.get("product_url"),"sku":x.get("sku"),"verified":True,"source":"supplier_catalog"}
-                    if cost is not None and sale: row["margin"]=margin(cost,sale,float(x.get("fees") or 0),float(x.get("shipping") or 0))
+                    row={"title":x.get("title") or x.get("name") or x.get("sku") or "Producto","cost":cost,"currency":x.get("currency"),"url":x.get("url") or x.get("product_url"),"sku":x.get("sku"),"verified":False,"catalog_observed":True,"cost_classification":"REAL" if cost is not None else "NO DISPONIBLE","dropshipping":x.get("dropshipping"),"source":"supplier_catalog"}
+                    if cost is not None and sale: row["margin"]=margin(cost,sale,x.get("fees"),x.get("shipping"))
                     candidates.append(row)
         except Exception as exc:
-            holdings.update_company(scope_id,"commerce",error=f"Catálogo proveedor: {exc}")
+            holdings.update_company(scope_id,"commerce",error="Catálogo proveedor no disponible; revisar configuración/contrato.")
     if not candidates:
         result=public_search_results(query+" proveedor mayorista precio",limit=10)
         for x in result.get("results") or []:
@@ -140,10 +109,10 @@ def scout(scope_id, query, sale_price=0):
             vals=[]
             for m in _PRICE_RE.finditer(blob):
                 try:
-                    v=float(m.group(1).replace(",","."))
+                    v=float((m.group(1) or m.group(2)).replace(",","."))
                     if 0.05 <= v <= 100000: vals.append(v)
                 except Exception: pass
-            candidates.append({"title":x.get("title") or "Resultado proveedor","cost":min(vals) if vals else None,"currency":"EUR","url":x.get("url"),"verified":False,"source":result.get("provider") or "web","margin":margin(min(vals),sale) if vals and sale else None})
+            candidates.append({"title":x.get("title") or "Resultado proveedor","cost":min(vals) if vals else None,"currency":"EUR","url":x.get("url"),"verified":False,"cost_classification":"ESTIMADA" if vals else "NO DISPONIBLE","dropshipping":None,"source":result.get("provider") or "web","margin":margin(min(vals),sale) if vals and sale else None})
     decision=gate("Seleccionar producto/proveedor para análisis comercial",{"query":query,"sale_price":sale,"candidates":candidates[:10]},"medium")
     holdings.update_company(scope_id,"commerce",action=f"Scouting: {len(candidates)} candidato(s) para «{query}»; sin compras automáticas.",event="SCOUT",event_detail=query)
     return {"ok":True,"query":query,"sale_price":sale,"candidates":candidates[:20],"decision":decision,"purchase_authority":False}

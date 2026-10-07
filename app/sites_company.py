@@ -63,13 +63,16 @@ def _public_root():
 def _read_registry(scope_id):
     try:
         data = json.loads(_registry_file(scope_id).read_text(encoding="utf-8"))
-        return data if isinstance(data, list) else []
-    except (OSError, json.JSONDecodeError):
+        if not isinstance(data,list): raise ValueError('Registro Sites inválido; no se sobrescribe.')
+        return data
+    except FileNotFoundError:
         return []
+    except json.JSONDecodeError:
+        raise ValueError('Registro Sites corrupto; no se sobrescribe.') from None
 
 
 def _write_registry(scope_id, rows):
-    rows = list(rows or [])[-_MAX_SITES:]
+    rows = list(rows or [])
     p = _registry_file(scope_id)
     tmp = p.with_suffix(".tmp")
     tmp.write_text(json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -110,11 +113,11 @@ def scout_ideas(seed, limit=6):
             "topic": title[:150],
             "source": row.get("url") or "",
             "snippet": re.sub(r"\s+", " ", str(row.get("snippet") or "")).strip()[:500],
-            "score": max(35, 92 - i * 7),
+            "score": None,
             "strategy": "SEO + utilidad + distribución orgánica",
         })
     if not ideas:
-        ideas = [{"topic": seed, "source": "", "snippet": "", "score": 50, "strategy": "SEO + utilidad"}]
+        ideas = [{"topic": seed, "source": "", "snippet": "", "score": None, "strategy": "SEO + utilidad"}]
     return {"ok": True, "query": seed, "provider": res.get("provider"), "ideas": ideas, "artificial_traffic": False}
 
 
@@ -135,15 +138,19 @@ def _article_from_sources(topic, rows):
     return sections
 
 
-def build_site(scope_id, topic, name="", *, queue_promotion=True):
+def build_site(scope_id, topic, name="", *, queue_promotion=True, project=None):
     topic = re.sub(r"\s+", " ", str(topic or "")).strip()
     if not topic:
         raise ValueError("Falta el tema del sitio.")
     display = re.sub(r"\s+", " ", str(name or topic)).strip()[:100]
-    slug = _slug(display)
+    slug = project['slug'] if project else _slug(display)
     root = _public_root() / slug
     root.mkdir(parents=True, exist_ok=True)
-    search = public_search_results(f"{topic} guía datos preguntas", limit=8)
+    if project:
+        from .web_search import _public_search
+        search = _public_search(f"{topic} guía datos preguntas {project.get('language','es')} {project.get('country','ES')}", 8)
+    else:
+        search = public_search_results(f"{topic} guía datos preguntas", limit=8)
     rows = search.get("results") or []
     sections = _article_from_sources(topic, rows)
     pub = _publisher_id(); client = _adsense_client()
@@ -157,6 +164,8 @@ def build_site(scope_id, topic, name="", *, queue_promotion=True):
     adsense = (f'<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client={html.escape(client)}" crossorigin="anonymous"></script>' if client else "")
     doc = f'''<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{html.escape(display)} · Guía</title><meta name="description" content="Guía útil y actualizada sobre {html.escape(topic[:150])}"><link rel="canonical" href="{html.escape(canonical, quote=True)}">{adsense}<style>*{{box-sizing:border-box}}body{{margin:0;background:#090909;color:#f5f1e8;font-family:Inter,system-ui,sans-serif}}.wrap{{max-width:1040px;margin:auto;padding:28px}}nav{{display:flex;justify-content:space-between;gap:20px;border-bottom:1px solid #33271d;padding:12px 0;color:#d9b97b}}.hero{{padding:72px 0 40px}}h1{{font-size:clamp(40px,7vw,78px);line-height:.98;letter-spacing:-.05em;margin:12px 0}}p{{color:#c3b9ad;line-height:1.7}}.pill{{display:inline-block;border:1px solid #614a32;border-radius:999px;padding:7px 10px;color:#e0bf84}}.grid{{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}}.card{{border:1px solid #342a22;background:#12100e;border-radius:16px;padding:22px}}.card a{{color:#e7c783}}footer{{margin-top:48px;border-top:1px solid #33271d;padding:28px 0;color:#8f857c;font-size:13px}}@media(max-width:720px){{.grid{{grid-template-columns:1fr}}.hero{{padding-top:48px}}}}</style></head><body><div class="wrap"><nav><b>{html.escape(display)}</b><span>ZAR Sites</span></nav><main><section class="hero"><span class="pill">Contenido útil · crecimiento orgánico</span><h1>{html.escape(topic)}</h1><p>Resumen práctico construido a partir de fuentes públicas. Este sitio prioriza contenido útil y no utiliza tráfico o clics artificiales.</p></section><section class="grid">{source_cards}</section></main><footer><a href="privacy.html" style="color:#bfa67b">Privacidad</a> · ZAR Sites · Actualizado {datetime.now().date().isoformat()}</footer></div></body></html>'''
     privacy = '''<!doctype html><html lang="es"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Privacidad</title><body style="font-family:system-ui;max-width:760px;margin:50px auto;padding:20px"><h1>Privacidad</h1><p>Este sitio puede utilizar cookies y servicios publicitarios/analíticos de terceros cuando estén configurados. El operador debe completar y adaptar esta política a los servicios realmente activos y a la normativa aplicable antes de monetizar.</p><p><a href="./">Volver</a></p></body></html>'''
+    if project:
+        doc=doc.replace('<html lang="es">','<html lang="'+html.escape(project.get('language','es'),quote=True)+'">')
     (root / "index.html").write_text(doc, encoding="utf-8")
     (root / "privacy.html").write_text(privacy, encoding="utf-8")
     (root / "robots.txt").write_text("User-agent: *\nAllow: /\nSitemap: sitemap.xml\n", encoding="utf-8")
@@ -164,13 +173,17 @@ def build_site(scope_id, topic, name="", *, queue_promotion=True):
     if pub:
         (root / "ads.txt").write_text(f"google.com, {pub}, DIRECT, f08c47fec0942fa0\n", encoding="utf-8")
     row = {
-        "id": uuid.uuid4().hex[:16], "slug": slug, "name": display, "topic": topic,
+        **(project or {}),
+        "id": project['id'] if project else uuid.uuid4().hex[:16], "slug": slug, "name": display, "topic": topic,
         "created_at": _now(), "updated_at": _now(), "relative_url": f"/holdings/site/{slug}/",
         "canonical": canonical, "adsense_embedded": bool(client), "adsense_status": "NEEDS_APPROVAL" if client else "NOT_CONFIGURED",
         "deployment": None, "domain": None, "domain_cost": 0.0, "organic_only": True,
-        "sources": [x.get("url") for x in rows[:8] if x.get("url")],
+        "sources": [x.get("url") for x in rows[:8] if x.get("url")], "state": "READY", "content_review_required": True,
     }
-    reg = _read_registry(scope_id); reg.append(row); _write_registry(scope_id, reg)
+    with holdings.transaction(scope_id):
+        reg = _read_registry(scope_id)
+        reg = [x for x in reg if x['id'] != row['id']]
+        reg.append(row); _write_registry(scope_id, reg)
     holdings.update_company(scope_id, "sites", action=f"Sitio creado: {display}", event="SITE_CREATED", event_detail=canonical)
     if queue_promotion:
         try:
@@ -301,8 +314,15 @@ def _maybe_auto_domain(scope_id, site):
             continue
         if price_eur > max_one or spent + price_eur > daily_cap or price_eur > profit:
             continue
-        # auto_domain_purchase is an explicit standing authorization stored by the user.
-        return buy_domain(scope_id, site.get("slug") or "", domain, price_usd, confirmed=True)
+        # A standing policy never substitutes Pablo's approval of this purchase.
+        pending = holdings.next_task(scope_id, "sites", statuses=("AWAITING_APPROVAL",))
+        if pending and pending.get("kind") == "domain_purchase":
+            return {"ok": False, "requires_review": True, "task": pending}
+        task = holdings.queue_task(scope_id, "sites", "domain_purchase", {
+            "slug": site.get("slug"), "domain": domain, "provider": "Vercel",
+            "price_usd": price_usd, "tax": None, "total_verified": False,
+            "note": "Verificar total e impuestos en checkout antes de confirmar."}, requires_approval=True)
+        return {"ok": False, "requires_review": True, "task": task}
     return {"ok": False, "skipped": "no eligible domain quote"}
 
 
@@ -360,13 +380,8 @@ def _autonomous_growth(scope_id):
         topic = idea.get("topic") or seed
     site = build_site(scope_id, topic, queue_promotion=True)
     parts = [f"Sites: expansión automática creó {site['name']}"]
-    if cfg.get("auto_deploy_vercel") and status().get("vercel_configured"):
-        try:
-            dep = deploy_vercel(scope_id, site["slug"])
-            site = dep.get("site") or site
-            parts.append("Vercel desplegado")
-        except Exception as exc:
-            parts.append(f"deploy pendiente: {str(exc)[:120]}")
+    if cfg.get("auto_deploy_vercel"):
+        parts.append("publicación Vercel pendiente de revisión explícita")
     if cfg.get("auto_domain_purchase"):
         try:
             dom = _maybe_auto_domain(scope_id, site)
@@ -392,12 +407,8 @@ def process_one(scope_id):
     result = site
     parts = [f"Sites: publicado {site['name']} en {site['relative_url']}"]
     cfg = _site_config(scope_id)
-    if cfg.get("auto_deploy_vercel") and status().get("vercel_configured"):
-        try:
-            dep = deploy_vercel(scope_id, site["slug"]); result = dep.get("site") or site
-            parts.append("Vercel desplegado")
-        except Exception as exc:
-            parts.append(f"deploy pendiente: {str(exc)[:120]}")
+    if cfg.get("auto_deploy_vercel"):
+        parts.append("publicación Vercel pendiente de revisión explícita")
     if cfg.get("auto_domain_purchase"):
         try:
             dom = _maybe_auto_domain(scope_id, result)
@@ -488,36 +499,13 @@ def buy_domain(scope_id, slug, domain, expected_price, *, confirmed=False):
         return {"ok": False, "requires_review": True, "message": "Activa primero la reinversión de dominios en ZAR Sites.", "decision": decision}
     if not confirmed:
         return {"ok": False, "requires_review": True, "message": "La compra real del dominio requiere confirmación explícita.", "decision": decision}
-    registrant_raw = os.environ.get("ZAR_DOMAIN_REGISTRANT_JSON", "").strip()
-    if not registrant_raw:
-        raise RuntimeError("Falta ZAR_DOMAIN_REGISTRANT_JSON con los datos del titular.")
-    try:
-        registrant = json.loads(registrant_raw)
-    except json.JSONDecodeError as exc:
-        raise RuntimeError("ZAR_DOMAIN_REGISTRANT_JSON no es JSON válido.") from exc
-    body = {"autoRenew": True, "years": 1, "expectedPrice": expected_price, "contactInformation": registrant, "languageCode": "es"}
-    r = requests.post(f"https://api.vercel.com/v1/registrar/domains/{quote(domain, safe='')}/buy", headers=_vercel_headers(), params=_team_query(), json=body, timeout=60)
-    if not r.ok:
-        raise RuntimeError(f"Compra dominio HTTP {r.status_code}: {r.text[:900]}")
-    payload = r.json()
-    holdings.add_ledger(scope_id, "sites", "cost", expected_price_eur, currency="EUR", status="collected", source="vercel_domain", reference=f"domain:{domain}", note=f"Registro Vercel {domain}: ${expected_price:.2f} USD · convertido con referencia ECB {rate:.6f} EUR/USD; impuestos del registrador pueden liquidarse aparte.", verified=True)
-    reg = _read_registry(scope_id)
-    target = None
-    for x in reg:
-        if x.get("slug") == slug:
-            x["domain"] = domain; x["domain_cost_usd"] = expected_price; x["domain_cost_eur"] = expected_price_eur; x["domain_order"] = payload; x["updated_at"] = _now(); target = x; break
-    _write_registry(scope_id, reg)
-    # If the site was deployed through ZAR, bind the purchased domain to that Vercel project.
-    if target and target.get("deployment", {}).get("project"):
-        project = target["deployment"]["project"]
-        rr = requests.post(f"https://api.vercel.com/v10/projects/{quote(project, safe='')}/domains", headers=_vercel_headers(), params=_team_query(), json={"name": domain}, timeout=40)
-        target["domain_binding"] = rr.json() if rr.headers.get("content-type", "").startswith("application/json") else {"status": rr.status_code, "text": rr.text[:800]}
-        reg = _read_registry(scope_id)
-        for i, x in enumerate(reg):
-            if x.get("slug") == slug: reg[i] = target; break
-        _write_registry(scope_id, reg)
-    holdings.update_company(scope_id, "sites", action=f"Dominio comprado con beneficio realizado: {domain}", event="DOMAIN_PURCHASE", event_detail=f"{domain} · ${expected_price:.2f} USD ≈ {expected_price_eur:.2f} EUR")
-    return {"ok": True, "domain": domain, "cost": expected_price_eur, "cost_eur": expected_price_eur, "cost_usd": expected_price, "order": payload, "site": target, "decision": decision}
+    # The legacy flag does not bind an approval to a provider-verified total,
+    # taxes and wallet reservation. Fail closed until that checkout is integrated.
+    return {"ok": False, "requires_review": True,
+            "message": "Compra bloqueada: falta checkout con total/impuestos verificados y aprobación vinculada a la wallet. Una política permanente o confirmed=true no autoriza el pago.",
+            "provider": "Vercel", "domain": domain, "price_usd": expected_price,
+            "tax": None, "total_verified": False, "decision": decision}
+
 
 
 def configure_policy(scope_id, *, allow_domain_reinvestment=None, max_domain_eur=None, auto_domain_purchase=None, domain_daily_budget_eur=None):
@@ -562,40 +550,12 @@ def _parse_money(text):
 
 
 def sync_adsense(scope_id):
-    account = _adsense_account()
-    headers = _adsense_headers()
-    if not account:
-        r0 = requests.get("https://adsense.googleapis.com/v2/accounts", headers=headers, timeout=30)
-        if not r0.ok:
-            raise RuntimeError(f"AdSense accounts HTTP {r0.status_code}: {r0.text[:600]}")
-        accs = r0.json().get("accounts") or []
-        if not accs:
-            raise RuntimeError("No hay cuentas AdSense accesibles.")
-        account = accs[0].get("name") or ""
-    params = [("dateRange", "LAST_30_DAYS"), ("metrics", "ESTIMATED_EARNINGS"), ("metrics", "PAGE_VIEWS"), ("metrics", "PAGE_VIEWS_RPM"), ("currencyCode", "EUR")]
-    rep = requests.get(f"https://adsense.googleapis.com/v2/{account}/reports:generate", headers=headers, params=params, timeout=40)
-    if not rep.ok:
-        raise RuntimeError(f"AdSense report HTTP {rep.status_code}: {rep.text[:800]}")
-    report = rep.json(); headers_meta = report.get("headers") or []; cells = ((report.get("totals") or {}).get("cells") or [])
-    totals = {}
-    for idx, h in enumerate(headers_meta):
-        value = (cells[idx].get("value") if idx < len(cells) and isinstance(cells[idx], dict) else None)
-        totals[h.get("name") or str(idx)] = value
-    estimated = float(totals.get("ESTIMATED_EARNINGS") or 0); page_views = int(float(totals.get("PAGE_VIEWS") or 0)); rpm = float(totals.get("PAGE_VIEWS_RPM") or 0)
-    payments = requests.get(f"https://adsense.googleapis.com/v2/{account}/payments", headers=headers, timeout=35)
-    if not payments.ok:
-        raise RuntimeError(f"AdSense payments HTTP {payments.status_code}: {payments.text[:800]}")
-    added = 0
-    for p in payments.json().get("payments") or []:
-        name = str(p.get("name") or "")
-        if name.endswith("/unpaid") or "youtube-" in name:
-            continue
-        amount, currency = _parse_money(p.get("amount"))
-        if amount <= 0:
-            continue
-        before = len(holdings.read(scope_id).get("ledger") or [])
-        holdings.add_ledger(scope_id, "sites", "revenue", amount, currency=currency, status="collected", source="adsense_payment", reference=name, note="Pago AdSense verificado vía API", verified=True)
-        after = len(holdings.read(scope_id).get("ledger") or [])
-        added += int(after > before)
-    holdings.update_company(scope_id, "sites", metrics={"adsense_estimated_30d": round(estimated, 4), "page_views_30d": page_views, "page_rpm_30d": round(rpm, 4)}, action=f"AdSense sincronizado · {page_views} vistas/30d · estimado {estimated:.2f} EUR · {added} pago(s) nuevo(s)", event="ADSENSE_SYNC", event_detail=account)
-    return {"ok": True, "account": account, "estimated_30d": estimated, "page_views_30d": page_views, "page_rpm_30d": rpm, "payments_added": added, "note": "Solo pagos AdSense acreditados se registran como ingreso cobrado; el estimado se muestra aparte."}
+    from .adsense_adapter import sync
+    result = sync(scope_id)
+    metrics = result['metrics']
+    return {'ok': True, **result,
+            'estimated_30d': metrics.get('ESTIMATED_EARNINGS'),
+            'page_views_30d': metrics.get('PAGE_VIEWS'),
+            'page_rpm_30d': metrics.get('PAGE_VIEWS_RPM'),
+            'payments_added': 0,
+            'note': 'ESTIMATED/FINALIZED no aumentan el saldo. Confirmar RECEIVED con referencia bancaria en Orquestación.'}

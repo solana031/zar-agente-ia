@@ -495,7 +495,7 @@ def _authorized():
 
 @app.before_request
 def _guard():
-    allowed = {"login","health","oauth2callback","connect_google","connect_gmail","holdings_media_public_video_api","distributed_nodes.poll","distributed_nodes.claim","distributed_nodes.health","distributed_nodes.inference"}
+    allowed = {"login","health","oauth2callback","connect_google","connect_gmail","holdings_media_public_video_api","distributed_nodes.poll","distributed_nodes.claim","distributed_nodes.health","distributed_nodes.inference","agency_stripe_webhook"}
     if request.endpoint in allowed or request.path.startswith("/static/"):
         return None
     if _auth_enabled() and not _authorized():
@@ -1653,6 +1653,14 @@ def stonks_news_api():
     return jsonify(data)
 
 # --- ZAR Holdings / subcompanies -------------------------------------------------
+from . import business_orchestration
+business_orchestration.register(app, _user_scope_id)
+from . import business_workflows
+from .site_projects import preview_headers as site_projects_preview
+business_workflows.register(app, _user_scope_id)
+from . import agency_events
+agency_events.register(app)
+
 @app.get('/api/holdings/state')
 def holdings_state_api():
     scope=_user_scope_id()
@@ -1933,7 +1941,7 @@ def holdings_site_page(slug):
     if safe != slug: return 'Sitio no válido',400
     path=Path(os.environ.get('ZAR_DATA_DIR','/data'))/'holdings_public_sites'/safe/'index.html'
     if not path.exists(): return 'Sitio no encontrado',404
-    return send_file(path,mimetype='text/html')
+    return site_projects_preview(send_file(path,mimetype='text/html'))
 
 @app.get('/holdings/site/<slug>/<path:filename>')
 def holdings_site_asset(slug,filename):
@@ -1943,7 +1951,7 @@ def holdings_site_asset(slug,filename):
     path=(root/filename).resolve()
     if root not in path.parents and path != root: return 'Ruta no válida',400
     if not path.exists() or not path.is_file(): return 'Archivo no encontrado',404
-    return send_file(path)
+    return site_projects_preview(send_file(path))
 
 @app.get('/api/subagents/state')
 def subagents_state_api():
@@ -2204,6 +2212,14 @@ def _stonks_current_signal(symbol, strategy='trend', timeframe='1Min', feed='iex
         else:
             zone='sobreventa' if cr<30 else ('sobrecompra' if cr>70 else 'zona neutral')
             item['reason']=f'RSI14 = {cr:.2f} ({zone}); no hay cruce nuevo.'
+    bar_time=item.get('bar_time')
+    age=(end-datetime.fromisoformat(bar_time.replace('Z','+00:00'))).total_seconds() if bar_time else None
+    item.update(asset=symbol,direction=item['signal'],confidence=None,entry=item.get('price'),
+                stop_loss=None,take_profit=None,expected_risk=None,expected_reward=None,risk_reward_ratio=None,
+                evidence=[item['reason']],timestamp=end.isoformat(),
+                data_freshness={'source':'Alpaca crypto' if crypto else 'Alpaca '+feed,
+                                'state':'DELAYED' if age is not None else 'UNKNOWN',
+                                'last_update':bar_time,'age_seconds':age,'note':'Completed historical bars; not a realtime quote'})
     return item, clock
 
 @app.get('/api/stonks/signals')
@@ -3169,7 +3185,7 @@ def stonks_engine_api():
 def stonks_automaton_api():
     payload=request.get_json(silent=True) or {}
     action=str(payload.get('action') or '').strip().lower()
-    if action not in ('start','pause','stop'):
+    if action not in ('start','pause','stop','kill'):
         return jsonify({'ok':False,'error':'Acción Automaton no válida.'}),400
     d=_stonks_read()
     if action=='start':
@@ -3178,22 +3194,28 @@ def stonks_automaton_api():
         if d.get('revoked'):
             return jsonify({'ok':False,'error':'El kill switch está revocado. Restaura primero el control de ZAR Stonks.'}),409
         # Automaton is an orchestrator over the existing Paper engine, never a new order path.
-        d['execution_mode']='paper_auto'
+        requested_mode=str(payload.get('automaton_mode') or 'PAPER').upper()
+        if requested_mode not in ('SHADOW','PAPER'):
+            return jsonify({'ok':False,'error':'LIVE desconectado; selecciona SHADOW o PAPER.'}),409
+        d['execution_mode']='shadow' if requested_mode=='SHADOW' else 'paper_auto'
         d['autonomous_engine']=True
         d['paused']=False
         stonks_automaton.start(d)
         _stonks_write(d)
         _stonks_engine_owner_write(_user_scope_id())
-        _stonks_audit_append('AUTOMATON',{'decision':'ENCENDIDO','paper_only':True,'execution_mode':'paper_auto'})
+        _stonks_audit_append('AUTOMATON',{'decision':'ENCENDIDO','paper_only':True,'execution_mode':d['execution_mode']})
     elif action=='pause':
+        d['paused']=True
         stonks_automaton.pause(d)
         _stonks_write(d)
         _stonks_audit_append('AUTOMATON',{'decision':'PAUSADO','paper_only':True})
     else:
+        if action=='kill':
+            d['paused']=True;d['revoked']=True;d['mode']='paper'
         stonks_automaton.stop(d)
         d['autonomous_engine']=False
         _stonks_write(d)
-        _stonks_audit_append('AUTOMATON',{'decision':'APAGADO','paper_only':True})
+        _stonks_audit_append('AUTOMATON',{'decision':'KILL_SWITCH' if action=='kill' else 'APAGADO','paper_only':True})
     return jsonify({'ok':True,'automaton':stonks_automaton.public_view(d),
                     'autonomous_engine':bool(d.get('autonomous_engine')),
                     'execution_mode':d.get('execution_mode'),'paused':bool(d.get('paused')),

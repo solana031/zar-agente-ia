@@ -101,6 +101,24 @@ def _read(scope_id, task_id):
 
 
 def _save(scope_id, task_id, record):
+    cp = record.get('checkpoint') or {}
+    status = record.get('status')
+    stage = cp.get('stage')
+    phase = 'DRAFT'
+    if status == 'PRODUCING':
+        phase = 'SCRIPTING'
+        if stage in {'storyboard','detect','colors','optimize'}: phase='STORYBOARD'
+        elif stage in {'portraits','identity_images','frames','videos'}: phase='GENERATING_VISUALS'
+        elif stage in {'narrator','audio'}: phase='GENERATING_AUDIO'
+        elif stage in {'compose','export','done'}: phase='EDITING'
+    elif status=='PRODUCED': phase='READY' if record.get('review_approved') else 'REVIEW'
+    elif status=='PUBLISHED': phase='PUBLISHED'
+    elif status=='PUBLISHING': phase='READY'
+    elif status=='ERROR': phase='ERROR'
+    record['project_state']=phase
+    record.setdefault('costs',{'estimated':None,'actual':None,'currency':None,'provider':'DramaClaw DIRECT','usage':None})
+    from .media_projects import trace
+    trace(scope_id, task_id, record)
     path = _path(scope_id, task_id)
     temp = path.with_suffix("." + secrets.token_hex(6) + ".tmp")
     try:
@@ -127,7 +145,11 @@ def _result(task, record):
               "project_id": cp.get("project_id"), "task_ids": cp.get("tasks", cp.get("task_records", [])),
               "editor_url": cp.get("editor_url") if os.environ.get("DRAMACLAW_WEB_URL", "").strip() else None, "production_provider": "DramaClaw Direct",
               "brief_chars": len((record.get("payload") or task.get("payload") or {}).get("master_brief", "")),
-              "caption": "Creado con DramaClaw · #historia #reels #tiktok", "aigc": True, "format": "9:16"}
+              "caption": "Creado con DramaClaw · #historia #reels #tiktok", "aigc": True, "format": (record.get('project') or {}).get('format','9:16'),
+              "project_state":record.get('project_state','DRAFT'), "project":record.get('project'),
+              "characters":record.get('characters',[]),"scenes":record.get('scenes',[]),"script":record.get('script'),
+              "subtitles":record.get('subtitles'),"costs":record.get('costs'),"agent_trace":record.get('agent_trace',[]),
+              "renders":record.get('renders',[]),"publications":record.get('publications',[])}
     if record.get("artifact"):
         result["preview_url"] = "/api/holdings/media/video/" + task["id"]
         result["download_url"] = result["preview_url"]
@@ -152,13 +174,22 @@ def jobs(scope_id):
     return {"ok": True, "tasks": tasks[-30:], "connector": status()}
 
 
-def queue_story(scope_id, topic, goal="retención", platform="tiktok"):
+def queue_story(scope_id, topic, goal="retención", platform="tiktok", *, options=None):
     master_brief = str(topic or "")
     if not master_brief.strip():
         raise ValueError("Falta la historia/briefing.")
+    project = None
+    if options is not None:
+        from .media_projects import validate_options
+        project = validate_options(options)
     payload = {"topic": master_brief, "master_brief": master_brief, "goal": goal, "platform": platform,
                "created_at": datetime.now(timezone.utc).isoformat(), "brief_chars": len(master_brief)}
-    return holdings.queue_task(scope_id, "media", "short_story", payload, requires_approval=False)
+    task = holdings.queue_task(scope_id, "media", "short_story", payload, requires_approval=False)
+    if options is not None:
+        record={'payload':payload,'project':project,'checkpoint':{},'status':'QUEUED'}
+        _save(scope_id,task['id'],record)
+        _mirror(scope_id,task,record)
+    return task
 
 
 def produce_local(scope_id, task_id):
@@ -171,6 +202,11 @@ def produce_local(scope_id, task_id):
         if not locked:
             return {"ok": True, "task_id": task_id, "status": "PRODUCING"}
         record = _read(scope_id, task_id) or {"payload": task["payload"], "checkpoint": {}}
+        project=record.get('project')
+        if project and not record.get('checkpoint'):
+            record['checkpoint']={'project_config':{'spine_template':'narrated','narration_style':'third_person',
+                'aspect_ratio':project['format'],'add_subtitles':project['subtitles'],
+                'visual_style':project['visual_style'],'video_resolution':{'9:16':'720x1280','16:9':'1280x720','1:1':'720x720'}[project['format']]},'music':project['music']}
         if record.get("status") not in {"PRODUCED", "PUBLISHED", "PUBLISHING"}:
             record.update(status="PRODUCING", error=None)
             _save(scope_id, task_id, record)
@@ -181,9 +217,10 @@ def produce_local(scope_id, task_id):
 
 def _narrator():
     from . import voice_pro
-    if not voice_pro._eleven_configured():
+    if not voice_pro._eleven_configured() and not voice_pro._f5_url():
         return None
-    return voice_pro.synthesize("Esta es la voz del narrador. Una historia comienza con una idea y cobra vida en cada escena.")
+    from .media_adapters import VoiceAdapter
+    return VoiceAdapter().synthesize("Esta es la voz del narrador. Una historia comienza con una idea y cobra vida en cada escena.")
 
 
 def process_one(scope_id):
@@ -212,8 +249,15 @@ def process_one(scope_id):
                 record["checkpoint"] = cp
                 _save(scope_id, task["id"], record)
             try:
+                from .media_projects import STAGE_AGENT
+                agent=STAGE_AGENT.get((record.get('checkpoint') or {}).get('stage','project'),'StoryAgent')
+                if state.get('orchestration',{}).get('agents',{}).get(agent,{}).get('state') in {'PAUSED','OFF'}:
+                    return 'Media: capacidad '+agent+' pausada.'
                 client = _client()
-                cp = client.advance(record.get("checkpoint") or {}, record["payload"]["master_brief"], persist,
+                brief=record['payload']['master_brief']
+                if record.get('project'):
+                    brief += '\n\nPREFERENCIAS DE PRODUCCIÓN ZAR (duración objetivo, no medida):\n'+json.dumps(record['project'],ensure_ascii=False,sort_keys=True)
+                cp = client.advance(record.get("checkpoint") or {}, brief, persist,
                                     narrator=_narrator)
                 persist(cp)
                 if cp.get("status") == "done":
@@ -249,12 +293,24 @@ def edit_story(scope_id, task_id, notes):
         payload["master_brief"] += "\n\nEDICIONES SOLICITADAS POR EL USUARIO:\n" + str(notes)
         payload.update(topic=payload["master_brief"], brief_chars=len(payload["master_brief"]), edit_notes=str(notes))
         history = (record.get("history") or []) + ([cp] if cp else [])
-        record = {"payload": payload, "checkpoint": {}, "status": "QUEUED", "history": history[-3:]}
+        record = {**record, "payload": payload, "checkpoint": {}, "status": "QUEUED", "history": history, "review_approved": False}
+        record.pop('artifact', None)
         # New revision must not reuse the preceding MP4.
-        _path(scope_id, task_id).with_suffix(".mp4").unlink(missing_ok=True)
+        archive_render(scope_id,task_id,record)
         _save(scope_id, task_id, record)
         _mirror(scope_id, task, record)
     return {"ok": True, "task_id": task_id, "status": "QUEUED", "message": "Edición preparada para regenerar en DramaClaw."}
+
+
+def archive_render(scope_id,task_id,record):
+    import uuid
+    path=_path(scope_id,task_id).with_suffix('.mp4')
+    if path.is_file():
+        saved=path.with_name(path.stem+'-revision-'+uuid.uuid4().hex[:12]+'.mp4')
+        path.replace(saved)
+        record.setdefault('renders',[]).append({'filename':saved.name,'timestamp':holdings._now(),'source':'previous_revision'})
+    record.pop('subtitle_render',None)
+    record.pop('publish',None)
 
 
 def video_path(scope_id, task_id):
@@ -272,20 +328,38 @@ def publish(scope_id, task_id, video_url, platform, caption="", confirmed=False)
     _task(scope_id, task_id)
     if confirmed is not True:
         return {"ok": False, "requires_review": True, "message": "Confirma la publicación de este MP4."}
-    if platform not in {"tiktok", "instagram", "reels"}:
+    if platform not in {"youtube", "tiktok", "instagram", "reels"}:
         raise ValueError("Plataforma no soportada.")
     with _job_lock(scope_id, task_id) as locked:
         if not locked:
             return {"ok": False, "error": "Media está procesando esta tarea."}
         record = _read(scope_id, task_id)
+        if holdings.read(scope_id).get('global_stop'):
+            raise ValueError('STOP GLOBAL activo; publicación bloqueada.')
+        if record.get('project') and not record.get('review_approved'):
+            raise ValueError('Aprueba revisión del vídeo antes de publicar.')
         if record.get("publish"):
-            return dict(record["publish"])
+            previous=record['publish']
+            if previous.get('pending_publish') or previous.get('platform')==platform:
+                return dict(previous)
+            if not previous.get('ok'): raise ValueError('Resuelve primero la publicación anterior.')
+        prior=next((p for p in record.get('publications',[]) if p.get('platform')==platform and p.get('revision')==len(record.get('history',[]))),None)
+        if prior: return dict(prior)
         video_path(scope_id, task_id)
         # This URL is minted by our authenticated route, never supplied by the browser.
         record["publish"] = {"ok": False, "pending_publish": True,
+                             "platform":platform,"timestamp":holdings._now(),"status":"PENDING","url":None,"metrics":None,
                              "message": "Solicitud registrada; comprueba la red social antes de reintentar."}
         _save(scope_id, task_id, record)  # Ambiguous failures must not duplicate posts.
         try:
+            if platform == 'youtube':
+                from .media_adapters import PublishingAdapter
+                safe = PublishingAdapter().youtube(video_path(scope_id,task_id),
+                    (record.get('project') or {}).get('title') or 'Historia ZAR', caption)
+                record.update(publish=safe,status='PUBLISHED')
+                record.setdefault('publications',[]).append(dict(safe,revision=len(record.get('history',[]))))
+                _save(scope_id,task_id,record);_mirror(scope_id,_task(scope_id,task_id),record)
+                return safe
             publish_fn = tiktok_direct_post if platform == "tiktok" else instagram_reel
             result = publish_fn(video_url, caption, confirmed=True)
             # Only known identifiers/status enter persistence; never raw provider errors.
@@ -293,10 +367,12 @@ def publish(scope_id, task_id, video_url, platform, caption="", confirmed=False)
             if platform == "tiktok" and (result.get("data") or {}).get("publish_id"):
                 safe.update(publish_id=result["data"]["publish_id"], pending_publish=True)
             safe["platform"] = platform
+            safe.update(timestamp=holdings._now(),url=None,metrics=None,status='PENDING' if safe.get('pending_publish') else 'PUBLISHED' if safe.get('ok') else 'ERROR')
             safe["message"] = "Publicación enviada." if safe.get("ok") else "Publicación no completada; comprueba el conector social."
         except Exception:
             safe = record["publish"]
         record.update(publish=safe, status="PUBLISHING" if safe.get("pending_publish") else "PUBLISHED" if safe.get("ok") else "PRODUCED")
+        record.setdefault('publications',[]).append(dict(safe,revision=len(record.get('history',[]))))
         _save(scope_id, task_id, record)
         _mirror(scope_id, _task(scope_id, task_id), record)
         return safe
@@ -347,6 +423,10 @@ def _resume_publication(scope_id, task, record):
             elif state in {'ERROR', 'EXPIRED'}:
                 publication.update(ok=False, pending_publish=False, message='Reels no completó la publicación.')
                 record['status'] = 'PRODUCED'
+        publication['status']='PENDING' if publication.get('pending_publish') else 'PUBLISHED' if publication.get('ok') else 'ERROR'
+        for saved in record.get('publications',[]):
+            if saved.get('platform')==publication.get('platform') and saved.get('revision')==len(record.get('history',[])):
+                saved.update(publication)
         _save(scope_id, task['id'], record)
         _mirror(scope_id, task, record)
     except Exception:

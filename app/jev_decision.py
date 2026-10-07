@@ -127,3 +127,95 @@ def gate(action, state=None, risk_hint="medium"):
         "decision": result,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
+
+
+def proposal(scope_id, data, *, use_provider=False):
+    """Audited typed business judgment. Policy, never the model, owns authority."""
+    from . import holdings
+    from decimal import Decimal
+    import uuid
+    if not isinstance(data, dict):
+        raise ValueError('Propuesta estructurada requerida.')
+    allowed = {'source_agent', 'task', 'task_id', 'wallet_id', 'expected_cost', 'expected_revenue',
+               'currency', 'risk', 'urgency', 'resources', 'suggested_provider', 'suggested_model', 'action'}
+    if set(data) - allowed:
+        raise ValueError('Campos no admitidos en la propuesta.')
+    p = {key: data.get(key) for key in allowed}
+    for field in ('source_agent', 'task', 'action'):
+        if not isinstance(p[field], str) or not p[field].strip() or len(p[field]) > 2000:
+            raise ValueError('Agente, tarea y acción requeridos; máximo 2000 caracteres.')
+    for field in ('expected_cost', 'expected_revenue'):
+        if p[field] is not None:
+            v = Decimal(str(p[field]))
+            if not v.is_finite() or v < 0:
+                raise ValueError('Importes finitos y no negativos requeridos.')
+            p[field] = str(v)
+    for field in ('risk', 'urgency'):
+        if p[field] is not None:
+            if isinstance(p[field], bool) or not isinstance(p[field], (int, float)) or not math.isfinite(p[field]) or not 0 <= p[field] <= 1:
+                raise ValueError('Riesgo/urgencia entre 0 y 1 o null.')
+    if p['currency'] is not None and not re.fullmatch(r'[A-Z]{3}', str(p['currency'])):
+        raise ValueError('Moneda ISO requerida.')
+    if p['resources'] is None:
+        p['resources'] = []
+    if not isinstance(p['resources'], list) or len(p['resources']) > 30 or any(not isinstance(x, str) or len(x) > 120 for x in p['resources']):
+        raise ValueError('Recursos: lista de nombres de capacidades.')
+    for field in ('suggested_provider', 'suggested_model', 'task_id', 'wallet_id'):
+        if p[field] is not None and (not isinstance(p[field], str) or len(p[field]) > 150):
+            raise ValueError('Referencia inválida.')
+    financial = (p['expected_cost'] is not None and Decimal(p['expected_cost']) > 0) or bool(
+        re.search(r'compr|paga|gasta|transfer|purchase|spend|payment|publish|publica|send|envi', p['action'], re.I))
+    local = bool(p['resources']) and set(p['resources']) <= {'local_read','local_write'} and p['expected_cost'] is not None and Decimal(p['expected_cost']) == 0
+    judgment, reason = ('APPROVE', 'Operación local sin autoridad económica.') if local else ('DEFER', 'Faltan recursos/proveedor verificados; preparar y revisar.')
+    risk = p['risk']
+    if financial:
+        judgment, reason = 'ESCALATE', 'Acción económica/externa: requiere aprobación explícita vinculada a la operación.'
+    elif risk is None or p['expected_cost'] is None:
+        judgment, reason = 'DEFER', 'Coste o riesgo desconocido; completar datos antes de ejecutar.'
+    if risk is not None and risk >= .8:
+        judgment, reason = 'REJECT', 'Riesgo declarado por encima del umbral permitido.'
+    confidence = None
+    provider_state = 'POR CONFIGURAR' if not _key() else 'NO DISPONIBLE'
+    provider_source = 'ZAR policy'
+    if use_provider:
+        remote = decide(p, {'route': {'type':'choice', 'instructions':'Decide la propuesta; nunca autoriza pagos/publicación.',
+            'criteria': {x:x for x in ('APPROVE','REJECT','DEFER','ESCALATE')}}})
+        if not remote.get('fallback') and remote.get('state') == 'ONLINE':
+            answer = remote['answers']['route']
+            candidate = answer['choice']
+            # Provider may only make local policy stricter, never unlock economics.
+            if candidate in {'REJECT', 'DEFER', 'ESCALATE'} and judgment != 'REJECT':
+                judgment, reason = candidate, 'JEV recomienda '+candidate+'; se conservan los guardrails del servidor.'
+            c = answer.get('confidence')
+            confidence = c if isinstance(c, (int,float)) and not isinstance(c,bool) and math.isfinite(c) and 0 <= c <= 1 else None
+            provider_state, provider_source = 'LISTO', 'TypeSafe Jev'
+        else:
+            provider_state = 'ERROR' if _key() else 'POR CONFIGURAR'
+            if judgment == 'APPROVE' and not local:
+                judgment, reason = 'DEFER', 'Proveedor no disponible.'
+    profit = None if p['expected_cost'] is None or p['expected_revenue'] is None else str(Decimal(p['expected_revenue'])-Decimal(p['expected_cost']))
+    output = {'decision': judgment, 'confidence': confidence, 'reasoning': reason, 'risk_score': risk,
+        'expected_cost': p['expected_cost'], 'expected_revenue': p['expected_revenue'], 'expected_profit': profit,
+        'currency': p['currency'], 'priority': p['urgency'], 'recommended_agent': p['source_agent'],
+        'recommended_provider': p['suggested_provider'], 'next_action': 'EXECUTE_LOCAL_OPERATION' if judgment == 'APPROVE' and local else 'HUMAN_REVIEW' if judgment == 'ESCALATE' else 'COMPLETE_INPUT' if judgment == 'DEFER' else 'STOP',
+        'source': provider_source, 'provider_state': provider_state, 'execution_authority': False}
+    row = {'id': uuid.uuid4().hex, 'timestamp': holdings._now(), 'input': p, 'output': output,
+           'requesting_agent': p['source_agent'], 'decision': judgment, 'subsequent_state': 'PENDING',
+           'task_id': p['task_id'], 'wallet_id': p['wallet_id']}
+    with holdings.transaction(scope_id):
+        state = holdings.read(scope_id)
+        state.setdefault('jev_decisions', []).append(row)
+        if use_provider:
+            from .business_connectors import verification
+            state.setdefault('verified_connectors', {})['JEV'] = verification('JEV',provider_state,'validated decision response')
+        holdings.write(scope_id, state)
+    return row
+
+
+def decision_state(scope_id, decision_id, state):
+    from . import holdings
+    with holdings.transaction(scope_id):
+        data = holdings.read(scope_id)
+        row = next(x for x in data.get('jev_decisions', []) if x['id'] == decision_id)
+        row['subsequent_state'] = str(state)[:80]
+        holdings.write(scope_id, data)

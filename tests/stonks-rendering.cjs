@@ -13,7 +13,7 @@ for (const file of fs.readdirSync('app/static').filter(f => f.endsWith('.js'))) 
   new vm.Script(fs.readFileSync(`app/static/${file}`, 'utf8'), {filename: file});
 }
 for (const file of ['VERSION', 'VERSION.txt', 'app/VERSION.txt']) {
-  assert.equal(fs.readFileSync(file, 'utf8').trim(), '33.3.0');
+  assert.equal(fs.readFileSync(file, 'utf8').trim(), '33.3.3');
 }
 console.log(`PASS: ${scripts} inline scripts, static JavaScript and three version files`);
 (async () => {
@@ -46,7 +46,7 @@ console.log(`PASS: ${scripts} inline scripts, static JavaScript and three versio
         }
 
         if (url.pathname === '/static/zar-silhouette.png') return route.fulfill({contentType:'image/png',body:fs.readFileSync('app/static/zar-silhouette.png')});
-        if (['/static/ui-polish.css','/static/ui-polish.js','/static/nodes.css','/static/nodes.js'].includes(url.pathname)) return route.fulfill({contentType:url.pathname.endsWith('.css')?'text/css':'application/javascript',body:fs.readFileSync('app'+url.pathname)});
+        if (['/static/ui-polish.css','/static/ui-polish.js','/static/nodes.css','/static/nodes.js','/static/business-orchestration.js','/static/business-workflows.js','/static/commerce-agency.js'].includes(url.pathname)) return route.fulfill({contentType:url.pathname.endsWith('.css')?'text/css':'application/javascript',body:fs.readFileSync('app'+url.pathname)});
         if (url.pathname === '/static/skills.js') return route.fulfill({contentType: 'application/javascript', body: fs.readFileSync('app/static/skills.js', 'utf8')});
         return route.fulfill({contentType: 'application/json', body: JSON.stringify({
           ok: true, paused: !controlledReady, revoked: false, mode: 'paper', execution_mode: controlledReady?'paper_auto':'decision',
@@ -213,6 +213,12 @@ console.log(`PASS: ${scripts} inline scripts, static JavaScript and three versio
       assert.equal(await page.locator('#zsLifecycleTestSteps li').evaluateAll(rows=>rows.every(r=>r.textContent.startsWith('✓'))),true);
       await checkLayout();
       await checkResponsive();
+      await page.locator('[data-zstab="automaton"]').click();
+      assert.equal(await page.locator('#zsTab-automaton').isVisible(),true);
+      assert.equal(await page.locator('#zsTab-risk').isVisible(),false);
+      assert.equal(await page.locator('#zsAutomatonStart').isVisible(),true);
+      assert.match(await page.locator('#zsTab-automaton').innerText(),/KILL SWITCH/);
+      assert.equal(await page.locator('#zsAutomatonMode option').last().evaluate(e=>e.disabled),true);
       await page.locator('.zsCloseBtn').click();
       assert.equal(await page.locator('#panel').isVisible(), false);
       assert.equal(await page.evaluate(() => zsLiveSyncTimer), null);

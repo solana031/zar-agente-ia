@@ -249,6 +249,7 @@ class DramaClawClient:
         if stage == "narrator":
             return bool((self._get(root + "/narrator-voice") or {}).get("reference_url"))
         if stage in {"compose", "export"}:
+            if stage=='compose' and cp.get('force_compose'):return False
             return (self._get(ep + "/final") or {}).get("exists") is True
         if stage == "upload":
             return False  # No promised upload-list/hash endpoint; never guess.
@@ -267,6 +268,9 @@ class DramaClawClient:
         return bool(field) and all(b.get(field) for b in beats)
 
     def _completed(self, cp, persist, record):
+        if record['stage']=='videos':
+            cp['forced_video_beats']=[x for x in cp.get('forced_video_beats',[]) if x!=record.get('beat_num')]
+        if record['stage']=='compose':cp.pop('force_compose',None)
         for task in cp.get("tasks", []):
             if task["task_id"] == record["task_id"]:
                 task["status"] = "completed"
@@ -481,7 +485,7 @@ class DramaClawClient:
                 return self._submit(cp, persist, ep + "/audio/generate", body={"mode": "sync_changed"}, task_type="audio_generation_indextts2", episode=number)
             if stage == "videos":
                 for beat in self._beats(cp):
-                    if not beat.get("video_url"):
+                    if not beat.get("video_url") or beat.get('beat_number') in cp.get('forced_video_beats',[]):
                         config = self._get(root) or {}
                         options = self._get(root + "/video-backends") or []
                         allowed = [o for o in options if isinstance(o, dict) and not o.get("dialogue_only")]
@@ -493,6 +497,8 @@ class DramaClawClient:
                         resolution = config.get("video_resolution") or "720x1280"
                         choices = choice.get("resolution_options") or []
                         if choices and resolution not in choices:
+                            if cp.get('project_config',{}).get('video_resolution'):
+                                return self._blocked(cp,persist,'video_resolution','El backend elegido no admite el formato solicitado; selecciona un backend compatible en DramaClaw.')
                             resolution = choices[0]
                         bn = beat["beat_number"]
                         return self._submit(cp, persist, ep + "/beats/" + str(bn) + "/video", body={"video_backend": choice["value"], "resolution": resolution}, task_type="single_video", episode=number, beat_num=bn, target={"beat_num": bn})
@@ -500,7 +506,8 @@ class DramaClawClient:
             if stage == "compose":
                 if self._evidence(cp, stage):
                     return self._next(cp, persist)
-                return self._submit(cp, persist, ep + "/videos/compose", body={"add_subtitles": True, "add_bgm": False, "resolution": "720x1280"}, task_type="compose_episode", episode=number)
+                config = cp.get('project_config') or {}
+                return self._submit(cp, persist, ep + "/videos/compose", body={"add_subtitles": config.get('add_subtitles', True), "add_bgm": cp.get('music', False), "resolution": config.get('video_resolution', "720x1280")}, task_type="compose_episode", episode=number)
             if stage == "export":
                 final = self._get(ep + "/final") or {}
                 filename = "ep%03d_final.mp4" % number

@@ -8,18 +8,20 @@ an authorization flag stored in the company's config.
 from __future__ import annotations
 
 import json
+import math
 import os
 import threading
 import uuid
 from copy import deepcopy
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
 from .user_scope import safe_slug
 
 _LOCK = threading.RLock()
+_TRANSACTIONS = threading.local()
 _MAX_JOURNAL = 120
-_MAX_LEDGER = 5000
 
 COMPANIES = {
     "commerce": {"name": "ZAR Commerce", "icon": "🛒"},
@@ -41,6 +43,39 @@ def _root(scope_id):
 
 def _file(scope_id):
     return _root(scope_id) / "state.json"
+
+
+@contextmanager
+def transaction(scope_id):
+    """Serialize scoped read/modify/write across threads and Gunicorn workers."""
+    with _LOCK:
+        active = getattr(_TRANSACTIONS, "active", set())
+        key = str(_root(scope_id).resolve())
+        if key in active:
+            yield
+            return
+        with (_root(scope_id) / "state.lock").open("a+b") as handle:
+            handle.seek(0, 2)
+            if not handle.tell():
+                handle.write(b"0")
+                handle.flush()
+            handle.seek(0)
+            if os.name == "nt":
+                import msvcrt
+                msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(handle, fcntl.LOCK_EX)
+            _TRANSACTIONS.active = active | {key}
+            try:
+                yield
+            finally:
+                _TRANSACTIONS.active = active
+                handle.seek(0)
+                if os.name == "nt":
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+                else:
+                    fcntl.flock(handle, fcntl.LOCK_UN)
 
 
 def _company_default(key):
@@ -129,20 +164,20 @@ def ensure(state):
         base["companies"] = {key: _merge_company(key, current_companies.get(key)) for key in COMPANIES}
     if not isinstance(base.get("ledger"), list):
         base["ledger"] = []
-    base["ledger"] = base["ledger"][-_MAX_LEDGER:]
+    # Financial history must never expire: balances are derived from all entries.
     return base
 
 
 def read(scope_id):
-    with _LOCK:
+    with transaction(scope_id):
         try:
             return ensure(json.loads(_file(scope_id).read_text(encoding="utf-8")))
-        except (FileNotFoundError, json.JSONDecodeError, OSError):
+        except FileNotFoundError:
             return default_state()
 
 
 def write(scope_id, state):
-    with _LOCK:
+    with transaction(scope_id):
         data = ensure(state)
         data["updated_at"] = _now()
         path = _file(scope_id)
@@ -164,7 +199,7 @@ def set_company_state(scope_id, key, action):
     if key not in COMPANIES:
         raise ValueError("Subempresa no válida.")
     action = str(action or "").lower().strip()
-    with _LOCK:
+    with transaction(scope_id):
         d = read(scope_id)
         c = d["companies"][key]
         now = _now()
@@ -191,7 +226,7 @@ def set_company_state(scope_id, key, action):
 
 
 def set_global_stop(scope_id, enabled, reason=""):
-    with _LOCK:
+    with transaction(scope_id):
         d = read(scope_id)
         d["global_stop"] = bool(enabled)
         d["global_stop_reason"] = str(reason or ("STOP GLOBAL manual" if enabled else ""))[:500]
@@ -206,7 +241,7 @@ def set_global_stop(scope_id, enabled, reason=""):
 
 
 def update_company(scope_id, key, *, action=None, error=None, metrics=None, config=None, event=None, event_detail=None):
-    with _LOCK:
+    with transaction(scope_id):
         d = read(scope_id)
         c = d["companies"][key]
         c["last_heartbeat"] = _now()
@@ -225,7 +260,7 @@ def update_company(scope_id, key, *, action=None, error=None, metrics=None, conf
 
 
 def complete_cycle(scope_id, key, action, *, error=None):
-    with _LOCK:
+    with transaction(scope_id):
         d = read(scope_id)
         c = d["companies"][key]
         if c.get("state") == "RUNNING":
@@ -242,7 +277,7 @@ def complete_cycle(scope_id, key, action, *, error=None):
 
 
 def queue_task(scope_id, key, kind, payload=None, *, requires_approval=False):
-    with _LOCK:
+    with transaction(scope_id):
         d = read(scope_id)
         c = d["companies"][key]
         task = {
@@ -264,7 +299,7 @@ def queue_task(scope_id, key, kind, payload=None, *, requires_approval=False):
 
 
 def update_task(scope_id, key, task_id, **patch):
-    with _LOCK:
+    with transaction(scope_id):
         d = read(scope_id)
         c = d["companies"][key]
         found = None
@@ -291,29 +326,36 @@ def next_task(scope_id, key, statuses=("QUEUED",)):
 
 
 def add_ledger(scope_id, company, kind, amount, *, currency="EUR", status="collected", source="manual", reference="", note="", verified=False):
-    if company not in COMPANIES and company != "stonks":
+    if company not in COMPANIES and company not in {"stonks", "zar"}:
         raise ValueError("Empresa no válida.")
     amount = round(float(amount), 6)
+    if not math.isfinite(amount) or amount <= 0:
+        raise ValueError("El importe debe ser positivo y finito.")
+    if kind not in {"revenue", "cost", "expense", "deposit"}:
+        raise ValueError("Tipo de movimiento no válido.")
+    if status not in {"collected", "pending", "cancelled"}:
+        raise ValueError("Estado de movimiento no válido.")
+    if not str(currency).isascii() or not str(currency).isalpha() or len(str(currency)) != 3:
+        raise ValueError("Moneda ISO de tres letras requerida.")
     row = {
         "id": uuid.uuid4().hex[:16], "timestamp": _now(), "company": company,
         "kind": str(kind or "revenue"), "amount": amount, "currency": str(currency or "EUR").upper(),
         "status": str(status or "collected"), "source": str(source or "manual"),
         "reference": str(reference or "")[:300], "note": str(note or "")[:1000], "verified": bool(verified),
     }
-    with _LOCK:
+    with transaction(scope_id):
         d = read(scope_id)
         # Idempotency for external synced rows.
         if row["reference"] and any(x.get("company") == company and x.get("reference") == row["reference"] and x.get("kind") == row["kind"] for x in d.get("ledger") or []):
             return next(x for x in d["ledger"] if x.get("company") == company and x.get("reference") == row["reference"] and x.get("kind") == row["kind"])
         d.setdefault("ledger", []).append(row)
-        d["ledger"] = d["ledger"][-_MAX_LEDGER:]
         write(scope_id, d)
     recalculate(scope_id)
     return row
 
 
 def recalculate(scope_id):
-    with _LOCK:
+    with transaction(scope_id):
         d = read(scope_id)
         for key in COMPANIES:
             revenue = pending = costs = 0.0
@@ -329,7 +371,7 @@ def recalculate(scope_id):
                         revenue += amt; sales += 1
                     elif status == "pending":
                         pending += amt
-                elif kind in {"cost", "expense"}:
+                elif kind in {"cost", "expense"} and status == "collected":
                     costs += abs(amt)
             c = d["companies"][key]
             c["metrics"].update({
@@ -365,7 +407,7 @@ def active_scope_ids():
     for path in base.glob("*/holdings/state.json"):
         try:
             d = ensure(json.loads(path.read_text(encoding="utf-8")))
-            if any(c.get("state") == "RUNNING" for c in d.get("companies", {}).values()):
+            if any(c.get("state") == "RUNNING" for c in d.get("companies", {}).values()) or d.get("orchestration", {}).get("mode", "OFF") != "OFF":
                 rows.append(path.parent.parent.name)
         except Exception:
             continue
