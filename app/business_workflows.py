@@ -36,6 +36,12 @@ def view(scope):
 
 
 def operate(scope, action, data):
+    if action=='canva_status':
+        from .canva_adapter import CanvaAdapter
+        return CanvaAdapter().status(scope)
+    if action=='semantic_tasks_status':
+        from .semantic_tasks import tasks
+        return {'tasks':tasks(scope)}
     if action.startswith('identity_workspace_'):
         from .identity_workspace import operate as workspace
         return workspace(scope,action.removeprefix('identity_workspace_'),data)

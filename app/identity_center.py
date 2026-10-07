@@ -18,7 +18,7 @@ PROBES={
  'ADSENSE':('adsense.readonly','https://adsense.googleapis.com/v2/accounts',{'pageSize':20})}
 EXTRA={'DOCS':'documents','SHEETS':'spreadsheets','SLIDES':'presentations'}
 SERVICES=['GOOGLE','GMAIL','DRIVE','DOCS','SHEETS','SLIDES','CALENDAR','CONTACTS','TASKS','YOUTUBE','ADSENSE',
- 'SHOPIFY','STRIPE','INSTAGRAM','TIKTOK','VERCEL','DOMAIN','SUPPLIER','MEDIA','PHONE']
+ 'SHOPIFY','STRIPE','INSTAGRAM','TIKTOK','VERCEL','DOMAIN','SUPPLIER','MEDIA','PHONE','CANVA']
 
 def ensure(d):
     return d.setdefault('identity_center',{'google':{'status':'CREATED','account_exists':True,'email':None,'display_name':'ZAR',
@@ -170,7 +170,7 @@ def provider_plan(scope,service):
         if not address:raise ValueError('Registra primero el correo existente de ZAR.')
         old=next((p for p in s['plans'] if p['service']==service and p['identity']==address),None)
         if old:return deepcopy(old)
-        node_name={'STRIPE':'Payment','DOMAIN':'Dominio','SUPPLIER':'Proveedor','MEDIA':'ElevenLabs','SHOPIFY':'Shopify','YOUTUBE':'YouTube','ADSENSE':'AdSense','INSTAGRAM':'Instagram','TIKTOK':'TikTok','VERCEL':'Vercel','PHONE':'ZAR Phone'}[service]
+        node_name={'STRIPE':'Payment','DOMAIN':'Dominio','SUPPLIER':'Proveedor','MEDIA':'ElevenLabs','SHOPIFY':'Shopify','YOUTUBE':'YouTube','ADSENSE':'AdSense','INSTAGRAM':'Instagram','TIKTOK':'TikTok','VERCEL':'Vercel','PHONE':'ZAR Phone','CANVA':'Canva'}[service]
         node=next(n for n in inventory(d) if n['name']==node_name)
         existing=next((a for a in d.get('orchestration',{}).get('accounts',[]) if a.get('provider','').upper()==service and a.get('identity')==address),None)
         status='ACTIVE' if node['state']=='LISTO' else 'API_CONFIG' if existing or node.get('configured') else 'HUMAN_ACTION_REQUIRED'

@@ -61,8 +61,8 @@ class Release337(unittest.TestCase):
     if code!=200:write.assert_not_called();self.assertTrue(d['revoked'])
     else:self.assertFalse(d['revoked']);self.assertTrue(d['paused']);self.assertFalse(d['autonomous_engine']);self.assertTrue(audit.call_args.args[1]['previous_revoked'])
  def test_version(self):
-  self.assertEqual(main.app.test_client().get('/health').json['version'],'33.3.7')
-  self.assertEqual({(root/p).read_text().strip() for p in ['VERSION','VERSION.txt','app/VERSION.txt']},{'33.3.7'})
+  self.assertEqual(main.app.test_client().get('/health').json['version'],'33.3.8')
+  self.assertEqual({(root/p).read_text().strip() for p in ['VERSION','VERSION.txt','app/VERSION.txt']},{'33.3.8'})
 
 try:
  result=unittest.TextTestRunner(verbosity=1).run(unittest.defaultTestLoader.loadTestsFromTestCase(Release337))

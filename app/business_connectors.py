@@ -4,6 +4,7 @@ import hashlib
 import json
 
 SPECS = {
+    "Canva": (["CANVA_ACCESS_TOKEN"], "https://www.canva.com/signup/"),
     "Alpaca Paper": (["ALPACA_API_KEY","ALPACA_API_SECRET"], "https://app.alpaca.markets"),
     "JEV": (["JEV_API_KEY"], "https://typesafe.ai"),
     "ElevenLabs": (["ELEVENLABS_API_KEY", "ELEVENLABS_VOICE_ID"], "https://elevenlabs.io"),

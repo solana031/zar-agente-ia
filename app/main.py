@@ -4260,6 +4260,16 @@ def _execute_workspace_action(pending):
 
 
 def _process_chat_message(msg):
+    from . import semantic_tasks
+    proposed=semantic_tasks.plan(msg)
+    pending_context = _ctx()
+    has_pending = any(pending_context.get(key) for key in ('pending_email','pending_contact','pending_calendar','pending_workspace')) or session.get('zar_pending_workspace')
+    if proposed and not has_pending and (len(proposed['subtasks'])>1 or proposed['subtasks'][0]['kind']!='READ_MAIL'):
+        task=semantic_tasks.create(_user_scope_id(),msg)
+        _launch_semantic_task(_user_scope_id(),task['id'],{})
+        labels={'RESEARCH':'Investigar con fuentes','CREATE_REPORT':'Crear el informe','RESOLVE_CONTACT':'Identificar destinatario','DRAFT_EMAIL':'Preparar email','ATTACH_ARTIFACT':'Adjuntar el archivo','SEND_EMAIL':'Enviar después de revisar'}
+        reply='He preparado esta tarea:\n'+'\n'.join(str(i+1)+'. '+labels.get(s['kind'],s['kind']) for i,s in enumerate(task['subtasks']))+'\n\n[Abrir tarea y continuar](/?task='+task['id']+')'
+        _remember_turn('user',msg);_remember_turn('assistant',reply);return reply
     low = (msg or "").strip().lower()
     # UI confirmation buttons use explicit internal decisions. They are mapped
     # here, before any intent routing, so confirmation never depends on NLU.
@@ -5574,6 +5584,12 @@ def upload_file():
 
 @app.get("/api/files")
 def files_api():
+    from .file_store import FileStore
+    previous=anonymous_id(session.get('zar_browser_id','')) if session.get('zar_browser_id') else None
+    marker=Path(os.environ.get('ZAR_DATA_DIR','/data'))/'legacy_owner_browser.txt'
+    legacy=bool(session.get('zar_browser_id') and marker.exists() and marker.read_text().strip()==session['zar_browser_id'])
+    try:recovery=FileStore().reconcile(previous_scope=previous,legacy_owner=legacy)
+    except ValueError as exc:return jsonify(ok=False,error=str(exc)),409
     category = (request.args.get("category") or "").strip()
     query = (request.args.get("q") or "").strip()
     items = search_files(query, category, 500) if query else list_files(category)[:500]
@@ -5598,7 +5614,71 @@ def files_api():
             items.sort(key=lambda x: (rank.get(str(x.get("id")), 0), x.get("created_at", "")), reverse=True)
         except Exception:
             pass
-    return jsonify({"ok": True, "query": query, "files": [public_item(x) for x in items]})
+    return jsonify({"ok": True, "query": query, "files": [public_item(x) for x in items],"recovery":recovery})
+
+@app.patch('/api/files/<file_id>')
+def file_metadata_api(file_id):
+    from .file_store import FileStore
+    data=request.get_json(silent=True) or {}
+    if set(data)-{'name','category','note','associated_contacts','associated_projects','associated_companies','associated_conversations'}:
+        return jsonify(ok=False,error='Solo nombre, categoría y asociaciones editables.'),409
+    try:return jsonify(ok=True,file=public_item(FileStore().metadata(file_id,**data)))
+    except ValueError as exc:return jsonify(ok=False,error=str(exc)),409
+
+@app.get('/api/semantic/tasks')
+def semantic_tasks_list_api():
+    from . import semantic_tasks
+    return jsonify(ok=True,csrf=session.setdefault('business_csrf',secrets.token_urlsafe(32)),tasks=semantic_tasks.tasks(_user_scope_id()))
+
+@app.post('/api/semantic/tasks')
+def semantic_tasks_create_api():
+    from . import semantic_tasks
+    token=session.get('business_csrf')
+    if not token or not secrets.compare_digest(token,request.headers.get('X-ZAR-Business-CSRF','')):return jsonify(ok=False,error='CSRF: recarga tareas.'),403
+    try:return jsonify(ok=True,task=semantic_tasks.create(_user_scope_id(),(request.get_json(silent=True) or {}).get('message')))
+    except ValueError as exc:return jsonify(ok=False,error=str(exc)),400
+
+def _launch_semantic_task(scope,identifier,data):
+    from . import semantic_tasks
+    snapshot=dict(session)
+    def execute():
+        set_current_user(scope)
+        with app.test_request_context('/api/semantic/tasks',method='POST'):
+            session.update(snapshot);semantic_tasks.run(scope,identifier,data.get('confirmed') is True,data.get('selected_email'))
+    threading.Thread(target=execute,daemon=True).start()
+
+@app.post('/api/semantic/tasks/<identifier>/<action>')
+def semantic_task_action_api(identifier,action):
+    from . import semantic_tasks,artifact_engine
+    token=session.get('business_csrf')
+    if not token or not secrets.compare_digest(token,request.headers.get('X-ZAR-Business-CSRF','')):return jsonify(ok=False,error='CSRF: recarga tareas.'),403
+    scope=_user_scope_id();data=request.get_json(silent=True) or {}
+    try:
+        task=semantic_tasks.get(scope,identifier)
+        if action=='workspace':return jsonify(ok=True,result=artifact_engine.workspace_export(task['outputs']['CREATE_REPORT']['artifact_id'],data.get('target'),data.get('confirmed')))
+        if action!='run':raise ValueError('Acción de tarea no soportada.')
+        _launch_semantic_task(scope,identifier,data)
+        return jsonify(ok=True,task=semantic_tasks.get(scope,identifier))
+    except (ValueError,KeyError) as exc:return jsonify(ok=False,error=str(exc)),409
+    except Exception:return jsonify(ok=False,error='Google no confirmó la operación. Revisa el documento existente antes de reintentar.'),409
+
+@app.post('/api/files/<file_id>/share')
+def file_share_api(file_id):
+    from .file_store import FileStore
+    from . import google_workspace
+    data=request.get_json(silent=True) or {}
+    if data.get('confirmed') is not True:return jsonify(ok=False,error='Confirma compartir este archivo por Drive con el destinatario.'),400
+    try:
+        address=str(data.get('email','')).strip()
+        if not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+',address):raise ValueError('Email de destino requerido.')
+        store=FileStore();item=get_file(file_id);store.path(file_id)
+        if not item.get('drive_id'):
+            uploaded=google_workspace.drive_upload(item['name'],store.read(file_id),item['mime'])
+            item=store.metadata(file_id,drive_id=uploaded['id'])
+        permission=google_workspace.drive_share(item['drive_id'],address,'reader')
+        return jsonify(ok=True,permission_id=permission.get('id'),drive_id=item['drive_id'])
+    except (ValueError,RuntimeError) as exc:return jsonify(ok=False,error=str(exc)),409
+    except Exception:return jsonify(ok=False,error='Drive no confirmó el permiso; revisa antes de reintentar.'),409
 
 @app.post("/api/files/<file_id>/analyze")
 def analyze_file_api(file_id):

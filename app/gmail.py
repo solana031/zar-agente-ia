@@ -86,9 +86,11 @@ def archive(message_id):
 
 def list_drafts():return service().users().drafts().list(userId='me',maxResults=30).execute().get('drafts',[])
 
-def send_with_attachments(to,subject,body,attachments=None,thread_id=None,reply_to_message_id=None,draft=False):
+def send_with_attachments(to,subject,body,attachments=None,thread_id=None,reply_to_message_id=None,draft=False,cc='',bcc=''):
     from email.message import EmailMessage
     msg=EmailMessage();msg['To']=to;msg['Subject']=subject;msg.set_content(body)
+    if cc:msg['Cc']=cc
+    if bcc:msg['Bcc']=bcc
     if reply_to_message_id:msg['In-Reply-To']=reply_to_message_id;msg['References']=reply_to_message_id
     total=0
     for item in attachments or []:

@@ -5,6 +5,7 @@ from copy import deepcopy
 from . import holdings
 
 PROVIDERS={
+ 'CANVA':('https://www.canva.com/signup/',['Usar zaragente031@gmail.com','Login/OAuth y términos requieren acción humana','Conectar y verificar antes de crear o exportar diseños']),
  'GOOGLE':('https://accounts.google.com/signup',['Datos reales y fecha de nacimiento','Elegir nombre disponible en Google','Contraseña en Google/gestor seguro','Recovery, teléfono/SMS o CAPTCHA si Google los solicita','Aceptar términos personalmente','Conectar OAuth en ZAR y verificar buzón']),
  'SHOPIFY':('https://www.shopify.com/free-trial',['Alta oficial','Plan/pago y términos humanos','Configurar token servidor y verificar tienda']),
  'STRIPE':('https://dashboard.stripe.com/register',['Alta oficial','Email y KYC humanos','Configurar clave servidor y webhook firmado']),

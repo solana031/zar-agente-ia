@@ -17,6 +17,14 @@ def operate(scope,action,data):
     if action=='drafts':return gmail.list_drafts()
     if action not in {'send','reply','forward','draft','archive'}:raise ValueError('Acción Gmail no soportada.')
     if data.get('confirmed') is not True:raise ValueError('Revisa y confirma la escritura en Gmail.')
+    data=dict(data)
+    for field in ('cc','bcc'):
+        value=str(data.get(field,'')).strip()
+        if value and any(not re.fullmatch(r'[^\r\n\s@]+@[^\r\n\s@]+\.[^\r\n\s@]+',address.strip()) for address in value.split(',')):raise ValueError('Direcciones CC/BCC no válidas.')
+    if data.get('artifact_ids'):
+        if not isinstance(data['artifact_ids'],list) or len(data['artifact_ids'])>20:raise ValueError('Lista de hasta 20 IDs de archivo requerida.')
+        from .file_store import FileStore
+        data['attachments']=list(data.get('attachments') or [])+[FileStore().attachment(fid) for fid in data['artifact_ids']]
     tid=str(data.get('transaction_id') or '')
     if not re.fullmatch(r'[A-Za-z0-9_-]{8,100}',tid):raise ValueError('transaction_id estable requerido para evitar duplicados.')
     signature=hashlib.sha256(json.dumps({'action':action,'data':data},sort_keys=True).encode()).hexdigest()
@@ -37,13 +45,21 @@ def operate(scope,action,data):
         row={'transaction_id':tid,'message_id':None,'thread_id':thread_id,'sender':sender,'recipient':recipient,'subject':subject,
              'agent':str(data.get('agent','Pablo'))[:100],'business':str(data.get('business',''))[:100],'client':str(data.get('client',''))[:100],
              'timestamp':holdings._now(),'status':'PENDING','action':action,'request_hash':signature}
+        row.update(task_id=data.get('task_id'),artifact_ids=data.get('artifact_ids',[]),cc=data.get('cc',''),bcc=data.get('bcc',''))
         s['mail_audit'].append(row);holdings.write(scope,d)
         try:
             if action=='archive':result=gmail.archive(data['id'])
-            else:result=gmail.send_with_attachments(recipient,subject,body,data.get('attachments'),thread_id,reference,draft=action=='draft')
+            else:result=gmail.send_with_attachments(recipient,subject,body,data.get('attachments'),thread_id,reference,draft=action=='draft',cc=data.get('cc',''),bcc=data.get('bcc',''))
             message=result.get('message',result);row.update(message_id=message.get('id'),thread_id=message.get('threadId',thread_id),draft_id=result.get('id') if action=='draft' else None,status='CONFIRMED')
             if not row['message_id']:raise ValueError('Sin ID confirmado.')
         except Exception:
             row['status']='REVIEW_REQUIRED';holdings.write(scope,d)
             raise ValueError('Resultado ambiguo: revisar Gmail. No se repetirá automáticamente.') from None
+        if data.get('attachments') and action!='archive':
+            try:
+                raw=gmail.service().users().messages().get(userId='me',id=row['message_id'],format='full').execute()
+                row['attachment_metadata']=gmail.attachment_metadata(raw)
+                row['attachments_verified']=True
+            except Exception:
+                row['attachment_metadata']=[];row['attachments_verified']=False
         holdings.write(scope,d);return deepcopy(row)

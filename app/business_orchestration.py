@@ -83,7 +83,9 @@ def register(app, scope_fn):
 
 
 def ensure(d):
+    d['account_identity_policy']={'operational_identity':'zaragente031@gmail.com','official_github_owner':'solana031@gmail.com','official_railway_owner':'solana031@gmail.com','migration_allowed':False}
     o = d.setdefault("orchestration", {})
+    o['identity_policy']=deepcopy(d['account_identity_policy'])
     for key, value in {"mode": "OFF", "agents": {}, "tasks": [], "approvals": [],
                        "accounts": [], "decisions": [], "cycles": 0, "last_heartbeat": None}.items():
         o.setdefault(key, deepcopy(value))
@@ -95,6 +97,9 @@ def ensure(d):
             "last_heartbeat": None, "costs": None, "attributed_revenue": None,
             "logs": [], "permissions": ["local_read"], "dependencies": [],
         })
+    for name in ['SemanticPlanner','ResearchAgent','ReportAgent','DocumentAgent','SpreadsheetAgent','PresentationAgent','ArtifactOrchestrator','ContactResolver','MailAgent','CanvaAdapter']:
+        parent='IDENTITY' if name in {'ContactResolver','MailAgent','CanvaAdapter'} else 'BusinessOrchestrator' if name in {'SemanticPlanner','ArtifactOrchestrator','ResearchAgent'} else 'ArtifactOrchestrator'
+        o['agents'].setdefault(name,{'id':name,'name':name,'domain':'identity' if parent=='IDENTITY' else 'business','parent':parent,'function':'semantic_tasks_status','state':'AVAILABLE' if name!='CanvaAdapter' else 'HUMAN_ACTION_REQUIRED','tools':['semantic_tasks_status'],'capabilities':['structured_tasks' if name=='SemanticPlanner' else 'artifact_pipeline'],'current_tasks':[],'errors':[],'permissions':['local_read']})
     for name, tool in [('AccountProvisioningAgent','provisioning_request'),('SiteBuilderAgent','site_build'),('SEOAgent','site_analyze'),
                        ('OptimizationAgent','project_review'),('AnalyticsAgent','project_review'),('ContentAgent','project_review')]:
         a=o['agents'][name]
@@ -186,6 +191,8 @@ def mutate(scope, action, data):
             if account_type not in ACCOUNT_TYPES: raise ValueError('Tipo de cuenta no permitido.')
             provider = str(data.get("provider", "")).strip()
             identity = str(data.get("identity", "")).strip()
+            if provider.upper() in {'GITHUB', 'RAILWAY'} and identity.lower() != 'solana031@gmail.com':
+                raise ValueError('GitHub y Railway oficiales conservan la identidad de Pablo: solana031@gmail.com.')
             ref = str(data.get("secret_ref", "")).strip()
             if not provider or not identity or (ref and not re.fullmatch(r"[A-Z][A-Z0-9_]{2,80}", ref)):
                 raise ValueError("Proveedor, identidad y nombre de variable seguro requeridos.")

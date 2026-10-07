@@ -9,7 +9,7 @@ import hashlib
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import quote
-from .user_scope import safe_slug
+from .user_scope import safe_slug, get_current_user
 
 DATA_DIR = Path(os.environ.get('ZAR_DATA_DIR', '/data'))
 
@@ -44,8 +44,9 @@ def _load():
         try:
             data = json.loads(_meta_file().read_text(encoding='utf-8'))
             return data if isinstance(data, list) else []
-        except (FileNotFoundError, json.JSONDecodeError):
+        except FileNotFoundError:
             return []
+        except json.JSONDecodeError:raise ValueError('Índice de archivos dañado: se conserva para recuperación; no se sustituye por una biblioteca vacía.')
 
 
 def _save(data):
@@ -87,6 +88,7 @@ def _guess_category(name, mime):
 
 
 def save_upload(file_storage, note=''):
+    persistent_storage()
     if not file_storage or not getattr(file_storage, 'filename', None):
         raise ValueError('No se recibió ningún archivo.')
     filename = _safe_name(file_storage.filename)
@@ -107,6 +109,7 @@ def save_upload(file_storage, note=''):
     now = datetime.now(timezone.utc).isoformat()
     item = {
         'id': file_id,
+        'owner_id':get_current_user(),'storage':'RAILWAY_VOLUME' if os.environ.get('RAILWAY_VOLUME_MOUNT_PATH') else 'LOCAL_PERSISTENT',
         'name': filename,
         'stored_name': stored_name,
         'mime': mime,
@@ -127,7 +130,7 @@ def save_upload(file_storage, note=''):
 
 
 def get_file(file_id):
-    return next((x for x in _load() if x.get('id') == file_id), None)
+    return next((x for x in _load() if x.get('id') == file_id and x.get('owner_id',get_current_user())==get_current_user()), None)
 
 
 def list_files(category=''):
@@ -144,7 +147,7 @@ def search_files(query='', category='', limit=20):
         tokens = [t for t in re.findall(r'\w+', query, re.UNICODE) if len(t) > 1]
         scored = []
         for item in items:
-            hay = ' '.join(str(item.get(k,'')) for k in ('name','note','category','mime')).lower()
+            hay = ' '.join(str(item.get(k,'')) for k in ('name','note','category','mime','retrieval_text','associated_contacts','associated_projects','associated_companies')).lower()
             score = sum(2 if tok in item.get('name','').lower() else 1 for tok in tokens if tok in hay)
             if score:
                 scored.append((score,item))
@@ -189,10 +192,7 @@ def delete_file(file_id):
     if not item:
         return False
     path = _folder(item.get('category','sin_clasificar')) / item.get('stored_name','')
-    try:
-        path.unlink(missing_ok=True)
-    except Exception:
-        pass
+    path.unlink(missing_ok=True)
     data = [x for x in _load() if x.get('id') != file_id]
     _save(data)
     return True
@@ -214,4 +214,99 @@ def public_item(item):
     out['indexing_error'] = item.get('indexing_error') or ''
     out['indexed_at'] = item.get('indexed_at') or ''
     out['sha256'] = item.get('sha256') or ''
+    out.setdefault('owner_id',get_current_user())
+    out.setdefault('storage','RAILWAY_VOLUME' if os.environ.get('RAILWAY_VOLUME_MOUNT_PATH') else 'LOCAL_PERSISTENT')
+    out['availability']='AVAILABLE' if FileStore().path(item['id']).is_file() else 'MISSING_BINARY'
     return out
+
+def persistent_storage():
+    mount=os.environ.get('RAILWAY_VOLUME_MOUNT_PATH','')
+    if os.environ.get('RAILWAY_ENVIRONMENT_ID'):
+        if not mount or not DATA_DIR.resolve().is_relative_to(Path(mount).resolve()) or not os.path.ismount(mount):
+            raise ValueError('Almacenamiento persistente no verificado: no se guardarán archivos en el container efímero.')
+    return {'storage':'RAILWAY_VOLUME' if mount else 'LOCAL_PERSISTENT','persistent':True,'root':str(DATA_DIR),'mount':mount or None}
+
+class FileStore:
+    """Scoped durable metadata and binaries; compatibility APIs above remain intact."""
+    def save(self,name,data,mime='application/octet-stream',**metadata):
+        from io import BytesIO
+        from werkzeug.datastructures import FileStorage
+        item=save_upload(FileStorage(stream=BytesIO(data),filename=name,content_type=mime))
+        return self.metadata(item['id'],**metadata)
+    def path(self,file_id):
+        item=get_file(file_id)
+        if not item:raise ValueError('Archivo no encontrado para este propietario.')
+        if item.get('owner_id',get_current_user())!=get_current_user():raise ValueError('Propietario incorrecto.')
+        path=files_dir()/item.get('category','sin_clasificar')/item.get('stored_name','')
+        if not path.resolve().is_relative_to(files_dir().resolve()) or path.is_symlink():raise ValueError('Ruta de archivo inválida.')
+        return path
+    def read(self,file_id):
+        path=self.path(file_id)
+        if not path.is_file():raise ValueError('Metadata conservada, pero el binario histórico ya no está disponible.')
+        data=path.read_bytes();item=get_file(file_id)
+        if item.get('sha256') and hashlib.sha256(data).hexdigest()!=item['sha256']:raise ValueError('Checksum incorrecto; archivo no enviado.')
+        return data
+    def list(self,category=''):return list_files(category)
+    def search(self,query,category=''):return search_files(query,category,500)
+    def delete(self,file_id):self.path(file_id);return delete_file(file_id)
+    def metadata(self,file_id,**changes):
+        self.path(file_id)
+        allowed={'type','title','creator_agent','source_task','version','associated_contacts','associated_projects','associated_companies','associated_conversations','retrieval_text','drive_id','workspace_exports','name','category','note'}
+        if set(changes)-allowed:raise ValueError('Campos de metadata no permitidos.')
+        with LOCK:
+            if 'category' in changes or 'note' in changes:update_file(file_id,changes.pop('category',None),changes.pop('note',None))
+            items=_load();item=next(x for x in items if x['id']==file_id)
+            if 'name' in changes:changes['name']=_safe_name(changes['name'])
+            item.update(changes,owner_id=get_current_user(),updated_at=datetime.now(timezone.utc).isoformat());_save(items)
+            return item
+    def attachment(self,file_id):
+        import base64
+        item=get_file(file_id)
+        if not item or int(item.get('size',0))>15*1024*1024:raise ValueError('Adjunto inexistente o superior a 15 MB.')
+        return {'filename':item['name'],'mime':item['mime'],'data':base64.b64encode(self.read(file_id)).decode(),'file_id':file_id}
+    def reconcile(self,previous_scope=None,legacy_owner=False):
+        """Only current owner or the caller's original browser scope may be reconciled."""
+        persistent_storage();recovered=0;missing=0
+        sources=[]
+        if previous_scope and previous_scope!=get_current_user():sources.append(DATA_DIR/'users'/safe_slug(previous_scope)/'files')
+        if legacy_owner:sources.append(DATA_DIR/'files')
+        with LOCK:
+            items=_load();known={x['id'] for x in items};checksums={x.get('sha256') for x in items}
+            for source in sources:
+                if not source.resolve().is_relative_to(DATA_DIR.resolve()) or source.is_symlink():continue
+                try:old=json.loads((source/'index.json').read_text(encoding='utf-8'))
+                except (OSError,ValueError):old=[]
+                for row in old:
+                    src=source/row.get('category','sin_clasificar')/row.get('stored_name','')
+                    existing=next((x for x in items if x['id']==row.get('id')),None)
+                    if existing and self.path(existing['id']).is_file():continue
+                    if not existing and row.get('sha256') and row.get('sha256') in checksums:continue
+                    if not src.resolve().is_relative_to(source.resolve()) or src.is_symlink():continue
+                    if not src.is_file():
+                        if not existing and row.get('id'):
+                            row=dict(row,owner_id=get_current_user(),category=row.get('category') if row.get('category') in ALLOWED_CATEGORIES else 'otros',stored_name=Path(row.get('stored_name','missing')).name)
+                            items.append(row);known.add(row['id'])
+                        continue
+                    content=src.read_bytes();checksum=hashlib.sha256(content).hexdigest()
+                    if row.get('sha256') and row['sha256']!=checksum:continue
+                    category=row.get('category') if row.get('category') in ALLOWED_CATEGORIES else 'otros'
+                    destination=_folder(category)/Path(row['stored_name']).name
+                    if destination.exists():continue
+                    shutil.copyfile(src,destination)
+                    row=dict(row,category=category,stored_name=destination.name,sha256=checksum,owner_id=get_current_user(),storage='RAILWAY_VOLUME' if os.environ.get('RAILWAY_VOLUME_MOUNT_PATH') else 'LOCAL_PERSISTENT',recovered_from=safe_slug(previous_scope) if previous_scope else 'legacy')
+                    if existing:existing.update(row)
+                    else:items.append(row)
+                    known.add(row['id']);checksums.add(checksum);recovered+=1
+            paths={str(self.path(x['id']).resolve()) for x in _load()}
+            paths.update(str((_files_dir()/x.get('category','sin_clasificar')/x.get('stored_name','')).resolve()) for x in items)
+            for category in ALLOWED_CATEGORIES:
+                folder=_files_dir()/category
+                if not folder.exists():continue
+                for path in folder.iterdir():
+                    if not path.is_file() or path.is_symlink() or str(path.resolve()) in paths:continue
+                    if not path.resolve().is_relative_to(files_dir().resolve()):continue
+                    content=path.read_bytes();now=datetime.now(timezone.utc).isoformat()
+                    items.append({'id':uuid.uuid4().hex,'name':path.name,'stored_name':path.name,'category':category,'mime':mimetypes.guess_type(path.name)[0] or 'application/octet-stream','size':len(content),'sha256':hashlib.sha256(content).hexdigest(),'owner_id':get_current_user(),'storage':'RAILWAY_VOLUME' if os.environ.get('RAILWAY_VOLUME_MOUNT_PATH') else 'LOCAL_PERSISTENT','created_at':now,'updated_at':now,'note':'Binario huérfano recuperado; nombre original no disponible.'});recovered+=1
+            _save(items)
+            missing+=sum(not self.path(x['id']).is_file() for x in items)
+        return {'recovered':recovered,'missing_binaries':missing,'message':'Se conservan metadata y archivos disponibles; no se inventan binarios perdidos.','storage':persistent_storage()}

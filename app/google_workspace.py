@@ -83,10 +83,12 @@ def drive_share(file_id,address,role='reader'):
     return drive_service().permissions().create(fileId=file_id,body={'type':'user','role':role,'emailAddress':address},sendNotificationEmail=True,fields='id').execute()
 
 
-def docs_create(title, text=''):
+def docs_create(title, text='', on_created=None):
     svc = docs_service()
     doc = svc.documents().create(body={'title': title}).execute()
     doc_id = doc['documentId']
+    doc['url'] = f'https://docs.google.com/document/d/{doc_id}/edit'
+    if on_created:on_created(doc,doc_id)
     if text:
         svc.documents().batchUpdate(documentId=doc_id, body={'requests':[{'insertText':{'endOfSegmentLocation':{},'text':text}}]}).execute()
     doc['url'] = f'https://docs.google.com/document/d/{doc_id}/edit'

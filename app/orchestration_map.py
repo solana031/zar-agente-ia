@@ -17,7 +17,7 @@ def graph(base,d):
             base['edges'].append(['zar_supervisor' if domain in {'business','identity','jev'} else 'BusinessOrchestrator',name]);seen.add(name)
     from .identity_center import ensure as identity
     state=identity(d)
-    for name in ('GOOGLE','GMAIL','WORKSPACE','YOUTUBE','SHOPIFY','STRIPE','INSTAGRAM','TIKTOK','ADSENSE','VERCEL','DOMAIN','PHONE','SUPPLIER','MEDIA'):
+    for name in ('GOOGLE','GMAIL','WORKSPACE','YOUTUBE','SHOPIFY','STRIPE','INSTAGRAM','TIKTOK','ADSENSE','VERCEL','DOMAIN','PHONE','SUPPLIER','MEDIA','CANVA'):
         aid='Identity:'+name
         if aid in seen:continue
         capability=state['capabilities'].get(name,{})
