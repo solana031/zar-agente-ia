@@ -2871,6 +2871,9 @@ def stonks_validation_suite_api():
 @app.get('/api/stonks/alpaca/portfolio')
 def stonks_alpaca_portfolio_api():
     """Return the current Paper account, positions and trading clock."""
+    key,secret=_alpaca_paper_credentials()
+    if not key or not secret:
+        return jsonify({"ok":False,"paper":True,"state":"POR CONFIGURAR","error":"Configura las claves Alpaca Paper en el servidor."}),409
     try:
         account=_alpaca_paper_request('/v2/account')
         positions=_alpaca_paper_request('/v2/positions')

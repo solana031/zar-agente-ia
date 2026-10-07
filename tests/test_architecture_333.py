@@ -37,6 +37,13 @@ class ArchitectureTests(unittest.TestCase):
         for name in ('business-orchestration.js','commerce-agency.js'):
             self.assertNotIn('registro Automaton',(root/'app/static'/name).read_text(encoding='utf-8'))
 
+    def test_preflight_without_heartbeat_is_unverified(self):
+        from app import stonks_preflight
+        result=stonks_preflight.evaluate({'engine_last_run':None},'AAPL',{},False,False)
+        heartbeat=next(x for x in result['checks'] if x['code']=='HEARTBEAT')
+        self.assertEqual(heartbeat['status'],'UNVERIFIED')
+        self.assertEqual(result['status'],'BLOCKED')
+
     def test_signature_and_missing_secret(self):
         raw=json.dumps({'id':'evt_offline','type':'unknown'}).encode()
         stamp=str(int(time.time()))
