@@ -2247,6 +2247,10 @@ def _stonks_current_signal(symbol, strategy='trend', timeframe='1Min', feed='iex
 @app.get('/api/stonks/signals')
 def stonks_signals_api():
     """Calculate near-real-time signals from completed Alpaca bars. Analysis only."""
+    key,secret=_alpaca_paper_credentials()
+    if not key or not secret:
+        return jsonify(ok=False,state='POR CONFIGURAR',analysis_only=True,orders_created=False,
+                       error='Configura las claves Alpaca Paper en el servidor.'),409
     try:
         raw_symbols=str(request.args.get('symbols') or 'AAPL')
         symbols=[]
