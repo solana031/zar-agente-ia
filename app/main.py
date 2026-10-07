@@ -153,7 +153,7 @@ def _canonical_redirect_if_needed():
 
 _OAUTH_PENDING_FILE = Path(os.environ.get('ZAR_DATA_DIR', '/data')) / 'oauth_pending.json'
 
-def _save_oauth_pending(provider, state, verifier, redirect_uri=None, expected_email=None, purpose=None):
+def _save_oauth_pending(provider, state, verifier, redirect_uri=None, expected_email=None, purpose=None, service=None):
     """Persist OAuth transactions independently of the browser session.
 
     A user can have several Zar tabs/windows open, and Railway may route the
@@ -172,7 +172,7 @@ def _save_oauth_pending(provider, state, verifier, redirect_uri=None, expected_e
                 data = {}
         if not isinstance(data, dict):
             data = {}
-        data[state] = {'provider': provider, 'state': state, 'verifier': verifier, 'redirect_uri': redirect_uri, 'user_id': get_current_user(), 'created_at': time.time(),'expected_email':expected_email,'purpose':purpose}
+        data[state] = {'provider': provider, 'state': state, 'verifier': verifier, 'redirect_uri': redirect_uri, 'user_id': get_current_user(), 'created_at': time.time(),'expected_email':expected_email,'purpose':purpose,'service':service}
         # Keep only recent transactions.
         cutoff = time.time() - 15 * 60
         data = {k: v for k, v in data.items() if isinstance(v, dict) and float(v.get('created_at', 0) or 0) >= cutoff}
@@ -551,6 +551,22 @@ def oauth2callback():
             session.pop("oauth_provider", None)
             session.pop("oauth_state", None)
             session.pop("oauth_code_verifier", None)
+            return _oauth_success_page('youtube')
+        if pending.get('purpose')=='zar' and pending.get('service')=='youtube':
+            from .cloud_auth import youtube_user_id,_token_file,get_account_email
+            old_uid=pending.get('user_id') or get_current_user()
+            creds=finish_oauth(state,code,verifier,pending.get('redirect_uri'),user_id=youtube_user_id(old_uid),expected_email=pending.get('expected_email'))
+            address=get_account_email(creds)
+            if not address:raise ValueError('YouTube OAuth no confirmó el email de ZAR.')
+            new_uid=user_id_for_email(address)
+            old_path=_token_file(youtube_user_id(old_uid));new_path=_token_file(youtube_user_id(new_uid))
+            new_path.parent.mkdir(parents=True,exist_ok=True)
+            if old_path.exists() and old_path!=new_path:old_path.replace(new_path)
+            session['zar_user_id']=new_uid;session['google_account_email']=address;set_current_user(new_uid)
+            from .identity_center import register_google,verify_google
+            register_google(new_uid,address);verify_google(new_uid,services=['YOUTUBE'])
+            _clear_oauth_pending('google',state)
+            for key in ('oauth_provider','oauth_state','oauth_code_verifier'):session.pop(key,None)
             return _oauth_success_page('youtube')
         finish_oauth(state, code, verifier, pending.get('redirect_uri'), user_id=pending.get('user_id') or get_current_user(),expected_email=pending.get('expected_email'))
         # Vincula esta sesión al correo Google real y mueve su token al espacio aislado por cuenta.
@@ -3473,7 +3489,7 @@ def connect_google():
         session["oauth_provider"] = "google"
         session["oauth_state"] = state
         session["oauth_code_verifier"] = verifier
-        _save_oauth_pending('google', state, verifier, redirect_uri,expected_email,purpose)
+        _save_oauth_pending('google', state, verifier, redirect_uri,expected_email,purpose,service)
         return redirect(url)
     except Exception as exc:
         return f"<h2>No se pudo iniciar Google OAuth</h2><pre>{exc}</pre>", 500

@@ -111,7 +111,8 @@ def verify_google(scope,services=None):
     actual=cloud_auth.get_account_email(creds)
     if actual!=expected:raise ValueError('OAuth pertenece a otra identidad; selecciona el correo real de ZAR.')
     names=[x for x in (services or PROBES) if x in PROBES]
-    with ThreadPoolExecutor(max_workers=4) as pool:results=dict(zip(names,pool.map(lambda n:_probe(n,creds),names)))
+    youtube_creds=cloud_auth.get_credentials(user_id=cloud_auth.youtube_user_id(scope)) if 'YOUTUBE' in names else None
+    with ThreadPoolExecutor(max_workers=4) as pool:results=dict(zip(names,pool.map(lambda n:_probe(n,youtube_creds or creds) if n=='YOUTUBE' else _probe(n,creds),names)))
     granted=set(creds.scopes or [])
     for name,permission in EXTRA.items():
         # Scope is available, but these APIs need a document ID or a write to prove operation.
@@ -206,6 +207,8 @@ def operate(scope,action,data):
             if r.status_code!=200 and not (r.status_code==400 and r.json().get('error')=='invalid_token'):raise ValueError('Google no confirmó revocación; conservar referencia local y reintentar.')
         path=cloud_auth._token_file(scope)
         if path.exists():path.unlink()
+        youtube_path=cloud_auth._token_file(cloud_auth.youtube_user_id(scope))
+        if youtube_path.exists():youtube_path.unlink()
         with holdings.transaction(scope):
             d=holdings.read(scope);s=ensure(d);s['google'].update(status='NEEDS_OAUTH',capabilities=[]);s['capabilities']={}
             d.setdefault('identity_provisioning',{})['base_identity']=None

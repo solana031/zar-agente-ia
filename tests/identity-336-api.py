@@ -23,6 +23,15 @@ try:
    assert 'youtube.upload' not in params['scope'][0]
    pending=main._load_oauth_pending('google',params['state'][0])
    assert pending['expected_email']=='zar.offline@gmail.com' and pending['purpose']=='zar'
+   yt=client.get('/connect/google?purpose=zar&force=1&service=youtube&email=zar.offline%40gmail.com')
+   params=parse_qs(urlparse(yt.headers['Location']).query)
+   assert params['include_granted_scopes']==['false']
+   assert main._load_oauth_pending('google',params['state'][0])['service']=='youtube'
+   from types import SimpleNamespace
+   with patch.object(main,'finish_oauth',return_value=SimpleNamespace()),patch.object(cloud_auth,'get_account_email',return_value='zar.offline@gmail.com'),patch('app.identity_center.verify_google',return_value={'google':{'status':'ACTIVE'}}):
+    callback=client.get('/oauth2callback?state='+params['state'][0]+'&code=offline')
+    assert callback.status_code==200
+    assert main.finish_oauth.call_args.kwargs['user_id'].endswith('__youtube_oauth')
   with patch.object(main,'finish_oauth',side_effect=AssertionError('Invalid callback must not exchange tokens')):
    assert client.get('/oauth2callback?state=invalid&code=offline').status_code==400
   assert client.get('/connect/google?purpose=zar&service=unknown&email=zar.offline%40gmail.com').status_code==400

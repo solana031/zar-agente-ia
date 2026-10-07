@@ -22,6 +22,9 @@ def _token_file(user_id=None):
     uid = safe_slug(user_id or get_current_user())
     return DATA_DIR / 'users' / uid / 'google_token.json'
 
+def youtube_user_id(user_id=None):
+    return safe_slug(user_id or get_current_user())+'__youtube_oauth'
+
 def _legacy_token_file():
     return TOKEN_FILE
 
@@ -143,6 +146,9 @@ def auth_status():
     if creds and creds.expiry:
         expires_at = creds.expiry.astimezone(timezone.utc).isoformat()
     email = get_account_email(creds) if connected_ok else ''
+    granted=set(creds.scopes or []) if creds else set()
+    # Google returns the canonical userinfo.email URL for the email alias.
+    if 'https://www.googleapis.com/auth/userinfo.email' in granted:granted.add('email')
     return {
         'email': email,
         'connected': connected_ok,
@@ -151,7 +157,7 @@ def auth_status():
         'missing_scopes': missing,
         'expires_at': expires_at,
         'needs_reauth': bool((creds is None and (_token_file().exists() or TOKEN_FILE.exists())) or
-                             (creds and not set(CORE_SCOPES).issubset(set(creds.scopes or [])))),
+                             (creds and not set(CORE_SCOPES).issubset(granted))),
         'error': _LAST_ERROR if not connected_ok else '',
     }
 
@@ -202,7 +208,7 @@ def authorization_url(force=False, redirect_uri=None, service=None, expected_ema
         'access_type': 'offline',
         'code_challenge': code_challenge,
         'code_challenge_method': 'S256',
-        'include_granted_scopes': 'true',
+        'include_granted_scopes': 'false' if service=='youtube' else 'true',
     }
     if force:
         params['prompt'] = 'consent select_account'

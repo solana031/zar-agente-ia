@@ -22,6 +22,12 @@ class IdentityTests(unittest.TestCase):
  def test_no_token_never_active(self):
   with patch.object(cloud_auth,'get_credentials',return_value=None):center.verify_google(self.scope)
   self.assertEqual(center.view(self.scope)['google']['status'],'NEEDS_OAUTH')
+ def test_google_canonical_email_scope_does_not_require_reauth(self):
+  scopes=[s if s!='email' else center.PREFIX+'userinfo.email' for s in cloud_auth.CORE_SCOPES]
+  creds=SimpleNamespace(valid=True,refresh_token='offline-refresh',expiry=None,scopes=scopes)
+  with patch.object(cloud_auth,'get_credentials',return_value=creds),patch.object(cloud_auth,'get_account_email',return_value=self.address):
+   status=cloud_auth.auth_status()
+  self.assertTrue(status['connected']);self.assertFalse(status['needs_reauth'])
  def test_wrong_identity_rejected(self):
   with patch.object(cloud_auth,'get_credentials',return_value=Mock()),patch.object(cloud_auth,'get_account_email',return_value='someone.else@gmail.com'):
    with self.assertRaises(ValueError):center.verify_google(self.scope)
@@ -77,6 +83,28 @@ class IdentityTests(unittest.TestCase):
   with patch.object(cloud_auth,'_oauth_client',return_value=('offline-id','offline-secret')),patch.object(cloud_auth.requests,'post',return_value=response),patch.object(cloud_auth,'get_account_email',return_value='wrong@gmail.com'),patch.object(cloud_auth,'_save_credentials') as save:
    with self.assertRaises(ValueError):cloud_auth.finish_oauth('state','code','verifier','https://zar.invalid/oauth2callback',self.scope,self.address)
    save.assert_not_called()
+ def test_youtube_authorization_excludes_existing_drive_scopes(self):
+  with patch.object(cloud_auth,'_oauth_client',return_value=('offline-id','offline-secret')):
+   url,_,_=cloud_auth.authorization_url(True,'https://zar.invalid/oauth2callback','youtube',self.address)
+  params=parse_qs(urlparse(url).query)
+  self.assertEqual(params['include_granted_scopes'],['false']);self.assertNotIn(center.PREFIX+'drive.file',params['scope'][0])
+  self.assertIn(center.PREFIX+'youtube.upload',params['scope'][0])
+ def test_youtube_vault_preserves_primary_google_token(self):
+  from google.oauth2.credentials import Credentials
+  def cred(token,scope):return Credentials(token=token,refresh_token='offline-refresh',client_id='offline-id',client_secret='offline-secret',token_uri='https://oauth2.googleapis.com/token',scopes=[scope])
+  with patch.object(cloud_auth,'DATA_DIR',self.tmp):
+   cloud_auth._save_credentials(cred('offline-google',center.PREFIX+'gmail.modify'),self.scope)
+   youtube_scope=cloud_auth.youtube_user_id(self.scope)
+   cloud_auth._save_credentials(cred('offline-youtube',center.PREFIX+'youtube.upload'),youtube_scope)
+   self.assertEqual(cloud_auth.get_credentials(False,self.scope).token,'offline-google')
+   self.assertEqual(cloud_auth.get_credentials(False,youtube_scope).token,'offline-youtube')
+ def test_youtube_probe_uses_separate_token(self):
+  base=SimpleNamespace(token='offline-google',scopes=[center.PREFIX+'gmail.modify'])
+  youtube=SimpleNamespace(token='offline-youtube',scopes=[center.PREFIX+'youtube.readonly'])
+  with patch.object(cloud_auth,'get_credentials',side_effect=lambda user_id:youtube if user_id==cloud_auth.youtube_user_id(self.scope) else base),patch.object(cloud_auth,'get_account_email',return_value=self.address),patch.object(center.requests,'get',return_value=Mock(ok=True,json=lambda:{'items':[{'id':'offline-channel'}]})) as get:
+   s=center.verify_google(self.scope,['YOUTUBE'])
+  self.assertEqual(s['capabilities']['YOUTUBE']['status'],'CONNECTED')
+  self.assertEqual(get.call_args.kwargs['headers']['Authorization'],'Bearer offline-youtube')
  def test_oauth_preserves_real_scopes(self):
   from google.oauth2.credentials import Credentials
   creds=Credentials(token='offline',refresh_token='offline-r',client_id='offline-id',client_secret='offline-secret',token_uri='https://oauth2.googleapis.com/token',scopes=[center.PREFIX+'drive.file'])
