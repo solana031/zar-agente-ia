@@ -596,8 +596,8 @@ def home():
     status = auth_status()
     # v30.2.8: abrir Zar o tener Google conectado NO inicia copias automáticamente.
     # El usuario debe pulsar "Configurar y crear copia" y elegir el contenido.
-    if not status.get("connected"):
-        return _google_login_page(status)
+    # Business/trading workspaces must remain usable without Google OAuth.
+    # Gmail/Drive retain their existing connection and authorization gates.
     return render_template("index.html")
 
 
