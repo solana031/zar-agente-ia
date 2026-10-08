@@ -33,7 +33,8 @@ def build(scope,message,fallback,allow_model=True):
                 contact=previous.get('outputs',{}).get('RESOLVE_CONTACT',{}).get('contact') or {}
                 if len(contact.get('emails',[]))==1:base['entities']['recipient']=contact['emails'][0]
         base['subtasks'].insert(0,{'kind':'RESOLVE_REFERENCE'})
-    if allow_model:
+    concrete_research_mail=all(k in [s['kind'] for s in base['subtasks']] for k in ('RESEARCH','CREATE_REPORT','SEND_EMAIL')) and not reference
+    if allow_model and not concrete_research_mail:
         from .config import load
         cfg=load()
         if any((cfg.get(key) or {}).get('api_key') for key in ('api','openai','openrouter')):
@@ -67,13 +68,16 @@ def build(scope,message,fallback,allow_model=True):
             except Exception:
                 base['planning_note']='Modelo no confirmó un plan válido; se conserva el plan contextual y sus ambigüedades.'
     if re.search(r'\bmi (?:propio )?(?:email|correo)\b',text):base['entities']['recipient']='SELF'
+    if concrete_research_mail:
+        base['subtasks']=[{'kind':k,'depends_on':[i-1] if i else []} for i,k in enumerate(('RESEARCH','VERIFY_SOURCES','CREATE_REPORT','STORE_ARTIFACT','RESOLVE_CONTACT','DRAFT_EMAIL','ATTACH_ARTIFACT','FINAL_CONFIRMATION','SEND_EMAIL'))]
+        base['planning_engine']='SEMANTIC_RESEARCH_REPORT_MAIL'
     kinds=[s['kind'] for s in base['subtasks']]
     ids={kind:str(i+1) for i,kind in enumerate(kinds)}
     dependencies={'CREATE_REPORT':['RESEARCH','RESOLVE_REFERENCE'],'DRAFT_EMAIL':['CREATE_REPORT','RESOLVE_REFERENCE','RESOLVE_CONTACT'],'ATTACH_ARTIFACT':['CREATE_REPORT','RESOLVE_REFERENCE','DRAFT_EMAIL'],'SEND_EMAIL':['DRAFT_EMAIL','ATTACH_ARTIFACT','RESOLVE_CONTACT']}
     steps=[]
     for i,s in enumerate(base['subtasks']):
         deps=list(dict.fromkeys([str(d+1) for d in s.get('depends_on',[])]+[ids[k] for k in dependencies.get(s['kind'],[]) if k in ids and int(ids[k])<i+1]))
-        if s['kind']=='RESOLVE_CONTACT':deps=[]
+        if s['kind']=='RESOLVE_CONTACT' and not concrete_research_mail:deps=[]
         steps.append({'id':str(i+1),'kind':s['kind'],'order':i+1,'dependencies':deps,'status':'PLANNED','outputs':None,'error':None})
     base.update(subtasks=steps,steps=deepcopy(steps),order=[s['id'] for s in steps],dependencies={s['id']:s['dependencies'] for s in steps},required_tools=kinds,tools=kinds,artifacts=[base['format']] if 'CREATE_REPORT' in kinds else [],external_actions=['SEND_EMAIL'] if 'SEND_EMAIL' in kinds else [],confirmations=['REVIEW_EMAIL_AND_RECIPIENT'] if 'SEND_EMAIL' in kinds else [],features={'MULTI_INTENT':len(steps)>1,'SEQUENCE':len(steps)>1,'DEPENDENCY':any(s['dependencies'] for s in steps),'CONDITIONAL':bool(base['conditions']),'REFERENCE':reference,'PRONOUN':bool(re.search(r'\b(esto|eso|selo|anterior|esas)\b',text)),'CONTACT':bool(base['entities'].get('recipient')),'TEMPORAL_REFERENCE':'ayer' in text,'EXTERNAL_ACTION':'SEND_EMAIL' in kinds,'FOLLOW_UP':reference})
     base['features'].update(PERSON=bool(base['entities'].get('recipient')),ARTIFACT='CREATE_REPORT' in kinds or 'ATTACH_ARTIFACT' in kinds,CONFIRMATION=bool(base['confirmations']))

@@ -4442,6 +4442,7 @@ def _process_chat_message(msg):
             _launch_semantic_task(_user_scope_id(),task['id'],{})
         labels={'RESEARCH':'Investigar con fuentes','CREATE_REPORT':'Crear el informe','RESOLVE_CONTACT':'Identificar destinatario','DRAFT_EMAIL':'Preparar email','ATTACH_ARTIFACT':'Adjuntar el archivo','SEND_EMAIL':'Enviar después de revisar'}
         reply=('PLAN PROPUESTO' if task.get('external_actions') else 'TAREA EN CURSO')+'\n'+'\n'.join(str(i+1)+'. '+labels.get(s['kind'],s['kind']) for i,s in enumerate(task['subtasks']))+'\n\n[Ver plan ZAR](/?task='+task['id']+')'
+        if task.get('planning_engine')=='SEMANTIC_RESEARCH_REPORT_MAIL':reply='PLAN PROPUESTO\n1. Investigar oportunidades y fuentes.\n2. Verificar requisitos y vigencia.\n3. Crear un informe resumido con enlaces.\n4. Resolver tu propio email.\n5. Preparar correo con el informe adjunto.\n6. Solicitar confirmación antes del envío.\n\n[Ver plan ZAR](/?task='+task['id']+')'
         _remember_turn('user',msg);_remember_turn('assistant',reply);return reply
     low = (msg or "").strip().lower()
     # UI confirmation buttons use explicit internal decisions. They are mapped

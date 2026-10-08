@@ -97,7 +97,7 @@ def ensure(d):
             "last_heartbeat": None, "costs": None, "attributed_revenue": None,
             "logs": [], "permissions": ["local_read"], "dependencies": [],
         })
-    for name in ['SemanticPlanner','ResearchAgent','ReportAgent','DocumentAgent','SpreadsheetAgent','PresentationAgent','ArtifactOrchestrator','ContactResolver','MailAgent','CanvaAdapter']:
+    for name in ['SemanticPlanner','ResearchAgent','SourceVerifier','ReportAgent','DocumentAgent','SpreadsheetAgent','PresentationAgent','ArtifactOrchestrator','ContactResolver','MailAgent','CanvaAdapter']:
         parent='IDENTITY' if name in {'ContactResolver','MailAgent','CanvaAdapter'} else 'BusinessOrchestrator' if name in {'SemanticPlanner','ArtifactOrchestrator','ResearchAgent'} else 'ArtifactOrchestrator'
         o['agents'].setdefault(name,{'id':name,'name':name,'domain':'identity' if parent=='IDENTITY' else 'business','parent':parent,'function':'semantic_tasks_status','state':'AVAILABLE' if name!='CanvaAdapter' else 'HUMAN_ACTION_REQUIRED','tools':['semantic_tasks_status'],'capabilities':['structured_tasks' if name=='SemanticPlanner' else 'artifact_pipeline'],'current_tasks':[],'errors':[],'permissions':['local_read']})
     for name, tool in [('AccountProvisioningAgent','provisioning_request'),('SiteBuilderAgent','site_build'),('SEOAgent','site_analyze'),

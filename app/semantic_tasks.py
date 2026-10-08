@@ -61,7 +61,7 @@ def save(scope,task):
         for i,row in enumerate(rows):
             if row['id']==task['id']:rows[i]=deepcopy(task);break
         from .business_orchestration import ensure
-        agents=ensure(d)['agents'];roles={'RESEARCH':'ResearchAgent','CREATE_REPORT':'ReportAgent','RESOLVE_CONTACT':'ContactResolver','DRAFT_EMAIL':'MailAgent','ATTACH_ARTIFACT':'ArtifactOrchestrator','SEND_EMAIL':'MailAgent'}
+        agents=ensure(d)['agents'];roles={'VERIFY_SOURCES':'SourceVerifier','STORE_ARTIFACT':'ArtifactOrchestrator','FINAL_CONFIRMATION':'MailAgent','RESEARCH':'ResearchAgent','CREATE_REPORT':'ReportAgent','RESOLVE_CONTACT':'ContactResolver','DRAFT_EMAIL':'MailAgent','ATTACH_ARTIFACT':'ArtifactOrchestrator','SEND_EMAIL':'MailAgent'}
         for step in task['subtasks']:
             agent=agents.get(roles.get(step['kind']))
             if agent and step['status'] in {'RUNNING','WAITING','ERROR'}:agent.update(state=step['status'],current_tasks=[task['id']],last_heartbeat=holdings._now())
@@ -108,7 +108,7 @@ def run(scope,identifier,confirmed=False,selected_email=None,selected_artifact_i
             kind=step['kind'];output=None
             if holdings.read(scope).get('global_stop'):raise ValueError('STOP GLOBAL activo; tarea conservada.')
             from .jev_decision import evaluate
-            judgment=evaluate(scope,{'action':kind,'agent':{'RESEARCH':'ResearchAgent','CREATE_REPORT':'ReportAgent','SEND_EMAIL':'CommunicationAgent'}.get(kind,'TaskOrchestrator'),'task_id':task['id']})
+            judgment=evaluate(scope,{'action':kind,'agent':{'RESEARCH':'ResearchAgent','VERIFY_SOURCES':'SourceVerifier','CREATE_REPORT':'ReportAgent','STORE_ARTIFACT':'ArtifactOrchestrator','DRAFT_EMAIL':'MailAgent','FINAL_CONFIRMATION':'MailAgent','SEND_EMAIL':'MailAgent'}.get(kind,'TaskOrchestrator'),'task_id':task['id']})
             if judgment['decision']=='DENY':raise ValueError(judgment['reason'])
             if kind=='RESOLVE_REFERENCE':
                 from .semantic_planner import resolve_reference
@@ -122,6 +122,21 @@ def run(scope,identifier,confirmed=False,selected_email=None,selected_artifact_i
                 output=investigate(task['topic'])
                 if not output.get('ok') or not output.get('sources'):raise ValueError('Investigación no confirmó fuentes web; se conserva la tarea sin inventar resultados.')
                 output.update(retrieved_at=holdings._now(),subquestions=['¿Qué fuentes primarias respaldan el tema?','¿Qué requisitos y fechas siguen vigentes?','¿Qué diferencias y próximos pasos hay?'],date_verification='Solo fechas respaldadas en el texto citado; las restantes no verificadas')
+            elif kind=='VERIFY_SOURCES':
+                from urllib.parse import urlparse
+                research=task['outputs']['RESEARCH'];verified=[]
+                for source in research.get('sources',[])[:8]:
+                    url=source.get('url','');page=web_search.fetch_webpage(url,max_chars=12000)
+                    domain=urlparse(url).hostname or ''
+                    official=any(domain==d or domain.endswith('.'+d) for d in ('comunidad.madrid','majadahonda.org','boe.es','bocm.es','mivau.gob.es','lamajadahonda.es','pammasa.es'))
+                    verified.append({**source,'classification':('OFICIAL' if official else 'SECUNDARIA') if page.get('ok') and page.get('text') else 'NO VERIFICADA','retrieved_at':holdings._now(),'excerpt':str(page.get('text') or '')[:1400],'verification':'Lectura documental; la fecha de consulta no demuestra vigencia de una convocatoria.'})
+                if not any(v['classification']!='NO VERIFICADA' for v in verified):raise ValueError('No se pudo leer ninguna fuente para verificar el informe.')
+                research['sources']=verified;output={'sources':verified,'verified_at':holdings._now()}
+            elif kind=='STORE_ARTIFACT':
+                artifact=task['outputs']['CREATE_REPORT'];data=FileStore().read(artifact['artifact_id'])
+                output={'artifact_id':artifact['artifact_id'],'status':'PERSISTED','verified_at':holdings._now()}
+            elif kind=='FINAL_CONFIRMATION':
+                output={'status':'REVIEW_REQUIRED','recipient':task['outputs']['DRAFT_EMAIL']['to'],'artifact_ids':task['outputs']['DRAFT_EMAIL']['artifact_ids'],'send_authorized':False}
             elif kind=='CREATE_REPORT':
                 research=task['outputs'].get('RESEARCH',{});content=research.get('text')
                 if not content:

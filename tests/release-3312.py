@@ -12,15 +12,15 @@ class Release3312(base['Release3310']):
    return tasks.create(self.scope,msg)
  def test_full_request_keeps_all_intents(self):
   t=self.create('Hazme un estudio de ayudas para vivienda. Hazme un informe resumido con links y envíamelo a mi propio email.')
-  self.assertEqual([s['kind'] for s in t['subtasks']],['RESEARCH','CREATE_REPORT','RESOLVE_CONTACT','DRAFT_EMAIL','ATTACH_ARTIFACT','SEND_EMAIL'])
+  self.assertEqual([s['kind'] for s in t['subtasks']],['RESEARCH','VERIFY_SOURCES','CREATE_REPORT','STORE_ARTIFACT','RESOLVE_CONTACT','DRAFT_EMAIL','ATTACH_ARTIFACT','FINAL_CONFIRMATION','SEND_EMAIL'])
   self.assertEqual(t['entities']['recipient'],'SELF')
-  self.assertIn(t['subtasks'][1]['id'],t['subtasks'][3]['dependencies'])
+  self.assertIn(t['subtasks'][1]['id'],t['subtasks'][2]['dependencies'])
  def test_plan_confirmation_is_required_and_does_not_send(self):
   t=self.create('Investiga vivienda y envíamelo a mi propio email')
   with patch('app.research_agent.investigate') as research,self.assertRaises(ValueError):tasks.run(self.scope,t['id'])
   research.assert_not_called()
   tasks.confirm_plan(self.scope,t['id'])
-  with main.app.test_request_context('/'),patch('app.research_agent.investigate',return_value={'ok':True,'text':'Evidence','sources':[{'url':'https://example.test','title':'Source'}]}),patch('app.artifact_engine.create',return_value={'artifact_id':'f1'}),patch('app.file_store.FileStore.read',return_value=b'fixture'),patch('app.identity_mail.operate') as send:
+  with main.app.test_request_context('/'),patch('app.research_agent.investigate',return_value={'ok':True,'text':'Evidence','sources':[{'url':'https://example.test','title':'Source'}]}),patch('app.web_search.fetch_webpage',return_value={'ok':True,'text':'Verified source evidence'}),patch('app.artifact_engine.create',return_value={'artifact_id':'f1'}),patch('app.file_store.FileStore.read',return_value=b'fixture'),patch('app.identity_mail.operate') as send:
    main.session['google_account_email']='owner@example.test'
    result=tasks.run(self.scope,t['id'])
    self.assertEqual(result['status'],'WAITING');self.assertEqual(result['outputs']['DRAFT_EMAIL']['to'],'owner@example.test');send.assert_not_called()
