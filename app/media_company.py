@@ -151,7 +151,7 @@ def _result(task, record):
               "characters":record.get('characters',[]),"scenes":record.get('scenes',[]),"script":record.get('script'),
               "subtitles":record.get('subtitles'),"costs":record.get('costs'),"agent_trace":record.get('agent_trace',[]),
               "rendered_at":record.get('rendered_at'),"renders":record.get('renders',[]),"publications":record.get('publications',[])}
-    result.update(submission_state=('READY' if record.get('artifact') else 'FAILED' if cp.get('status')=='blocked' and cp.get('last_submission_error','').startswith('http_4') else 'UNKNOWN' if cp.get('error_code')=='submission_unknown' else cp.get('submission_state') or 'PROCESSING'), editor_spec=record.get('editor_spec',{}), error_code=cp.get('error_code'), submission_error=cp.get('last_submission_error'),
+    result.update(submission_state=('READY' if record.get('artifact') else 'UNKNOWN' if cp.get('error_code') in {'submission_unknown','task_missing','task_status'} else 'FAILED' if cp.get('status')=='blocked' else cp.get('submission_state') or 'PROCESSING'), editor_spec=record.get('editor_spec',{}), error_code=cp.get('error_code'), submission_error=cp.get('last_submission_error'),
                   submission_message=cp.get('submission_message'), active_tasks=cp.get('active_tasks') or ([cp['active_task']] if cp.get('active_task') else []))
     if record.get("artifact"):
         result["preview_url"] = "/api/holdings/media/video/" + task["id"]

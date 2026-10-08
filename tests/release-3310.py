@@ -33,6 +33,9 @@ class Release3310(unittest.TestCase):
  def test_asset_search_uses_broker_no_model(self):
   with main.app.test_request_context('/api/stonks/chart/assets?q=apple'),patch.object(main,'_alpaca_paper_request',return_value=[{'symbol':'AAPL','name':'Apple Inc','tradable':True},{'symbol':'BAD','name':'Apple fake','tradable':False}]),patch('app.agent.api_text') as model:
    data=main.stonks_chart_assets_api().get_json();self.assertEqual([a['symbol'] for a in data['assets']],['AAPL']);model.assert_not_called()
+ def test_persisted_provider_failure_is_not_processing(self):
+  result=media._result({'id':'fixture','payload':{}},{'status':'ERROR','checkpoint':{'stage':'characters','status':'blocked','error_code':'task_failed','submission_state':'PROCESSING'}})
+  self.assertEqual(result['submission_state'],'FAILED')
  def test_direct_endpoint_requires_csrf(self):
   with main.app.test_request_context('/api/holdings/media/direct/generate',method='POST',json={'story':'Original'}):
    response,status=main.holdings_media_direct_api('generate');self.assertEqual(status,403)
