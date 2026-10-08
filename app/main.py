@@ -1939,6 +1939,9 @@ def holdings_media_direct_api(operation):
                 d=holdings.read(scope);identity=identity_center.ensure(d)
                 action=identity_center.queue(identity,'DRAMACLAW','CONFIGURE','Falta credencial del gateway de generación',None,[cap['service'],cap['variable'],cap['where_configure'],cap['where_obtain'],'CONTINUAR verifica configuración; no genera contenido'])
                 action.update(status='DONE' if cap['configured'] else 'ACTION_REQUIRED')
+                storage=cap.get('media_storage') or {}
+                storage_action=identity_center.queue(identity,'CLOUDINARY','CONFIGURE','Relay temporal de referencias sin configurar','https://cloudinary.com/users/register/free',['Usar zaragente031@gmail.com; completar signup/consentimiento personalmente si no existe cuenta.','DramaClaw Settings → Media Storage → Cloudinary','Guardar Cloud Name, API Key y API Secret únicamente en settings.db de dramaclaw-api.','CONTINUAR consulta configuración real; no sube contenido ni concede accesos.'])
+                storage_action.update(status='DONE' if storage.get('configured') and storage.get('provider')=='cloudinary' else 'ACTION_REQUIRED')
                 holdings.write(scope,d)
             result=cap
         elif operation=='readiness':
@@ -4434,9 +4437,11 @@ def _process_chat_message(msg):
             _remember_turn('user',msg);_remember_turn('assistant',reply);return reply
     if proposed and not has_pending and (len(proposed['subtasks'])>1 or proposed['subtasks'][0]['kind']!='READ_MAIL'):
         task=semantic_tasks.create(_user_scope_id(),msg)
-        _launch_semantic_task(_user_scope_id(),task['id'],{})
+        if not task.get('external_actions'):
+            semantic_tasks.confirm_plan(_user_scope_id(),task['id'])
+            _launch_semantic_task(_user_scope_id(),task['id'],{})
         labels={'RESEARCH':'Investigar con fuentes','CREATE_REPORT':'Crear el informe','RESOLVE_CONTACT':'Identificar destinatario','DRAFT_EMAIL':'Preparar email','ATTACH_ARTIFACT':'Adjuntar el archivo','SEND_EMAIL':'Enviar después de revisar'}
-        reply='He preparado esta tarea:\n'+'\n'.join(str(i+1)+'. '+labels.get(s['kind'],s['kind']) for i,s in enumerate(task['subtasks']))+'\n\n[Abrir tarea y continuar](/?task='+task['id']+')'
+        reply=('PLAN PROPUESTO' if task.get('external_actions') else 'TAREA EN CURSO')+'\n'+'\n'.join(str(i+1)+'. '+labels.get(s['kind'],s['kind']) for i,s in enumerate(task['subtasks']))+'\n\n[Ver plan ZAR](/?task='+task['id']+')'
         _remember_turn('user',msg);_remember_turn('assistant',reply);return reply
     low = (msg or "").strip().lower()
     # UI confirmation buttons use explicit internal decisions. They are mapped
@@ -5851,8 +5856,27 @@ def semantic_task_action_api(identifier,action):
     scope=_user_scope_id();data=request.get_json(silent=True) or {}
     try:
         task=semantic_tasks.get(scope,identifier)
+        if action=='confirm-plan':
+            semantic_tasks.confirm_plan(scope,identifier)
+            _launch_semantic_task(scope,identifier,{})
+            return jsonify(ok=True,task=semantic_tasks.get(scope,identifier))
+        if action=='cancel':return jsonify(ok=True,task=semantic_tasks.cancel_plan(scope,identifier))
+        if action=='draft':
+            if task['status']=='RUNNING' or task.get('outputs',{}).get('SEND_EMAIL'):raise ValueError('El borrador ya no es editable.')
+            draft=task.get('outputs',{}).get('DRAFT_EMAIL')
+            if not draft:raise ValueError('Todavía no hay email preparado.')
+            address=str(data.get('to','')).strip()
+            if not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+',address):raise ValueError('Email válido requerido.')
+            draft.update(to=address,subject=str(data.get('subject',''))[:200],body=str(data.get('body',''))[:100000])
+            semantic_tasks.save(scope,task)
+            return jsonify(ok=True,task=task)
+        if action=='export':
+            research=task.get('outputs',{}).get('RESEARCH') or {}
+            if not research.get('text'):raise ValueError('El informe aún no tiene contenido verificado.')
+            return jsonify(ok=True,result=artifact_engine.create(task['topic'],research['text'],data.get('format'),research.get('sources'),task['id']))
         if action=='workspace':return jsonify(ok=True,result=artifact_engine.workspace_export(task['outputs']['CREATE_REPORT']['artifact_id'],data.get('target'),data.get('confirmed')))
         if action!='run':raise ValueError('Acción de tarea no soportada.')
+        if task.get('plan_confirmed') is False and task.get('external_actions'):raise ValueError('Confirma primero el plan; todavía no se autoriza el envío.')
         _launch_semantic_task(scope,identifier,data)
         return jsonify(ok=True,task=semantic_tasks.get(scope,identifier))
     except (ValueError,KeyError) as exc:return jsonify(ok=False,error=str(exc)),409

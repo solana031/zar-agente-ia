@@ -26,6 +26,20 @@ def _key():
 def status():
     return {"configured": bool(_key()), "state": "CONFIGURED_UNVERIFIED" if _key() else "NOT_CONFIGURED", "provider": "TypeSafe Jev" if _key() else "ZAR deterministic fallback", "model": MODEL, "base": BASE, "execution_authority": False}
 
+def evaluate(scope_id, context):
+    """Typed server policy judgment. It never grants execution authority."""
+    from . import holdings
+    import uuid
+    action=str(context.get('action') or '')
+    denied=action in {'TRADING_LIVE','LIVE_TRADE'} or bool(holdings.read(scope_id).get('global_stop'))
+    external=action in {'SEND_EMAIL','MEDIA_PUBLISH','BUY_DOMAIN','PAYMENT'}
+    decision='DENY' if denied else 'CONFIRM' if external else 'ALLOW'
+    row={'id':uuid.uuid4().hex,'timestamp':holdings._now(),'task_id':context.get('task_id'),'requesting_agent':context.get('agent','TaskOrchestrator'),'decision':decision,'subsequent_state':'PENDING',
+         'output':{'decision':decision,'confidence':1.0,'risk':'HIGH' if external or denied else 'LOW','risk_score':1 if denied else .7 if external else .1,'reason':'STOP GLOBAL o Live bloqueado.' if denied else 'Requiere revisión y confirmación separada.' if external else 'Paso interno autorizado por el plan.','reasoning':'Política aplicada por el servidor.','cost':context.get('cost'),'policy':'ZAR_SERVER_POLICY','constraints':['EXPLICIT_CONFIRMATION'] if external else [],'execution_authority':False,'source':'ZAR policy','provider_state':'LOCAL'}}
+    with holdings.transaction(scope_id):
+        state=holdings.read(scope_id);state.setdefault('jev_decisions',[]).append(row);holdings.write(scope_id,state)
+    return dict(row['output'],id=row['id'],timestamp=row['timestamp'])
+
 
 def _validated(data, questions):
     if not isinstance(data, dict) or not isinstance(data.get('answers'), dict):

@@ -269,12 +269,13 @@ def operate(scope,action,data):
             if a['status']=='DONE':return deepcopy(a)
             service=a['service'];plan_id=a.get('plan_id')
         if service=='GOOGLE':return verify_google(scope)
-        if service=='DRAMACLAW':
+        if service in {'DRAMACLAW','CLOUDINARY'}:
             from . import media_company
             result=media_company._client().capabilities()
             with holdings.transaction(scope):
                 d=holdings.read(scope);s=ensure(d);a=next(x for x in s['human_actions'] if x['id']==data['id'])
-                a.update(status='DONE' if result['configured'] else 'ACTION_REQUIRED',last_checked=holdings._now())
+                configured=result['configured'] if service=='DRAMACLAW' else (result.get('media_storage') or {}).get('configured') and (result.get('media_storage') or {}).get('provider')=='cloudinary'
+                a.update(status='DONE' if configured else 'ACTION_REQUIRED',last_checked=holdings._now())
                 holdings.write(scope,d)
             return deepcopy(a)
         from .business_workflows import operate as workflow

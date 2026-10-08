@@ -119,6 +119,7 @@ class DramaClawClient:
                 'where_configure': 'DramaClaw editor → Model Gateway' if ce else 'Railway → dramaclaw-api → Variables',
                 'where_obtain': 'https://relayclaw.cdnfg.com' if source in {'official','hybrid','environment'} else 'Portal del gateway personalizado seleccionado',
                 'verify': '/api/v1/model-gateway/config',
+                'media_storage': {'provider': (gateway.get('mediaRelay') or {}).get('provider'), 'configured': (gateway.get('mediaRelay') or {}).get('configured') is True, 'source': (gateway.get('mediaRelay') or {}).get('source')},
                 'dependencies': [{'name': name, 'status': 'CONFIGURED_UNVERIFIED' if configured else 'POR CONFIGURAR'} for name in ('SCRIPT', 'CHARACTERS', 'IMAGE GENERATION', 'VIDEO GENERATION')]
                     + [{'name': 'VOICE PROVIDER', 'status': 'UNVERIFIED'}, {'name': 'FFMPEG', 'status': 'UNVERIFIED'}]}
 

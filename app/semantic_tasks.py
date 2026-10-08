@@ -6,9 +6,10 @@ BOOT_ID=secrets.token_hex(12)
 
 def plan(message):
     text=str(message or '').strip();low=text.casefold()
-    research=bool(re.search(r'\b(investiga(?:r)?|investigación|analiza|compara|averigua|busca (?:ayudas|informaci[oó]n))\b',low))
+    research=bool(re.search(r'\b(investiga(?:r)?|investigación|analiza|compara|averigua|busca (?:ayudas|informaci[oó]n)|estudio|investigaci[oó]n)\b',low))
     report=bool(re.search(r'\b(haz(?:me)?|crea|prepara|genera|redacta|mete|pon)\b.{0,55}\b(informe|documento|presentaci[oó]n|hoja|presupuesto|tabla)\b',low))
-    send=bool(re.search(r'\b(env[ií]a(?:selo|lo|le|me)?|m[aá]nda(?:selo|sela|lo|le)?|enviar)\b',low))
+    send=bool(re.search(r'\b(env[ií]a(?:selo|sela|melo|mela|lo|le|me)?|m[aá]nda(?:selo|sela|melo|mela|lo|le|me)?|enviar)\b',low))
+    if research and send:report=True
     resolve=bool(re.search(r'\b(correo|email|direcci[oó]n)\s+de\s+\w',low))
     attach=bool(re.search(r'\b(adjunta(?:r)?|usa el documento|a[nñ]ade las fotos)\b',low))
     draft=bool(re.search(r'\b(redacta|prepara|escribe|hazme|haz)\b.{0,30}\b(correo|email|mensaje)\b',low))
@@ -20,6 +21,7 @@ def plan(message):
         contact_match=re.search(r'(?:correo\s+de|email\s+de|env[ií]a\w*\s+a|manda\w*\s+a|m[aá]ndaselo\s+a)\s+([^,;.!?]+)',text,re.I)
     explicit=re.search(r'[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}',text)
     contact=explicit.group() if explicit else contact_match.group(1).strip(' .;,') if contact_match else None
+    if re.search(r'\bmi (?:propio )?(?:email|correo)\b',low):contact='SELF'
     if contact:contact=re.sub(r'\s+por\s+(?:email|correo).*$', '',contact,flags=re.I).strip()
     topic=re.sub(r'^(investiga|analiza|compara|averigua)\s+','',text,flags=re.I)
     topic=re.split(r'[,;]|\by después\b|\bdespués\b|\by (?:haz|crea|prepara|envía|manda)',topic,flags=re.I)[0].strip()
@@ -41,7 +43,7 @@ def create(scope,message):
     from .semantic_planner import build
     task=build(scope,message,plan)
     if not task:raise ValueError('No se ha identificado una tarea estructurada; especifica verbo y objetivo.')
-    task.update(id=secrets.token_hex(12),created_at=holdings._now(),updated_at=holdings._now(),current_step=None,outputs={},errors=[])
+    task.update(id=secrets.token_hex(12),created_at=holdings._now(),updated_at=holdings._now(),current_step=None,outputs={},errors=[],plan_confirmed=False)
     with holdings.transaction(scope):
         d=holdings.read(scope);d.setdefault('semantic_tasks',[]).append(task);holdings.write(scope,d)
     return deepcopy(task)
@@ -66,6 +68,21 @@ def save(scope,task):
             elif agent and task['id'] in agent.get('current_tasks',[]):agent.update(state='IDLE',current_tasks=[],last_heartbeat=holdings._now())
         holdings.write(scope,d)
 
+def confirm_plan(scope,identifier):
+    with holdings.transaction(scope):
+        task=get(scope,identifier)
+        if task['status']=='CANCELLED':raise ValueError('El plan está cancelado.')
+        task.update(plan_confirmed=True,plan_confirmed_at=holdings._now())
+        save(scope,task)
+    return task
+
+def cancel_plan(scope,identifier):
+    with holdings.transaction(scope):
+        task=get(scope,identifier)
+        if task['status']=='RUNNING':raise ValueError('La tarea está ejecutándose; no se ocultará una operación en curso.')
+        task['status']='CANCELLED';save(scope,task)
+    return task
+
 def run(scope,identifier,confirmed=False,selected_email=None,selected_artifact_id=None):
     from . import web_search,artifact_engine,contact_resolver,identity_mail
     from .file_store import FileStore
@@ -73,6 +90,9 @@ def run(scope,identifier,confirmed=False,selected_email=None,selected_artifact_i
     # A persistent RUNNING/ambiguous step is never silently repeated after restart.
     with holdings.transaction(scope):
         task=get(scope,identifier)
+        if task['status']=='CANCELLED':return task
+        if task.get('plan_confirmed') is False and task.get('external_actions'):
+            raise ValueError('Confirma primero el plan; esta confirmación no autoriza el envío.')
         if task['status']=='RUNNING' and task.get('runner_boot')==BOOT_ID:return task
         if task.get('runner_boot')!=BOOT_ID:
             for step in task['subtasks']:
@@ -87,6 +107,9 @@ def run(scope,identifier,confirmed=False,selected_email=None,selected_artifact_i
         try:
             kind=step['kind'];output=None
             if holdings.read(scope).get('global_stop'):raise ValueError('STOP GLOBAL activo; tarea conservada.')
+            from .jev_decision import evaluate
+            judgment=evaluate(scope,{'action':kind,'agent':{'RESEARCH':'ResearchAgent','CREATE_REPORT':'ReportAgent','SEND_EMAIL':'CommunicationAgent'}.get(kind,'TaskOrchestrator'),'task_id':task['id']})
+            if judgment['decision']=='DENY':raise ValueError(judgment['reason'])
             if kind=='RESOLVE_REFERENCE':
                 from .semantic_planner import resolve_reference
                 output=resolve_reference(scope,task,selected_artifact_id)
@@ -107,6 +130,11 @@ def run(scope,identifier,confirmed=False,selected_email=None,selected_artifact_i
                 output=artifact_engine.create(task['topic'],content,task['format'],research.get('sources'),task['id'],template=template)
             elif kind=='RESOLVE_CONTACT':
                 name=task['entities'].get('recipient')
+                if name=='SELF':
+                    from flask import session
+                    name=session.get('google_account_email')
+                    if not name:
+                        task['status']='WAITING';step.update(status='WAITING',error='La sesión no acredita un email principal; conecta tu cuenta Google.');save(scope,task);return task
                 if name and re.fullmatch(r'[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}',name):output={'status':'RESOLVED','contact':{'contact_id':None,'display_name':name,'emails':[name],'phones':[],'aliases':[],'source':'USER_EXPLICIT_EMAIL','confidence':1}}
                 else:output=contact_resolver.resolve(scope,name)
                 if selected_email:
@@ -135,6 +163,8 @@ def run(scope,identifier,confirmed=False,selected_email=None,selected_artifact_i
                 for fid in draft['artifact_ids']:FileStore().metadata(fid,associated_contacts=[contact.get('contact_id') or draft['to']])
             elif kind=='READ_MAIL':output=identity_mail.operate(scope,'inbox',{})
             else:raise ValueError('Paso no soportado.')
+            from .jev_decision import decision_state
+            decision_state(scope,judgment['id'],'DONE')
             step.update(status='DONE',outputs=output);task['outputs'][kind]=output;save(scope,task)
         except Exception as exc:
             step.update(status='ERROR',error=str(exc));task.update(status='ERROR');task['errors'].append(str(exc));save(scope,task);return task

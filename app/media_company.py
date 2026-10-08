@@ -108,6 +108,8 @@ def _read(scope_id, task_id):
 
 
 def _save(scope_id, task_id, record):
+    from .relayclaw_cost_tracker import RelayClawCostTracker
+    record['costs']=RelayClawCostTracker.record(task_id,record)
     cp = record.get('checkpoint') or {}
     status = record.get('status')
     stage = cp.get('stage')
@@ -163,6 +165,8 @@ def _result(task, record):
     index = STAGES.index(stage) if stage in STAGES else 0
     result['pipeline'] = [{'stage': name, 'status': 'READY' if i < index or cp.get('status') == 'done' else 'FAILED' if i == index and cp.get('status') == 'blocked' else 'RUNNING' if i == index and record.get('status') == 'PRODUCING' else 'PENDING'} for i, name in enumerate(STAGES) if name != 'done']
     result['diagnostic'] = {'provider': 'DramaClawAPI' if 'DramaClawAPI' in str(cp.get('error')) else 'DramaClaw', 'stage': stage, 'error': cp.get('error'), 'missing_requirement': 'Model Gateway credential (dramaclaw-api)' if 'credenciales' in str(cp.get('error')) else None}
+    if 'insufficient_user_quota' in str(cp.get('error')):
+        result['diagnostic'].update(provider='RelayClaw',missing_requirement='Saldo de cuenta RelayClaw',action_required='Activar crédito personalmente; no repetir generación sin saldo.')
     if record.get("artifact"):
         result['file_size'] = record.get('file_size')
         result["preview_url"] = "/api/holdings/media/video/" + task["id"]

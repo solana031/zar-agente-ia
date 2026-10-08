@@ -66,6 +66,7 @@ def build(scope,message,fallback,allow_model=True):
                 base['planning_engine']='VALIDATED_SEMANTIC_MODEL'
             except Exception:
                 base['planning_note']='Modelo no confirmó un plan válido; se conserva el plan contextual y sus ambigüedades.'
+    if re.search(r'\bmi (?:propio )?(?:email|correo)\b',text):base['entities']['recipient']='SELF'
     kinds=[s['kind'] for s in base['subtasks']]
     ids={kind:str(i+1) for i,kind in enumerate(kinds)}
     dependencies={'CREATE_REPORT':['RESEARCH','RESOLVE_REFERENCE'],'DRAFT_EMAIL':['CREATE_REPORT','RESOLVE_REFERENCE','RESOLVE_CONTACT'],'ATTACH_ARTIFACT':['CREATE_REPORT','RESOLVE_REFERENCE','DRAFT_EMAIL'],'SEND_EMAIL':['DRAFT_EMAIL','ATTACH_ARTIFACT','RESOLVE_CONTACT']}
