@@ -12,7 +12,7 @@
   return {...j,agents,edges};
  }
  function controls(){const tools=document.querySelector('.zoToolbar');if(!tools||tools.querySelector('[data-cluster-controls]'))return;const box=document.createElement('span');box.dataset.clusterControls='';for(const name of [...domains,'Commerce','Agency','Media','Automaton','Sites']){const b=document.createElement('button');b.className='zoBtn';b.dataset.cluster=name;b.onclick=()=>{collapsed.has(name)?collapsed.delete(name):collapsed.add(name);window.zoPersistClusters?.();if(window.__zoState)window.zoRender(window.__zoState);update();};box.append(b);}tools.append(box);update();}
- function update(){document.querySelectorAll('[data-cluster]').forEach(b=>{b.textContent=(collapsed.has(b.dataset.cluster)?'EXPAND ':'COLLAPSE ')+b.dataset.cluster;b.setAttribute('aria-expanded',String(!collapsed.has(b.dataset.cluster)));});}
+ function update(){document.querySelectorAll('[data-cluster]').forEach(b=>{b.textContent=(collapsed.has(b.dataset.cluster)?'EXPAND ':'COLLAPSE ')+b.dataset.cluster;b.disabled=!window.zoViewState?.().loaded;b.setAttribute('aria-expanded',String(!collapsed.has(b.dataset.cluster)));});}
  window.ZarClusters={project,restore:rows=>{collapsed=new Set((rows||[]).filter(x=>[...domains,'Commerce','Agency','Media','Automaton','Sites'].includes(x)));update();},state:()=>[...collapsed],controls};
  new MutationObserver(controls).observe(document.body,{childList:true,subtree:true});controls();
 })();

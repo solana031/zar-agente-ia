@@ -46,6 +46,16 @@ class Release3311(base['Release3310']):
   from app.social_publish import publishing_readiness
   with patch.dict(base['os'].environ,{'TIKTOK_ACCESS_TOKEN':'','INSTAGRAM_ACCESS_TOKEN':'','INSTAGRAM_IG_USER_ID':''}):
    self.assertFalse(publishing_readiness('instagram')['connected']);self.assertFalse(publishing_readiness('tiktok')['connected'])
+ def test_oauth_never_accumulates_incompatible_youtube_grants(self):
+  from app import cloud_auth
+  from urllib.parse import parse_qs,urlsplit
+  previous=Mock();previous.scopes=cloud_auth.SERVICE_SCOPES['core']+cloud_auth.SERVICE_SCOPES['youtube']+cloud_auth.SERVICE_SCOPES['docs']
+  with patch.object(cloud_auth,'_oauth_client',return_value=('fixture','fixture')),patch.object(cloud_auth,'get_credentials',return_value=previous):
+   for service in ('core','docs','youtube'):
+    url,_,_=cloud_auth.authorization_url(service=service)
+    params=parse_qs(urlsplit(url).query);self.assertEqual(params['include_granted_scopes'],['false'])
+    if service=='youtube':self.assertNotIn('drive.file',params['scope'][0])
+    else:self.assertNotIn('/youtube',params['scope'][0]);self.assertIn('/documents',params['scope'][0])
 if __name__=='__main__':
  try:result=unittest.TextTestRunner().run(unittest.defaultTestLoader.loadTestsFromTestCase(Release3311))
  finally:base['env'].stop();base['shutil'].rmtree(base['temp'])

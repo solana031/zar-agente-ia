@@ -199,16 +199,26 @@ def authorization_url(force=False, redirect_uri=None, service=None, expected_ema
     code_challenge = base64.urlsafe_b64encode(digest).rstrip(b'=').decode('ascii')
     state = secrets.token_urlsafe(32)
 
+    requested_scopes = (['openid','email']+SERVICE_SCOPES[service]) if service else list(SCOPES)
+    if service != 'youtube':
+        previous = get_credentials(auto_refresh=False)
+        allowed = set(SCOPES + CORE_SCOPES + [s for name, values in SERVICE_SCOPES.items() if name != 'youtube' for s in values])
+        if previous:
+            requested_scopes = list(dict.fromkeys(requested_scopes + [s for s in (previous.scopes or []) if s in allowed and '/youtube' not in s]))
+
     params = {
         'client_id': client_id,
         'redirect_uri': redirect,
         'response_type': 'code',
-        'scope': ' '.join((['openid','email']+SERVICE_SCOPES[service]) if service else SCOPES),
+        'scope': ' '.join(requested_scopes),
         'state': state,
         'access_type': 'offline',
         'code_challenge': code_challenge,
         'code_challenge_method': 'S256',
-        'include_granted_scopes': 'false' if service=='youtube' else 'true',
+        # Google rejects drive.file + YouTube grants, including implicit accumulation.
+        # Workspace scopes may accumulate only the grants already stored in its
+        # own credential file; YouTube remains in its separate credential file.
+        'include_granted_scopes': 'false',
     }
     if force:
         params['prompt'] = 'consent select_account'

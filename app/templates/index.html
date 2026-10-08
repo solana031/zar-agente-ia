@@ -6288,8 +6288,10 @@ window.zoRender=function(j){
   const projectedAgents=j.agents||[];
   const agents=zoSection==='all'?projectedAgents:projectedAgents.filter(a=>a.domain===zoSection||a.id==='zar_supervisor'||a.id==='stonks_supervisor');
   const layout=window.zoLayout(agents), pos=layout.pos;
-  ZO_SCENE_W=layout.width;
-  ZO_SCENE_H=layout.height;
+  const currentViewport=document.getElementById('zoViewport');
+  // Keep enough scene area for the user's existing pan when clusters shrink.
+  ZO_SCENE_W=Math.max(layout.width,((currentViewport?.scrollLeft||0)+(currentViewport?.clientWidth||0))/zoScale+40);
+  ZO_SCENE_H=Math.max(layout.height,((currentViewport?.scrollTop||0)+(currentViewport?.clientHeight||0))/zoScale+40);
   window.zoUpdateZoom();
   if(zoAutoFit){zoAutoFit=false;requestAnimationFrame(()=>window.zoFitAll());}
   stats.innerHTML=`<div class="zoStat"><small>Subagentes registrados</small><b>${agents.length}</b></div><div class="zoStat"><small>Router local</small><b>${j.router_token_cost||0} tokens</b></div><div class="zoStat"><small>Stonks</small><b>Phase ${j.stonks_phase||'—'} · Paper</b></div><div class="zoStat"><small>Actividad reciente</small><b>${j.active_count||0} eventos</b></div>`;

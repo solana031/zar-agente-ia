@@ -1,6 +1,7 @@
 // Reuse the focused regression harness and add cluster/SRT surface checks.
 const fs=require('node:fs'),Module=require('node:module');
 let source=fs.readFileSync(__dirname+'/release-3310-ui.cjs','utf8');
+source=source.replace("if(path==='/api/holdings/orchestration')","if(path==='/api/subagents/view')return route.fulfill({json:{ok:true,csrf:'fixture',view:{zoom:.7,pan_x:0,pan_y:0,collapsed:[]}}});if(path==='/api/holdings/orchestration')");
 const checks=`
  await page.getByRole('button',{name:'COLLAPSE Media',exact:true}).waitFor();
  const graph={agents:[{id:'zar_supervisor',name:'ZAR',domain:'core'},{id:'MediaOrchestrator',name:'Media',domain:'media'},{id:'child1',name:'Visual',domain:'media',status:'RUNNING'},{id:'child2',name:'Audio',domain:'media',status:'FAILED'},{id:'outside',name:'Shop',domain:'commerce'}],edges:[['zar_supervisor','MediaOrchestrator'],['MediaOrchestrator','child1'],['child1','outside']]};
