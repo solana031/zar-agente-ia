@@ -343,6 +343,7 @@ def google_web_search(query, instructions=""):
             if s["url"] in seen:
                 continue
             seen.add(s["url"]); unique_sources.append(s)
+        if not unique_sources:return _fallback_web_search(query,instructions)
         if unique_sources:
             cited += "\n\n**Fuentes**\n" + "\n".join(
                 f"- [{s['title']}]({s['url']})" for s in unique_sources[:10]
