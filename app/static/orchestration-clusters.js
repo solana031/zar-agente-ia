@@ -1,7 +1,7 @@
 /* Graph projection only: never creates agents or inferred edges. */
 (()=>{
  const domains=['BUSINESS','INTELLIGENCE','IDENTITY','TRADING'];
- const group=a=>a.domain==='finance'?'TRADING':/semantic|research|artifact|jev|report|spreadsheet|presentation|chart/i.test(a.id+' '+a.name+' '+a.domain)?'INTELLIGENCE':/identity|google|gmail|mail|social|contact|account|provision/i.test(a.id+' '+a.name+' '+a.domain)?'IDENTITY':'BUSINESS';
+ const group=a=>a.domain==='finance'?'TRADING':/semantic|sourceverif|research|artifact|jev|report|spreadsheet|presentation|chart/i.test(a.id+' '+a.name+' '+a.domain)?'INTELLIGENCE':/identity|google|gmail|mail|social|contact|account|provision/i.test(a.id+' '+a.name+' '+a.domain)?'IDENTITY':'BUSINESS';
  const sub=a=>({commerce:'Commerce',web_agency:'Agency',media:'Media',sites:'Sites',finance:'Automaton'})[a.domain];
  let collapsed=new Set();
  function project(j){

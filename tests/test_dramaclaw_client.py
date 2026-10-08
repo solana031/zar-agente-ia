@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 from urllib.parse import urlsplit
 
 import requests
@@ -165,6 +166,22 @@ class PipelineAPI:
 
 
 class ClientTests(unittest.TestCase):
+    def test_scene_cap_blocks_before_visual_submission(self):
+        client=self.client(ScriptedSession([]))
+        cp={'stage':'script','project_id':'p1','max_scenes':2}
+        with patch.object(client,'_evidence',return_value=True),patch.object(client,'_beats',return_value=[{}, {}, {}]):
+            result=client.advance(cp,'brief',self.persist)
+        self.assertEqual(result['error_code'],'scene_limit_exceeded')
+        self.assertEqual(result['scene_count'],3)
+        self.assertFalse(client.session.calls)
+
+    def test_scene_cap_checks_script_before_portraits(self):
+        client=self.client(ScriptedSession([]))
+        cp={'stage':'portraits','project_id':'p1','max_scenes':2}
+        result=client.advance(cp,'brief',self.persist)
+        self.assertEqual(result['stage'],'script')
+        self.assertFalse(client.session.calls)
+
     def setUp(self):
         self.saved = []
 

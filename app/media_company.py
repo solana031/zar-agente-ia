@@ -231,7 +231,8 @@ def produce_local(scope_id, task_id):
         if project and not record.get('checkpoint'):
             record['checkpoint']={'project_config':{'spine_template':'narrated','narration_style':'third_person',
                 'aspect_ratio':project['format'],'add_subtitles':project['subtitles'],
-                'visual_style':project['visual_style'],'video_resolution':{'9:16':'720x1280','16:9':'1280x720','1:1':'720x720'}[project['format']]},'music':project['music']}
+                'visual_style':project['visual_style'],'video_resolution':{'9:16':'720x1280','16:9':'1280x720','1:1':'720x720'}[project['format']]},'music':project['music'],
+                'max_scenes':project.get('max_scenes')}
         if record.get("status") not in {"PRODUCED", "PUBLISHED", "PUBLISHING"}:
             record.update(status="PRODUCING", error=None)
             _save(scope_id, task_id, record)

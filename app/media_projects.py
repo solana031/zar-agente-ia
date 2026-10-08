@@ -24,11 +24,18 @@ def validate_options(data):
         raise ValueError('Duración objetivo entre 5 y 600 segundos.')
     for field in ('subtitles','music'):
         if field in data and not isinstance(data[field],bool): raise ValueError('Preferencia booleana requerida.')
+    max_scenes=data.get('max_scenes')
+    if max_scenes not in (None,''):
+        if isinstance(max_scenes,bool) or not str(max_scenes).isdigit() or not 1<=int(max_scenes)<=20:
+            raise ValueError('Máximo de escenas entre 1 y 20.')
+        max_scenes=int(max_scenes)
+    else:max_scenes=None
     return {'title':str(data.get('title') or '')[:150], 'language':str(data.get('language') or 'es')[:30],
         'visual_style':style,'format':fmt,'duration':duration,'subtitles':data.get('subtitles',True),
         'subtitle_language':str(data.get('subtitle_language') or data.get('language') or 'es')[:30],
         'subtitle_style':str(data.get('subtitle_style') or 'default')[:50], 'subtitle_position':'bottom',
-        'subtitle_size':24,'music':data.get('music',False), 'duration_is_target':True}
+        'subtitle_size':24,'music':data.get('music',False), 'duration_is_target':True,
+        'max_scenes':max_scenes}
 
 
 def trace(scope, task_id, record):

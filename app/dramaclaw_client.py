@@ -459,6 +459,8 @@ class DramaClawClient:
                     return self._next(cp, persist)
                 return self._submit(cp, persist, ep + "/identities/plan", task_type="identity_planner", episode=number)
             if stage == "portraits":
+                if cp.get('max_scenes') and not cp.get('scene_limit_checked'):
+                    return self._next(cp, persist, 'script')
                 for char in self._get(root + "/characters") or []:
                     if not char.get("portrait_url"):
                         name = char["name"]
@@ -482,6 +484,15 @@ class DramaClawClient:
                 return self._save(cp, persist)
             if stage == "script":
                 if self._evidence(cp, stage):
+                    if cp.get('max_scenes'):
+                        count=len(self._beats(cp))
+                        if count>int(cp['max_scenes']):
+                            cp['scene_count']=count
+                            return self._blocked(cp, persist, 'scene_limit_exceeded',
+                                'El guion contiene '+str(count)+' escenas y el máximo es '+str(cp['max_scenes'])+'. Ajusta el guion en DramaClaw; no se generan visuales ni se regenera automáticamente.')
+                        if not cp.get('scene_limit_checked'):
+                            cp['scene_limit_checked']=True
+                            return self._next(cp, persist, 'portraits')
                     return self._next(cp, persist)
                 return self._submit(cp, persist, ep + "/script/generate", task_type="script_writer", episode=number)
             if stage == "colors":
