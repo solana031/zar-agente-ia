@@ -38,7 +38,13 @@ def status():
     cached = _HEALTH.get(key)
     if not cached or time.monotonic() - cached[0] > 30:
         try:
-            check = _client().health()
+            client = _client()
+            check = client.health()
+            if check.get('ready'):
+                try:
+                    check['capabilities'] = client.capabilities()
+                except DramaClawError:
+                    check['capabilities'] = {'configured': False, 'provider': 'UNKNOWN', 'missing_requirement': 'Verificar configuración del gateway', 'service': 'dramaclaw-api'}
         except Exception:
             check = {"ready": False, "error": "DramaClaw no disponible; revisa URL, acceso y modelos."}
         _HEALTH.clear()
@@ -46,7 +52,7 @@ def status():
     check = _HEALTH[key][1]
     ready = bool(check.get("ready"))
     configured = bool(os.environ.get("DRAMACLAW_API_URL", "").strip())
-    return {"ready": ready, "label": "DramaClaw DIRECT · LISTO" if ready else "DramaClaw DIRECT · NO DISPONIBLE",
+    return {"ready": ready, "api_ready": ready, "generation_ready": False, "capabilities": check.get('capabilities', {}), "label": "DramaClaw CORE · LISTO · generación por verificar" if ready else "DramaClaw DIRECT · NO DISPONIBLE",
             "error": check.get("error") if not ready else None, "message": check.get("message"),
             "dramaclaw_direct_configured": configured, "dramaclaw_bridge_configured": configured,
             "direct_only": True, "visual_fallback": "desactivado", "attribution_required": True,
@@ -153,9 +159,15 @@ def _result(task, record):
               "rendered_at":record.get('rendered_at'),"renders":record.get('renders',[]),"publications":record.get('publications',[])}
     result.update(submission_state=('READY' if record.get('artifact') else 'UNKNOWN' if cp.get('error_code') in {'submission_unknown','task_missing','task_status'} else 'FAILED' if cp.get('status')=='blocked' else cp.get('submission_state') or 'PROCESSING'), editor_spec=record.get('editor_spec',{}), error_code=cp.get('error_code'), submission_error=cp.get('last_submission_error'),
                   submission_message=cp.get('submission_message'), active_tasks=cp.get('active_tasks') or ([cp['active_task']] if cp.get('active_task') else []))
+    from .dramaclaw_client import STAGES
+    index = STAGES.index(stage) if stage in STAGES else 0
+    result['pipeline'] = [{'stage': name, 'status': 'READY' if i < index or cp.get('status') == 'done' else 'FAILED' if i == index and cp.get('status') == 'blocked' else 'RUNNING' if i == index and record.get('status') == 'PRODUCING' else 'PENDING'} for i, name in enumerate(STAGES) if name != 'done']
+    result['diagnostic'] = {'provider': 'DramaClawAPI' if 'DramaClawAPI' in str(cp.get('error')) else 'DramaClaw', 'stage': stage, 'error': cp.get('error'), 'missing_requirement': 'Model Gateway credential (dramaclaw-api)' if 'credenciales' in str(cp.get('error')) else None}
     if record.get("artifact"):
+        result['file_size'] = record.get('file_size')
         result["preview_url"] = "/api/holdings/media/video/" + task["id"]
         result["download_url"] = result["preview_url"]
+    if record.get('thumbnail'):result['thumbnail_url']='/api/holdings/media/thumbnail/'+task['id']
     if any(r.get("source")=="previous_revision" for r in record.get("renders",[])):
         result["previous_preview_url"]="/api/holdings/media/video/"+task["id"]+"?revision=previous"
     if record.get("publish"):
@@ -170,13 +182,17 @@ def _mirror(scope_id, task, record):
 
 
 def jobs(scope_id):
-    tasks = holdings.read(scope_id)["companies"]["media"].get("queue", [])
+    state = holdings.read(scope_id)
+    tasks = state["companies"]["media"].get("queue", [])
     for task in tasks:
         record = _read(scope_id, task["id"])
         if record:
             task.update(status=record.get("status", task["status"]), error=record.get("error"),
                         payload=record.get("payload", task.get("payload")), result=_result(task, record))
-    return {"ok": True, "tasks": tasks[-30:], "connector": status()}
+    connector = status()
+    caps = state.get('identity_center',{}).get('capabilities',{})
+    connector['publication_states'] = {name.lower(): 'CONNECTED' if caps.get(name,{}).get('status') == 'CONNECTED' else 'ACTION_REQUIRED' for name in ('YOUTUBE','INSTAGRAM','TIKTOK')}
+    return {"ok": True, "tasks": tasks[-30:], "connector": connector}
 
 
 def queue_story(scope_id, topic, goal="retención", platform="tiktok", *, options=None):
@@ -269,7 +285,7 @@ def process_one(scope_id):
                     artifact = _path(scope_id, task["id"]).with_suffix(".mp4")
                     if not artifact.exists():
                         client.download_final(cp, artifact)
-                    record.update(status="PRODUCED", artifact=artifact.name, error=None,rendered_at=holdings._now())
+                    record.update(status="PRODUCED", artifact=artifact.name, error=None,rendered_at=holdings._now(),file_size=artifact.stat().st_size)
                 elif cp.get("status") in {"error", "blocked"}:
                     record.update(status="ERROR", error=cp.get("error") or "DramaClaw requiere revisión en su editor.")
                 _save(scope_id, task["id"], record)

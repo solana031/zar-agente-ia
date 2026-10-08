@@ -54,12 +54,17 @@ def publishing_readiness(platform):
     result={'ok':True,'connected':connected,'privacy_options':[],'account':None}
     if not connected:return result
     if platform=='instagram':
-        result['account']=os.environ.get('INSTAGRAM_IG_USER_ID')
+        user=os.environ.get('INSTAGRAM_IG_USER_ID')
+        response=requests.get('https://graph.facebook.com/'+os.environ.get('META_GRAPH_VERSION','v24.0')+'/'+user,params={'fields':'id,username','access_token':os.environ['INSTAGRAM_ACCESS_TOKEN']},timeout=20,allow_redirects=False)
+        if not response.ok:raise ValueError('Instagram no confirmó identidad (HTTP '+str(response.status_code)+').')
+        data=response.json()
+        if data.get('id')!=user:raise ValueError('Instagram devolvió otra identidad.')
+        result.update(account=data.get('username'),account_id=data['id'],capabilities=['IDENTITY_VERIFIED'],publish_capability='UNVERIFIED')
         return result
     response=requests.post('https://open.tiktokapis.com/v2/post/publish/creator_info/query/',headers={'Authorization':'Bearer '+os.environ['TIKTOK_ACCESS_TOKEN']},json={},timeout=25,allow_redirects=False)
     if not response.ok:raise ValueError('TikTok no confirmó cuenta/opciones (HTTP '+str(response.status_code)+').')
     payload=response.json()
     if (payload.get('error') or {}).get('code') not in {None,'ok'}:raise ValueError('TikTok requiere revisar la conexión de la cuenta.')
     data=payload.get('data') or {}
-    result.update(account=data.get('creator_nickname'),privacy_options=[v for v in data.get('privacy_level_options',[]) if v in {'PUBLIC_TO_EVERYONE','MUTUAL_FOLLOW_FRIENDS','FOLLOWER_OF_CREATOR','SELF_ONLY'}])
+    result.update(account=data.get('creator_nickname'),account_id=data.get('creator_username'),max_video_post_duration_sec=data.get('max_video_post_duration_sec'),capabilities=['CREATOR_INFO_VERIFIED'],privacy_options=[v for v in data.get('privacy_level_options',[]) if v in {'PUBLIC_TO_EVERYONE','MUTUAL_FOLLOW_FRIENDS','FOLLOWER_OF_CREATOR','SELF_ONLY'}])
     return result

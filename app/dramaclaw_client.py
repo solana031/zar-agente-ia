@@ -103,6 +103,25 @@ class DramaClawClient:
         except DramaClawError as exc:
             return {"ready": False, "status": "error", "code": exc.code, "error": str(exc), "message": str(exc)}
 
+    def capabilities(self):
+        """Read-only configuration evidence. Never return key previews or provider bodies."""
+        runtime = self._get('/config', timeout=3) or {}
+        gateway = self._get('/model-gateway/config', timeout=3) or {}
+        effective = gateway.get('effective') or {}
+        source = effective.get('source')
+        configured = effective.get('configured') is True
+        ce = runtime.get('edition') == 'ce'
+        variable = 'official_newapi_api_key' if ce and source != 'custom' else 'custom_newapi_api_key' if ce else 'NEWAPI_API_KEY'
+        return {'provider': 'DramaClawAPI' if source in {'official', 'hybrid', 'environment'} else 'Custom NewAPI' if source == 'custom' else 'UNKNOWN',
+                'edition': runtime.get('edition'), 'configured': configured, 'credential_source': 'settings.db' if ce else 'environment',
+                'missing_requirement': None if configured else variable,
+                'service': 'dramaclaw-api', 'variable': variable,
+                'where_configure': 'DramaClaw editor → Model Gateway' if ce else 'Railway → dramaclaw-api → Variables',
+                'where_obtain': 'https://relayclaw.cdnfg.com' if source in {'official','hybrid','environment'} else 'Portal del gateway personalizado seleccionado',
+                'verify': '/api/v1/model-gateway/config',
+                'dependencies': [{'name': name, 'status': 'CONFIGURED_UNVERIFIED' if configured else 'POR CONFIGURAR'} for name in ('SCRIPT', 'CHARACTERS', 'IMAGE GENERATION', 'VIDEO GENERATION')]
+                    + [{'name': 'VOICE PROVIDER', 'status': 'UNVERIFIED'}, {'name': 'FFMPEG', 'status': 'UNVERIFIED'}]}
+
     @staticmethod
     def _brief_bytes(brief):
         text = brief if isinstance(brief, str) else json.dumps(brief, ensure_ascii=False, sort_keys=True, indent=2)

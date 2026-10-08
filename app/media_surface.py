@@ -54,3 +54,62 @@ def pause(scope, task_id):
         record.update(status='PAUSED',error='Avance ZAR pausado. Las tareas ya aceptadas por DramaClaw pueden continuar; reintentar consulta los mismos IDs.')
         media._save(scope,task_id,record);media._mirror(scope,task,record)
     return {'ok':True,'status':'PAUSED','task_id':task_id}
+
+def retry_stage(scope, task_id):
+    """Explicit retry of a definitively failed stage; preserve earlier outputs and IDs."""
+    task=media._task(scope,task_id)
+    if holdings.read(scope).get('global_stop'):raise ValueError('STOP GLOBAL activo; reanúdalo antes de producir.')
+    with media._job_lock(scope,task_id) as locked:
+        if not locked: raise ValueError('Etapa activa; espera antes de reintentar.')
+        record=media._read(scope,task_id);cp=record.get('checkpoint') or {}
+        if cp.get('pending') or cp.get('active_tasks'): raise ValueError('Resuelve el envío pendiente antes de reintentar; no se duplicará.')
+        active=cp.get('active_task')
+        if not active or active.get('status') not in {'failed','cancelled'}: raise ValueError('Solo se puede reintentar una etapa con fallo confirmado.')
+        capabilities=media._client().capabilities()
+        if not capabilities.get('configured'): raise ValueError('ACTION_REQUIRED: configura Model Gateway en dramaclaw-api antes de reintentar.')
+        record.setdefault('history',[]).append(json.loads(json.dumps(cp)))
+        cp.pop('active_task');cp.pop('error',None);cp.pop('error_code',None)
+        cp.update(status='running',submission_state='PROCESSING')
+        record.update(status='PRODUCING',error=None)
+        media._save(scope,task_id,record);media._mirror(scope,task,record)
+        holdings.set_company_state(scope,'media','start')
+    return {'ok':True,'task_id':task_id,'stage':cp['stage'],'status':'PRODUCING'}
+
+def subtitles(scope, data):
+    task_id=data.get('task_id');task=media._task(scope,task_id)
+    with media._job_lock(scope,task_id) as locked:
+        if not locked: raise ValueError('Producción activa; espera antes de editar subtítulos.')
+        record=media._read(scope,task_id)
+        text=data.get('text')
+        if text is None:
+            client=media._client();cp=record.get('checkpoint') or {}
+            if not cp.get('project_id'): raise ValueError('Sin proyecto con subtítulos disponibles.')
+            response=client.session.get(client.base_url+'/api/v1'+client._episode(cp)+'/export/srt',headers=client.headers,timeout=(5,20),allow_redirects=False)
+            if not response.ok or 'json' in response.headers.get('Content-Type',''): raise ValueError('DramaClaw todavía no confirmó SRT real.')
+            text=response.text
+        if not isinstance(text,str) or len(text)>500000 or not text.strip(): raise ValueError('SRT requerido, máximo 500.000 caracteres.')
+        import re
+        if not re.search(r'\d{2}:\d{2}:\d{2},\d{3} --> \d{2}:\d{2}:\d{2},\d{3}',text): raise ValueError('SRT sin marcas de tiempo válidas.')
+        path=media._path(scope,task_id).with_suffix('.srt');path.write_text(text,encoding='utf-8')
+        record['subtitles']={'style':'default','position':'bottom','size':24,**(record.get('subtitles') or {}),'text':text,'enabled':data.get('enabled',True) is True,'file':path.name,'source':'provider' if data.get('text') is None else 'edited','render_pending':True}
+        if data.get('text') is not None:record['needs_final_render']=True
+        record['review_approved']=False
+        media._save(scope,task_id,record);media._mirror(scope,task,record)
+    return {'ok':True,'url':'/api/holdings/media/subtitles/'+task_id,'render_pending':True}
+
+def thumbnail(scope, data):
+    """Capture a real frame from the scoped durable MP4; no provider generation."""
+    import math,shutil,subprocess
+    task_id=data.get('task_id');task=media._task(scope,task_id)
+    timestamp=float(data.get('timestamp',0))
+    if not math.isfinite(timestamp) or not 0<=timestamp<=600:raise ValueError('Tiempo del frame fuera de límites.')
+    binary=shutil.which('ffmpeg')
+    if not binary:raise ValueError('FFmpeg no disponible para extraer portada.')
+    with media._job_lock(scope,task_id) as locked:
+        if not locked:raise ValueError('Producción activa; espera antes de extraer portada.')
+        source=media.video_path(scope,task_id);path=media._path(scope,task_id).with_suffix('.jpg')
+        result=subprocess.run([binary,'-y','-ss',str(timestamp),'-i',str(source),'-frames:v','1','-update','1',str(path)],capture_output=True,timeout=30)
+        if result.returncode or not path.is_file():raise ValueError('No se pudo confirmar un frame real del vídeo.')
+        record=media._read(scope,task_id);record['thumbnail']={'file':path.name,'source':'video_frame','timestamp':timestamp,'created_at':holdings._now()}
+        media._save(scope,task_id,record);media._mirror(scope,task,record)
+    return {'ok':True,'url':'/api/holdings/media/thumbnail/'+task_id}

@@ -1929,12 +1929,28 @@ def holdings_media_direct_api(operation):
         elif operation=='edit': result=media_surface.edit(scope,data)
         elif operation=='pause': result=media_surface.pause(scope,data.get('task_id'))
         elif operation=='retry': result=media_company.produce_local(scope,data.get('task_id'))
+        elif operation=='retry_stage': result=media_surface.retry_stage(scope,data.get('task_id'))
+        elif operation=='subtitles': result=media_surface.subtitles(scope,data)
+        elif operation=='thumbnail': result=media_surface.thumbnail(scope,data)
+        elif operation=='configuration':
+            from . import identity_center
+            cap=media_company._client().capabilities()
+            with holdings.transaction(scope):
+                d=holdings.read(scope);identity=identity_center.ensure(d)
+                action=identity_center.queue(identity,'DRAMACLAW','CONFIGURE','Falta credencial del gateway de generación',None,[cap['service'],cap['variable'],cap['where_configure'],cap['where_obtain'],'CONTINUAR verifica configuración; no genera contenido'])
+                action.update(status='DONE' if cap['configured'] else 'ACTION_REQUIRED')
+                holdings.write(scope,d)
+            result=cap
         elif operation=='readiness':
             from .media_adapters import PublishingAdapter
             if data.get('platform')=='youtube':result=PublishingAdapter().prepare_youtube(scope,data.get('title') or 'Historia ZAR')
             else:
                 from .social_publish import publishing_readiness
                 result=publishing_readiness(data.get('platform'))
+                if not result.get('connected'):
+                    from . import identity_center
+                    if identity_center.ensure(holdings.read(scope))['google'].get('email'):
+                        identity_center.provider_plan(scope,data['platform'].upper())
         elif operation=='copy':
             task=media_company._task(scope,data.get('task_id'))
             from . import agent
@@ -1948,6 +1964,24 @@ def holdings_media_direct_api(operation):
         return jsonify(ok=True,result=result)
     except (ValueError,TypeError,KeyError) as exc:return jsonify(ok=False,error=str(exc)),409
     except Exception:return jsonify(ok=False,error='Proveedor no confirmó la operación. Se conserva el proyecto.'),409
+
+@app.get('/api/holdings/media/subtitles/<task_id>')
+def holdings_media_subtitles_api(task_id):
+    try:
+        scope=_user_scope_id();media_company._task(scope,task_id)
+        path=media_company._path(scope,task_id).with_suffix('.srt')
+        if not path.is_file():raise ValueError('SRT todavía no disponible.')
+        return send_file(path,mimetype='application/x-subrip',as_attachment=True,download_name=task_id+'.srt')
+    except ValueError as exc:return jsonify(ok=False,error=str(exc)),404
+
+@app.get('/api/holdings/media/thumbnail/<task_id>')
+def holdings_media_thumbnail_api(task_id):
+    try:
+        scope=_user_scope_id();media_company._task(scope,task_id)
+        path=media_company._path(scope,task_id).with_suffix('.jpg')
+        if not path.is_file():raise ValueError('Portada todavía no disponible.')
+        return send_file(path,mimetype='image/jpeg',conditional=True,max_age=0)
+    except ValueError as exc:return jsonify(ok=False,error=str(exc)),404
 
 @app.get('/api/holdings/media/video/<task_id>')
 def holdings_media_video_api(task_id):

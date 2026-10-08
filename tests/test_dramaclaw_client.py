@@ -171,6 +171,15 @@ class ClientTests(unittest.TestCase):
     def persist(self, cp):
         self.saved.append(copy.deepcopy(cp))
 
+    def test_capabilities_ce_never_leaks_keys_and_does_not_claim_generation(self):
+        session=ScriptedSession([('GET','/api/v1/config',ok({'edition':'ce'})),('GET','/api/v1/model-gateway/config',ok({'effective':{'source':'official','configured':False,'apiKeyPreview':'never-return'}}))])
+        result=self.client(session).capabilities()
+        self.assertEqual(result['missing_requirement'],'official_newapi_api_key')
+        self.assertEqual(result['credential_source'],'settings.db')
+        self.assertNotIn('never-return',json.dumps(result))
+        self.assertFalse(result['configured'])
+        self.assertTrue(all(row['status']!='LISTO' for row in result['dependencies']))
+
     def client(self, session, **kwargs):
         return DramaClawClient("https://api.example.test", session=session,
                                public_url="https://editor.example.test", **kwargs)

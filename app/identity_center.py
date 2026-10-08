@@ -108,8 +108,12 @@ def _probe(name,creds):
 def verify_google(scope,services=None):
     from . import cloud_auth
     s=ensure(holdings.read(scope));expected=s['google'].get('email')
-    if not expected:raise ValueError('Registra el email de la cuenta Google ya creada.')
     creds=cloud_auth.get_credentials(user_id=scope)
+    if not expected:
+        actual=cloud_auth.get_account_email(creds) if creds else None
+        if actual != 'zaragente031@gmail.com':raise ValueError('Registra el email de la cuenta Google ya creada.')
+        register_google(scope,actual)
+        s=ensure(holdings.read(scope));expected=actual
     if not creds:return register_google(scope,expected)
     actual=cloud_auth.get_account_email(creds)
     if actual!=expected:raise ValueError('OAuth pertenece a otra identidad; selecciona el correo real de ZAR.')
@@ -202,9 +206,11 @@ def _setup_actions(s):
     address=s['google'].get('email') or 'la cuenta Google de ZAR'
     guides={
       'YOUTUBE':('Crear canal YouTube','https://www.youtube.com/account',['Iniciar sesión con '+address,'Crear canal: nombre ZAR Agente IA; handle @zaragente031 si está disponible','Aceptar términos personalmente o con confirmación explícita; volver y pulsar CONTINUAR']),
-      'ADSENSE':('CREAR / ACTIVAR ADSENSE','https://www.google.com/adsense/start/',['Usar '+address,'Completar sitio real, términos, datos fiscales y verificación personalmente','CONTINUAR consulta accounts por API; esperar aprobación']),
+      'INSTAGRAM':('Conectar Instagram/Meta','https://business.facebook.com',['Usar '+address+' y comprobar la cuenta existente','Completar login, CAPTCHA, SMS, 2FA, vínculo Business y consentimiento personalmente','Configurar INSTAGRAM_ACCESS_TOKEN e INSTAGRAM_IG_USER_ID en Railway → web; CONTINUAR verifica la cuenta']),
+      'TIKTOK':('Conectar TikTok','https://developers.tiktok.com',['Usar '+address+' y comprobar la cuenta existente','Completar login y consentimiento personalmente','Configurar TIKTOK_ACCESS_TOKEN en Railway → web; CONTINUAR verifica capacidades reales'])}
+    guides.update({'ADSENSE':('CREAR / ACTIVAR ADSENSE','https://www.google.com/adsense/start/',['Usar '+address,'Completar sitio real, términos, datos fiscales y verificación personalmente','CONTINUAR consulta accounts por API; esperar aprobación']),
       'SHOPIFY':('CONFIGURAR SHOPIFY','https://admin.shopify.com',['Configurar SHOPIFY_SHOP_DOMAIN y SHOPIFY_ADMIN_ACCESS_TOKEN únicamente en Railway principal','Pulsar CONTINUAR / VERIFICAR']),
-      'STRIPE':('CONFIGURAR STRIPE','https://dashboard.stripe.com/apikeys',['Configurar STRIPE_SECRET_KEY y STRIPE_WEBHOOK_SECRET únicamente en Railway principal','Pulsar CONTINUAR / VERIFICAR'])}
+      'STRIPE':('CONFIGURAR STRIPE','https://dashboard.stripe.com/apikeys',['Configurar STRIPE_SECRET_KEY y STRIPE_WEBHOOK_SECRET únicamente en Railway principal','Pulsar CONTINUAR / VERIFICAR'])})
     for a in s['human_actions']:
         if a['service'] not in guides or a['status']=='DONE':continue
         title,url,instructions=guides[a['service']]
@@ -263,17 +269,30 @@ def operate(scope,action,data):
             if a['status']=='DONE':return deepcopy(a)
             service=a['service'];plan_id=a.get('plan_id')
         if service=='GOOGLE':return verify_google(scope)
+        if service=='DRAMACLAW':
+            from . import media_company
+            result=media_company._client().capabilities()
+            with holdings.transaction(scope):
+                d=holdings.read(scope);s=ensure(d);a=next(x for x in s['human_actions'] if x['id']==data['id'])
+                a.update(status='DONE' if result['configured'] else 'ACTION_REQUIRED',last_checked=holdings._now())
+                holdings.write(scope,d)
+            return deepcopy(a)
         from .business_workflows import operate as workflow
         operations={'SHOPIFY':'commerce_shopify_sync','STRIPE':'agency_payment_probe','YOUTUBE':None,'ADSENSE':None}
         result=None
         if service in {'YOUTUBE','ADSENSE'}:result=verify_google(scope,services=[service])['capabilities'].get(service,{})
+        elif service in {'INSTAGRAM','TIKTOK'}:
+            from .social_publish import publishing_readiness
+            result=publishing_readiness(service.lower())
         elif operations.get(service):result=workflow(scope,operations[service],{})
         from .business_connectors import inventory
         name={'SHOPIFY':'Shopify','STRIPE':'Payment','YOUTUBE':'YouTube','ADSENSE':'AdSense'}.get(service)
         verified=bool(name and next(n for n in inventory(holdings.read(scope)) if n['name']==name)['state']=='LISTO')
+        if service in {'INSTAGRAM','TIKTOK'}:verified=result.get('connected') is True
         if service=='ADSENSE':verified=verified and result.get('account_state')=='ACTIVE'
         with holdings.transaction(scope):
             d=holdings.read(scope);s=ensure(d);a=next(x for x in s['human_actions'] if x['id']==data['id']);a.update(status='DONE' if verified else 'ACTION_REQUIRED',last_checked=holdings._now())
+            if service in {'INSTAGRAM','TIKTOK'}:s['capabilities'][service]={**result,'status':'CONNECTED' if verified else 'ACTION_REQUIRED','last_verified':holdings._now()}
             plan=next((p for p in s['plans'] if p['id']==plan_id),None)
             if plan:plan.update(status='ACTIVE' if verified else 'API_CONFIG');plan['events'].append('VERIFY')
             if verified and plan:
@@ -281,6 +300,7 @@ def operate(scope,action,data):
                 account=next((x for x in accounts if x.get('provider')==service and x.get('identity')==plan['identity']),None)
                 fields={'provider':service,'type':service,'identity':plan['identity'],'display_name':'ZAR','status':'ACTIVE','state':'LISTO','last_verified':holdings._now(),'secret_ref':'SCOPED_YOUTUBE_OAUTH' if service=='YOUTUBE' else service+'_SERVER_CONFIGURATION'}
                 if service=='YOUTUBE':fields['channel_ids']=result.get('channel_ids',[])
+                if service in {'INSTAGRAM','TIKTOK'}:fields.update(account_id=result.get('account_id'),display_name=result.get('account'),capabilities=result.get('capabilities',[]))
                 if account:account.update(fields)
                 else:accounts.append({'id':secrets.token_hex(12),**fields})
             agent=d.get('orchestration',{}).get('agents',{}).get('AccountProvisioningAgent:'+service)

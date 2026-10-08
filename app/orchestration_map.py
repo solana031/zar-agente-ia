@@ -52,6 +52,7 @@ def save(scope,data):
         result[key]=val
     result['section']=str(data.get('section','all'))[:100]
     result['filters']=[str(x)[:100] for x in data.get('filters',[])][:30]
+    result['collapsed']=[x for x in data.get('collapsed',[]) if x in {'BUSINESS','INTELLIGENCE','IDENTITY','TRADING','Commerce','Agency','Media','Automaton','Sites'}][:9]
     with holdings.transaction(scope):
         d=holdings.read(scope);d['map_view']=result;holdings.write(scope,d)
     return result
