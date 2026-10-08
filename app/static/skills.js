@@ -141,7 +141,7 @@
     const ok=await openConfirm('Eliminar aprendizaje definitivamente', '¿Quieres eliminar definitivamente «'+label+'»? Si está en marcha, ZAR lo cancelará de forma segura. Si eliges «No, conservar», no se borrará nada.');
     if(!ok)return;
     try{await api('/api/learning/'+encodeURIComponent(id),{method:'DELETE'}); resumePending.delete(id); await loadLearningState(); await loadSkills();}
-    catch(e){alert(e.message||'No se pudo eliminar el aprendizaje.');}
+    catch(e){await ZarUI.alert(e.message||'No se pudo eliminar el aprendizaje.');}
   }
   async function loadLearningState(){
     try{
@@ -218,15 +218,15 @@
   async function saveSkill(){
     const payload={name:document.getElementById('skName').value,description:document.getElementById('skDesc').value,steps:document.getElementById('skSteps').value.split('\n').map(x=>x.trim()).filter(Boolean),triggers:document.getElementById('skTriggers').value.split(',').map(x=>x.trim()).filter(Boolean),tools:document.getElementById('skTools').value.split(',').map(x=>x.trim()).filter(Boolean),enabled:document.getElementById('skEnabled').checked};
     try{if(!payload.name.trim())throw new Error('Escribe un nombre.');if(editing)await api('/api/skills/'+encodeURIComponent(editing.id),{method:'PATCH',body:JSON.stringify(payload)});else await api('/api/skills',{method:'POST',body:JSON.stringify(payload)});document.getElementById('zarSkillsEditor').hidden=true;editing=null;await loadSkills();}
-    catch(e){alert(e.message)}
+    catch(e){await ZarUI.alert(e.message)}
   }
 
   async function skillAction(act,id){
     const skill=skills.find(x=>x.id===id); if(!skill)return;
     const card=document.getElementById('run-'+id);
     if(act==='edit'){showEditor(skill);return}
-    if(act==='del'){const ok=await openConfirm('Eliminar habilidad definitivamente','¿Quieres eliminar definitivamente la habilidad «'+skill.name+'»? Esta acción no se puede deshacer.');if(!ok)return;try{await api('/api/skills/'+encodeURIComponent(id),{method:'DELETE'});await loadSkills()}catch(e){alert(e.message)}return}
-    if(act==='toggle'){try{await api('/api/skills/'+encodeURIComponent(id),{method:'PATCH',body:JSON.stringify({enabled:!skill.enabled})});await loadSkills()}catch(e){alert(e.message)}return}
+    if(act==='del'){const ok=await openConfirm('Eliminar habilidad definitivamente','¿Quieres eliminar definitivamente la habilidad «'+skill.name+'»? Esta acción no se puede deshacer.');if(!ok)return;try{await api('/api/skills/'+encodeURIComponent(id),{method:'DELETE'});await loadSkills()}catch(e){await ZarUI.alert(e.message)}return}
+    if(act==='toggle'){try{await api('/api/skills/'+encodeURIComponent(id),{method:'PATCH',body:JSON.stringify({enabled:!skill.enabled})});await loadSkills()}catch(e){await ZarUI.alert(e.message)}return}
     if(act==='run'){card?.classList.add('open');card?.querySelector('textarea')?.focus();return}
     if(act==='cancelrun'){card?.classList.remove('open');return}
     if(act==='confirmrun'){

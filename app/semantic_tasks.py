@@ -6,19 +6,21 @@ BOOT_ID=secrets.token_hex(12)
 
 def plan(message):
     text=str(message or '').strip();low=text.casefold()
-    research=bool(re.search(r'\b(investiga(?:r)?|investigación|analiza|compara|averigua|busca ayudas)\b',low))
-    report=bool(re.search(r'\b(haz(?:me)?|crea|prepara|genera|redacta)\b.{0,55}\b(informe|documento|presentaci[oó]n|hoja|presupuesto|tabla)\b',low))
-    send=bool(re.search(r'\b(env[ií]a(?:selo|lo|le|me)?|manda(?:selo|lo|le)?|enviar|m[aá]ndaselo)\b',low))
-    resolve=bool(re.search(r'\bbusca\b.{0,25}\b(correo|email|direcci[oó]n)\b.{0,20}\bde\b',low))
-    attach=bool(re.search(r'\badjunta(?:r)?\b',low))
-    draft=bool(re.search(r'\b(redacta|prepara|escribe)\b.{0,30}\b(correo|email|mensaje)\b',low))
+    research=bool(re.search(r'\b(investiga(?:r)?|investigación|analiza|compara|averigua|busca (?:ayudas|informaci[oó]n))\b',low))
+    report=bool(re.search(r'\b(haz(?:me)?|crea|prepara|genera|redacta|mete|pon)\b.{0,55}\b(informe|documento|presentaci[oó]n|hoja|presupuesto|tabla)\b',low))
+    send=bool(re.search(r'\b(env[ií]a(?:selo|lo|le|me)?|m[aá]nda(?:selo|sela|lo|le)?|enviar)\b',low))
+    resolve=bool(re.search(r'\b(correo|email|direcci[oó]n)\s+de\s+\w',low))
+    attach=bool(re.search(r'\b(adjunta(?:r)?|usa el documento|a[nñ]ade las fotos)\b',low))
+    draft=bool(re.search(r'\b(redacta|prepara|escribe|hazme|haz)\b.{0,30}\b(correo|email|mensaje)\b',low))
     read=bool(re.search(r'\b(mira|lee|abre|revisa)\b.{0,18}\b(mi correo|mis correos|bandeja|inbox|email)\b',low)) and not (research or report or send or attach or draft or resolve)
     if not any((research,report,send,resolve,attach,draft,read)):return None
-    contact_match=re.search(r'\b(?:a|de)\s+([A-ZÁÉÍÓÚÑ][\wáéíóúñÁÉÍÓÚÑ.-]*(?:\s+[A-ZÁÉÍÓÚÑ][\wáéíóúñÁÉÍÓÚÑ.-]*)*)',text)
+    contact_match=re.search(r'\b(?:env[ií]a\w*|m[aá]nda\w*)\s+(?:(?:esto|eso|lo anterior|por email|por correo|el informe)\s+)*a\s+([^,;.!?\n]+)',text,re.I)
+    if not contact_match:contact_match=re.search(r'\b(?:a|de)\s+([A-ZÁÉÍÓÚÑ][\wáéíóúñÁÉÍÓÚÑ.-]*(?:\s+[A-ZÁÉÍÓÚÑ][\wáéíóúñÁÉÍÓÚÑ.-]*)*)',text)
     if not contact_match and (resolve or send or draft):
         contact_match=re.search(r'(?:correo\s+de|email\s+de|env[ií]a\w*\s+a|manda\w*\s+a|m[aá]ndaselo\s+a)\s+([^,;.!?]+)',text,re.I)
     explicit=re.search(r'[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}',text)
     contact=explicit.group() if explicit else contact_match.group(1).strip(' .;,') if contact_match else None
+    if contact:contact=re.sub(r'\s+por\s+(?:email|correo).*$', '',contact,flags=re.I).strip()
     topic=re.sub(r'^(investiga|analiza|compara|averigua)\s+','',text,flags=re.I)
     topic=re.split(r'[,;]|\by después\b|\bdespués\b|\by (?:haz|crea|prepara|envía|manda)',topic,flags=re.I)[0].strip()
     kinds=[]
@@ -36,7 +38,8 @@ def plan(message):
         'required_tools':kinds,'required_artifacts':[fmt] if report else [],'external_actions':['SEND_EMAIL'] if send else [],'confirmation_requirements':['REVIEW_EMAIL_AND_RECIPIENT'] if send else [],'expected_outputs':kinds,'status':'PLANNED'}
 
 def create(scope,message):
-    task=plan(message)
+    from .semantic_planner import build
+    task=build(scope,message,plan)
     if not task:raise ValueError('No se ha identificado una tarea estructurada; especifica verbo y objetivo.')
     task.update(id=secrets.token_hex(12),created_at=holdings._now(),updated_at=holdings._now(),current_step=None,outputs={},errors=[])
     with holdings.transaction(scope):
@@ -50,6 +53,7 @@ def get(scope,identifier):
     return task
 def save(scope,task):
     task['updated_at']=holdings._now()
+    task['steps']=deepcopy(task['subtasks'])
     with holdings.transaction(scope):
         d=holdings.read(scope);rows=d.setdefault('semantic_tasks',[])
         for i,row in enumerate(rows):
@@ -62,7 +66,7 @@ def save(scope,task):
             elif agent and task['id'] in agent.get('current_tasks',[]):agent.update(state='IDLE',current_tasks=[],last_heartbeat=holdings._now())
         holdings.write(scope,d)
 
-def run(scope,identifier,confirmed=False,selected_email=None):
+def run(scope,identifier,confirmed=False,selected_email=None,selected_artifact_id=None):
     from . import web_search,artifact_engine,contact_resolver,identity_mail
     from .file_store import FileStore
     from .google_contacts import search_contacts
@@ -83,7 +87,14 @@ def run(scope,identifier,confirmed=False,selected_email=None):
         try:
             kind=step['kind'];output=None
             if holdings.read(scope).get('global_stop'):raise ValueError('STOP GLOBAL activo; tarea conservada.')
-            if kind=='RESEARCH':
+            if kind=='RESOLVE_REFERENCE':
+                from .semantic_planner import resolve_reference
+                output=resolve_reference(scope,task,selected_artifact_id)
+                if output['status']!='RESOLVED':
+                    task['outputs'][kind]=output;task['status']='WAITING';step.update(status='WAITING',outputs=output,error=output['reason']);save(scope,task);return task
+                if output.get('research'):task['outputs']['RESEARCH']=output['research']
+                if output.get('artifact') and not any(s['kind']=='CREATE_REPORT' for s in task['subtasks']):task['outputs']['CREATE_REPORT']=output['artifact']
+            elif kind=='RESEARCH':
                 from .research_agent import investigate
                 output=investigate(task['topic'])
                 if not output.get('ok') or not output.get('sources'):raise ValueError('Investigación no confirmó fuentes web; se conserva la tarea sin inventar resultados.')
@@ -92,7 +103,8 @@ def run(scope,identifier,confirmed=False,selected_email=None):
                 research=task['outputs'].get('RESEARCH',{});content=research.get('text')
                 if not content:
                     task['status']='WAITING';step['status']='WAITING';step['error']='Indica el contenido o completa una investigación antes de crear el informe.';save(scope,task);return task
-                output=artifact_engine.create(task['topic'],content,task['format'],research.get('sources'),task['id'])
+                template=next((value for phrase,value in [('financier','FINANCIAL_REPORT'),('mercado','MARKET_RESEARCH'),('propuesta','PROPOSAL'),('técnic','TECHNICAL_REPORT'),('proyecto','PROJECT_REPORT'),('negocio','BUSINESS_REPORT')] if phrase in task['goal'].casefold()),'GENERAL_REPORT')
+                output=artifact_engine.create(task['topic'],content,task['format'],research.get('sources'),task['id'],template=template)
             elif kind=='RESOLVE_CONTACT':
                 name=task['entities'].get('recipient')
                 if name and re.fullmatch(r'[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}',name):output={'status':'RESOLVED','contact':{'contact_id':None,'display_name':name,'emails':[name],'phones':[],'aliases':[],'source':'USER_EXPLICIT_EMAIL','confidence':1}}
@@ -106,15 +118,17 @@ def run(scope,identifier,confirmed=False,selected_email=None):
                 contact_resolver.remember(scope,output['contact'],tasks=[task['id']])
             elif kind=='DRAFT_EMAIL':
                 contact=task['outputs']['RESOLVE_CONTACT']['contact'];artifact=task['outputs'].get('CREATE_REPORT')
-                output={'to':contact['emails'][0],'cc':'','bcc':'','subject':task['topic'][:150],'body':'Hola '+contact['display_name']+',\n\n'+('Adjunto el informe solicitado.\n\nSaludos,\nZAR' if artifact else task['goal']),'artifact_ids':[artifact['artifact_id']] if artifact else [],'status':'LOCAL_DRAFT_NOT_SENT'}
+                content=task['outputs'].get('RESEARCH',{}).get('text') or task['goal']
+                output={'to':contact['emails'][0],'cc':'','bcc':'','subject':task['topic'][:150],'body':'Hola '+contact['display_name']+',\n\n'+('Adjunto el informe solicitado.\n\nSaludos,\nZAR' if artifact else content),'artifact_ids':[artifact['artifact_id']] if artifact else [],'status':'LOCAL_DRAFT_NOT_SENT'}
             elif kind=='ATTACH_ARTIFACT':
                 artifact=task['outputs'].get('CREATE_REPORT')
-                if not artifact:raise ValueError('Selecciona un archivo existente; no se inventa un adjunto.')
+                if not artifact:
+                    task['status']='WAITING';step.update(status='WAITING',error='Selecciona un archivo existente; no se inventa un adjunto.');save(scope,task);return task
                 FileStore().read(artifact['artifact_id']);output={'artifact_ids':[artifact['artifact_id']],'status':'ATTACHED_TO_REVIEW'}
             elif kind=='SEND_EMAIL':
                 draft=task['outputs']['DRAFT_EMAIL']
                 if confirmed is not True:
-                    task['status']='WAITING';step.update(status='WAITING',error='Revisa destinatario, mensaje y adjuntos; confirma Enviar.');save(scope,task);return task
+                    task['status']='WAITING';step.update(status='WAITING',error='Revisa destinatario, mensaje, adjuntos y condiciones pendientes: '+('; '.join(task.get('conditions',[])) or 'sin condiciones adicionales')+'. Confirma Enviar.');save(scope,task);return task
                 output=identity_mail.operate(scope,'send',{**draft,'confirmed':True,'transaction_id':'task_'+task['id'],'agent':'MailAgent','task_id':task['id']})
                 if output['status']!='CONFIRMED':raise ValueError('Envío no confirmado; revisar Gmail antes de reintentar.')
                 contact=task['outputs']['RESOLVE_CONTACT']['contact'];contact_resolver.remember(scope,contact,files=draft['artifact_ids'],tasks=[task['id']])

@@ -102,7 +102,7 @@
   document.addEventListener('submit',async e=>{
     const f=e.target;if(!f.matches('#zarCommerceAgency form'))return;e.preventDefault();const data=Object.fromEntries(new FormData(f));
     try{
-      if(f.dataset.confirm){if(!confirm(f.dataset.confirm))return;data.confirmed=true;}
+      if(f.dataset.confirm){if(!await ZarUI.confirm(f.dataset.confirm))return;data.confirmed=true;}
       for(const k of ['subniches','restrictions','shipping_countries','tags','bullets','fulfillment_order_ids'])if(k in data)data[k]=data[k].split(',').map(x=>x.trim()).filter(Boolean);
       for(const k of ['evidence','payload','shipping_address'])if(k in data && (f.dataset.caForm==='commerce_score'||k!=='evidence'))data[k]=JSON.parse(data[k]);
       for(const k of ['quantity','limit'])if(k in data)data[k]=Number(data[k]);

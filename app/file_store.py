@@ -251,7 +251,7 @@ class FileStore:
     def delete(self,file_id):self.path(file_id);return delete_file(file_id)
     def metadata(self,file_id,**changes):
         self.path(file_id)
-        allowed={'type','title','creator_agent','source_task','version','associated_contacts','associated_projects','associated_companies','associated_conversations','retrieval_text','drive_id','workspace_exports','name','category','note'}
+        allowed={'report_template','chart_count','type','title','creator_agent','source_task','version','associated_contacts','associated_projects','associated_companies','associated_conversations','retrieval_text','drive_id','workspace_exports','name','category','note'}
         if set(changes)-allowed:raise ValueError('Campos de metadata no permitidos.')
         with LOCK:
             if 'category' in changes or 'note' in changes:update_file(file_id,changes.pop('category',None),changes.pop('note',None))

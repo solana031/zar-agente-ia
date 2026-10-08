@@ -13,11 +13,11 @@
  document.addEventListener('click',async e=>{const b=e.target.closest('[data-file-preview],[data-file-rename],[data-file-move],[data-file-share],[data-file-delete],[data-open-task]');if(!b)return;
   try{if(b.dataset.openTask)return showSemanticTasks(b.dataset.openTask);const id=b.dataset.filePreview||b.dataset.fileRename||b.dataset.fileMove||b.dataset.fileShare||b.dataset.fileDelete;
    if(b.dataset.filePreview)return previewFile(id,'Archivo');let method='PATCH',data;
-   if(b.dataset.fileRename){const name=prompt('Nuevo nombre del archivo');if(!name)return;data={name};}
-   if(b.dataset.fileMove){const category=prompt('Categoría: fotos, documentos, facturas, finanzas, recibos, contratos, personal, otros');if(!category)return;data={category};}
-   if(b.dataset.fileDelete){if(!confirm('Eliminar este archivo y su índice de ZAR.'))return;method='DELETE';}
-   if(b.dataset.fileShare){const email=prompt('Compartir por Google Drive con este email');if(!email||!confirm('Subir este archivo a Drive de ZAR y conceder lectura exclusivamente a '+email+'?'))return;const r=await fetch('/api/files/'+id+'/share',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,confirmed:true})});const j=await r.json();if(!r.ok||!j.ok)throw Error(j.error);alert('Permiso de lectura confirmado por Drive.');return;}
+   if(b.dataset.fileRename){const name=await ZarUI.prompt('Nuevo nombre del archivo');if(!name)return;data={name};}
+   if(b.dataset.fileMove){const category=await ZarUI.prompt('Categoría: fotos, documentos, facturas, finanzas, recibos, contratos, personal, otros');if(!category)return;data={category};}
+   if(b.dataset.fileDelete){if(!await ZarUI.confirm('Eliminar este archivo y su índice de ZAR.'))return;method='DELETE';}
+   if(b.dataset.fileShare){const email=await ZarUI.prompt('Compartir por Google Drive con este email');if(!email||!await ZarUI.confirm('Subir este archivo a Drive de ZAR y conceder lectura exclusivamente a '+email+'?'))return;const r=await fetch('/api/files/'+id+'/share',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,confirmed:true})});const j=await r.json();if(!r.ok||!j.ok)throw Error(j.error);await ZarUI.alert('Permiso de lectura confirmado por Drive.');return;}
    const r=await fetch('/api/files/'+id,{method,headers:{'Content-Type':'application/json'},body:data?JSON.stringify(data):undefined});const j=await r.json();if(!r.ok||!j.ok)throw Error(j.error||'Operación no confirmada');await loadZarFiles();
-  }catch(err){alert(err.message);}
+  }catch(err){await ZarUI.alert(err.message);}
  });
 })();

@@ -405,6 +405,9 @@ class MarketStreamManager:
             self._status[kind]['last_message_at'] = now
             self._status[kind]['updated_at'] = now
 
+        from .stonks_realtime import BUS
+        BUS.publish('MARKET_PUBLIC','BAR_UPDATE' if typ in ('b','u','d') else 'QUOTE_UPDATE' if typ=='q' else 'MARKET_TICK',dict(rec))
+
     def status(self, limit=30):
         with self._lock:
             feeds = deepcopy(self._status)

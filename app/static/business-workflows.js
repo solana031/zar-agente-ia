@@ -59,11 +59,11 @@
       const kind=f.dataset.form;
       if(kind==='site'){const fd=new FormData(f);for(const [key,value] of [...fd.entries()])if(value instanceof File&&!value.name)fd.delete(key);await post('site_upload',fd);}
       else if(kind==='media'){data.duration=Number(data.duration);data.subtitles=f.elements.subtitles.checked;data.music=f.elements.music.checked;await post('media_create',data);}
-      else if(kind==='jev'){for(const k of ['risk','urgency','expected_cost','expected_revenue'])data[k]=data[k]===''?null:Number(data[k]);data.resources=data.resources.split(',').map(x=>x.trim()).filter(Boolean);const remote=f.elements.remote.checked;delete data.remote;if(!data.suggested_provider)data.suggested_provider=null;if(remote&&!confirm('Consultar TypeSafe con esta propuesta puede consumir cuota del proveedor. ¿Continuar?'))return;await post('jev',{proposal:data,use_provider:remote,confirmed:remote});}
+      else if(kind==='jev'){for(const k of ['risk','urgency','expected_cost','expected_revenue'])data[k]=data[k]===''?null:Number(data[k]);data.resources=data.resources.split(',').map(x=>x.trim()).filter(Boolean);const remote=f.elements.remote.checked;delete data.remote;if(!data.suggested_provider)data.suggested_provider=null;if(remote&&!await ZarUI.confirm('Consultar TypeSafe con esta propuesta puede consumir cuota del proveedor. ¿Continuar?'))return;await post('jev',{proposal:data,use_provider:remote,confirmed:remote});}
       else if(kind==='adsense')await post('adsense_sync',data);
       else if(kind==='script')await post('media_edit',{id:f.dataset.id,script:data.script});
       else if(kind==='voice')await post('media_control',{id:f.dataset.id,control:'voice',...data});
-      else if(kind==='audio'){if(!confirm('Generar este audio usa créditos/cuota del proveedor. Coste monetario no disponible. No se realiza compra de saldo. ¿Continuar?'))return;await post('media_control',{id:f.dataset.id,control:'character_audio',confirmed:true,...data});}
+      else if(kind==='audio'){if(!await ZarUI.confirm('Generar este audio usa créditos/cuota del proveedor. Coste monetario no disponible. No se realiza compra de saldo. ¿Continuar?'))return;await post('media_control',{id:f.dataset.id,control:'character_audio',confirmed:true,...data});}
       else if(kind==='subtitles'){data.enabled=f.elements.enabled.checked;data.size=Number(data.size);await post('media_control',{id:f.dataset.id,control:'subtitles',...data});}
     }catch(error){notify(error.message);}
   });
@@ -74,13 +74,13 @@
       else if(op==='detail'){selectedMedia=id;editing=false;await refresh();}
       else if(op==='probe')await post('probe',{name:id});
       else if(op==='voices'){const result=await post('probe',{name:'ElevenLabs'});const host=document.getElementById('zwVoiceSamples');if(host)host.innerHTML=(result.voices||[]).map(v=>`<p>${esc(v.name)} · ID ${esc(v.id)}</p>${safeAsset(v.preview_url)?`<audio controls preload="none" src="${esc(safeAsset(v.preview_url))}"></audio>`:''}`).join('');notify(result.state);}
-      else if(op==='media_produce'){if(confirm('Producir/continuar esta historia con DramaClaw y sus proveedores puede consumir cuota/créditos. No se comprará saldo ni se publicará automáticamente. ¿Continuar?'))await post(op,{id,confirmed:true});}
+      else if(op==='media_produce'){if(await ZarUI.confirm('Producir/continuar esta historia con DramaClaw y sus proveedores puede consumir cuota/créditos. No se comprará saldo ni se publicará automáticamente. ¿Continuar?'))await post(op,{id,confirmed:true});}
       else if(['inspect','assign_voices','load_subtitles','render_final'].includes(op))await post('media_control',{id,control:op});
-      else if(op==='ready'||op==='voice_import_review'){if(confirm(op==='ready'?'¿Has revisado el MP4 y apruebas su contenido?':'¿Has importado y verificado las voces seleccionadas en el editor?'))await post('media_control',{id,control:op,confirmed:true});}
-      else if(op==='clean_source'){if(confirm('Recomponer fuente sin subtítulos en DramaClaw puede consumir cuota. Se conserva vídeo anterior. ¿Continuar?'))await post('media_control',{id,control:op,confirmed:true});}
-      else if(op==='regenerate_scene'){const [project,scene]=id.split('|');if(confirm('Regenerar esta escena puede consumir cuota/créditos del proveedor. ¿Continuar?'))await post('media_control',{id:project,scene:Number(scene),control:op,confirmed:true});}
-      else if(op==='publish'){const [project,platform]=id.split('|');if(confirm(`Publicar vídeo revisado en ${platform}. YouTube se subirá privado. ¿Confirmas esta publicación?`))await post('media_publish',{id:project,platform,confirmed:true});}
-      else if(op==='received'){const reference=prompt('Referencia bancaria del cobro realmente recibido:');if(reference&&confirm('Registrar como RECEIVED; confirmas que ya recibiste este pago. No se ejecuta transferencia.'))await post('adsense_received',{reference:id,bank_reference:reference,confirmed:true});}
+      else if(op==='ready'||op==='voice_import_review'){if(await ZarUI.confirm(op==='ready'?'¿Has revisado el MP4 y apruebas su contenido?':'¿Has importado y verificado las voces seleccionadas en el editor?'))await post('media_control',{id,control:op,confirmed:true});}
+      else if(op==='clean_source'){if(await ZarUI.confirm('Recomponer fuente sin subtítulos en DramaClaw puede consumir cuota. Se conserva vídeo anterior. ¿Continuar?'))await post('media_control',{id,control:op,confirmed:true});}
+      else if(op==='regenerate_scene'){const [project,scene]=id.split('|');if(await ZarUI.confirm('Regenerar esta escena puede consumir cuota/créditos del proveedor. ¿Continuar?'))await post('media_control',{id:project,scene:Number(scene),control:op,confirmed:true});}
+      else if(op==='publish'){const [project,platform]=id.split('|');if(await ZarUI.confirm(`Publicar vídeo revisado en ${platform}. YouTube se subirá privado. ¿Confirmas esta publicación?`))await post('media_publish',{id:project,platform,confirmed:true});}
+      else if(op==='received'){const reference=await ZarUI.prompt('Referencia bancaria del cobro realmente recibido:');if(reference&&await ZarUI.confirm('Registrar como RECEIVED; confirmas que ya recibiste este pago. No se ejecuta transferencia.'))await post('adsense_received',{reference:id,bank_reference:reference,confirmed:true});}
       else if(op==='site_build')await post(op,{id});
       else if(op==='site_analyze'){const result=await post(op,{id});notify(JSON.stringify(result));}
     }catch(error){notify(error.message);}

@@ -1,6 +1,7 @@
 # ZAR v30.3.0 — Memoria + Archivos 2.0
 from flask import Flask, render_template, request, jsonify, redirect, session, send_file
 import threading
+from contextvars import ContextVar
 import webbrowser
 import re
 import requests
@@ -242,7 +243,11 @@ except Exception:
 JOB_DIR = Path(os.environ.get("ZAR_JOB_DIR", "/data/jobs"))
 JOB_DIR.mkdir(parents=True, exist_ok=True)
 
+_action_event=ContextVar('zar_action_event',default=None)
+
 def _remember_turn(role, content):
+    if role=='user' and _action_event.get():
+        role='system';content=_action_event.get()
     add_message(role, content)
     add_conversation_message(role, content)
 
@@ -285,7 +290,7 @@ def _read_job(job_id):
     except Exception:
         return None
 
-def _run_chat_job(job_id, msg, user_id, session_snapshot=None):
+def _run_chat_job(job_id, msg, user_id, session_snapshot=None, confirmation_id=None):
     """Run chat work in a background thread with an isolated Flask request context.
 
     Several mature ZAR paths (pending confirmations, Google Workspace/OAuth helpers,
@@ -294,6 +299,7 @@ def _run_chat_job(job_id, msg, user_id, session_snapshot=None):
     explicitly instead of letting those helpers touch Flask proxies out of context.
     """
     set_current_user(user_id)
+    event_token=_action_event.set((session_snapshot or {}).get('zar_action_event'))
     try:
         with app.test_request_context('/api/chat', method='POST', json={'message': msg}):
             for key, value in dict(session_snapshot or {}).items():
@@ -327,9 +333,17 @@ def _run_chat_job(job_id, msg, user_id, session_snapshot=None):
                 confirmation = {"required": True, "kind": "email", "title": "Gmail", "action": "enviar correo"}
             elif (ctx_after.get("pending_calendar") or {}).get("event"):
                 confirmation = {"required": True, "kind": "calendar", "title": "Google Calendar", "action": "crear evento"}
+            if confirmation:confirmation=_decorate_confirmation(confirmation)
         _write_job(job_id, "done", reply=reply, confirmation=confirmation, action=( {"type":"open_url","url":action.get("url"),"platform":action.get("platform"),"query":action.get("query")} if action and action.get("url") else None ))
+        if confirmation_id:
+            from .confirmations import complete
+            complete(user_id,confirmation_id,error=bool(confirmation and confirmation.get('required')))
     except Exception as exc:
         _write_job(job_id, "error", error=str(exc))
+        if confirmation_id:
+            from .confirmations import complete
+            complete(user_id,confirmation_id,error=True)
+    finally:_action_event.reset(event_token)
 
 
 def _is_noreply(address):
@@ -767,6 +781,11 @@ def _stonks_read():
 
 def _stonks_write(d):
     _stonks_atomic_json(_stonks_file(), d)
+    from .stonks_realtime import BUS
+    fields=('paused','revoked','mode','execution_mode','autonomous_engine','max_trade_eur','max_daily_loss_eur','max_position_pct','position_lifecycle_enabled','stop_loss_pct','take_profit_pct','managed_positions','engine_last_positions','engine_last_open_orders','engine_last_run','engine_last_action','paper_connected','paper_account_metrics','market_stream_snapshot','agent_last_trace','automaton')
+    public={key:d.get(key) for key in fields if key in d}
+    public['automaton']=stonks_automaton.public_view(d);public['live_trading_enabled']=False
+    BUS.publish(_user_scope_id(),'RISK_UPDATE',public)
 
 
 def _stonks_audit_file():
@@ -1675,6 +1694,63 @@ def stonks_dataplane_api():
 def stonks_stream_api():
     d=_stonks_read()
     return jsonify({'ok':True,'zero_token':True,'stream':_stonks_stream_plan(d)})
+
+def _start_broker_observer(scope,snapshot):
+    from .stonks_realtime import BUS
+    def read():
+        set_current_user(scope)
+        with app.test_request_context('/api/stonks/realtime'):
+            session.update(snapshot)
+            response=stonks_alpaca_portfolio_api()
+            if isinstance(response,tuple):response=response[0]
+            data=response.get_json()
+            if not data.get('ok'):raise ValueError('Broker no disponible.')
+            data['orders']=_alpaca_paper_request('/v2/orders',params={'status':'all','limit':100,'nested':'false'})
+            return data
+    BUS.observe(scope,read)
+
+@app.get('/api/stonks/realtime/snapshot')
+def stonks_realtime_snapshot_api():
+    from .stonks_realtime import BUS
+    scope=_user_scope_id();_start_broker_observer(scope,dict(session))
+    return jsonify(ok=True,events=list(BUS.snapshot(scope).values()),zero_tokens=True)
+
+@app.get('/api/stonks/realtime/events')
+def stonks_realtime_events_api():
+    from .stonks_realtime import BUS
+    from flask import Response
+    import queue
+    scope=_user_scope_id()
+    if not request.environ.get('wsgi.multithread',False):return jsonify(ok=False,fallback='INCREMENTAL_SNAPSHOT',reason='Servidor sin concurrencia para SSE.'),409
+    try:identifier,events=BUS.subscribe(scope)
+    except ValueError as exc:return jsonify(ok=False,fallback='INCREMENTAL_SNAPSHOT',reason=str(exc)),429
+    _start_broker_observer(scope,dict(session))
+    initial=BUS.snapshot(scope)
+    def generate():
+        start=time.monotonic()
+        try:
+            yield 'retry: 3000\n\n'
+            for event in initial.values():yield 'data: '+json.dumps(event,default=str)+'\n\n'
+            while time.monotonic()-start<55:
+                try:event=events.get(timeout=10)
+                except queue.Empty:event={'type':'HEARTBEAT','data':{'state':'CONNECTED'},'zero_tokens':True,'timestamp':time.time()}
+                yield 'data: '+json.dumps(event,default=str)+'\n\n'
+        finally:BUS.unsubscribe(identifier)
+    return Response(generate(),mimetype='text/event-stream',headers={'Cache-Control':'no-cache','X-Accel-Buffering':'no'})
+
+@app.get('/api/stonks/chart/btc')
+def stonks_btc_chart_api():
+    from datetime import timedelta
+    timeframe=request.args.get('timeframe','1Min')
+    if timeframe not in {'1Min','5Min','15Min','1Hour','4Hour','1Day'}:return jsonify(ok=False,error='Periodo no permitido.'),400
+    try:
+        now=datetime.now(timezone.utc);days={'1Min':2,'5Min':3,'15Min':5,'1Hour':14,'4Hour':30,'1Day':200}[timeframe]
+        data=_alpaca_market_request('/v1beta3/crypto/us/bars',params={'symbols':'BTC/USD','timeframe':timeframe,'start':(now-timedelta(days=days)).isoformat(),'end':now.isoformat(),'limit':400,'sort':'desc'})
+        bars=(data.get('bars') or {}).get('BTC/USD') or []
+        bars=sorted([b for b in bars if all(b.get(k) is not None for k in ('t','o','h','l','c','v'))],key=lambda b:b['t'])
+        if not bars:raise ValueError('Alpaca no devolvió barras BTC/USD.')
+        return jsonify(ok=True,symbol='BTC/USD',source='Alpaca crypto',mode='HISTORICAL',timeframe=timeframe,bars=bars,last_update=bars[-1]['t'],zero_tokens=True)
+    except Exception:return jsonify(ok=False,symbol='BTC/USD',source='Alpaca crypto',error='Histórico no confirmado; comprueba conexión y permisos de Alpaca.',bars=[]),409
 
 @app.post('/api/stonks/stream/watchlist')
 @_stonks_serialized
@@ -4264,6 +4340,11 @@ def _process_chat_message(msg):
     proposed=semantic_tasks.plan(msg)
     pending_context = _ctx()
     has_pending = any(pending_context.get(key) for key in ('pending_email','pending_contact','pending_calendar','pending_workspace')) or session.get('zar_pending_workspace')
+    if has_pending and not _action_event.get() and _looks_like_send(msg):
+        confirmation=_decorate_confirmation({'required':True,'action':'Acción externa pendiente'})
+        if confirmation.get('risk') in {'HIGH','CRITICAL'}:
+            reply='Esta acción requiere dos confirmaciones. Revisa la tarjeta y pulsa Confirmar; después revisa su impacto exacto.'
+            _remember_turn('user',msg);_remember_turn('assistant',reply);return reply
     if proposed and not has_pending and (len(proposed['subtasks'])>1 or proposed['subtasks'][0]['kind']!='READ_MAIL'):
         task=semantic_tasks.create(_user_scope_id(),msg)
         _launch_semantic_task(_user_scope_id(),task['id'],{})
@@ -4967,6 +5048,8 @@ def _process_chat_message(msg):
 def chat():
     data = request.get_json(silent=True) or {}
     msg = (data.get("message") or "").strip()
+    if msg.casefold() in {'__zar_confirm__','__zar_cancel__'}:
+        return jsonify(error='Usa la tarjeta de confirmación de la acción.'),409
     if not msg:
         return jsonify({"error":"Mensaje vacío"}), 400
     job_id = uuid.uuid4().hex
@@ -4990,36 +5073,44 @@ def job_status(job_id):
         return jsonify({"status":"not_found"}), 404
     return jsonify(job)
 
-@app.get("/api/confirmation-status")
-def confirmation_status():
-    """Return the current structured confirmation for the active user.
+def _pending_confirmation_payload():
+    ctx=_ctx()
+    for key in ('pending_workspace','pending_contact','pending_email','pending_calendar'):
+        value=ctx.get(key) or (session.get('zar_pending_workspace') if key=='pending_workspace' else None)
+        if value:return {'kind':key.removeprefix('pending_'),'payload':value}
+    return None
 
-    Background chat workers can persist the action after the job response object has
-    already been assembled.  This endpoint gives the browser a durable source of
-    truth so confirmation controls never depend on one transient job payload.
-    """
-    ctx = _ctx()
-    pending_workspace = ctx.get("pending_workspace") or session.get("zar_pending_workspace")
-    if pending_workspace:
-        return jsonify({
-            "required": True,
-            "kind": "workspace",
-            "title": pending_workspace.get("service") or "Google Workspace",
-            "action": pending_workspace.get("action") or "acción pendiente",
-        })
-    pending_contact = ctx.get("pending_contact")
-    if pending_contact:
-        return jsonify({
-            "required": True,
-            "kind": "contact",
-            "title": "Google Contacts",
-            "action": pending_contact.get("action") or "modificar contacto",
-        })
-    if ctx.get("pending_email"):
-        return jsonify({"required": True, "kind": "email", "title": "Gmail", "action": "enviar correo"})
-    if (ctx.get("pending_calendar") or {}).get("event"):
-        return jsonify({"required": True, "kind": "calendar", "title": "Google Calendar", "action": "crear evento"})
-    return jsonify({"required": False})
+def _decorate_confirmation(row):
+    from .confirmations import prepare
+    payload=_pending_confirmation_payload()
+    if not payload:return {'required':False}
+    risk='HIGH' if re.search(r'publ|borrar|eliminar|comprar|dinero|sensible',str(payload),re.I) else 'MEDIUM'
+    details=payload['payload'];description=(row.get('action') or 'Acción pendiente')+' · '+json.dumps(details,ensure_ascii=False,default=str)[:6000]
+    record=prepare(_user_scope_id(),description,payload,risk)
+    return {**row,**record,'csrf':session.setdefault('business_csrf',secrets.token_urlsafe(32))}
+
+@app.get('/api/confirmation-status')
+def confirmation_status():
+    pending=_pending_confirmation_payload()
+    if not pending:return jsonify(required=False)
+    title={'workspace':'Google Workspace','contact':'Google Contacts','email':'Gmail','calendar':'Google Calendar'}[pending['kind']]
+    action=pending['payload'].get('action') or {'email':'enviar correo','calendar':'crear evento'}.get(pending['kind'],'acción pendiente')
+    return jsonify(_decorate_confirmation({'required':True,'kind':pending['kind'],'title':title,'action':action}))
+
+@app.post('/api/confirmations/<identifier>/decision')
+def confirmation_decision_api(identifier):
+    from .confirmations import decide
+    data=request.get_json(silent=True) or {};token=session.get('business_csrf')
+    if not token or not secrets.compare_digest(token,request.headers.get('X-ZAR-Business-CSRF','')):return jsonify(ok=False,error='Recarga la confirmación.'),403
+    payload=_pending_confirmation_payload();scope=_user_scope_id();job_id=uuid.uuid4().hex
+    try:row=decide(scope,identifier,payload,data.get('decision'),data.get('second_confirmed') is True,job_id)
+    except ValueError as exc:return jsonify(ok=False,error=str(exc)),409
+    if row['state']=='WAITING_SECOND':return jsonify(ok=True,needs_second=True,confirmation=row)
+    if row.get('job_id')!=job_id:return jsonify(ok=True,job_id=row.get('job_id'),status=row['state'])
+    snapshot=dict(session);snapshot['zar_action_event']=('ACTION_CONFIRMED: Pablo confirmó ' if data.get('decision')=='confirm' else 'ACTION_CANCELLED: Pablo canceló ')+row['description']
+    _write_job(job_id,'running',user_id=scope)
+    threading.Thread(target=_run_chat_job,args=(job_id,'__ZAR_CONFIRM__' if data.get('decision')=='confirm' else '__ZAR_CANCEL__',scope,snapshot,identifier),daemon=True).start()
+    return jsonify(ok=True,job_id=job_id,status='running'),202
 
 @app.post("/api/studio/command")
 def studio_command():
@@ -5625,6 +5716,24 @@ def file_metadata_api(file_id):
     try:return jsonify(ok=True,file=public_item(FileStore().metadata(file_id,**data)))
     except ValueError as exc:return jsonify(ok=False,error=str(exc)),409
 
+@app.post('/api/artifacts')
+def artifacts_create_api():
+    token=session.get('business_csrf');data=request.get_json(silent=True) or {}
+    if not token or not secrets.compare_digest(token,request.headers.get('X-ZAR-Business-CSRF','')):return jsonify(ok=False,error='Recarga Archivos.'),403
+    if len(str(data.get('text','')))>200000 or len(data.get('charts') or [])>12:return jsonify(ok=False,error='Contenido demasiado grande.'),400
+    from .artifact_engine import create
+    try:return jsonify(ok=True,artifact=create(data.get('title'),data.get('text'),data.get('kind','pdf'),data.get('sources'),template=data.get('template','GENERAL_REPORT'),charts=data.get('charts')))
+    except (ValueError,TypeError,KeyError) as exc:return jsonify(ok=False,error=str(exc)),400
+
+@app.post('/api/workspace/verify-writes')
+def workspace_verify_writes_api():
+    data=request.get_json(silent=True) or {};token=session.get('business_csrf')
+    if not token or not secrets.compare_digest(token,request.headers.get('X-ZAR-Business-CSRF','')):return jsonify(ok=False,error='Recarga Workspace.'),403
+    if data.get('confirmed') is not True:return jsonify(ok=False,error='Confirma las tres pruebas controladas.'),409
+    from .workspace_verification import verify
+    try:return jsonify(ok=True,results=verify(_user_scope_id()))
+    except ValueError as exc:return jsonify(ok=False,error=str(exc)),409
+
 @app.get('/api/semantic/tasks')
 def semantic_tasks_list_api():
     from . import semantic_tasks
@@ -5644,7 +5753,7 @@ def _launch_semantic_task(scope,identifier,data):
     def execute():
         set_current_user(scope)
         with app.test_request_context('/api/semantic/tasks',method='POST'):
-            session.update(snapshot);semantic_tasks.run(scope,identifier,data.get('confirmed') is True,data.get('selected_email'))
+            session.update(snapshot);semantic_tasks.run(scope,identifier,data.get('confirmed') is True,data.get('selected_email'),data.get('selected_artifact_id'))
     threading.Thread(target=execute,daemon=True).start()
 
 @app.post('/api/semantic/tasks/<identifier>/<action>')
@@ -5812,7 +5921,7 @@ def reset_chat_context():
 
 @app.get("/api/conversations")
 def conversations_api():
-    return jsonify({"ok": True, "conversations": list_conversations(80)})
+    return jsonify({"ok": True,"csrf":session.setdefault("business_csrf",secrets.token_urlsafe(32)), "conversations": list_conversations(80)})
 
 @app.get("/api/conversations/search")
 def conversations_search_api():
@@ -5845,6 +5954,40 @@ def conversation_archive_update_api(thread_id):
     if not item:
         return jsonify({"ok": False, "error": "Conversación no encontrada."}), 404
     return jsonify({"ok": True, "conversation": item})
+
+def _conversation_delete_payload(thread_id):
+    item=get_conversation_archive(thread_id)
+    if not item:raise ValueError('Conversación no encontrada.')
+    return {'kind':'DELETE_CONVERSATION','id':thread_id,'title':item.get('title'),'updated_at':item.get('updated_at')}
+
+@app.post('/api/conversations/<thread_id>/deletion-review')
+def conversation_delete_review_api(thread_id):
+    token=session.get('business_csrf')
+    if not token or not secrets.compare_digest(token,request.headers.get('X-ZAR-Business-CSRF','')):return jsonify(ok=False,error='Recarga la lista.'),403
+    from .confirmations import prepare,decide
+    try:
+        payload=_conversation_delete_payload(thread_id);scope=_user_scope_id()
+        row=prepare(scope,'Borrar irreversiblemente la conversación '+str(payload['title']),payload,'HIGH')
+        row=decide(scope,row['confirmation_id'],payload,'confirm')
+        return jsonify(ok=True,confirmation=row)
+    except ValueError as exc:return jsonify(ok=False,error=str(exc)),409
+
+@app.delete('/api/conversations/<thread_id>')
+def conversation_archive_delete_api(thread_id):
+    data=request.get_json(silent=True) or {};token=session.get('business_csrf')
+    if not token or not secrets.compare_digest(token,request.headers.get('X-ZAR-Business-CSRF','')):return jsonify(ok=False,error='Recarga la lista.'),403
+    from .confirmations import decide,complete
+    from .memory import delete_conversation_archive
+    scope=_user_scope_id();identifier=data.get('confirmation_id')
+    try:
+        payload=_conversation_delete_payload(thread_id)
+        claim=uuid.uuid4().hex
+        row=decide(scope,identifier,payload,'confirm',data.get('second_confirmed') is True,job_id=claim)
+        if row['state']!='RUNNING':return jsonify(ok=False,error='Eliminar exige dos decisiones separadas.'),409
+        if row.get('job_id')!=claim:return jsonify(ok=True,status=row['state'])
+        if not delete_conversation_archive(thread_id):raise ValueError('Conversación no encontrada.')
+        complete(scope,identifier);return jsonify(ok=True)
+    except ValueError as exc:return jsonify(ok=False,error=str(exc)),409
 
 @app.post("/api/conversations/<thread_id>/restore")
 def conversation_archive_restore_api(thread_id):

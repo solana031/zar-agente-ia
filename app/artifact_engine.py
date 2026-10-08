@@ -2,20 +2,29 @@
 import io,re,html
 from .file_store import FileStore,DuplicateFileError
 
-def create(title,text,kind='pdf',sources=None,source_task=None,contacts=None,projects=None):
+TEMPLATES={'BUSINESS_REPORT','MARKET_RESEARCH','FINANCIAL_REPORT','PROJECT_REPORT','PROPOSAL','TECHNICAL_REPORT','GENERAL_REPORT'}
+
+def create(title,text,kind='pdf',sources=None,source_task=None,contacts=None,projects=None,template='GENERAL_REPORT',charts=None):
     sources=sources or [];text=str(text or '');title=str(title or 'Informe ZAR')[:180]
     full=text+'\n\nFuentes y referencias\n'+'\n'.join(str(x.get('title','Fuente'))+' — '+str(x.get('url','')) for x in sources)
+    if template not in TEMPLATES:raise ValueError('Plantilla de informe no soportada.')
+    from .chart_agent import render
+    chart_images=[(spec,render(spec)) for spec in (charts or [])]
+    headings=[line.lstrip('# ').strip() for line in text.splitlines() if line.startswith('#')]
     output=io.BytesIO()
     if kind=='pdf':
-        from reportlab.platypus import SimpleDocTemplate,Paragraph,Spacer,PageBreak
+        from reportlab.platypus import SimpleDocTemplate,Paragraph,Spacer,PageBreak,Table,TableStyle,Image
         from reportlab.lib.styles import getSampleStyleSheet
         from reportlab.lib import colors
         styles=getSampleStyleSheet();styles['Title'].textColor=colors.HexColor('#173854');styles['Heading1'].textColor=colors.HexColor('#173854')
-        story=[Paragraph(html.escape(title),styles['Title']),Spacer(1,24),Paragraph('Informe profesional · ZAR',styles['Heading2']),PageBreak()]
+        story=[Paragraph(html.escape(title),styles['Title']),Spacer(1,24),Paragraph('ZAR · '+template.replace('_',' '),styles['Heading2']),PageBreak(),Paragraph('Índice',styles['Heading1'])]+[Paragraph(html.escape(heading),styles['BodyText']) for heading in headings]+[Spacer(1,18)]
         for line in full.splitlines():
             if not line.strip():story.append(Spacer(1,8));continue
+            if '\t' in line:
+                table=Table([[Paragraph(html.escape(cell),styles['BodyText']) for cell in line.split('\t')]],hAlign='LEFT');table.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,-1),colors.HexColor('#f0f2f4')),('GRID',(0,0),(-1,-1),.3,colors.lightgrey),('VALIGN',(0,0),(-1,-1),'TOP')]));story.append(table);continue
             style=styles['Heading1'] if line.startswith('#') else styles['BodyText']
-            story.append(Paragraph(html.escape(line.lstrip('# ')),style))
+            escaped=html.escape(line.lstrip('# '));escaped=re.sub(r'https?://[^\s<>]+',lambda m:'<link href="'+m.group()+'" color="#173854">'+m.group()+'</link>',escaped);story.append(Paragraph(escaped,style))
+        for spec,data in chart_images:story.extend([Spacer(1,16),Paragraph(html.escape(spec.get('title','Gráfico')),styles['Heading2']),Image(io.BytesIO(data),width=480,height=278)])
         def footer(canvas,doc):
             canvas.setFont('Helvetica',8);canvas.drawString(40,25,'ZAR · '+title[:70]);canvas.drawRightString(555,25,str(doc.page))
         SimpleDocTemplate(output,title=title,author='ZAR',topMargin=50,bottomMargin=45).build(story,onFirstPage=footer,onLaterPages=footer)
@@ -23,42 +32,83 @@ def create(title,text,kind='pdf',sources=None,source_task=None,contacts=None,pro
     elif kind=='docx':
         from docx import Document
         from docx.shared import Pt
-        doc=Document();doc.core_properties.title=title;doc.add_heading(title,0);doc.add_paragraph('Informe profesional · ZAR');doc.add_page_break()
+        doc=Document();doc.core_properties.title=title;doc.add_heading(title,0);doc.add_paragraph('ZAR · '+template.replace('_',' '));doc.add_page_break();doc.add_heading('Índice',1)
+        for heading in headings:doc.add_paragraph(heading,style='List Bullet')
         doc.styles['Normal'].font.size=Pt(11)
         for line in full.splitlines():
             if line.startswith('#'):doc.add_heading(line.lstrip('# '),min(3,len(line)-len(line.lstrip('#'))))
+            elif '\t' in line:
+                cells=line.split('\t');table=doc.add_table(rows=1,cols=len(cells));table.style='Light Shading Accent 1'
+                for cell,value in zip(table.rows[0].cells,cells):cell.text=value
             else:doc.add_paragraph(line)
-        doc.sections[0].footer.paragraphs[0].text='ZAR · '+title;doc.save(output);mime='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        doc.sections[0].header.paragraphs[0].text='ZAR · '+template.replace('_',' ')
+        from docx.shared import Inches
+        for spec,data in chart_images:doc.add_heading(spec.get('title','Gráfico'),2);doc.add_picture(io.BytesIO(data),width=Inches(6))
+        doc.sections[0].footer.paragraphs[0].text='ZAR · '+title+' · '
+        from docx.oxml import OxmlElement
+        from docx.oxml.ns import qn
+        page=OxmlElement('w:fldSimple');page.set(qn('w:instr'),'PAGE');doc.sections[0].footer.paragraphs[0]._p.append(page)
+        doc.save(output);mime='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
     elif kind=='xlsx':
         from openpyxl import Workbook
         from openpyxl.styles import Font,PatternFill
         from openpyxl.chart import BarChart,Reference
         wb=Workbook();ws=wb.active;ws.title='Análisis';rows=[line.split('\t') for line in full.splitlines() if line.strip()]
-        for row in rows:ws.append(row)
+        for row in rows:
+            converted=[]
+            for value in row:
+                try:converted.append(float(value) if '.' in value else int(value))
+                except (ValueError,TypeError):converted.append(value)
+            ws.append(converted)
         ws.freeze_panes='A2';ws.auto_filter.ref=ws.dimensions
         for cell in ws[1]:cell.font=Font(color='FFFFFF',bold=True);cell.fill=PatternFill('solid',fgColor='173854')
         for col in ws.columns:ws.column_dimensions[col[0].column_letter].width=min(65,max(20,max(len(str(c.value or '')) for c in col)+2))
         refs=wb.create_sheet('Fuentes');refs.append(['Título','URL'])
         for source in sources:refs.append([source.get('title'),source.get('url')])
+        from openpyxl.formatting.rule import ColorScaleRule
+        from openpyxl.worksheet.datavalidation import DataValidation
+        from openpyxl.drawing.image import Image as SheetImage
+        dashboard=wb.create_sheet('Dashboard');dashboard.append(['ZAR · '+title]);dashboard.append(['Filas de contenido',"=COUNTA('Análisis'!A:A)-1"]);dashboard.append(['Fuentes',len(sources)]);dashboard.column_dimensions['A'].width=45;dashboard.column_dimensions['B'].width=24
+        for col in range(1,ws.max_column+1):
+            cells=[ws.cell(r,col).value for r in range(2,ws.max_row+1)]
+            if cells and all(isinstance(v,(int,float)) for v in cells):
+                letter=ws.cell(1,col).column_letter;ws.conditional_formatting.add(letter+'2:'+letter+str(ws.max_row),ColorScaleRule(start_type='min',start_color='F2E4C9',end_type='max',end_color='48776C'))
+                chart=BarChart();chart.title=str(ws.cell(1,col).value or 'Datos');chart.add_data(Reference(ws,min_col=col,min_row=1,max_row=ws.max_row),titles_from_data=True);chart.set_categories(Reference(ws,min_col=1,min_row=2,max_row=ws.max_row));dashboard.add_chart(chart,'D2');break
+        validation=DataValidation(type='list',formula1='"Pendiente,Revisado,Completado"');dashboard.add_data_validation(validation);dashboard['A5']='Estado de revisión';dashboard['B5']='Pendiente';validation.add(dashboard['B5'])
+        for i,(spec,data) in enumerate(chart_images):
+            sheet=wb.create_sheet(('Gráfico '+str(i+1))[:31]);image=SheetImage(io.BytesIO(data));image.width=800;image.height=464;sheet.add_image(image,'A1')
         wb.save(output);mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
     elif kind=='pptx':
         from pptx import Presentation
         from pptx.util import Inches,Pt
         from pptx.dml.color import RGBColor
         prs=Presentation();prs.slide_width=Inches(13.33);prs.slide_height=Inches(7.5)
-        blocks=re.split(r'\n(?=#)',full);blocks=[title]+blocks
-        for block in blocks[:30]:
+        # Keep all content in paced slides; notes retain each complete source block.
+        blocks=[]
+        for section in re.split(r'\n(?=#)',full):
+            lines=section.splitlines();heading=lines[0].lstrip('# ') if lines else title
+            chunks=[];chunk=''
+            for line in lines[1:]:
+                for start in range(0,max(1,len(line)),180):
+                    part=line[start:start+180]
+                    if len(chunk)+len(part)>480:chunks.append(chunk);chunk=''
+                    chunk+=part+'\n'
+            if chunk:chunks.append(chunk)
+            blocks.extend((heading,content) for content in chunks or [''])
+        slides=[(title,'ZAR · '+template.replace('_',' '),'TITLE')]+[(heading,content,'CONTENT') for heading,content in blocks]
+        for i,(heading,content,layout) in enumerate(slides):
             slide=prs.slides.add_slide(prs.slide_layouts[6]);bg=slide.background.fill;bg.solid();bg.fore_color.rgb=RGBColor(15,31,49)
-            lines=block.splitlines();heading=lines[0].lstrip('# ');content='\n'.join(lines[1:])[:600]
-            for y,h,body,size in [(0.6,1.2,heading,30),(2,4.8,content,20)]:
+            for y,h,body,size in [(0.6,1.1,heading,30),(1.9,4.8,content,20),(6.9,.3,'ZAR · '+str(i+1),11)]:
                 shape=slide.shapes.add_textbox(Inches(.8),Inches(y),Inches(11.7),Inches(h));shape.text_frame.word_wrap=True;shape.text=body
-                for p in shape.text_frame.paragraphs:p.font.size=Pt(size);p.font.color.rgb=RGBColor(240,244,249)
-            slide.notes_slide.notes_text_frame.text=block
+                for paragraph in shape.text_frame.paragraphs:paragraph.font.size=Pt(size);paragraph.font.color.rgb=RGBColor(240,244,249)
+            slide.notes_slide.notes_text_frame.text=layout+'\n'+heading+'\n'+content
+        for spec,data in chart_images:
+            slide=prs.slides.add_slide(prs.slide_layouts[6]);slide.shapes.add_picture(io.BytesIO(data),Inches(.8),Inches(.8),width=Inches(11.7));slide.notes_slide.notes_text_frame.text='CHART · '+spec.get('title','Gráfico')
         prs.save(output);mime='application/vnd.openxmlformats-officedocument.presentationml.presentation'
     elif kind=='md':output.write(full.encode());mime='text/markdown'
     else:raise ValueError('Formato soportado: pdf, docx, xlsx, pptx, md.')
     store=FileStore()
-    try:item=store.save(title+'.'+kind,output.getvalue(),mime,type=kind,title=title,creator_agent='ArtifactOrchestrator',source_task=source_task,version=1,associated_contacts=contacts or [],associated_projects=projects or [],retrieval_text=full[:100000])
+    try:item=store.save(title+'.'+kind,output.getvalue(),mime,type=kind,title=title,creator_agent='ArtifactOrchestrator',source_task=source_task,version=1,report_template=template,chart_count=len(chart_images),associated_contacts=contacts or [],associated_projects=projects or [],retrieval_text=full[:100000])
     except DuplicateFileError as exc:item=exc.item
     return {'artifact_id':item['id'],'type':kind,'title':title,'mime':mime,'size':item['size'],'created_at':item['created_at'],'creator_agent':'ArtifactOrchestrator','source_task':source_task,'storage_path':item.get('stored_name'),'drive_id':item.get('drive_id'),'version':item.get('version',1),'associated_contacts':item.get('associated_contacts',[]),'associated_projects':item.get('associated_projects',[]),'download_url':'/api/files/'+item['id']+'/download'}
 

@@ -115,7 +115,10 @@ def list_conversations(limit=50):
     if not isinstance(threads, list): return []
     out=[]
     for x in reversed(threads[-max(1,int(limit)):]):
-        out.append({k:x.get(k) for k in ("id","title","created_at","updated_at","starred")})
+        row={k:x.get(k) for k in ("id","title","created_at","updated_at","starred")}
+        messages=x.get('messages') or []
+        row.update(message_count=len(messages),snippet=next((str(m.get('content',''))[:220] for m in reversed(messages) if m.get('content')),''))
+        out.append(row)
     return out
 
 
@@ -148,3 +151,11 @@ def clear_conversation(archive=True):
     if archive:
         archive_current_conversation()
     save(_user_file("conversation.json"), [])
+
+
+def delete_conversation_archive(thread_id):
+    threads=load(_threads_file(),[])
+    remaining=[x for x in threads if x.get('id')!=thread_id]
+    if len(remaining)==len(threads):return False
+    save(_threads_file(),remaining)
+    return True

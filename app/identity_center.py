@@ -117,8 +117,11 @@ def verify_google(scope,services=None):
     youtube_creds=cloud_auth.get_credentials(user_id=cloud_auth.youtube_user_id(scope)) if 'YOUTUBE' in names else None
     with ThreadPoolExecutor(max_workers=4) as pool:results=dict(zip(names,pool.map(lambda n:_probe(n,youtube_creds or creds) if n=='YOUTUBE' else _probe(n,creds),names)))
     granted=set(creds.scopes or [])
+    persisted=holdings.read(scope).get('workspace_tests',{})
     for name,permission in EXTRA.items():
         # Scope is available, but these APIs need a document ID or a write to prove operation.
+        if persisted.get(name,{}).get('status')=='CONNECTED':
+            results[name]={'status':'CONNECTED','evidence':persisted[name]['evidence'],'last_verified':persisted[name]['last_verified'],'document_id':persisted[name]['id']};continue
         results[name]={'status':'AVAILABLE' if PREFIX+permission in granted or PREFIX+'drive.file' in granted else 'NOT_CONNECTED',
                        'reason':'Comprobar con un documento autorizado; todavía no se ha creado ninguno','last_verified':None}
     with holdings.transaction(scope):

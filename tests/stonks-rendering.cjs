@@ -13,7 +13,7 @@ for (const file of fs.readdirSync('app/static').filter(f => f.endsWith('.js'))) 
   new vm.Script(fs.readFileSync(`app/static/${file}`, 'utf8'), {filename: file});
 }
 for (const file of ['VERSION', 'VERSION.txt', 'app/VERSION.txt']) {
-  assert.equal(fs.readFileSync(file, 'utf8').trim(), '33.3.8');
+  assert.equal(fs.readFileSync(file, 'utf8').trim(), '33.3.9');
 }
 console.log(`PASS: ${scripts} inline scripts, static JavaScript and three version files`);
 (async () => {
@@ -47,6 +47,7 @@ console.log(`PASS: ${scripts} inline scripts, static JavaScript and three versio
 
         if (url.pathname === '/static/zar-silhouette.png') return route.fulfill({contentType:'image/png',body:fs.readFileSync('app/static/zar-silhouette.png')});
         if (['/static/ui-polish.css','/static/ui-polish.js','/static/nodes.css','/static/nodes.js','/static/business-orchestration.js','/static/business-workflows.js','/static/commerce-agency.js','/static/trading-capital.js','/static/identity-provisioning.js'].includes(url.pathname)) return route.fulfill({contentType:url.pathname.endsWith('.css')?'text/css':'application/javascript',body:fs.readFileSync('app'+url.pathname)});
+        if (url.pathname.startsWith('/static/') && /\.(js|css)$/.test(url.pathname) && fs.existsSync('app'+url.pathname))return route.fulfill({contentType:url.pathname.endsWith('.css')?'text/css':'application/javascript',body:fs.readFileSync('app'+url.pathname)});
         if (url.pathname === '/static/skills.js') return route.fulfill({contentType: 'application/javascript', body: fs.readFileSync('app/static/skills.js', 'utf8')});
         return route.fulfill({contentType: 'application/json', body: JSON.stringify({
           ok: true, paused: !controlledReady, revoked: false, mode: 'paper', execution_mode: controlledReady?'paper_auto':'decision',
@@ -221,12 +222,12 @@ console.log(`PASS: ${scripts} inline scripts, static JavaScript and three versio
       assert.equal(await page.locator('#zsAutomatonMode option').last().evaluate(e=>e.disabled),true);
       await page.locator('.zsCloseBtn').click();
       assert.equal(await page.locator('#panel').isVisible(), false);
-      assert.equal(await page.evaluate(() => zsLiveSyncTimer), null);
+      assert.equal(await page.evaluate(() => StonksRealtimeBus.state().running), false);
       assert.equal(await page.locator('#chatContent .composer').evaluate(e=>getComputedStyle(e).visibility),'visible');
       await page.evaluate(() => showStonks());
       await page.waitForTimeout(100);
       await checkLayout();
-      assert.notEqual(await page.evaluate(() => zsLiveSyncTimer), null);
+      assert.equal(await page.evaluate(() => StonksRealtimeBus.state().running), true);
       assert.deepEqual(errors, []);
       console.log(`PASS: ${viewport.width}x${viewport.height}: layout, IDs, chat, Risk/Position Management save, close/reopen, sync, no JS errors`);
       await page.close();

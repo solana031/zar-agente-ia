@@ -30,7 +30,7 @@
   document.addEventListener('click', async event => {
     const button = event.target.closest('#zarNodesCards button[data-action]');
     if (!button || button.disabled) return;
-    if (button.dataset.action === 'revoke' && !confirm('¿Revocar este nodo? Su token dejará de permitir la conexión.')) return;
+    if (button.dataset.action === 'revoke' && !await ZarUI.confirm('¿Revocar este nodo? Su token dejará de permitir la conexión.')) return;
     button.disabled = true;
     try {
       const response = await fetch(`/api/nodes/${encodeURIComponent(button.dataset.node)}/${button.dataset.action}`, {method:'POST', credentials:'same-origin', headers:{'X-ZAR-Nodes-CSRF':csrf}});
