@@ -2553,7 +2553,7 @@ async function zsCloseOrphanTest(){
 }
 
 function zsTab(id,btn){document.querySelectorAll('.zsTabPanel').forEach(x=>x.classList.remove('active'));const p=document.getElementById('zsTab-'+id);if(p)p.classList.add('active');document.querySelectorAll('.zsNav button').forEach(x=>x.classList.remove('active'));if(btn)btn.classList.add('active');if(id==='orders')zsLoadOrders();if(id==='risk'){zsLoadPortfolio();zsLoadAudit();}else if(id==='dashboard'||id==='wallets')zsLoadPortfolio();}
-function zsOpenAutomaton(btn){zsTab('automaton',btn);zsRefreshStatus();zsLoadPortfolio();}
+function zsOpenAutomaton(btn){zsTab('automaton',btn);if(!document.getElementById('zsTradingBudget'))window.zarTradingRefresh?.();zsRefreshStatus();zsLoadPortfolio();}
 let zsPreflight=null, zsPreflightPending=null;
 function zsInvalidatePreflight(){zsPreflight=null;zsRenderPreflight();zsRenderLifecycleTest(zsLifecycleTestState||{})}
 function zsRenderPreflight(){
