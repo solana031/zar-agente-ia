@@ -136,7 +136,7 @@ class DramaClawClient:
         return self._save(cp, persist)
 
     def _blocked(self, cp, persist, code, message):
-        cp.update(status="blocked", error_code=code, error=message)
+        cp.update(status="blocked", error_code=code, error=message,submission_state="UNKNOWN" if code=="submission_unknown" else "FAILED")
         return self._save(cp, persist)
 
     def _tasks(self, cp):
@@ -312,7 +312,9 @@ class DramaClawClient:
             record["status"] = status
             if self._evidence(cp, record["stage"], record.get("target")):
                 return self._completed(cp, persist, record)
-            return self._blocked(cp, persist, "task_" + status, "DramaClaw detuvo la etapa. Revisa modelos, voces, cuotas y recursos en su editor; ZAR conserva los identificadores.")
+            reason=str(found.get('error') or '').lower()
+            hint=('ACTION_REQUIRED: DramaClaw no tiene configuradas sus credenciales DramaClawAPI de generación.' if 'api key not set' in reason else 'DramaClaw agotó la cuota del proveedor; revisa saldo/cuota antes de reintentar.' if 'quota' in reason or 'insufficient credits' in reason else 'DramaClaw detuvo la etapa. Revisa modelos, voces, cuotas y recursos en su editor; ZAR conserva los identificadores.')
+            return self._blocked(cp, persist, "task_" + status, hint)
         return self._blocked(cp, persist, "task_status", "Estado de tarea desconocido; no se enviará otra generación.")
 
     def _poll_batch(self, cp, persist):

@@ -215,6 +215,15 @@ class ClientTests(unittest.TestCase):
         self.assertNotIn('pending',cp)
         self.assertNotIn('video_url',cp)
 
+    def test_missing_provider_generation_credentials_are_specific_and_sanitized(self):
+        task={'task_id':'t1','task_type':'build_characters','episode':0,'status':'failed','error':'API key not set. Configure DramaClawAPI credentials. secret-never-print'}
+        api=ScriptedSession([('GET',ROOT+'/tasks',ok([task])),('GET',ROOT+'/characters',ok([]))])
+        cp=self.client(api).advance({'stage':'characters','project_id':'p1','active_task':{'stage':'characters','task_id':'t1'},'tasks':[]},'brief',self.persist)
+        self.assertEqual(cp['submission_state'],'FAILED')
+        self.assertIn('DramaClawAPI',cp['error'])
+        self.assertNotIn('secret-never-print',json.dumps(cp))
+        self.assertTrue(all(c[0]=='GET' for c in api.calls))
+
     def test_full_pipeline_preserves_brief_and_resumes_after_every_call(self):
         api = PipelineAPI(self.saved)
         client = self.client(api)
