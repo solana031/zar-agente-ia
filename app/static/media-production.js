@@ -1,7 +1,7 @@
 /* Shared Media surface: no provider secrets, no automatic publishing or copy. */
 (()=>{
  const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
- let jobs=[],connector={},selected='',csrf='',busy=false,timer=null,loading=false;
+ let jobs=[],connector={},selected='',csrf='',busy=false,timer=null,loading=false,refreshError=false;
  const hosts=()=>[...document.querySelectorAll('[data-zar-media]')];
  const current=()=>jobs.find(t=>t.id===selected)||jobs.at(-1);
  async function post(path,data){if(!csrf)csrf=(await fetch('/api/semantic/tasks').then(r=>r.json())).csrf;const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json','X-ZAR-Business-CSRF':csrf},body:JSON.stringify(data)}),j=await r.json();if(!r.ok||j.ok===false)throw Error(j.error||'Operación no confirmada');return j.result||j;}
@@ -14,7 +14,7 @@
   }
   if(hosts().length&&!timer){refresh();timer=setInterval(()=>{if(hosts().some(h=>h.getClientRects().length))refresh();else{clearInterval(timer);timer=null;}},5000);}
  }
- async function refresh(){if(loading)return;loading=true;try{const r=await fetch('/api/holdings/media/jobs',{cache:'no-store'}),j=await r.json();if(!r.ok||!j.ok)throw Error(j.error||'No se pudo recuperar Media');jobs=(j.tasks||[]).sort((a,b)=>String(a.created_at||a.payload?.created_at).localeCompare(String(b.created_at||b.payload?.created_at)));connector=j.connector||{};render();}catch(e){notice(e.message);}finally{loading=false;}}
+ async function refresh(){if(loading)return;loading=true;try{const r=await fetch('/api/holdings/media/jobs',{cache:'no-store'}),j=await r.json();if(!r.ok||!j.ok)throw Error(j.error||'No se pudo recuperar Media');jobs=(j.tasks||[]).sort((a,b)=>String(a.created_at||a.payload?.created_at).localeCompare(String(b.created_at||b.payload?.created_at)));connector=j.connector||{};if(refreshError){notice('');refreshError=false;}render();}catch(e){refreshError=true;notice(e.message);}finally{loading=false;}}
  function render(){const task=current(),r=task?.result||{},active=task&&['PRODUCING','PUBLISHING'].includes(task.status);
   hosts().forEach(h=>{const f=h.querySelector('form'),story=f.elements.story;if(task&&!story.dataset.edited&&story.dataset.task!==task.id){story.value=task.payload?.editor_story||task.payload?.master_brief||'';story.dataset.task=task.id;f.elements.format.value=r.format||'9:16';f.elements.platform.value=task.payload?.platform||'tiktok';f.elements.duration.value=r.project?.duration||60;}
    h.querySelector('[data-media-project]').innerHTML='<option value="">Último proyecto</option>'+jobs.slice().reverse().map(t=>`<option value="${esc(t.id)}" ${selected===t.id?'selected':''}>${esc(t.result?.project?.title||t.id)} · ${esc(t.status)}</option>`).join('');

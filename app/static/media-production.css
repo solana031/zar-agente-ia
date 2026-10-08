@@ -5,3 +5,5 @@
 .workspaceTool[onclick="showVoice()"],.workspaceTool[onclick="showProvider()"],.mobileMenuItem[onclick="showVoice();closeMobileDrawer()"],.mobileMenuItem[onclick="showProvider();closeMobileDrawer()"]{display:none!important}
 
 .right .zarWorkspaceDock button[onclick="showMedia()"],.right .controlTile[onclick="showMedia()"],.right .controlTile[onclick="showFiles()"]{display:none!important}
+
+.zhTools>[data-zar-media]{grid-column:1/-1}.zhTools>.zhCard{align-self:start}[data-jev-card] p{font-size:12px;line-height:1.4;margin:8px 0}
