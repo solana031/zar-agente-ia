@@ -130,6 +130,7 @@ class DramaClawClient:
     def _next(self, cp, persist, stage=None):
         cp["stage"] = stage or STAGES[STAGES.index(cp["stage"]) + 1]
         cp["status"] = "done" if cp["stage"] == "done" else "running"
+        if cp["stage"]!="configure":cp["submission_state"]="READY" if cp["stage"]=="done" else "PROCESSING"
         for key in ("error", "error_code", "pending", "active_task", "active_tasks"):
             cp.pop(key, None)
         return self._save(cp, persist)
@@ -181,8 +182,16 @@ class DramaClawClient:
             return self._save(cp, persist)
         if intent["stage"] == "project":
             data = response.get("data") or {}
-            cp["project_id"] = data.get("project_id") or data.get("id")
+            identifier=data.get('project_id') or data.get('id')
+            if not identifier:
+                ids={key:data[key] for key in ('job_id','task_id','submission_id') if isinstance(data.get(key),str) and data[key]}
+                if ids:
+                    cp['submission_ids']=ids;cp['pending']['accepted']=True;cp['submission_state']='REQUEST_ACCEPTED'
+                    return self._save(cp,persist)
+                raise DramaClawError('project_response','DramaClaw no confirmó un proyecto ni una tarea de creación.')
+            cp["project_id"] = identifier
             _part(cp["project_id"])
+            cp['submission_state']='PROJECT_CREATED'
         if intent["stage"] == "narrator":
             cp["narrator_provider"] = intent.get("provider", "external")
         return self._next(cp, persist)
@@ -210,6 +219,10 @@ class DramaClawClient:
         except DramaClawError as exc:
             # Even a 5xx may follow a queued operation. Keep intent, no retry.
             cp["last_submission_error"] = exc.code
+            cp["submission_message"] = str(exc)
+            if exc.code.startswith('http_') and exc.code[5:].isdigit() and 400 <= int(exc.code[5:]) < 500 and exc.code not in {'http_408','http_409'}:
+                cp.pop('pending', None)
+                return self._blocked(cp, persist, exc.code, str(exc))
             return self._save(cp, persist)
 
     def _beats(self, cp):
@@ -225,7 +238,7 @@ class DramaClawClient:
             projects = self._get("/projects") or []
             found = [p for p in projects if isinstance(p, dict) and p.get("name") == cp["project_name"]]
             if len(found) == 1:
-                cp["project_id"] = found[0].get("id")
+                cp["project_id"] = found[0].get("project_id") or found[0].get("id")
                 _part(cp["project_id"])
                 return True
             return False
@@ -333,6 +346,13 @@ class DramaClawClient:
                 cp["status"] = "running"
                 return self._save(cp, persist)
             return self._next(cp, persist)
+        if intent['stage']=='project' and intent.get('accepted'):
+            cp['status']='running';cp['submission_state']='PROCESSING'
+            return self._save(cp,persist)
+        rejected=cp.get('last_submission_error','')
+        if rejected.startswith('http_') and rejected[5:].isdigit() and 400<=int(rejected[5:])<500 and rejected not in {'http_408','http_409'}:
+            cp.pop('pending',None)
+            return self._blocked(cp,persist,rejected,cp.get('submission_message') or 'DramaClaw rechazó la solicitud (HTTP '+rejected[5:]+'); revisa la petición antes de reintentar.')
         if intent.get("task_type"):
             def matches(task):
                 if task.get("task_id") in intent.get("before_task_ids", []):
@@ -352,7 +372,7 @@ class DramaClawClient:
                 return self._accept(cp, persist, {"data": {"tasks": candidates}}, intent)
             if len(candidates) == 1:
                 return self._accept(cp, persist, candidates[0], intent)
-        return self._blocked(cp, persist, "submission_unknown", "No se puede confirmar si DramaClaw aceptó la operación. Se conserva su intención y no se repetirá automáticamente; revisa el editor.")
+        return self._blocked(cp, persist, "submission_unknown", "No se puede confirmar si DramaClaw aceptó la operación. " + cp.get('submission_message', '') + " Se conserva su intención y no se repetirá automáticamente; revisa el editor.")
 
     def advance(self, checkpoint, master_brief, persist, narrator=None):
         """One bounded advance; narrator() returns (audio bytes, MIME, provider)."""
@@ -370,7 +390,13 @@ class DramaClawClient:
                 raise DramaClawError("checkpoint", "El brief o el servidor cambiaron; crea una producción nueva para conservar la trazabilidad.")
             cp.setdefault("brief_sha256", digest)
             cp.setdefault("origin_sha256", binding)
-            cp.setdefault("project_name", "ZAR-" + uuid.uuid4().hex[:20])
+            cp.setdefault("project_name", "ZAR_" + uuid.uuid4().hex[:20])
+            # Official validate_project_name only accepts letters/digits/underscore.
+            # Repair only a proven rejected legacy creation, never an ambiguous one.
+            if cp['stage']=='project' and cp.get('last_submission_error')=='http_400' and '-' in cp['project_name'] and not cp.get('project_id'):
+                cp['project_name']=cp['project_name'].replace('-','_');cp.pop('pending',None)
+                cp.pop('last_submission_error',None);cp.pop('submission_message',None)
+                self._save(cp,persist)
             cp.setdefault("filename", "zar-brief-" + digest[:16] + ".txt")
             cp.setdefault("episode", 1)
             cp.setdefault("project_config", {"spine_template": "narrated", "narration_style": "third_person", "aspect_ratio": "9:16", "add_subtitles": True})

@@ -175,6 +175,46 @@ class ClientTests(unittest.TestCase):
         return DramaClawClient("https://api.example.test", session=session,
                                public_url="https://editor.example.test", **kwargs)
 
+    def test_project_name_matches_provider_contract(self):
+        session=ScriptedSession([('POST','/api/v1/projects',ok({'project_id':'p1'}))])
+        cp=self.client(session).advance({},'brief',self.persist)
+        self.assertRegex(session.calls[0][2]['json']['name'],r'^[a-zA-Z0-9_]+$')
+        self.assertEqual(cp['submission_state'],'PROJECT_CREATED')
+
+    def test_rejected_legacy_name_repaired_once(self):
+        session=ScriptedSession([('POST','/api/v1/projects',ok({'id':'p1'}))])
+        cp=self.client(session).advance({'stage':'project','project_name':'ZAR_old','last_submission_error':'http_400'},'brief',self.persist)
+        self.assertEqual(cp['project_id'],'p1')
+        legacy={'stage':'project','project_name':'ZAR-old','last_submission_error':'http_400','pending':{'stage':'project'}}
+        api=ScriptedSession([('POST','/api/v1/projects',ok({'id':'p2'}))])
+        result=self.client(api).advance(legacy,'brief',self.persist)
+        self.assertEqual(result['project_name'],'ZAR_old')
+        self.assertEqual(result['project_id'],'p2')
+        self.assertEqual(len(api.calls),1)
+
+    def test_async_creation_keeps_id_and_never_repeats_post(self):
+        api=ScriptedSession([('POST','/api/v1/projects',ok({'submission_id':'accepted-1'}))])
+        cp=self.client(api).advance({},'brief',self.persist)
+        self.assertEqual(cp['submission_state'],'REQUEST_ACCEPTED')
+        self.assertEqual(cp['submission_ids'],{'submission_id':'accepted-1'})
+        for i in range(2):
+            poll=ScriptedSession([('GET','/api/v1/projects',ok([]))])
+            cp=self.client(poll).advance(json.loads(json.dumps(cp)),'brief',self.persist)
+            self.assertEqual(cp['submission_state'],'PROCESSING')
+            self.assertNotEqual(cp['status'],'blocked')
+            self.assertEqual([c[0] for c in poll.calls],['GET'])
+        poll=ScriptedSession([('GET','/api/v1/projects',ok([{'project_id':'p1','name':cp['project_name']}]))])
+        cp=self.client(poll).advance(cp,'brief',self.persist)
+        self.assertEqual(cp['project_id'],'p1')
+        self.assertNotIn('pending',cp)
+
+    def test_definitive_http400_is_specific_not_unknown(self):
+        api=ScriptedSession([('POST','/api/v1/projects',Response({},400))])
+        cp=self.client(api).advance({},'brief',self.persist)
+        self.assertEqual(cp['error_code'],'http_400')
+        self.assertNotIn('pending',cp)
+        self.assertNotIn('video_url',cp)
+
     def test_full_pipeline_preserves_brief_and_resumes_after_every_call(self):
         api = PipelineAPI(self.saved)
         client = self.client(api)

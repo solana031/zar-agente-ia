@@ -83,17 +83,17 @@ class PublishingAdapter:
             'thumbnail':thumbnail,'subtitle_track':subtitle_track,'upload_capability':ready,'publish_capability':cap.get('publish_capability','BLOCKED'),
             'publish_status':'NOT_UPLOADED','message':'Sin subida: YouTube no ofrece dry-run de videos.insert; publicación y assets requieren confirmación posterior.'}
 
-    def youtube(self,path,title,description,scope_id=None):
+    def youtube(self,path,title,description,scope_id=None,privacy='private',tags=None,publish_at=None):
         if scope_id:
-            plan=self.prepare_youtube(scope_id,title,description)
+            plan=self.prepare_youtube(scope_id,title,description,privacy=privacy)
             if not plan['upload_capability']:raise ValueError('HUMAN_ACTION_REQUIRED: crear/verificar el canal YouTube de ZAR.')
         from .youtube import upload
-        result=upload(path,title,description=description,privacy='private',**({'user_id':scope_id} if scope_id else {}))
+        result=upload(path,title,description=description,privacy=privacy,tags=tags,publish_at=publish_at,**({'user_id':scope_id} if scope_id else {}))
         video_id=result.get('id')
         if not video_id:
             raise ValueError('YouTube no confirmó identificador; revisar cuenta antes de reintentar.')
         return {'ok':True,'platform':'youtube','id':video_id,'url':'https://www.youtube.com/watch?v='+quote(video_id,safe=''),
-            'status':'UPLOADED_PRIVATE','timestamp':holdings._now(),'metrics':None,'pending_publish':False}
+            'status':'SCHEDULED' if publish_at else 'UPLOADED_'+privacy.upper(),'timestamp':holdings._now(),'metrics':None,'pending_publish':False}
 
 
 class MediaRenderAdapter:

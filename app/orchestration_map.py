@@ -35,6 +35,12 @@ def graph(base,d):
             'task':deepcopy(a.get('current_tasks',[])),'heartbeat':a.get('last_heartbeat'),
             'cost':a.get('costs'),'revenue':a.get('attributed_revenue'),'errors':deepcopy(a.get('errors',[]))[-10:]})
         base['edges'].append([parent,aid]);seen.add(aid)
+    for agent in base['agents']:
+        if agent['id']=='JEV':agent['status']='LOCAL_POLICY_ACTIVE'
+    for row in d.get('jev_decisions',[]):
+        requester=row.get('requesting_agent')
+        edge=[requester,'JEV']
+        if requester in seen and requester!='JEV' and edge not in base['edges']:base['edges'].append(edge)
     return base
 
 

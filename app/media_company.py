@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import os
 import secrets
 import requests
@@ -149,10 +150,14 @@ def _result(task, record):
               "project_state":record.get('project_state','DRAFT'), "project":record.get('project'),
               "characters":record.get('characters',[]),"scenes":record.get('scenes',[]),"script":record.get('script'),
               "subtitles":record.get('subtitles'),"costs":record.get('costs'),"agent_trace":record.get('agent_trace',[]),
-              "renders":record.get('renders',[]),"publications":record.get('publications',[])}
+              "rendered_at":record.get('rendered_at'),"renders":record.get('renders',[]),"publications":record.get('publications',[])}
+    result.update(submission_state=('READY' if record.get('artifact') else 'FAILED' if cp.get('status')=='blocked' and cp.get('last_submission_error','').startswith('http_4') else 'UNKNOWN' if cp.get('error_code')=='submission_unknown' else cp.get('submission_state') or 'PROCESSING'), editor_spec=record.get('editor_spec',{}), error_code=cp.get('error_code'), submission_error=cp.get('last_submission_error'),
+                  submission_message=cp.get('submission_message'), active_tasks=cp.get('active_tasks') or ([cp['active_task']] if cp.get('active_task') else []))
     if record.get("artifact"):
         result["preview_url"] = "/api/holdings/media/video/" + task["id"]
         result["download_url"] = result["preview_url"]
+    if any(r.get("source")=="previous_revision" for r in record.get("renders",[])):
+        result["previous_preview_url"]="/api/holdings/media/video/"+task["id"]+"?revision=previous"
     if record.get("publish"):
         result["publish"] = record["publish"]
     return result
@@ -264,10 +269,13 @@ def process_one(scope_id):
                     artifact = _path(scope_id, task["id"]).with_suffix(".mp4")
                     if not artifact.exists():
                         client.download_final(cp, artifact)
-                    record.update(status="PRODUCED", artifact=artifact.name, error=None)
+                    record.update(status="PRODUCED", artifact=artifact.name, error=None,rendered_at=holdings._now())
                 elif cp.get("status") in {"error", "blocked"}:
                     record.update(status="ERROR", error=cp.get("error") or "DramaClaw requiere revisión en su editor.")
                 _save(scope_id, task["id"], record)
+            except DramaClawError as exc:
+                record.update(status='ERROR',error=str(exc))
+                _save(scope_id,task['id'],record)
             except Exception:
                 # Do not disclose URLs, tokens, provider bodies or narration errors.
                 record.update(status="ERROR", error="DramaClaw no disponible o generación interrumpida. Reanuda el trabajo existente; no se usará fallback local.")
@@ -313,9 +321,17 @@ def archive_render(scope_id,task_id,record):
     record.pop('publish',None)
 
 
-def video_path(scope_id, task_id):
+def video_path(scope_id, task_id, previous=False):
     _task(scope_id, task_id)
     record = _read(scope_id, task_id)
+    if previous:
+        old=next((r for r in reversed(record.get("renders",[])) if r.get("source")=="previous_revision"),None)
+        if not old: raise ValueError("Sin render anterior.")
+        filename=old.get("filename","")
+        if not re.fullmatch(re.escape(task_id)+r"-revision-[a-f0-9]{12}\.mp4",filename): raise ValueError("Revisión inválida.")
+        path=_root(scope_id)/filename
+        if not path.is_file(): raise ValueError("Revisión no disponible.")
+        return path
     if not record.get("artifact"):
         raise ValueError("El MP4 final aún no está disponible.")
     path = _path(scope_id, task_id).with_suffix(".mp4")
@@ -324,12 +340,22 @@ def video_path(scope_id, task_id):
     return path
 
 
-def publish(scope_id, task_id, video_url, platform, caption="", confirmed=False):
+def publish(scope_id, task_id, video_url, platform, caption="", confirmed=False, metadata=None):
     _task(scope_id, task_id)
     if confirmed is not True:
         return {"ok": False, "requires_review": True, "message": "Confirma la publicación de este MP4."}
     if platform not in {"youtube", "tiktok", "instagram", "reels"}:
         raise ValueError("Plataforma no soportada.")
+    metadata=metadata or {}
+    privacy=metadata.get('privacy','private')
+    title=metadata.get('title') or 'Historia ZAR'
+    if platform=='youtube':
+        if privacy not in {'private','unlisted','public'} or not isinstance(title,str) or not title.strip() or len(title)>100 or len(caption)>5000:raise ValueError('Revisa título, descripción y privacidad YouTube.')
+        if metadata.get('publish_at'):
+            if privacy!='private':raise ValueError('Una subida programada de YouTube debe ser privada hasta su publicación.')
+            stamp=datetime.fromisoformat(str(metadata['publish_at']).replace('Z','+00:00'))
+            if stamp.tzinfo is None or stamp<=datetime.now(timezone.utc):raise ValueError('Programación requiere fecha futura con zona horaria.')
+        if not isinstance(metadata.get('tags',[]),list):raise ValueError('Tags requieren lista.')
     with _job_lock(scope_id, task_id) as locked:
         if not locked:
             return {"ok": False, "error": "Media está procesando esta tarea."}
@@ -348,7 +374,7 @@ def publish(scope_id, task_id, video_url, platform, caption="", confirmed=False)
         video_path(scope_id, task_id)
         if platform=='youtube':
             from .media_adapters import PublishingAdapter
-            readiness=PublishingAdapter().prepare_youtube(scope_id,(record.get('project') or {}).get('title') or 'Historia ZAR',caption)
+            readiness=PublishingAdapter().prepare_youtube(scope_id,title,caption,privacy=privacy)
             if not readiness['upload_capability']:return readiness
         # This URL is minted by our authenticated route, never supplied by the browser.
         record["publish"] = {"ok": False, "pending_publish": True,
@@ -359,13 +385,13 @@ def publish(scope_id, task_id, video_url, platform, caption="", confirmed=False)
             if platform == 'youtube':
                 from .media_adapters import PublishingAdapter
                 safe = PublishingAdapter().youtube(video_path(scope_id,task_id),
-                    (record.get('project') or {}).get('title') or 'Historia ZAR', caption,scope_id=scope_id)
+                    title, caption,scope_id=scope_id,privacy=privacy,tags=metadata.get('tags'),publish_at=metadata.get('publish_at'))
                 record.update(publish=safe,status='PUBLISHED')
                 record.setdefault('publications',[]).append(dict(safe,revision=len(record.get('history',[]))))
                 _save(scope_id,task_id,record);_mirror(scope_id,_task(scope_id,task_id),record)
                 return safe
             publish_fn = tiktok_direct_post if platform == "tiktok" else instagram_reel
-            result = publish_fn(video_url, caption, confirmed=True)
+            result = publish_fn(video_url, caption, confirmed=True, **({'privacy':metadata.get('privacy','SELF_ONLY')} if platform=='tiktok' else {}))
             # Only known identifiers/status enter persistence; never raw provider errors.
             safe = {k: result[k] for k in ("ok", "pending_publish", "publish_id", "container_id", "id") if k in result}
             if platform == "tiktok" and (result.get("data") or {}).get("publish_id"):

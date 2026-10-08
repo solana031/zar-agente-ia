@@ -22,7 +22,7 @@ def tiktok_direct_post(video_url, caption, privacy="SELF_ONLY", confirmed=False)
     info=requests.post("https://open.tiktokapis.com/v2/post/publish/creator_info/query/",headers=headers,json={},timeout=25)
     if not info.ok: raise RuntimeError(f"TikTok creator info {info.status_code}: {info.text[:700]}")
     options=((info.json().get("data") or {}).get("privacy_level_options") or [])
-    if privacy not in options: privacy=options[0] if options else "SELF_ONLY"
+    if privacy not in options: raise ValueError("Privacidad TikTok no autorizada por la cuenta; revisa las opciones actuales.")
     payload={"post_info":{"title":str(caption or "")[:2200],"privacy_level":privacy,"disable_duet":False,"disable_comment":False,"disable_stitch":False,"is_aigc":True},"source_info":{"source":"PULL_FROM_URL","video_url":video_url}}
     r=requests.post("https://open.tiktokapis.com/v2/post/publish/video/init/",headers=headers,json=payload,timeout=30)
     if not r.ok: raise RuntimeError(f"TikTok publish {r.status_code}: {r.text[:900]}")
@@ -46,3 +46,20 @@ def instagram_reel(video_url, caption, confirmed=False):
     p=requests.post(f"{base}/{user}/media_publish",params={"creation_id":cid,"access_token":token},timeout=35)
     if not p.ok: raise RuntimeError(f"Instagram publish {p.status_code}: {p.text[:900]}")
     return {"ok":True,"platform":"instagram","container_id":cid,"media":p.json()}
+
+
+def publishing_readiness(platform):
+    if platform not in {'tiktok','instagram'}: raise ValueError('Plataforma no admitida.')
+    connected=status()[platform]
+    result={'ok':True,'connected':connected,'privacy_options':[],'account':None}
+    if not connected:return result
+    if platform=='instagram':
+        result['account']=os.environ.get('INSTAGRAM_IG_USER_ID')
+        return result
+    response=requests.post('https://open.tiktokapis.com/v2/post/publish/creator_info/query/',headers={'Authorization':'Bearer '+os.environ['TIKTOK_ACCESS_TOKEN']},json={},timeout=25,allow_redirects=False)
+    if not response.ok:raise ValueError('TikTok no confirmó cuenta/opciones (HTTP '+str(response.status_code)+').')
+    payload=response.json()
+    if (payload.get('error') or {}).get('code') not in {None,'ok'}:raise ValueError('TikTok requiere revisar la conexión de la cuenta.')
+    data=payload.get('data') or {}
+    result.update(account=data.get('creator_nickname'),privacy_options=[v for v in data.get('privacy_level_options',[]) if v in {'PUBLIC_TO_EVERYONE','MUTUAL_FOLLOW_FRIENDS','FOLLOWER_OF_CREATOR','SELF_ONLY'}])
+    return result

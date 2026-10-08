@@ -1289,12 +1289,12 @@ def _stonks_stream_plan(d, activate=None):
     option_symbols = {r.get('symbol') for r in exposure if r.get('asset_class') == 'us_option'} | set(d.get('stream_watchlist_options') or [])
     priority = [r.get('symbol') for r in exposure]
     priority += [r.get('symbol') for r in [t.get('data') or {} for t in (d.get('agent_last_trace') or [])] if r.get('signal') in ('BUY', 'SELL')]
-    for raw in priority + list(d.get('engine_symbols') or []) + list(d.get('stream_watchlist_equities') or []):
+    for raw in priority + [d.get('chart_symbol')] + list(d.get('engine_symbols') or []) + list(d.get('stream_watchlist_equities') or []):
         s=str(raw or '').strip().upper()
         if s and '/' not in s and s not in option_symbols and s not in equities:
             equities.append(s)
     crypto=[]
-    for raw in [s for s in priority if '/' in str(s)] + list(d.get('stream_watchlist_crypto') or []):
+    for raw in [s for s in priority+[d.get('chart_symbol')] if '/' in str(s)] + list(d.get('stream_watchlist_crypto') or []):
         s=str(raw or '').strip().upper().replace('-', '/')
         if s and s not in crypto:
             crypto.append(s)
@@ -1739,18 +1739,40 @@ def stonks_realtime_events_api():
     return Response(generate(),mimetype='text/event-stream',headers={'Cache-Control':'no-cache','X-Accel-Buffering':'no'})
 
 @app.get('/api/stonks/chart/btc')
+@app.get('/api/stonks/chart/asset')
 def stonks_btc_chart_api():
     from datetime import timedelta
     timeframe=request.args.get('timeframe','1Min')
     if timeframe not in {'1Min','5Min','15Min','1Hour','4Hour','1Day'}:return jsonify(ok=False,error='Periodo no permitido.'),400
+    symbol=str(request.args.get('symbol') or 'BTC/USD').strip().upper()
+    from .stonks_stream import _norm_crypto,_norm_equity
+    symbol=(_norm_crypto(symbol) if '/' in symbol or symbol.endswith('USD') else _norm_equity(symbol))
+    if not symbol:return jsonify(ok=False,error='Símbolo no válido.'),400
+    crypto='/' in symbol;source='Alpaca crypto' if crypto else 'Alpaca IEX'
     try:
         now=datetime.now(timezone.utc);days={'1Min':2,'5Min':3,'15Min':5,'1Hour':14,'4Hour':30,'1Day':200}[timeframe]
-        data=_alpaca_market_request('/v1beta3/crypto/us/bars',params={'symbols':'BTC/USD','timeframe':timeframe,'start':(now-timedelta(days=days)).isoformat(),'end':now.isoformat(),'limit':400,'sort':'desc'})
-        bars=(data.get('bars') or {}).get('BTC/USD') or []
+        params={'timeframe':timeframe,'start':(now-timedelta(days=days)).isoformat(),'end':now.isoformat(),'limit':400,'sort':'desc'}
+        if crypto:
+            data=_alpaca_market_request('/v1beta3/crypto/us/bars',params={**params,'symbols':symbol})
+            bars=(data.get('bars') or {}).get(symbol) or []
+        else:
+            data=_alpaca_market_request('/v2/stocks/'+symbol+'/bars',params={**params,'feed':'iex'})
+            bars=data.get('bars') or []
         bars=sorted([b for b in bars if all(b.get(k) is not None for k in ('t','o','h','l','c','v'))],key=lambda b:b['t'])
-        if not bars:raise ValueError('Alpaca no devolvió barras BTC/USD.')
-        return jsonify(ok=True,symbol='BTC/USD',source='Alpaca crypto',mode='HISTORICAL',timeframe=timeframe,bars=bars,last_update=bars[-1]['t'],zero_tokens=True)
-    except Exception:return jsonify(ok=False,symbol='BTC/USD',source='Alpaca crypto',error='Histórico no confirmado; comprueba conexión y permisos de Alpaca.',bars=[]),409
+        if not bars:raise ValueError('Alpaca no devolvió barras.')
+        with _STONKS_LOCK:
+            d=_stonks_read();d['chart_symbol']=symbol;_stonks_write(d);_stonks_stream_plan(d)
+        return jsonify(ok=True,symbol=symbol,source=source,mode='HISTORICAL',timeframe=timeframe,bars=bars,last_update=bars[-1]['t'],zero_tokens=True)
+    except Exception:return jsonify(ok=False,symbol=symbol,source=source,error='Histórico no confirmado; comprueba conexión y permisos de Alpaca.',bars=[]),409
+
+@app.get('/api/stonks/chart/assets')
+def stonks_chart_assets_api():
+    query=str(request.args.get('q') or '').strip().upper()[:24]
+    try:
+        rows=_alpaca_paper_request('/v2/assets',params={'status':'active'})
+        matches=[{'symbol':r['symbol'],'name':r.get('name',r['symbol']),'class':r.get('class')} for r in rows if r.get('tradable') and (query in r.get('symbol','').upper() or query in r.get('name','').upper())]
+        return jsonify(ok=True,assets=matches[:30],zero_tokens=True)
+    except Exception:return jsonify(ok=False,assets=[],error='Catálogo del broker no disponible; puedes escribir el símbolo.'),409
 
 @app.post('/api/stonks/stream/watchlist')
 @_stonks_serialized
@@ -1896,10 +1918,41 @@ def holdings_commerce_supplier_order_api():
 def holdings_media_jobs_api():
     return jsonify(media_company.jobs(_user_scope_id()))
 
+@app.post('/api/holdings/media/direct/<operation>')
+def holdings_media_direct_api(operation):
+    data=request.get_json(silent=True) or {};token=session.get('business_csrf')
+    if not token or not secrets.compare_digest(token,request.headers.get('X-ZAR-Business-CSRF','')):return jsonify(ok=False,error='Recarga Media.'),403
+    from . import media_surface
+    try:
+        scope=_user_scope_id()
+        if operation=='generate': result=media_surface.generate(scope,data)
+        elif operation=='edit': result=media_surface.edit(scope,data)
+        elif operation=='pause': result=media_surface.pause(scope,data.get('task_id'))
+        elif operation=='retry': result=media_company.produce_local(scope,data.get('task_id'))
+        elif operation=='readiness':
+            from .media_adapters import PublishingAdapter
+            if data.get('platform')=='youtube':result=PublishingAdapter().prepare_youtube(scope,data.get('title') or 'Historia ZAR')
+            else:
+                from .social_publish import publishing_readiness
+                result=publishing_readiness(data.get('platform'))
+        elif operation=='copy':
+            task=media_company._task(scope,data.get('task_id'))
+            from . import agent
+            platform=data.get('platform')
+            if platform not in {'youtube','instagram','tiktok'}:raise ValueError('Plataforma no admitida.')
+            text=agent.api_text('Devuelve solo JSON con title, description, hashtags (lista), CTA. Copy veraz en español para '+platform+'. No inventes hechos. Contenido: '+task['payload']['master_brief'][:12000],load())
+            result=json.loads(str(text).strip().removeprefix('```json').removesuffix('```'))
+            if not isinstance(result,dict) or not isinstance(result.get('hashtags',[]),list) or any(not isinstance(result.get(k,''),str) for k in ('title','description','CTA')):raise ValueError('El modelo no devolvió metadatos válidos.')
+            if any(not isinstance(x,str) for x in result.get('hashtags',[])):raise ValueError('Hashtags no válidos.')
+        else: return jsonify(ok=False,error='Control no disponible.'),404
+        return jsonify(ok=True,result=result)
+    except (ValueError,TypeError,KeyError) as exc:return jsonify(ok=False,error=str(exc)),409
+    except Exception:return jsonify(ok=False,error='Proveedor no confirmó la operación. Se conserva el proyecto.'),409
+
 @app.get('/api/holdings/media/video/<task_id>')
 def holdings_media_video_api(task_id):
     try:
-        path = media_company.video_path(_user_scope_id(), task_id)
+        path = media_company.video_path(_user_scope_id(), task_id, previous=request.args.get("revision")=="previous")
         return send_file(path, mimetype='video/mp4', conditional=True, max_age=0)
     except ValueError as exc:
         return jsonify({'ok': False, 'error': str(exc)}), 404
@@ -1955,7 +2008,7 @@ def holdings_media_publish_api():
                 'scope': scope, 'task': task_id, 'project': record['checkpoint']['project_id']})
             video_url = url_for('holdings_media_public_video_api', token=token, _external=True)
         return jsonify(media_company.publish(scope, task_id, video_url, data.get('platform'),
-                       data.get('caption') or '', confirmed=confirmed))
+                       data.get('caption') or '', confirmed=confirmed,metadata=data.get('metadata')))
     except (ValueError, KeyError) as exc: return jsonify({'ok':False,'error':str(exc)}),400
     except Exception: return jsonify({'ok':False,'error':'Publicación Media no disponible.'}),400
 

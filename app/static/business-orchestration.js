@@ -14,7 +14,7 @@
     const workspace = document.getElementById('orchestrationWorkspaceInner');
     if (!workspace || document.getElementById('orchestrationWorkspace')?.hidden) return;
     let host = document.getElementById('zarBusinessControl');
-    if (!host) {host=document.createElement('section');host.id='zarBusinessControl';host.className='workspaceCard';workspace.prepend(host);}
+    if (!host) {host=document.createElement('section');host.id='zarBusinessControl';host.className='workspaceCard';workspace.append(host);}
     try {
       const r=await fetch('/api/holdings/orchestration',{cache:'no-store'}),j=await r.json();
       if(!r.ok || !j.ok) throw Error(j.error || 'No disponible');
