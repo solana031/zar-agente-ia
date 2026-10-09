@@ -126,4 +126,14 @@ def inventory(state=None):
         elif row['name'] in {'F5-TTS', 'faster-whisper'} and row['state'] == 'POR CONFIGURAR':
             row.update(state='OPTIONAL', status='OPTIONAL',
                        next_step='Motor opcional. No se ha verificado inferencia; consultar Voice para el proveedor activo. No es un bloqueo de ZAR.')
+        elif row['name'] == 'DramaClaw DIRECT' and row.get('configured'):
+            from .media_company import status as media_status
+            proof=media_status()
+            row.update(state='LISTO' if proof.get('api_ready') else 'ERROR',
+                       status='VERIFIED' if proof.get('api_ready') else 'ERROR',
+                       verified_at=proof.get('verified_at'), last_verified=proof.get('verified_at'),
+                       verification_scope='Health real de DramaClaw API; generación y MP4 se verifican por proyecto.',
+                       next_step='API verificada; revisar el resultado real del proyecto antes de publicar.' if proof.get('api_ready') else proof.get('error'))
+        elif row['name']=='Proveedor' and row['state']=='POR CONFIGURAR':
+            row.update(status='ACTION_REQUIRED',next_step='Seleccionar proveedor real compatible con el adapter existente: catálogo, cotización, pedido y seguimiento. No hay proveedor seleccionado.')
     return rows

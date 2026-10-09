@@ -24,7 +24,7 @@ def _key():
 
 
 def status():
-    return {"configured": bool(_key()), "state": "CONFIGURED_UNVERIFIED" if _key() else "NOT_CONFIGURED", "provider": "TypeSafe Jev" if _key() else "ZAR deterministic fallback", "model": MODEL, "base": BASE, "execution_authority": False}
+    return {"configured": bool(_key()), "state": "READY", "provider": "ZAR server policy", "hosted_state": "CONFIGURED_UNVERIFIED" if _key() else "OPTIONAL", "hosted_provider": "TypeSafe Jev", "model": MODEL, "base": BASE, "execution_authority": False}
 
 def evaluate(scope_id, context):
     """Typed server policy judgment. It never grants execution authority."""

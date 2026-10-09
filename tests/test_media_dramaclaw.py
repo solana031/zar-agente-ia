@@ -108,7 +108,7 @@ def test_app_jobs_video_and_signed_social_export(scope,monkeypatch):
 
 def test_version_consistency():
     root=Path(__file__).parents[1]
-    assert {root.joinpath(p).read_text().strip() for p in ('VERSION','VERSION.txt','app/VERSION.txt')}=={'33.3.23'}
+    assert {root.joinpath(p).read_text().strip() for p in ('VERSION','VERSION.txt','app/VERSION.txt')}=={'33.3.24'}
 
 def test_reels_resume_existing_container_once(scope,monkeypatch):
     t,c=finished(scope,monkeypatch)

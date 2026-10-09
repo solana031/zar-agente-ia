@@ -47,13 +47,14 @@ def status():
                     check['capabilities'] = {'configured': False, 'provider': 'UNKNOWN', 'missing_requirement': 'Verificar configuración del gateway', 'service': 'dramaclaw-api'}
         except Exception:
             check = {"ready": False, "error": "DramaClaw no disponible; revisa URL, acceso y modelos."}
+        check['verified_at'] = datetime.now(timezone.utc).isoformat()
         _HEALTH.clear()
         _HEALTH[key] = (time.monotonic(), check)
     check = _HEALTH[key][1]
     ready = bool(check.get("ready"))
     configured = bool(os.environ.get("DRAMACLAW_API_URL", "").strip())
     return {"ready": ready, "api_ready": ready, "generation_ready": False, "capabilities": check.get('capabilities', {}), "label": "DramaClaw CORE · LISTO · generación por verificar" if ready else "DramaClaw DIRECT · NO DISPONIBLE",
-            "error": check.get("error") if not ready else None, "message": check.get("message"),
+            "error": check.get("error") if not ready else None, "message": check.get("message"), "verified_at": check.get('verified_at'),
             "dramaclaw_direct_configured": configured, "dramaclaw_bridge_configured": configured,
             "direct_only": True, "visual_fallback": "desactivado", "attribution_required": True,
             "preferred_provider": "DramaClaw Direct", "social": social_status()}

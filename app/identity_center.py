@@ -235,7 +235,7 @@ def view(scope):
         s['onboarding'].append({'service':name,'status':'CONNECTED' if cap.get('status')=='CONNECTED' or plan.get('status')=='ACTIVE' else 'ERROR' if cap.get('status')=='ERROR' else 'ACTION_REQUIRED',
             'capability_status':cap.get('status','NOT_CONNECTED')})
     s['integrations']=[]
-    connector_names={'SHOPIFY':'Shopify','STRIPE':'Payment','INSTAGRAM':'Instagram','TIKTOK':'TikTok','CLOUDINARY':'Cloudinary','RELAYCLAW':'RelayClaw','LOVABLE':'Lovable','DRAMACLAW':'DramaClaw DIRECT'}
+    connector_names={'SHOPIFY':'Shopify','STRIPE':'Payment','INSTAGRAM':'Instagram','TIKTOK':'TikTok','CLOUDINARY':'Cloudinary','RELAYCLAW':'RelayClaw','LOVABLE':'Lovable','DRAMACLAW':'DramaClaw DIRECT','JEV':'JEV','ELEVENLABS':'ElevenLabs','F5-TTS':'F5-TTS','FASTER-WHISPER':'faster-whisper','SUPPLIER':'Proveedor','MAPS':'Google Maps'}
     for name in ['GMAIL','DRIVE','YOUTUBE','ADSENSE',*connector_names]:
         cap=s['capabilities'].get(name,{})
         node=next((n for n in nodes if n['name']==connector_names.get(name,name)),{})
@@ -247,6 +247,9 @@ def view(scope):
         status='CONNECTED' if connected else 'ERROR' if cap.get('status')=='ERROR' or node.get('state')=='ERROR' else 'ACTION_REQUIRED' if cap or node.get('configured') else 'NOT_CONFIGURED'
         reason=cap.get('reason') or node.get('next_step') or 'No hay conexión verificada; comprobar cuenta existente antes de crear otra.'
         if connected:reason=cap.get('evidence') or node.get('verification_scope') or 'API confirmó acceso; la publicación sigue requiriendo revisión.'
+        if connected and name=='DRAMACLAW':status='VERIFIED'
+        if node.get('status') in {'READY','OPTIONAL','DISABLED'}:status=node['status'];reason=node.get('next_step') or reason
+        if name=='SUPPLIER' and not connected:status='ACTION_REQUIRED'
         if name in {'CLOUDINARY','RELAYCLAW'} and not cap and not node:status='ACTION_REQUIRED';reason='Configuración gestionada por DramaClaw; comprobar capacidad real antes del render.'
         if not fresh and verified:reason='Verificación anterior; volver a verificar antes de usar.'
         if name=='ADSENSE' and cap.get('account_state')!='ACTIVE':status='ERROR' if cap.get('status')=='ERROR' else 'ACTION_REQUIRED';reason=cap.get('reason') or 'AdSense: '+str(cap.get('account_state') or 'existencia y aprobación sin verificar')
@@ -309,11 +312,15 @@ def operate(scope,action,data):
         if service=='GOOGLE':return verify_google(scope)
         if service in {'DRAMACLAW','CLOUDINARY'}:
             from . import media_company
-            result=media_company._client().capabilities()
+            proof=media_company.status()
+            result=proof.get('capabilities',{})
             with holdings.transaction(scope):
                 d=holdings.read(scope);s=ensure(d);a=next(x for x in s['human_actions'] if x['id']==data['id'])
-                configured=result['configured'] if service=='DRAMACLAW' else (result.get('media_storage') or {}).get('configured') and (result.get('media_storage') or {}).get('provider')=='cloudinary'
-                a.update(status='DONE' if configured else 'ACTION_REQUIRED',last_checked=holdings._now())
+                configured=result.get('configured',False) if service=='DRAMACLAW' else (result.get('media_storage') or {}).get('configured') and (result.get('media_storage') or {}).get('provider')=='cloudinary'
+                # Configuration presence cannot resolve a failed render or prove storage uploads.
+                verified=service=='DRAMACLAW' and proof.get('api_ready') and a.get('action')!='OBSERVED_BLOCKER'
+                a.update(status='DONE' if verified else 'ACTION_REQUIRED',last_checked=holdings._now(),
+                         verification='API health verified; render checked separately' if verified else 'Configuration present; original operation still requires verification' if configured else 'Configuration missing')
                 holdings.write(scope,d)
             return deepcopy(a)
         from .business_workflows import operate as workflow
