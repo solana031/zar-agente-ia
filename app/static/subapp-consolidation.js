@@ -25,7 +25,7 @@
     });
   }
   function decorate() {
-    document.querySelectorAll('#zarCommerceAgency > h2, [data-zar-media] > h3, .zhCard > b, #zhLedgerCompany option').forEach(el => {
+    document.querySelectorAll('#zarCommerceAgency > h2, [data-zar-media] > h3, .zhCard > b, #zhLedgerCompany option, #orchestrationWorkspace article > h3').forEach(el => {
       const current = el.textContent;
       for (const [oldName,newName] of Object.entries(labels)) if (current.includes(oldName)) text(el,current.replace(oldName,newName));
     });
