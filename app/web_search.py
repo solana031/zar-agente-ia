@@ -371,12 +371,20 @@ def fetch_webpage(url, max_chars=18000):
         r = requests.get(
             url,
             timeout=30,
-            headers={"User-Agent": "Zar/1.0 (+https://example.invalid)"},
+            headers={"User-Agent": "Zar/1.0 (+https://example.invalid)","Accept":"text/html,application/pdf;q=0.9","Accept-Language":"es-ES,es;q=0.9"},
             allow_redirects=True,
         )
         r.raise_for_status()
         if 'application/pdf' in r.headers.get('Content-Type','').lower() or r.content.startswith(b'%PDF-'):
-            return {'ok':False,'status':r.status_code,'error':'PDF requiere extracción documental; no se interpreta su binario como HTML.'}
+            if len(r.content)>15*1024*1024:return {'ok':False,'error':'PDF supera el límite de lectura de 15 MB.'}
+            try:
+                from io import BytesIO
+                from pypdf import PdfReader
+                pdf=PdfReader(BytesIO(r.content))
+                text='\n'.join(page.extract_text() or '' for page in pdf.pages[:20]).strip()
+                if not text:return {'ok':False,'error':'PDF sin texto extraíble; no se interpreta como HTML.'}
+                return {'ok':True,'url':r.url,'status':r.status_code,'text':text[:max_chars],'extraction':'PDF_TEXT'}
+            except Exception as exc:return {'ok':False,'error':'Extracción PDF fallida: '+type(exc).__name__}
         parser = _TextParser()
         parser.feed(r.text)
         text = "\n".join(parser.parts)

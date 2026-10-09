@@ -7,7 +7,7 @@ def investigate(topic,_official=False):
     if (not result.get('ok') or not result.get('sources')) and 'majadahonda' in topic.casefold() and 'vivienda' in topic.casefold():
         # Public authority entry points; all evidence below is fetched live.
         result={'ok':True,'provider':'Official housing directory','sources':[
-            {'title':'PAMMASA · Registro de solicitantes','url':'https://www.pammasa.es/registro-de-solicitantes'},
+            {'title':'PAMMASA · Bases del Registro Permanente de Solicitantes','url':'https://www.pammasa.es/doc/BRPSV%2021122021%20art%2018.pdf'},
             {'title':'Comunidad de Madrid · Bono Alquiler Joven','url':'https://sede.comunidad.madrid/ayudas-becas-subvenciones/bono-alquiler-joven-0'},
             {'title':'Comunidad de Madrid · Necesito una vivienda','url':'https://www.comunidad.madrid/vivienda/necesito-vivienda'}]}
     if not result.get('ok') or not result.get('sources'):raise ValueError('Investigación sin fuentes confirmadas: '+str(result.get('error') or 'sin enlaces verificables'))
