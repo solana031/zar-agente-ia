@@ -1,0 +1,24 @@
+// Actual template and component scripts; all requests are intercepted locally.
+const fs=require('node:fs'),assert=require('node:assert/strict'),{chromium}=require('playwright');
+const sizes=[[390,844],[393,852],[412,915],[768,1024],[1024,1366],[1440,900]];
+(async()=>{const browser=await chromium.launch({headless:true,executablePath:process.env.ZAR_TEST_BROWSER});try{
+ for(const [width,height] of sizes){const page=await browser.newPage({viewport:{width,height}});const errors=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.route('**/*',r=>{const p=new URL(r.request().url()).pathname;
+ if(p==='/')return r.fulfill({contentType:'text/html',body:fs.readFileSync('app/templates/index.html')});
+ if(p.startsWith('/static/')&&fs.existsSync('app'+p))return r.fulfill({contentType:p.endsWith('.css')?'text/css':p.endsWith('.js')?'application/javascript':'image/png',body:fs.readFileSync('app'+p)});
+ const data={ok:true,skills:[],conversations:[{id:'fixture',title:'Informe de vivienda y ayudas municipales para jóvenes',snippet:'Resumen claro con un título largo, pasos completados y resultados disponibles.',message_count:8,updated_at:'2026-10-09T12:00:00Z'}],stats:{total:1,persistent:1},recent:[{category:'preferencias',permanence:'permanent',text:'Prefiero instrucciones claras y prácticas.',created_at:'2026-10-09'}],insights:{by_type:[{source_type:'chat',sources:8}]},files:[{id:'fixture',name:'Informe de vivienda y ayudas municipales para jóvenes.pdf',size:2000,mime:'application/pdf',category:'documentos',created_at:'2026-10-09'}],agents:[],events:[],companies:{},view:{},csrf:'fixture'};
+ return r.fulfill({contentType:'application/json',body:JSON.stringify(data)});});
+ console.log('START '+width); await page.goto('http://zar.test/');await page.waitForTimeout(250);
+ const bounds=async(label,selector)=>{const m=await page.locator(selector).evaluate(e=>{const r=e.getBoundingClientRect();return {width:r.width,height:r.height,left:r.left,right:r.right,top:r.top,bottom:r.bottom,overflow:document.documentElement.scrollWidth>innerWidth+1}});assert(!m.overflow,label+' horizontal overflow '+JSON.stringify(m));assert(m.width>0&&m.height>0,label+' collapsed');assert(m.left>=-1&&m.right<=width+1,label+' outside viewport '+JSON.stringify(m));return m;};
+ const composer=await bounds('Home composer','.composerMain');assert(composer.bottom<=height+1&&composer.top>=0,'composer inaccessible');
+ console.log('HOME '+width); for(const fn of ['showConversations','showMemory','showFiles']){console.log(fn); await page.evaluate(fn=>window[fn](),fn);await page.waitForTimeout(100);await bounds(fn,'#panel');assert(await page.getByRole('button',{name:'Cerrar panel',exact:true}).isVisible());
+ if(fn==='showMemory'){assert(parseFloat(await page.locator('.zarMemoryMini span').first().evaluate(e=>getComputedStyle(e).fontSize))>=12);await bounds('memory search','#memorySearch');}
+ if(fn==='showFiles'){const file=await bounds('file row','.zarFileReadable');assert(file.height<(width<=600?220:180),'file too tall '+JSON.stringify(file));for(const key of ['preview','rename','move','share','delete'])assert.equal(await page.locator('[data-file-'+key+']').count(),1);}
+ if(fn==='showConversations'){await page.locator('#zarConversationFilter').fill('vivienda');assert(await page.locator('.zarConversationItem').isVisible());}
+ await page.getByRole('button',{name:'Cerrar panel',exact:true}).click();}
+ console.log('LEARNINGS'); await page.evaluate(()=>{void ZARSkills.open();});await page.locator('.zarSkillEmpty').waitFor();await bounds('learnings','.zarSkillsShell');await page.locator('.zarSkillsClose').click();
+ await page.evaluate(()=>{void ZarUI.form({title:'Decisiones',message:'Vista previa sin acciones externas.',entries:[{title:'<script>prueba</script>',badge:'ALLOW',body:'Paso interno autorizado',meta:'Riesgo bajo'}],cancel:false});});await bounds('dialog','.zarDialog');assert.equal(await page.locator('.zarDecisionBadge').innerText(),'ALLOW');assert.equal(await page.locator('.zarDecisionEntry script').count(),0);await page.locator('.zarDialog button').last().click();
+ await page.evaluate(()=>showSubagentOrchestration());await page.waitForTimeout(250);const map=await bounds('orchestration map','.zoSceneWrap');assert(map.height>=350);assert.equal(await page.locator('.zoSceneWrap').evaluate(e=>getComputedStyle(e).resize),'none');await page.evaluate(()=>exitSubagentOrchestration());
+ assert.deepEqual(errors,[]);console.log('PASS UI '+width+'x'+height+': Home, Conversations, Memory, Files, Learnings, modal, static map, no JS errors');await page.close();
+ }
+}finally{await browser.close();}})().catch(e=>{console.error(e);process.exit(1)});

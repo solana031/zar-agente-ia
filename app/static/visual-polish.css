@@ -1,0 +1,117 @@
+/* 33.3.16: presentation only; trading surfaces retain their own styles. */
+:root{--zar-ui-muted:#b5a698;--zar-ui-line:#54402e;--zar-ui-radius:12px}
+#panel:not(.zsFloatingWindow),.zarSkillsShell,.zarDialog,.zarArtifactViewer{box-sizing:border-box;scrollbar-width:thin;scrollbar-color:#725333 #15100d;overscroll-behavior:contain}
+#panel:not(.zsFloatingWindow) .zarPanelHero{padding-bottom:12px;border-bottom:1px solid var(--zar-ui-line);margin-bottom:12px;align-items:flex-start}
+#panel:not(.zsFloatingWindow) .zarPanelHero p{font-size:13px;line-height:1.5;color:var(--zar-ui-muted);max-width:68ch}
+#panel:not(.zsFloatingWindow) :is(input,select,textarea){box-sizing:border-box;min-width:0;max-width:100%;font-size:14px;border-radius:9px}
+#panel:not(.zsFloatingWindow) :is(.btnSmall,.btn),.zarSkillsShell button{min-height:38px;font-size:13px!important;border-radius:9px;line-height:1.3}
+#panel:not(.zsFloatingWindow) :is(button,input,select,textarea,summary):focus-visible,.zarSkillsShell :focus-visible,.zarDialog :focus-visible,#chatContent :focus-visible{outline:2px solid #e8bf80;outline-offset:3px}
+.zarConversationTitle{font-size:15px;line-height:1.4;margin:0}
+.zarConversationItem{padding:10px 12px!important;margin:8px 0}
+.zarConversationItem>p{font-size:13px;color:#c4b6a8;line-height:1.5;max-height:39px;margin:5px 0!important}
+.zarConversationMeta{font-size:12px;color:var(--zar-ui-muted)}
+.zarConversationControls{flex-shrink:0}
+.zarConversationControls details{position:relative}
+.zarConversationControls details[open]{z-index:3;background:#211810;border:1px solid #725333;border-radius:10px;padding:4px;box-shadow:0 8px 24px #0006}
+.zarConversationControls details[open]>button{display:block;width:100%;margin-top:4px;text-align:left}
+.zarMemoryHero{gap:10px}
+.zarMemoryCard{padding:12px;border-color:var(--zar-ui-line);border-radius:var(--zar-ui-radius);min-width:0}
+.zarMemoryCard :is(.vcHint2,.zarMemoryMini span){font-size:12px;color:var(--zar-ui-muted);line-height:1.5}
+.zarMemoryMini b{font-size:15px}
+.zarMemoryItem,.zarKnowledgeResult{padding:12px;font-size:14px;line-height:1.5;overflow-wrap:anywhere}
+.zarMemoryItem>div:nth-child(2),.zarMemoryItemHead b{font-size:14px!important;line-height:1.5!important}
+.zarMemoryPill,.zarKnowledgeType,.memoryBadge{font-size:11px;line-height:1.4;padding:4px 8px;color:#e1c69e}
+.zarKnowledgeSnippet{font-size:13px;line-height:1.5;color:#cbbdaf}
+.zarKnowledgeSearchHead{flex-wrap:wrap}
+.zarMemorySearch input{width:0;min-width:0}
+.zarFileReadable{padding:10px 12px!important;gap:10px!important;align-items:center!important}
+.zarFileReadable .zarFileInfo p{margin:2px 0!important}
+.zarFileMeta,.zarFileReadable .zarFileInfo small{font-size:12px;line-height:1.4!important;color:var(--zar-ui-muted)}
+.zarFileActions{gap:6px}
+.zarFileSidebar{border-radius:12px;padding:10px}
+.zarFileSidebar button{font-size:13px!important;line-height:1.35}
+.zarSkillsHead{padding:18px;gap:12px}
+.zarSkillsHead h2{font-size:25px}
+.zarSkillsHead p,.zarSkillDesc,.zarSkillHint,.zarSkillResult{font-size:13px;line-height:1.5;color:var(--zar-ui-muted)}
+.zarSkillMeta span,.zarSkillsToolbar span,.zarSkillsEditor label,.zarSkillRunLabel,.zarSkillRunStatus{font-size:12px;color:var(--zar-ui-muted)}
+.zarSkillCard{padding:10px 12px;border-color:var(--zar-ui-line);border-radius:12px}
+.zarSkillsClose{flex-shrink:0;min-width:44px;min-height:44px}
+.zarSkillEmpty,.zarEmpty,.emptyState,.empty-state{font-size:14px!important;line-height:1.6;color:var(--zar-ui-muted);padding:22px 16px;border-radius:12px}
+.zarSkillsEditor :is(input,textarea){box-sizing:border-box;font-size:14px}
+.zarDialog{padding:20px;max-height:calc(100dvh - 24px)}
+.zarDialog h2{font-size:21px;line-height:1.35}
+.zarDialog footer{gap:8px;flex-wrap:wrap}
+.zarDialogEntries{display:grid;gap:8px}
+.zarDecisionEntry{padding:10px 12px;border:1px solid var(--zar-ui-line);border-radius:10px;background:#18120e}
+.zarDecisionEntry header{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.zarDecisionEntry p{font-size:13px;line-height:1.5;margin:8px 0}
+.zarDecisionEntry small{font-size:12px;color:var(--zar-ui-muted);overflow-wrap:anywhere}
+.zarDecisionBadge{font-size:11px;font-weight:700;padding:4px 8px;border:1px solid #8d693c;border-radius:99px;color:#ecd09f}
+.zarDecisionBadge:is([data-decision="ALLOW"],[data-decision="APPROVE"]){color:#a5dfba;border-color:#41634b}
+.zarDecisionBadge:is([data-decision="DENY"],[data-decision="REJECT"]){color:#efb5a4;border-color:#885448}
+#zarSemanticTasks .card{padding:14px!important;border-radius:12px}
+#zarSemanticTasks .card h3{font-size:16px;line-height:1.5;margin:0 0 8px}
+#zarSemanticTasks .card ol{display:grid;gap:6px;padding-left:24px;font-size:14px;line-height:1.5}
+#zarSemanticTasks .card li{padding:6px 8px;background:#18120e;border-radius:8px}
+#zarSemanticTasks details{border-top:1px solid var(--zar-ui-line);padding-top:10px;margin-top:10px}
+#zarSemanticTasks summary{cursor:pointer;font-size:14px;line-height:1.5}
+.zarDialog :is(input,textarea,select){box-sizing:border-box;max-width:100%;font-size:16px}
+.zarTaskResult{padding:14px;line-height:1.6;border-radius:12px}
+.zarTaskResult :is(p,li){overflow-wrap:anywhere}
+.zarTaskResult :is(button,a){margin:3px;min-height:40px;box-sizing:border-box}
+.zarArtifactViewer{padding:16px;max-width:calc(100vw - 24px)}
+#rightRailContent :is(.card,.controlSection){border-radius:12px;margin-bottom:8px;padding:10px;min-width:0}
+#rightRailContent :is(p,small,.meta,.railHint){font-size:12px;line-height:1.5;color:var(--zar-ui-muted);overflow-wrap:anywhere}
+#rightRailContent :is(h3,h4){font-size:14px;line-height:1.4;margin:4px 0 8px}
+.rightRailToggle{min-height:40px}
+.rightRailToggle small{font-size:11px}
+#chatContent .zarDockItem b{font-size:12px!important;line-height:1.3}
+#chatContent .zarDockItem small{font-size:11px!important;line-height:1.35;color:var(--zar-ui-muted)}
+#chatContent .zarDockItem{min-width:0}
+#chatContent .bubble{overflow-wrap:anywhere;line-height:1.6}
+#orchestrationWorkspace :is(.zoHead,.zoActions,.zoToolbar,.zoZoomControls){gap:8px;flex-wrap:wrap;min-width:0}
+#orchestrationWorkspace .zoSceneWrap{position:relative!important;left:auto!important;top:auto!important;width:100%!important;resize:none!important;min-width:0!important}
+#orchestrationWorkspace :is(.zoStat small,.zoTimelineHead b,.zoTraceRow,.zoTraceMeta){font-size:12px;line-height:1.5}
+#orchestrationWorkspace .zoStat b{font-size:17px}
+#orchestrationWorkspace .zoTraceRow{grid-template-columns:90px 80px minmax(0,1fr);overflow-wrap:anywhere}
+#orchestrationWorkspace .zoBtn{font-size:12px;min-height:38px}
+[data-jev-card]{padding:10px 12px!important;border-radius:12px}
+[data-jev-card] p{font-size:13px;line-height:1.5}
+@media(max-width:1100px){
+ #mobileDrawer{box-sizing:border-box;border-radius:16px;overscroll-behavior:contain;scrollbar-width:thin}
+ #mobileDrawer :is(button,a){min-height:44px;font-size:14px}
+ #panel:not(.zsFloatingWindow){padding:12px!important}
+ #orchestrationWorkspace .zoSceneWrap{height:60dvh!important;min-height:360px!important;max-height:700px}
+}
+@media(min-width:1101px){
+ #panel.zarEnhancedPanel:not(.zsFloatingWindow){width:min(1000px,calc(100vw - 260px))!important;max-width:calc(100vw - 24px)!important;right:12px!important;left:auto!important}
+}
+@media(max-width:600px){
+ .zarMemoryHero{grid-template-columns:minmax(0,1fr)}
+ .zarMemoryMiniGrid{grid-template-columns:repeat(3,minmax(0,1fr))}
+ .zarMemoryMini{padding:7px}
+ .zarMemorySearch{align-items:stretch}
+ .zarConversationSearch{flex-wrap:wrap}
+ .zarConversationSearch input{flex-basis:100%}
+ .zarConversationTop{gap:8px}
+ .zarConversationTitle{font-size:14px}
+ .zarConversationControls{gap:4px}
+ .zarFileReadable{gap:8px!important;padding:9px 10px!important}
+ .zarFileActions{gap:6px;justify-content:flex-start!important}
+ #panel:not(.zsFloatingWindow) :is(.btnSmall,.btn,summary),.zarSkillsShell button,.zarDialog button,.zarTaskResult :is(button,a){min-height:44px}
+ #panel:not(.zsFloatingWindow) :is(input,select,textarea){font-size:16px}
+ .zarSkillsHead{padding:14px}
+ .zarSkillsHead h2{font-size:22px}
+ .zarSkillsToolbar{padding:10px;gap:6px}
+ .zarSkillActions{justify-content:flex-start;gap:6px}
+ .zarSkillCard{grid-template-columns:38px minmax(0,1fr);padding:10px}
+ .zarSkillActions{grid-column:1/-1}
+ .zarDialog{padding:16px;width:100%;border-radius:14px}
+ .zarDialog footer{position:sticky;bottom:0;background:#15110e;padding-top:10px}
+ .zarArtifactViewer header{gap:8px;flex-wrap:wrap}
+ #orchestrationWorkspace .zoTraceRow{grid-template-columns:70px minmax(0,1fr)}
+ #orchestrationWorkspace .zoTraceRow>:last-child{grid-column:1/-1}
+ #orchestrationWorkspace .zoBtn{min-height:44px}
+ #orchestrationWorkspace .zoTimelineHead{gap:8px;flex-wrap:wrap}
+}
+@media(prefers-reduced-motion:reduce){.zarConversationItem,.zarTaskResult,.zarSkillCard{transition:none;animation:none}}
