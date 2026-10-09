@@ -20,6 +20,7 @@ def _current_user_message():
     return _CURRENT_USER_MESSAGE
 
 TOOL_DEFINITIONS = [
+    {"type":"function","name":"zar_browser","description":"Navegador Chromium propio de ZAR: abrir URL HTTPS pública, leer DOM, rellenar campos reversibles y seguir controles por índice. No permite confirmar publicaciones/pagos/términos; devuelve ACTION_REQUIRED cuando se necesita intervención humana. No introducir passwords ni códigos.","parameters":{"type":"object","properties":{"action":{"type":"string","enum":["open","read","back","forward","reload","click","fill"]},"url":{"type":"string"},"index":{"type":"integer"},"value":{"type":"string"}},"required":["action"],"additionalProperties":False}},
     {"type":"function","name":"zar_get_context","description":"Devuelve el estado actual de Zar: correo activo, resumen, borrador actual, ID del borrador, calendario pendiente y foco. Úsalo antes de actuar cuando el usuario emplee referencias como «ese», «eso», «lo de antes», «la reunión», «el borrador» o «haz lo mismo». Así puedes resolver la referencia contra el estado real de la conversación.","parameters":{"type":"object","properties":{},"additionalProperties":False},"strict":True},
     {"type":"function","name":"zar_set_task_state","description":"Actualiza el estado persistente de la tarea actual. Úsalo cuando el usuario cambie de objeto o de fase (por ejemplo correo activo, borrador, evento, tarea pendiente).","parameters":{"type":"object","properties":{"intent":{"type":"string"},"object_type":{"type":"string"},"object_id":{"type":"string"},"action":{"type":"string"},"risk":{"type":"string","enum":["low","medium","high","irreversible"]},"status":{"type":"string"},"summary":{"type":"string"}},"required":["intent","object_type","action","risk","status","summary"],"additionalProperties":False},"strict":True},
     {"type":"function","name":"save_memory","description":"Guarda un dato o preferencia de forma local.","parameters":{"type":"object","properties":{"text":{"type":"string"}},"required":["text"],"additionalProperties":False},"strict":True},
@@ -91,6 +92,22 @@ TOOL_DEFINITIONS = [
 ]
 
 def execute_tool(name, args):
+    if name == "zar_browser":
+        from .zar_browser import operate
+        from .cloud_auth import connected
+        if not connected():
+            return {'ok':False,'status':'ACTION_REQUIRED','reason':'Conectar Google de ZAR antes de usar Browser'}
+        from .jev_decision import evaluate
+        from .user_scope import get_current_user
+        decision = evaluate(get_current_user(), {'action':'BROWSER_READ' if args.get('action') in ('open','read','back','forward','reload') else 'BROWSER_PREPARE', 'agent':'BrowserAgent'})
+        if decision['decision'] == 'DENY':
+            return {'ok':False,'status':'ERROR','reason':'JEV bloquea la operación'}
+        try:
+            result = operate({key:value for key,value in args.items() if key in ('action','url','index','value')})
+            result.pop('screenshot', None)
+            return result
+        except Exception:
+            return {'ok':False,'status':'ERROR','reason':'Browser no disponible; revisar Human Actions'}
     if name == "zar_set_task_state":
         try:
             from .context import set_task_state
