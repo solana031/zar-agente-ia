@@ -133,14 +133,14 @@ class IdentityTests(unittest.TestCase):
  def test_revoke_requires_confirmation(self):
   with self.assertRaises(ValueError):center.operate(self.scope,'revoke',{})
  def test_mail_confirmation_dedup_audit(self):
-  data={'to':'recipient@example.test','subject':'Offline','body':'Test','transaction_id':uuid.uuid4().hex,'confirmed':True,'client':'client','business':'agency','agent':'Pablo'}
-  with patch.object(mail,'require_mail'),patch.object(mail.gmail,'gmail_status',return_value={'email':self.address}),patch.object(mail.gmail,'send_with_attachments',return_value={'id':'mock-message','threadId':'mock-thread'}) as send:
+  data={'sender_identity':self.address,'to':'recipient@example.test','subject':'Offline','body':'Test','transaction_id':uuid.uuid4().hex,'confirmed':True,'client':'client','business':'agency','agent':'Pablo'}
+  with patch.object(mail.gmail,'is_connected',return_value=True),patch.object(mail,'require_mail'),patch.object(mail.gmail,'gmail_status',return_value={'email':self.address}),patch.object(mail.gmail,'send_with_attachments',return_value={'id':'mock-message','threadId':'mock-thread'}) as send:
    first=mail.operate(self.scope,'send',data);self.assertEqual(mail.operate(self.scope,'send',data),first);self.assertEqual(send.call_count,1)
    with self.assertRaises(ValueError):mail.operate(self.scope,'send',{**data,'to':'other@example.test'})
   self.assertEqual(first['message_id'],'mock-message');self.assertEqual(first['business'],'agency');self.assertNotIn('body',first)
  def test_ambiguous_mail_not_repeated(self):
-  data={'to':'recipient@example.test','subject':'Offline','body':'Test','transaction_id':uuid.uuid4().hex,'confirmed':True}
-  with patch.object(mail,'require_mail'),patch.object(mail.gmail,'gmail_status',return_value={'email':self.address}),patch.object(mail.gmail,'send_with_attachments',side_effect=TimeoutError) as send:
+  data={'sender_identity':self.address,'to':'recipient@example.test','subject':'Offline','body':'Test','transaction_id':uuid.uuid4().hex,'confirmed':True}
+  with patch.object(mail.gmail,'is_connected',return_value=True),patch.object(mail,'require_mail'),patch.object(mail.gmail,'gmail_status',return_value={'email':self.address}),patch.object(mail.gmail,'send_with_attachments',side_effect=TimeoutError) as send:
    with self.assertRaises(ValueError):mail.operate(self.scope,'send',data)
    self.assertEqual(mail.operate(self.scope,'send',data)['status'],'REVIEW_REQUIRED');self.assertEqual(send.call_count,1)
  def test_mail_wrong_principal_blocked(self):

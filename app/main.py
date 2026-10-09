@@ -362,6 +362,7 @@ def _email_card(draft, question=True):
     blocked = _is_noreply(draft.get("to", ""))
     payload = {
         "kind": "draft",
+        "sender_identity": draft.get("sender_identity", ""),
         "to": draft.get("to", ""),
         "subject": draft.get("subject", ""),
         "body": draft.get("body", ""),
@@ -417,6 +418,7 @@ def _pending_email_from(draft):
         "body": draft["body"],
         "reply_to_message_id": draft.get("reply_to_message_id", ""),
         "thread_id": draft.get("thread_id", ""),
+        "sender_identity": draft.get("sender_identity", ""),
         "noreply": _is_noreply(draft.get("to", ""))
     }
 
@@ -4571,6 +4573,20 @@ def _process_chat_message(msg):
     # Contexto natural: permite usar «guárdala», «hazlo más formal», «contéstale que…»
     # y preguntas cortas sobre el correo actual sin repetir el objeto de la conversación.
 
+    # Sender selection is distinct from final send confirmation; never switch silently.
+    if pending_email and re.fullmatch(r'(?:remitente|desde)\s+([^\s]+)',msg.strip(),re.I):
+        from .mail_identity import validate
+        try:
+            sender=validate(msg.strip().split(None,1)[1]);pending_email['sender_identity']=sender;_set_pending(pending_email)
+            reply=_email_card(pending_email,question=True)
+        except ValueError as exc:reply=str(exc)
+        _remember_turn('user',msg);_remember_turn('assistant',reply);return reply
+    if pending_email and (_looks_like_send(msg) or 'enviar de todos modos' in low) and not pending_email.get('sender_identity'):
+        from .mail_identity import available
+        try:accounts=available();reply='¿DESDE QUÉ CUENTA QUIERES ENVIARLO?\n'+('\n'.join(a['label']+' · '+a['email']+'\nEscribe: remitente '+a['email'] for a in accounts) if accounts else 'ACTION_REQUIRED: conecta un buzón Google autorizado.')
+        except Exception:reply='ERROR: Gmail no confirmó el remitente. Revisa la conexión.'
+        _remember_turn('user',msg);_remember_turn('assistant',reply);return reply
+
     # Confirmación de envío. Las direcciones noreply requieren una confirmación más explícita.
     if _looks_like_send(msg):
         if pending_email:
@@ -4583,7 +4599,8 @@ def _process_chat_message(msg):
                     sent = send_message(
                         pending_email["to"], pending_email["subject"], pending_email["body"],
                         pending_email.get("reply_to_message_id") or None,
-                        pending_email.get("thread_id") or None
+                        pending_email.get("thread_id") or None,
+                    sender_identity=pending_email.get("sender_identity")
                     )
                     clear_pending(keep_email=True)
                     set_task_state("responder correo", "email", "", "enviar", "irreversible", "sent", "Correo enviado correctamente")
@@ -4600,7 +4617,8 @@ def _process_chat_message(msg):
                 sent = send_message(
                     pending_email["to"], pending_email["subject"], pending_email["body"],
                     pending_email.get("reply_to_message_id") or None,
-                    pending_email.get("thread_id") or None
+                    pending_email.get("thread_id") or None,
+                    sender_identity=pending_email.get("sender_identity")
                 )
                 clear_pending(keep_email=True)
                 set_task_state("responder correo", "email", "", "enviar", "irreversible", "sent", "Correo enviado tras confirmación explícita")
@@ -4621,7 +4639,8 @@ def _process_chat_message(msg):
                 saved = create_draft(
                     pending_email["to"], pending_email["subject"], pending_email["body"],
                     pending_email.get("reply_to_message_id") or None,
-                    pending_email.get("thread_id") or None
+                    pending_email.get("thread_id") or None,
+                    sender_identity=pending_email.get("sender_identity")
                 )
                 draft_id = saved.get("id", "")
             mark_saved_draft(draft_id)
@@ -5829,6 +5848,12 @@ def workspace_verify_writes_api():
     try:return jsonify(ok=True,results=verify(_user_scope_id()))
     except ValueError as exc:return jsonify(ok=False,error=str(exc)),409
 
+@app.get('/api/mail/identities')
+def mail_identities_api():
+    from .mail_identity import available
+    try:return jsonify(ok=True,accounts=available())
+    except Exception:return jsonify(ok=False,error='Gmail no confirmó la identidad; revisa OAuth.',accounts=[]),409
+
 @app.get('/api/semantic/tasks')
 def semantic_tasks_list_api():
     from . import semantic_tasks
@@ -5848,7 +5873,7 @@ def _launch_semantic_task(scope,identifier,data):
     def execute():
         set_current_user(scope)
         with app.test_request_context('/api/semantic/tasks',method='POST'):
-            session.update(snapshot);semantic_tasks.run(scope,identifier,data.get('confirmed') is True,data.get('selected_email'),data.get('selected_artifact_id'))
+            session.update(snapshot);semantic_tasks.run(scope,identifier,data.get('confirmed') is True,data.get('selected_email'),data.get('selected_artifact_id'),data.get('sender_identity'))
     threading.Thread(target=execute,daemon=True).start()
 
 @app.post('/api/semantic/tasks/<identifier>/<action>')
@@ -5870,7 +5895,9 @@ def semantic_task_action_api(identifier,action):
             if not draft:raise ValueError('Todavía no hay email preparado.')
             address=str(data.get('to','')).strip()
             if not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+',address):raise ValueError('Email válido requerido.')
-            draft.update(to=address,subject=str(data.get('subject',''))[:200],body=str(data.get('body',''))[:100000])
+            from .mail_identity import validate
+            sender=validate(data.get('sender_identity'))
+            draft.update(sender_identity=sender,to=address,subject=str(data.get('subject',''))[:200],body=str(data.get('body',''))[:100000])
             semantic_tasks.save(scope,task)
             return jsonify(ok=True,task=task)
         if action=='export':

@@ -86,9 +86,13 @@ def archive(message_id):
 
 def list_drafts():return service().users().drafts().list(userId='me',maxResults=30).execute().get('drafts',[])
 
-def send_with_attachments(to,subject,body,attachments=None,thread_id=None,reply_to_message_id=None,draft=False,cc='',bcc=''):
+def send_with_attachments(to,subject,body,attachments=None,thread_id=None,reply_to_message_id=None,draft=False,cc='',bcc='',sender_identity=None):
     from email.message import EmailMessage
+    if sender_identity:
+        from .mail_identity import validate
+        sender_identity=validate(sender_identity)
     msg=EmailMessage();msg['To']=to;msg['Subject']=subject;msg.set_content(body)
+    if sender_identity:msg['From']=sender_identity
     if cc:msg['Cc']=cc
     if bcc:msg['Bcc']=bcc
     if reply_to_message_id:msg['In-Reply-To']=reply_to_message_id;msg['References']=reply_to_message_id
@@ -104,12 +108,17 @@ def send_with_attachments(to,subject,body,attachments=None,thread_id=None,reply_
     svc=service().users()
     return svc.drafts().create(userId='me',body={'message':payload}).execute() if draft else svc.messages().send(userId='me',body=payload).execute()
 
-def send_message(to,subject,body,reply_to_message_id=None,thread_id=None):
+def send_message(to,subject,body,reply_to_message_id=None,thread_id=None,sender_identity=None):
+    from .mail_identity import validate
+    validate(sender_identity)
     res={'raw':_raw(to,subject,body,reply_to_message_id)}
     if thread_id: res['threadId']=thread_id
     return service().users().messages().send(userId='me',body=res).execute()
 
-def create_draft(to,subject,body,reply_to_message_id=None,thread_id=None):
+def create_draft(to,subject,body,reply_to_message_id=None,thread_id=None,sender_identity=None):
+    if sender_identity:
+        from .mail_identity import validate
+        validate(sender_identity)
     msg={'raw':_raw(to,subject,body,reply_to_message_id)}
     if thread_id: msg['threadId']=thread_id
     return service().users().drafts().create(userId='me',body={'message':msg}).execute()

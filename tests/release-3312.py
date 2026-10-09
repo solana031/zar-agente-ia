@@ -12,7 +12,7 @@ class Release3312(base['Release3310']):
    return tasks.create(self.scope,msg)
  def test_full_request_keeps_all_intents(self):
   t=self.create('Hazme un estudio de ayudas para vivienda. Hazme un informe resumido con links y envíamelo a mi propio email.')
-  self.assertEqual([s['kind'] for s in t['subtasks']],['RESEARCH','VERIFY_SOURCES','CREATE_REPORT','STORE_ARTIFACT','RESOLVE_CONTACT','DRAFT_EMAIL','ATTACH_ARTIFACT','FINAL_CONFIRMATION','SEND_EMAIL'])
+  self.assertEqual([s['kind'] for s in t['subtasks']],['RESEARCH','VERIFY_SOURCES','CREATE_REPORT','STORE_ARTIFACT','RESOLVE_CONTACT','DRAFT_EMAIL','ATTACH_ARTIFACT','SENDER_SELECTION','FINAL_CONFIRMATION','SEND_EMAIL'])
   self.assertEqual(t['entities']['recipient'],'SELF')
   self.assertIn(t['subtasks'][1]['id'],t['subtasks'][2]['dependencies'])
  def test_plan_confirmation_is_required_and_does_not_send(self):
@@ -24,7 +24,7 @@ class Release3312(base['Release3310']):
    main.session['google_account_email']='owner@example.test'
    result=tasks.run(self.scope,t['id'])
    self.assertEqual(result['status'],'WAITING');self.assertEqual(result['outputs']['DRAFT_EMAIL']['to'],'owner@example.test');send.assert_not_called()
-  decisions=holdings.read(self.scope)['jev_decisions'];self.assertTrue(any(r['decision']=='ALLOW' for r in decisions));self.assertEqual(decisions[-1]['decision'],'CONFIRM')
+  decisions=holdings.read(self.scope)['jev_decisions'];self.assertTrue(any(r['decision']=='ALLOW' for r in decisions));self.assertEqual(result['current_step'],next(s['id'] for s in result['subtasks'] if s['kind']=='SENDER_SELECTION'));self.assertEqual(decisions[-1]['decision'],'ALLOW')
  def test_official_housing_fallback_reads_live_evidence(self):
   from app.research_agent import investigate
   with patch('app.web_search.google_web_search',return_value={'ok':False,'error':'quota'}),patch('app.web_search.fetch_webpage',return_value={'ok':True,'text':'Los requisitos de acceso a vivienda de jóvenes y los plazos de solicitudes deben comprobarse en la convocatoria oficial publicada.'}) as read:
@@ -41,7 +41,7 @@ class Release3312(base['Release3310']):
    self.assertIn('HTTP 403',result['failed_sources'][0]['error'])
  def test_prepare_to_send_recognizes_complete_graph(self):
   task=self.create('Hazme un estudio de las ayudas, vivienda protegida y sorteos de vivienda a los que podría acceder un joven de 26 años que vive en Majadahonda. Hazme un informe resumido con enlaces y prepáralo para enviarlo a mi propio email.')
-  self.assertEqual(len(task['subtasks']),9)
+  self.assertEqual(len(task['subtasks']),10)
   self.assertEqual(task['entities']['recipient'],'SELF')
   self.assertIn('Majadahonda',task['topic'])
   self.assertIn('vivienda protegida',task['topic'])

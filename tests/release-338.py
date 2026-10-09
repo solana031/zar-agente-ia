@@ -54,8 +54,8 @@ class Release338(unittest.TestCase):
    last=tasks.run(self.scope,task['id'],confirmed=True);self.assertEqual(last['status'],'DONE');research.assert_called_once();send.assert_called_once();self.assertEqual(send.call_args.args[2]['artifact_ids'],[artifact])
  def test_mail_attachments_and_cc_bcc(self):
   item=self.store.save('fixture.txt',b'attachment bytes','text/plain')
-  with patch.object(identity_mail,'require_mail'),patch.object(gmail,'gmail_status',return_value={'email':'fixture-zar@example.test'}),patch.object(gmail,'send_with_attachments',return_value={'id':'fixture-message'}) as send:
-   row=identity_mail.operate(self.scope,'send',{'to':'fixture@example.test','cc':'cc@example.test','bcc':'bcc@example.test','subject':'Fixture','body':'Fixture','artifact_ids':[item['id']],'confirmed':True,'transaction_id':'fixture_transaction'})
+  with patch.object(gmail,'is_connected',return_value=True),patch.object(identity_mail,'require_mail'),patch.object(gmail,'gmail_status',return_value={'email':'fixture-zar@example.test'}),patch.object(gmail,'send_with_attachments',return_value={'id':'fixture-message'}) as send:
+   row=identity_mail.operate(self.scope,'send',{'sender_identity':'fixture-zar@example.test','to':'fixture@example.test','cc':'cc@example.test','bcc':'bcc@example.test','subject':'Fixture','body':'Fixture','artifact_ids':[item['id']],'confirmed':True,'transaction_id':'fixture_transaction'})
    self.assertEqual(row['artifact_ids'],[item['id']]);self.assertEqual(base64.b64decode(send.call_args.args[3][0]['data']),b'attachment bytes');self.assertEqual(send.call_args.kwargs['cc'],'cc@example.test')
  def test_workspace_exports(self):
   from app import google_workspace as w

@@ -49,7 +49,7 @@ def build(scope,message,fallback,allow_model=True):
                 original={s['kind'] for s in base['subtasks']}
                 if not original.issubset(kinds):raise ValueError('El plan omite una acción solicitada.')
                 if any(k in kinds and k not in original for k in ('SEND_EMAIL','READ_MAIL','ATTACH_ARTIFACT')):raise ValueError('Acción externa no solicitada.')
-                producers={'CREATE_REPORT':['RESEARCH','RESOLVE_REFERENCE'],'DRAFT_EMAIL':['CREATE_REPORT','RESOLVE_REFERENCE','RESOLVE_CONTACT'],'ATTACH_ARTIFACT':['CREATE_REPORT','RESOLVE_REFERENCE'],'SEND_EMAIL':['DRAFT_EMAIL','ATTACH_ARTIFACT','RESOLVE_CONTACT']}
+                producers={'CREATE_REPORT':['RESEARCH','RESOLVE_REFERENCE'],'DRAFT_EMAIL':['CREATE_REPORT','RESOLVE_REFERENCE','RESOLVE_CONTACT'],'ATTACH_ARTIFACT':['CREATE_REPORT','RESOLVE_REFERENCE'],'SENDER_SELECTION':['DRAFT_EMAIL'],'FINAL_CONFIRMATION':['SENDER_SELECTION'],'SEND_EMAIL':['DRAFT_EMAIL','ATTACH_ARTIFACT','RESOLVE_CONTACT','SENDER_SELECTION']}
                 for kind,required in producers.items():
                     if kind in kinds and any(k in kinds and kinds.index(k)>=kinds.index(kind) for k in required):raise ValueError('El resultado debe existir antes de consumirse.')
                 if 'SEND_EMAIL' in kinds and not all(k in kinds for k in ('RESOLVE_CONTACT','DRAFT_EMAIL')):raise ValueError('Envío sin destinatario y borrador.')
@@ -71,9 +71,14 @@ def build(scope,message,fallback,allow_model=True):
     if concrete_research_mail:
         base['subtasks']=[{'kind':k,'depends_on':[i-1] if i else []} for i,k in enumerate(('RESEARCH','VERIFY_SOURCES','CREATE_REPORT','STORE_ARTIFACT','RESOLVE_CONTACT','DRAFT_EMAIL','ATTACH_ARTIFACT','FINAL_CONFIRMATION','SEND_EMAIL'))]
         base['planning_engine']='SEMANTIC_RESEARCH_REPORT_MAIL'
+    if any(s['kind']=='SEND_EMAIL' for s in base['subtasks']):
+        index=next(i for i,s in enumerate(base['subtasks']) if s['kind'] in {'FINAL_CONFIRMATION','SEND_EMAIL'})
+        for step in base['subtasks']:step['depends_on']=[d+1 if d>=index else d for d in step.get('depends_on',[])]
+        base['subtasks'].insert(index,{'kind':'SENDER_SELECTION'})
+        base['entities']['sender_identity']='zaragente031@gmail.com' if re.search(r'\bdesde\s+ZAR\b',message,re.I) else None
     kinds=[s['kind'] for s in base['subtasks']]
     ids={kind:str(i+1) for i,kind in enumerate(kinds)}
-    dependencies={'CREATE_REPORT':['RESEARCH','RESOLVE_REFERENCE'],'DRAFT_EMAIL':['CREATE_REPORT','RESOLVE_REFERENCE','RESOLVE_CONTACT'],'ATTACH_ARTIFACT':['CREATE_REPORT','RESOLVE_REFERENCE','DRAFT_EMAIL'],'SEND_EMAIL':['DRAFT_EMAIL','ATTACH_ARTIFACT','RESOLVE_CONTACT']}
+    dependencies={'CREATE_REPORT':['RESEARCH','RESOLVE_REFERENCE'],'DRAFT_EMAIL':['CREATE_REPORT','RESOLVE_REFERENCE','RESOLVE_CONTACT'],'ATTACH_ARTIFACT':['CREATE_REPORT','RESOLVE_REFERENCE','DRAFT_EMAIL'],'SENDER_SELECTION':['DRAFT_EMAIL'],'FINAL_CONFIRMATION':['SENDER_SELECTION'],'SEND_EMAIL':['DRAFT_EMAIL','ATTACH_ARTIFACT','RESOLVE_CONTACT','SENDER_SELECTION']}
     steps=[]
     for i,s in enumerate(base['subtasks']):
         deps=list(dict.fromkeys([str(d+1) for d in s.get('depends_on',[])]+[ids[k] for k in dependencies.get(s['kind'],[]) if k in ids and int(ids[k])<i+1]))

@@ -137,6 +137,11 @@ def verify_google(scope,services=None):
         for plan in s['plans']:
             capability=results.get(plan['service'])
             if not capability:continue
+            if capability.get('status')=='CONNECTED':
+                plan.update(status='ACTIVE',last_verified=capability.get('last_verified'))
+                for action in s['human_actions']:
+                    if action.get('plan_id')==plan['id'] and plan['service']!='ADSENSE':action.update(status='DONE',completed_at=holdings._now())
+            else:plan.update(status='ERROR' if capability.get('status')=='ERROR' else 'ACTION_REQUIRED',last_verified=capability.get('last_verified'))
             for action in s['human_actions']:
                 if action.get('plan_id')!=plan['id'] or action['status']=='DONE':continue
                 action['last_checked']=holdings._now()
@@ -212,7 +217,7 @@ def _setup_actions(s):
       'SHOPIFY':('CONFIGURAR SHOPIFY','https://admin.shopify.com',['Configurar SHOPIFY_SHOP_DOMAIN y SHOPIFY_ADMIN_ACCESS_TOKEN únicamente en Railway principal','Pulsar CONTINUAR / VERIFICAR']),
       'STRIPE':('CONFIGURAR STRIPE','https://dashboard.stripe.com/apikeys',['Configurar STRIPE_SECRET_KEY y STRIPE_WEBHOOK_SECRET únicamente en Railway principal','Pulsar CONTINUAR / VERIFICAR'])})
     for a in s['human_actions']:
-        if a['service'] not in guides or a['status']=='DONE':continue
+        if a['service'] not in guides or a['status']=='DONE' or a.get('action')=='OBSERVED_BLOCKER':continue
         title,url,instructions=guides[a['service']]
         a.update(title=title,url=url,instructions=instructions)
         if a['service']=='YOUTUBE':a.update(suggested_name='ZAR Agente IA',suggested_handle='@zaragente031')
@@ -226,6 +231,26 @@ def view(scope):
         cap=s['capabilities'].get(name,{});plan=next((p for p in s['plans'] if p['service']==name),{})
         s['onboarding'].append({'service':name,'status':'CONNECTED' if cap.get('status')=='CONNECTED' or plan.get('status')=='ACTIVE' else 'ERROR' if cap.get('status')=='ERROR' else 'ACTION_REQUIRED',
             'capability_status':cap.get('status','NOT_CONNECTED')})
+    s['integrations']=[]
+    connector_names={'SHOPIFY':'Shopify','STRIPE':'Payment','INSTAGRAM':'Instagram','TIKTOK':'TikTok','CLOUDINARY':'Cloudinary','RELAYCLAW':'RelayClaw','LOVABLE':'Lovable','DRAMACLAW':'DramaClaw DIRECT'}
+    for name in ['GMAIL','DRIVE','YOUTUBE','ADSENSE',*connector_names]:
+        cap=s['capabilities'].get(name,{})
+        node=next((n for n in nodes if n['name']==connector_names.get(name,name)),{})
+        verified=cap.get('last_verified') or node.get('last_verified') or node.get('verified_at')
+        from datetime import datetime,timezone
+        try:fresh=0<=(datetime.now(timezone.utc)-datetime.fromisoformat(verified)).total_seconds()<600
+        except (TypeError,ValueError):fresh=False
+        connected=fresh and (cap.get('status')=='CONNECTED' or node.get('state')=='LISTO')
+        status='CONNECTED' if connected else 'ERROR' if cap.get('status')=='ERROR' or node.get('state')=='ERROR' else 'ACTION_REQUIRED' if cap or node.get('configured') else 'NOT_CONFIGURED'
+        reason=cap.get('reason') or node.get('next_step') or 'No hay conexión verificada; comprobar cuenta existente antes de crear otra.'
+        if connected:reason=cap.get('evidence') or node.get('verification_scope') or 'API confirmó acceso; la publicación sigue requiriendo revisión.'
+        if name in {'CLOUDINARY','RELAYCLAW'} and not cap and not node:status='ACTION_REQUIRED';reason='Configuración gestionada por DramaClaw; comprobar capacidad real antes del render.'
+        if not fresh and verified:reason='Verificación anterior; volver a verificar antes de usar.'
+        if name=='ADSENSE' and cap.get('account_state')!='ACTIVE':status='ACTION_REQUIRED';reason='AdSense: '+str(cap.get('account_state') or 'sin cuenta aprobada; verificar acceso')
+        s['integrations'].append({'service':name,'status':status,'account':'solana031@gmail.com' if name=='LOVABLE' else s['google'].get('email') or 'zaragente031@gmail.com','last_verified':verified,'reason':reason,'upload_capability':cap.get('upload_capability')})
+    for row in s['onboarding']:
+        verified_row=next((item for item in s['integrations'] if item['service']==row['service']),None)
+        if verified_row:row['status']=verified_row['status']
     s['workspace_organization']='NOT_VERIFIED; Gmail does not establish managed Workspace membership'
     s['connect_url']=connect_url(s['google']['email']) if s['google'].get('email') else None
     return s
@@ -236,6 +261,16 @@ def operate(scope,action,data):
     if action=='verify':return verify_google(scope)
     if action=='request':return natural_request(scope,data.get('request'))
     if action=='prepare':return provider_plan(scope,data.get('service'))
+    if action=='record_blocker':
+        service=str(data.get('service','')).upper()
+        if service not in {'SHOPIFY','INSTAGRAM','TIKTOK','ADSENSE','STRIPE','LOVABLE','DRAMACLAW','CLOUDINARY','RELAYCLAW'}:raise ValueError('Servicio no permitido.')
+        reason=str(data.get('reason','')).strip()[:1500]
+        if not reason:raise ValueError('Indica el bloqueo observado; no introduzcas credenciales.')
+        with holdings.transaction(scope):
+            d=holdings.read(scope);s=ensure(d)
+            row=queue(s,service,'OBSERVED_BLOCKER',reason,None,[reason,'Usar zaragente031@gmail.com; no utilizar cuentas personales ni crear duplicados.','Completar únicamente la acción pendiente y verificar la integración antes de publicar.'])
+            row.update(reason=reason,instructions=[reason,'Usar zaragente031@gmail.com; conservar identidades personales separadas.','Verificar la integración antes de publicar.'],title='Bloqueo verificado · '+service,last_checked=holdings._now(),status='ACTION_REQUIRED',account='zaragente031@gmail.com')
+            holdings.write(scope,d);return deepcopy(row)
     if action=='youtube_validate':
         from .media_adapters import PublishingAdapter
         return PublishingAdapter().prepare_youtube(scope,title=data.get('title','Historia ZAR'),description=data.get('description',''),privacy=data.get('privacy','private'))

@@ -50,14 +50,15 @@ def send(scope,data):
         if draft.get('send_intent'):return deepcopy(draft)
         if draft.get('to')!=lead.get('email') or not draft.get('to'):raise ValueError('Email público no coincide con el lead.')
         if 'ZAR' not in draft.get('body',''):raise ValueError('Identidad ZAR requerida.')
-        identity=gmail.gmail_status().get('email')
+        from .mail_identity import validate
+        identity=validate(data.get('sender_identity'))
         if not identity:raise ValueError('Identidad real Gmail no verificada.')
         draft.update(send_intent='REQUESTED',sender_identity=identity)
         holdings.write(scope,d)
         previous=(lead.get('inbound') or [{}])[-1]
         try:
             result=gmail.send_message(draft['to'],draft['subject'],draft['body'],
-                reply_to_message_id=previous.get('rfc_message_id'),thread_id=lead.get('thread_id'))
+                reply_to_message_id=previous.get('rfc_message_id'),thread_id=lead.get('thread_id'),sender_identity=identity)
             if not result.get('id'):raise ValueError('Sin ID confirmado.')
         except Exception:
             draft['send_intent']='REVIEW_REQUIRED';holdings.write(scope,d)

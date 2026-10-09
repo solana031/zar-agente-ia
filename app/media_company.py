@@ -194,8 +194,9 @@ def jobs(scope_id):
             task.update(status=record.get("status", task["status"]), error=record.get("error"),
                         payload=record.get("payload", task.get("payload")), result=_result(task, record))
     connector = status()
-    caps = state.get('identity_center',{}).get('capabilities',{})
-    connector['publication_states'] = {name.lower(): 'CONNECTED' if caps.get(name,{}).get('status') == 'CONNECTED' else 'ACTION_REQUIRED' for name in ('YOUTUBE','INSTAGRAM','TIKTOK')}
+    from .identity_center import view as identity_view
+    verified = {row['service']:row for row in identity_view(scope_id).get('integrations',[])}
+    connector['publication_states'] = {name.lower():verified.get(name,{}).get('status','NOT_CONFIGURED') for name in ('YOUTUBE','INSTAGRAM','TIKTOK')}
     return {"ok": True, "tasks": tasks[-30:], "connector": connector}
 
 

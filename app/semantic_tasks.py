@@ -83,7 +83,7 @@ def cancel_plan(scope,identifier):
         task['status']='CANCELLED';save(scope,task)
     return task
 
-def run(scope,identifier,confirmed=False,selected_email=None,selected_artifact_id=None):
+def run(scope,identifier,confirmed=False,selected_email=None,selected_artifact_id=None,sender_identity=None):
     from . import web_search,artifact_engine,contact_resolver,identity_mail
     from .file_store import FileStore
     from .google_contacts import search_contacts
@@ -135,6 +135,14 @@ def run(scope,identifier,confirmed=False,selected_email=None,selected_artifact_i
             elif kind=='STORE_ARTIFACT':
                 artifact=task['outputs']['CREATE_REPORT'];data=FileStore().read(artifact['artifact_id'])
                 output={'artifact_id':artifact['artifact_id'],'status':'PERSISTED','verified_at':holdings._now()}
+            elif kind=='SENDER_SELECTION':
+                from .mail_identity import available,validate
+                selected=sender_identity or task['entities'].get('sender_identity')
+                if not selected:
+                    output={'status':'ACTION_REQUIRED','accounts':available(),'reason':'Elige desde qué cuenta quieres enviar el correo.'}
+                    task['outputs'][kind]=output;task['status']='WAITING';step.update(status='WAITING',outputs=output,error=output['reason']);save(scope,task);return task
+                selected=validate(selected);task['outputs']['DRAFT_EMAIL']['sender_identity']=selected
+                output={'status':'VERIFIED','sender_identity':selected}
             elif kind=='FINAL_CONFIRMATION':
                 output={'status':'REVIEW_REQUIRED','recipient':task['outputs']['DRAFT_EMAIL']['to'],'artifact_ids':task['outputs']['DRAFT_EMAIL']['artifact_ids'],'send_authorized':False}
             elif kind=='CREATE_REPORT':
@@ -170,8 +178,10 @@ def run(scope,identifier,confirmed=False,selected_email=None,selected_artifact_i
                 FileStore().read(artifact['artifact_id']);output={'artifact_ids':[artifact['artifact_id']],'status':'ATTACHED_TO_REVIEW'}
             elif kind=='SEND_EMAIL':
                 draft=task['outputs']['DRAFT_EMAIL']
+                if not draft.get('sender_identity'):
+                    task['status']='WAITING';step.update(status='WAITING',error='Selecciona y revisa el remitente antes de confirmar.');save(scope,task);return task
                 if confirmed is not True:
-                    task['status']='WAITING';step.update(status='WAITING',error='Revisa destinatario, mensaje, adjuntos y condiciones pendientes: '+('; '.join(task.get('conditions',[])) or 'sin condiciones adicionales')+'. Confirma Enviar.');save(scope,task);return task
+                    task['status']='WAITING';step.update(status='WAITING',error='Revisa remitente, destinatario, mensaje, adjuntos y condiciones pendientes: '+('; '.join(task.get('conditions',[])) or 'sin condiciones adicionales')+'. Confirma Enviar.');save(scope,task);return task
                 output=identity_mail.operate(scope,'send',{**draft,'confirmed':True,'transaction_id':'task_'+task['id'],'agent':'MailAgent','task_id':task['id']})
                 if output['status']!='CONFIRMED':raise ValueError('Envío no confirmado; revisar Gmail antes de reintentar.')
                 contact=task['outputs']['RESOLVE_CONTACT']['contact'];contact_resolver.remember(scope,contact,files=draft['artifact_ids'],tasks=[task['id']])

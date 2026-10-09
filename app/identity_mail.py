@@ -7,7 +7,7 @@ from . import gmail,holdings
 from .identity_center import ensure,require_mail
 
 def operate(scope,action,data):
-    require_mail(scope)
+    if action not in {'send','reply','forward','draft'}:require_mail(scope)
     if action in {'inbox','unread','search'}:return gmail.search_messages(data.get('query') or ('is:unread' if action=='unread' else 'in:inbox'),min(50,int(data.get('limit',20))))
     if action=='message':
         m=gmail.get_message(data['id']);raw=gmail.service().users().messages().get(userId='me',id=data['id'],format='full').execute();m['attachments']=gmail.attachment_metadata(raw);return m
@@ -18,6 +18,9 @@ def operate(scope,action,data):
     if action not in {'send','reply','forward','draft','archive'}:raise ValueError('Acción Gmail no soportada.')
     if data.get('confirmed') is not True:raise ValueError('Revisa y confirma la escritura en Gmail.')
     data=dict(data)
+    if action!='archive':
+        from .mail_identity import validate
+        data['sender_identity']=validate(data.get('sender_identity'))
     for field in ('cc','bcc'):
         value=str(data.get(field,'')).strip()
         if value and any(not re.fullmatch(r'[^\r\n\s@]+@[^\r\n\s@]+\.[^\r\n\s@]+',address.strip()) for address in value.split(',')):raise ValueError('Direcciones CC/BCC no válidas.')
@@ -37,7 +40,7 @@ def operate(scope,action,data):
             return deepcopy(prior)
         recipient=str(data.get('to','')).strip();subject=str(data.get('subject',''))[:500];body=str(data.get('body',''))[:100000]
         if action!='archive' and not re.fullmatch(r'[^\r\n\s@]+@[^\r\n\s@]+\.[^\r\n\s@]+',recipient):raise ValueError('Un destinatario email válido requerido.')
-        sender=gmail.gmail_status()['email'];reference=None;thread_id=data.get('thread_id')
+        sender=data.get('sender_identity') or gmail.gmail_status()['email'];reference=None;thread_id=data.get('thread_id')
         if action in {'reply','forward'}:
             original=gmail.get_message(data['id']);reference=original.get('rfc_message_id') if action=='reply' else None
             if action=='reply':thread_id=original['threadId']
@@ -45,11 +48,11 @@ def operate(scope,action,data):
         row={'transaction_id':tid,'message_id':None,'thread_id':thread_id,'sender':sender,'recipient':recipient,'subject':subject,
              'agent':str(data.get('agent','Pablo'))[:100],'business':str(data.get('business',''))[:100],'client':str(data.get('client',''))[:100],
              'timestamp':holdings._now(),'status':'PENDING','action':action,'request_hash':signature}
-        row.update(task_id=data.get('task_id'),artifact_ids=data.get('artifact_ids',[]),cc=data.get('cc',''),bcc=data.get('bcc',''))
+        row.update(task_id=data.get('task_id'),artifact_ids=data.get('artifact_ids',[]),cc=data.get('cc',''),bcc=data.get('bcc',''),sender_identity=sender)
         s['mail_audit'].append(row);holdings.write(scope,d)
         try:
             if action=='archive':result=gmail.archive(data['id'])
-            else:result=gmail.send_with_attachments(recipient,subject,body,data.get('attachments'),thread_id,reference,draft=action=='draft',cc=data.get('cc',''),bcc=data.get('bcc',''))
+            else:result=gmail.send_with_attachments(recipient,subject,body,data.get('attachments'),thread_id,reference,draft=action=='draft',cc=data.get('cc',''),bcc=data.get('bcc',''),sender_identity=sender)
             message=result.get('message',result);row.update(message_id=message.get('id'),thread_id=message.get('threadId',thread_id),draft_id=result.get('id') if action=='draft' else None,status='CONFIRMED')
             if not row['message_id']:raise ValueError('Sin ID confirmado.')
         except Exception:
