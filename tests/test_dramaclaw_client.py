@@ -453,5 +453,31 @@ class ClientTests(unittest.TestCase):
                 self.assertTrue(session.calls[0][1].startswith("https://api.example.test/"))
 
 
+class SceneCapAsyncRegression(unittest.TestCase):
+    def test_completed_script_still_checks_cap_before_paid_visuals(self):
+        client = DramaClawClient("https://api.example.test")
+        task = {'task_id':'script1','stage':'script'}
+        cp = {'project_id':'p1','episode':1,'stage':'script','max_scenes':1,
+              'active_task':task,'tasks':[task]}
+        with patch.object(client, '_tasks', return_value=[{'task_id':'script1','status':'completed'}]), \
+             patch.object(client, '_evidence', return_value=True), \
+             patch.object(client, '_beats', return_value=[{}, {}, {}, {}]), \
+             patch.object(client, '_submit') as submit:
+            client.advance(cp, 'brief', lambda value: None)
+            self.assertEqual(cp['stage'], 'script')
+            client.advance(cp, 'brief', lambda value: None)
+            self.assertEqual(cp['error_code'], 'scene_limit_exceeded')
+            submit.assert_not_called()
+
+    def test_older_checkpoint_over_cap_cannot_submit_another_paid_stage(self):
+        client = DramaClawClient("https://api.example.test")
+        cp = {'project_id':'p1','episode':1,'stage':'narrator','max_scenes':1}
+        with patch.object(client, '_evidence', return_value=True), \
+             patch.object(client, '_beats', return_value=[{}, {}]), \
+             patch.object(client, '_submit') as submit:
+            client.advance(cp, 'brief', lambda value: None, narrator=lambda: self.fail('Paid voice called'))
+            self.assertEqual(cp['error_code'], 'scene_limit_exceeded')
+            submit.assert_not_called()
+
 if __name__ == "__main__":
     unittest.main()

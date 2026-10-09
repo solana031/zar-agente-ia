@@ -309,7 +309,7 @@ class DramaClawClient:
                 task["status"] = "completed"
         cp.pop("active_task", None)
         cp.pop("pending", None)
-        if record["stage"] in REPEATING or record["stage"] == "episodes":
+        if record["stage"] in REPEATING or record["stage"] == "episodes" or (record["stage"] == "script" and cp.get("max_scenes")):
             cp["status"] = "running"
             return self._save(cp, persist)
         return self._next(cp, persist)
@@ -363,7 +363,7 @@ class DramaClawClient:
     def _recover(self, cp, persist):
         intent = cp["pending"]
         if self._evidence(cp, intent["stage"], intent.get("target")):
-            if intent["stage"] in REPEATING or intent["stage"] == "episodes":
+            if intent["stage"] in REPEATING or intent["stage"] == "episodes" or (intent["stage"] == "script" and cp.get("max_scenes")):
                 cp.pop("pending", None)
                 cp["status"] = "running"
                 return self._save(cp, persist)
@@ -433,6 +433,14 @@ class DramaClawClient:
             cp["status"] = "running"
             cp.pop("error", None)
             stage = cp["stage"]
+            # Older checkpoints may have advanced past the script asynchronously.
+            # Poll accepted work above, but never submit more paid work over the cap.
+            if cp.get('max_scenes') and stage in {'identity_images','colors','storyboard','detect','optimize','frames','narrator','audio','videos','compose','export'} and self._evidence(cp, 'script'):
+                count = len(self._beats(cp))
+                if count > int(cp['max_scenes']):
+                    cp['scene_count'] = count
+                    return self._blocked(cp, persist, 'scene_limit_exceeded',
+                        'El guion contiene '+str(count)+' escenas y el máximo es '+str(cp['max_scenes'])+'. Ajusta el guion en DramaClaw; no se generan visuales ni se regenera automáticamente.')
             if stage == "project":
                 return self._submit(cp, persist, "/projects", body={"name": cp["project_name"]})
             root, ep, number = self._project(cp), self._episode(cp), cp["episode"]
