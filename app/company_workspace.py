@@ -7,6 +7,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from flask import Blueprint, jsonify, request, session
 from . import file_store
+from . import company_knowledge
 from .user_scope import get_current_user
 
 blueprint = Blueprint('company_workspace', __name__)
@@ -106,8 +107,9 @@ def refresh():
         live = {row['id'] for row in rows}
         # Preserve source annotations and provenance even if a file was removed.
         rows.extend({**row, 'available': False} for key, row in previous.items() if key not in live)
-        if rows != data.get('sources', []):
+        if rows != data.get('sources', []) or 'knowledge' not in data:
             data['sources'] = rows
+            data['knowledge'] = company_knowledge.rebuild(rows, data.get('knowledge'))
             data['revision'] = data.get('revision', 0) + 1
             data['history'] = (data.get('history', []) + [{'timestamp': now(), 'action': 'Fuentes actualizadas', 'documents': len(items)}])[-100:]
             write(data)
@@ -144,6 +146,8 @@ def update_workspace():
             elif action == 'rebuild':
                 label = 'Base derivada reconstruida conservando perfil, notas y fuentes'
             else: raise ValueError('Acción no válida.')
+            if action in {'source', 'rebuild'}:
+                data['knowledge'] = company_knowledge.rebuild(data['sources'], data.get('knowledge'))
             data['revision'] += 1
             data['history'] = (data.get('history', []) + [{'timestamp': now(), 'action': label}])[-100:]
             write(data)

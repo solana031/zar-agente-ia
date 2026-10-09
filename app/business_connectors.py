@@ -115,4 +115,15 @@ def inventory(state=None):
             'next_step':'ACTIVAR ZAR → CONECTAR → VERIFICAR; permisos adicionales solo al necesitar el servicio.',
             'provider_url':'https://myaccount.google.com/permissions',
             'verify':{'path':'/api/holdings/workflows/identity_center_verify','action':None}})
+    for row in rows:
+        if row['name'] == 'JEV':
+            # The server policy is wired into semantic_tasks.run; the hosted
+            # TypeSafe model is an optional, separate decision provider.
+            row.update(state='READY', status='READY', missing=[], missing_requirements=[],
+                       capabilities=['server_policy', 'explicit_confirmation', 'live_trading_denied'],
+                       next_step='Política interna activa en TaskOrchestrator. El modelo TypeSafe externo es opcional; su presencia no concede autoridad de ejecución.',
+                       provider='ZAR server policy', configuration=[], variables=[])
+        elif row['name'] in {'F5-TTS', 'faster-whisper'} and row['state'] == 'POR CONFIGURAR':
+            row.update(state='OPTIONAL', status='OPTIONAL',
+                       next_step='Motor opcional. No se ha verificado inferencia; consultar Voice para el proveedor activo. No es un bloqueo de ZAR.')
     return rows
