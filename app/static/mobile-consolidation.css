@@ -29,3 +29,11 @@
  #orchestrationWorkspace #zoInspector{min-width:0;overflow-wrap:anywhere}
  #orchestrationWorkspace #zoInspector :is(button,input,select){max-width:100%;min-height:44px;box-sizing:border-box}
 }
+
+/* Shared natural-height menu cards: icon, title and bounded description. */
+#mobileDrawer .mobileMenuCard{display:grid!important;grid-template-columns:24px minmax(0,1fr);align-items:center;gap:10px;height:auto!important;min-height:76px!important;max-height:none!important;padding:12px!important;box-sizing:border-box;white-space:normal!important;flex-shrink:0}
+#mobileDrawer .mobileCardIcon{font-size:20px;line-height:1.2;align-self:start;margin-top:2px}
+#mobileDrawer .mobileCardCopy{min-width:0;display:block;text-align:left}
+#mobileDrawer .mobileCardCopy strong,#mobileDrawer .mobileCardCopy small{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;overflow-wrap:anywhere;white-space:normal;line-height:1.4!important}
+#mobileDrawer .mobileCardCopy strong{font-size:13px;font-weight:800}
+#mobileDrawer .mobileCardCopy small{font-size:12px;font-weight:500;margin-top:4px}
