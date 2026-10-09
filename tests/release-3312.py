@@ -31,6 +31,14 @@ class Release3312(base['Release3310']):
    result=investigate('Ayudas vivienda Majadahonda joven 26 años')
    self.assertEqual(read.call_count,3);self.assertEqual(len(result['evidence']),3);self.assertEqual(result['synthesis'],'DOCUMENTARY_EVIDENCE')
   with patch('app.web_search.google_web_search',return_value={'ok':False,'error':'quota'}),self.assertRaises(ValueError):investigate('Un asunto sin fuentes')
+ def test_research_preserves_inline_fragments_and_records_failed_sources(self):
+  from app.research_agent import investigate
+  pages=[{'ok':False,'error':'HTTP 403'}, {'ok':True,'text':'Requisitos de acceso\npara jóvenes de Majadahonda\npublicados en la convocatoria\noficial de vivienda protegida.'}, {'ok':False,'error':'timeout'}]
+  with patch('app.web_search.google_web_search',return_value={'ok':False}),patch('app.web_search.fetch_webpage',side_effect=pages):
+   result=investigate('Vivienda joven Majadahonda')
+   self.assertEqual(len(result['evidence']),1)
+   self.assertEqual(len(result['failed_sources']),2)
+   self.assertIn('HTTP 403',result['failed_sources'][0]['error'])
  def test_cancelled_plan_cannot_resume(self):
   t=self.create('Investiga vivienda y envíamelo a mi propio email');tasks.cancel_plan(self.scope,t['id'])
   with self.assertRaises(ValueError):tasks.confirm_plan(self.scope,t['id'])
