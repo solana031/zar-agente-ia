@@ -131,8 +131,8 @@ def verify_google(scope,services=None):
     with holdings.transaction(scope):
         d=holdings.read(scope);s=ensure(d);s['capabilities'].update(results)
         if 'ADSENSE' in results:
-            cap=results['ADSENSE'];s['adsense_onboarding']={'state':'SIGNUP_REQUIRED' if cap.get('account_state')=='NO_ACCOUNT' else cap.get('account_state','ERROR'),
-                'account_state':cap.get('account_state','ERROR'),'email':expected,'url':'https://www.google.com/adsense/start/','last_verified':cap.get('last_verified')}
+            cap=results['ADSENSE'];s['adsense_onboarding']={'state':'NEEDS_OAUTH' if cap.get('status')=='NOT_CONNECTED' else 'SIGNUP_REQUIRED' if cap.get('account_state')=='NO_ACCOUNT' else cap.get('account_state','ERROR'),
+                'account_state':cap.get('account_state','NOT_VERIFIED'),'reason':cap.get('reason'),'email':expected,'url':'https://www.google.com/adsense/start/','last_verified':cap.get('last_verified')}
         s['google'].update(status='ACTIVE',last_verified=holdings._now(),capabilities=[n for n,r in s['capabilities'].items() if r['status']=='CONNECTED'])
         for plan in s['plans']:
             capability=results.get(plan['service'])
@@ -147,6 +147,8 @@ def verify_google(scope,services=None):
                 action['last_checked']=holdings._now()
                 if plan['service']=='YOUTUBE' and capability['status']=='NOT_ELIGIBLE':
                     action.update(reason=capability['reason'],instructions=['Abrir YouTube con '+expected,'Crear un canal de ZAR con un nombre permitido; aceptar los términos personalmente o mediante confirmación explícita','CONTINUAR comprobará el canal por API antes de activar el plan'])
+                elif plan['service']=='ADSENSE' and capability.get('status')=='NOT_CONNECTED':
+                    action.update(reason='AdSense no verificable: falta autorización OAuth específica; existencia y aprobación de cuenta sin confirmar',instructions=['Conectar el permiso AdSense de la cuenta operativa '+expected,'Completar consentimiento humano si Google lo solicita','Volver a verificar cuentas por API antes de iniciar cualquier alta'])
                 elif plan['service']=='ADSENSE' and capability.get('account_state')=='NO_ACCOUNT':
                     action.update(reason='OAuth y API verificados; Google confirma NO_ACCOUNT',instructions=['Abrir AdSense con '+expected,'Completar alta, sitio real, país y términos con datos confirmados por Pablo','Esperar la aprobación de Google; OAuth no acredita monetización','CONTINUAR verificará la cuenta y su estado real'])
         d.setdefault('identity_provisioning',{})['base_identity']=expected
@@ -220,6 +222,7 @@ def _setup_actions(s):
         if a['service'] not in guides or a['status']=='DONE' or a.get('action')=='OBSERVED_BLOCKER':continue
         title,url,instructions=guides[a['service']]
         a.update(title=title,url=url,instructions=instructions)
+        if a['service']=='ADSENSE' and 'falta autorización OAuth' in a.get('reason',''):a.update(title='Autorizar lectura AdSense',instructions=['Conectar el permiso AdSense para '+address,'Completar consentimiento humano si Google lo solicita','Verificar existencia y estado de cuenta antes de registrar otra'])
         if a['service']=='YOUTUBE':a.update(suggested_name='ZAR Agente IA',suggested_handle='@zaragente031')
         a['status']='HUMAN_ACTION_REQUIRED'
 
@@ -246,7 +249,7 @@ def view(scope):
         if connected:reason=cap.get('evidence') or node.get('verification_scope') or 'API confirmó acceso; la publicación sigue requiriendo revisión.'
         if name in {'CLOUDINARY','RELAYCLAW'} and not cap and not node:status='ACTION_REQUIRED';reason='Configuración gestionada por DramaClaw; comprobar capacidad real antes del render.'
         if not fresh and verified:reason='Verificación anterior; volver a verificar antes de usar.'
-        if name=='ADSENSE' and cap.get('account_state')!='ACTIVE':status='ACTION_REQUIRED';reason='AdSense: '+str(cap.get('account_state') or 'sin cuenta aprobada; verificar acceso')
+        if name=='ADSENSE' and cap.get('account_state')!='ACTIVE':status='ERROR' if cap.get('status')=='ERROR' else 'ACTION_REQUIRED';reason=cap.get('reason') or 'AdSense: '+str(cap.get('account_state') or 'existencia y aprobación sin verificar')
         s['integrations'].append({'service':name,'status':status,'account':'solana031@gmail.com' if name=='LOVABLE' else s['google'].get('email') or 'zaragente031@gmail.com','last_verified':verified,'reason':reason,'upload_capability':cap.get('upload_capability')})
     for row in s['onboarding']:
         verified_row=next((item for item in s['integrations'] if item['service']==row['service']),None)

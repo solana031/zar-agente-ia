@@ -146,6 +146,16 @@ class IdentityTests(unittest.TestCase):
  def test_mail_wrong_principal_blocked(self):
   with patch('app.gmail.gmail_status',return_value={'email':'personal@gmail.com'}):
    with self.assertRaises(ValueError):center.require_mail(self.scope)
+ def test_adsense_missing_scope_does_not_claim_no_account(self):
+  center.provider_plan(self.scope,'ADSENSE')
+  creds=SimpleNamespace(scopes=[])
+  with patch.object(cloud_auth,'get_credentials',return_value=creds),patch.object(cloud_auth,'get_account_email',return_value=self.address),patch.object(center,'_probe',return_value={'status':'NOT_CONNECTED','reason':'Autorizar scope específico','last_verified':None}):
+   center.verify_google(self.scope,services=['ADSENSE'])
+  state=center.view(self.scope)
+  self.assertEqual(state['adsense_onboarding']['state'],'NEEDS_OAUTH')
+  action=next(a for a in state['human_actions'] if a['service']=='ADSENSE')
+  self.assertNotIn('NO_ACCOUNT',action['reason'])
+  self.assertIn('OAuth',action['reason'])
 
  def test_workspace_writes_require_confirmation(self):
   from app import identity_workspace as workspace
