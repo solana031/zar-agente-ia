@@ -13,7 +13,7 @@ for (const file of fs.readdirSync('app/static').filter(f => f.endsWith('.js'))) 
   new vm.Script(fs.readFileSync(`app/static/${file}`, 'utf8'), {filename: file});
 }
 for (const file of ['VERSION', 'VERSION.txt', 'app/VERSION.txt']) {
-  assert.equal(fs.readFileSync(file, 'utf8').trim(), '33.3.17');
+  assert.equal(fs.readFileSync(file, 'utf8').trim(), '33.3.18');
 }
 console.log(`PASS: ${scripts} inline scripts, static JavaScript and three version files`);
 (async () => {
@@ -29,6 +29,9 @@ console.log(`PASS: ${scripts} inline scripts, static JavaScript and three versio
         const request = route.request(), url = new URL(request.url());
         requests.push({path: url.pathname, method: request.method(), body: request.postData()});
         if (url.pathname === '/') return route.fulfill({contentType: 'text/html', body: html});
+        // Component regression keeps the original Stonks controls/close cycle.
+        // Real tab integration is covered separately by workspace-tabs-3318.cjs.
+        if (url.pathname === '/static/workspace-tabs.js') return route.fulfill({contentType:'application/javascript',body:''});
         if(url.pathname==='/api/stonks/lifecycle-test/preflight'){
           return route.fulfill({contentType:'application/json',body:JSON.stringify({ok:true,preflight:{
             status:controlledReady?'READY':'BLOCKED',symbol:url.searchParams.get('symbol'),

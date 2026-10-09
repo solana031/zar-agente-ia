@@ -1,0 +1,87 @@
+/* Frontend workspace panes: isolated existing modules, no new backend or framework. */
+(()=>{
+ const catalog={home:['🏠','Inicio / Chat'],sites:['🌐','ZAR Sites'],dropshipping:['📦','ZAR Dropshipping'],clipper:['🎬','ZAR Clipper'],studio:['🎞️','ZAR Studio'],stonks:['📈','ZAR Stonks'],holdings:['🏢','ZAR Holdings'],orchestration:['🧬','Orquestación'],workspace:['☁️','Workspace'],files:['📁','Archivos'],conversations:['🗂️','Conversaciones'],memory:['🧠','Memoria'],learning:['📖','Aprendizajes'],maps:['📍','Maps'],gmail:['✉️','Gmail']};
+ const hooks={showSites:'sites',showDropshipping:'dropshipping',showClipper:'clipper',showStonks:'stonks',showHoldings:'holdings',showSubagentOrchestration:'orchestration',showWorkspace:'workspace',showFiles:'files',showConversations:'conversations',showMemory:'memory',showMaps:'maps',showGmail:'gmail',openRecentEmails:'gmail',openZarStudio:'studio',showMedia:'studio'};
+ const embedded=new URLSearchParams(location.search).get('zar_workspace');
+ const esc=v=>String(v??'—').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+ const metric=(name,value)=>`<div class="zwtMetric"><span>${esc(name)}</span><b>${esc(value??'—')}</b></div>`;
+ const safeURL=v=>{try{const u=new URL(v,location.origin);return u.origin===location.origin&&u.pathname!=='/'?u.href:''}catch{return ''}};
+ const safeImage=v=>{if(!v)return '';try{const u=new URL(v,location.origin);return u.protocol==='https:'||u.origin===location.origin?u.href:''}catch{return ''}};
+ function embeddedStart(type){
+  document.body.classList.add('zarEmbedded');document.body.dataset.workspaceType=type;
+  const business=['sites','dropshipping','clipper'].includes(type);
+  const launch=business?'showSubagentOrchestration':Object.keys(hooks).find(k=>hooks[k]===type&&typeof window[k]==='function');
+  if(type==='learning')window.ZARSkills?.open();else if(launch)window[launch]();
+  if(business){
+   document.body.classList.add('zarBusinessPane');
+   const shell=document.createElement('header');shell.className='zwtSubappHeader';
+   const subtitles={sites:'Creación, gestión y monetización de sitios web',dropshipping:'Investigación, selección, publicación y seguimiento de productos',clipper:'Generación, edición y publicación de clips para redes'};
+   shell.innerHTML=`<h1>${catalog[type][0]} ${catalog[type][1]}</h1><p>${subtitles[type]}</p><nav><button data-zwt-jump="create">${type==='clipper'?'Nueva historia':type==='sites'?'Nuevo sitio':'Buscar producto'}</button><button data-zwt-jump="projects">Ver proyectos</button><button data-zwt-jump="preview">Preview</button>${type==='sites'?'<button data-zwt-jump="import">Importar proyecto</button><button disabled title="Requiere proyecto y destino de publicación configurado">Publicar · revisar destino</button>':''}</nav>`;
+   document.getElementById('orchestrationWorkspaceInner')?.prepend(shell);
+   window.addEventListener('zar-workflow-state',e=>decorateBusiness(type,e.detail));
+   new MutationObserver(()=>{const debug=document.getElementById('zoDebug');if(debug&&!debug.open)debug.open=true;}).observe(document.getElementById('orchestrationWorkspaceInner'),{childList:true,subtree:true});
+   window.zarWorkflowRefresh?.();
+  }
+  document.addEventListener('click',e=>{
+   const b=e.target.closest('button');if(!b)return;
+   if(/newChat\(/.test(b.getAttribute('onclick')||'')){e.preventDefault();e.stopImmediatePropagation();parent.postMessage({zarWorkspace:true,action:'newChat',type},location.origin);return;}
+   if(/closePanel\(|closeStonksWindow\(|exitMediaEditor\(/.test(b.getAttribute('onclick')||'')||b.classList.contains('zarSkillsClose')){e.preventDefault();e.stopImmediatePropagation();parent.postMessage({zarWorkspace:true,action:'close',type},location.origin);}
+   if(b.dataset.zwtJump){const selectors={create:type==='clipper'?'[data-media-generate]':type==='sites'?'#zwSites [data-form=site]':'#zarCommerceAgency',projects:'#zwtProjects',preview:'#zwtPreview',import:'#zwSites input[type=file]'};document.querySelector(selectors[b.dataset.zwtJump])?.scrollIntoView({behavior:'smooth',block:'start'});if(b.dataset.zwtJump==='import')document.querySelector(selectors.import)?.click();}
+  },true);
+  if(typeof window.restoreConversation==='function')window.restoreConversation=id=>parent.postMessage({zarWorkspace:true,action:'restore',id},location.origin);
+  window.addEventListener('message',e=>{if(e.origin===location.origin&&e.source===parent&&e.data?.zarWorkspace)document.body.classList.toggle('zwtInactive',e.data.active===false)});
+ }
+ function decorateBusiness(type,j){
+  const debug=document.getElementById('zoDebug');if(debug)debug.open=true;
+  const target=document.querySelector(type==='sites'?'#zwSites':type==='dropshipping'?'#zarCommerceAgency':'#zarMediaWorkflowMount');if(!target)return;
+  let dash=document.getElementById('zwtDashboard');if(!dash){dash=document.createElement('section');dash.id='zwtDashboard';target.prepend(dash);}
+  let rows=[],metrics='';
+  if(type==='sites'){rows=j.sites||[];metrics=metric('Sitios',rows.length)+metric('Publicados',rows.filter(p=>p.state==='PUBLISHED').length)+metric('Borradores',rows.filter(p=>p.state==='DRAFT'||p.source_kind==='IDEA').length)+['Tráfico','Ingresos','Coste','SEO'].map(n=>metric(n,null)).join('');}
+  if(type==='dropshipping'){const c=j.commerce||{};rows=c.products||[];metrics=metric('Productos',rows.length)+metric('Publicados',(c.listings||[]).filter(l=>l.state==='PUBLISHED').length)+metric('Pedidos',(c.orders||[]).length)+['Ventas','Beneficio','Margen','Coste publicidad','ROAS'].map(n=>metric(n,null)).join('');}
+  if(type==='clipper'){rows=j.media||[];metrics=metric('Proyectos',rows.length)+metric('Clips generados',rows.filter(p=>p.result?.preview_url).length)+metric('Publicados',rows.filter(p=>p.status==='PUBLISHED').length)+['Vistas','Ingresos','Coste generación','ROI'].map(n=>metric(n,null)).join('');}
+  if(type==='clipper'){const generate=target.querySelector('[data-media-generate] button[type=submit]');if(generate)generate.textContent='GENERAR CLIP';}
+  dash.innerHTML=`<div class="zwtMetrics">${metrics}</div><section id="zwtProjects"><h2>${type==='dropshipping'?'Productos':'Proyectos'}</h2><div class="zwtProjectGrid">${rows.map(p=>projectCard(type,p)).join('')||'<div class="zwtEmpty">Tu próximo proyecto empieza aquí.<br>Los resultados aparecerán cuando exista información real.</div>'}</div></section>`;
+  dash.querySelectorAll('[data-zwt-project]').forEach(b=>b.onclick=()=>{
+   if(type==='clipper'){const select=document.querySelector('[data-media-project]');if(select){select.value=b.dataset.zwtProject;select.dispatchEvent(new Event('change',{bubbles:true}));}document.querySelector('[data-media-preview]')?.scrollIntoView({behavior:'smooth'});}
+   if(type==='sites'){const p=rows.find(x=>x.id===b.dataset.zwtProject),url=safeURL(p?.relative_url);const preview=document.querySelector('#zwtPreview .zwtPreviewContent');if(url){preview.replaceChildren();const frame=document.createElement('iframe');frame.sandbox='allow-scripts';frame.title='Previsualización web';frame.src=url;preview.append(frame);}else preview.textContent='Este proyecto todavía no tiene una web renderizada.';preview.scrollIntoView({behavior:'smooth'});}
+  });
+  if(!document.getElementById('zwtPreview')){
+   const preview=document.createElement('section');preview.id='zwtPreview';preview.className='zwtPreview';
+   preview.innerHTML=`<h2>${type==='sites'?'PREVISUALIZACIÓN WEB':type==='dropshipping'?'PREVISUALIZACIÓN DE ANUNCIO':'PREVISUALIZACIÓN'}</h2><nav>${(type==='sites'?['Desktop','Tablet','Móvil']:type==='dropshipping'?['Meta','Instagram','TikTok','Shopify','Genérico']:[]).map(x=>`<button data-preview-mode="${x}">${x}</button>`).join('')}</nav><div class="zwtPreviewContent"><div class="zwtEmpty">ZAR · ${type==='sites'?'Selecciona un proyecto para ver su web.':type==='dropshipping'?'Selecciona un producto o prepara un anuncio.':'Tu clip aparecerá tras un render real.'}</div></div>`;
+   dash.after(preview);
+   preview.onclick=e=>{const b=e.target.closest('[data-preview-mode]');if(!b)return;preview.dataset.mode=b.dataset.previewMode;preview.querySelectorAll('button').forEach(x=>x.classList.toggle('active',x===b));preview.querySelector('.zwtAdForm')?.dispatchEvent(new Event('input'));};
+   if(type==='dropshipping'){
+    const form=document.createElement('form');form.className='zwtAdForm';form.innerHTML='<label>Nombre producto<input name="name"></label><label>Imagen pública del producto<input name="image" type="url" placeholder="https://…"></label><label>Precio<input name="price"></label><label>Descuento<input name="discount"></label><label>CTA<input name="cta" value="Descubrir producto"></label><label>Copy<textarea name="copy"></textarea></label><p>Preview local · no publica anuncios.</p>';
+    preview.append(form);form.oninput=()=>{const d=Object.fromEntries(new FormData(form)),image=safeImage(d.image);preview.querySelector('.zwtPreviewContent').innerHTML=`<article class="zwtAd"><div class="zwtAdImage">${image?`<img alt="Producto" src="${esc(image)}" style="width:100%;height:140px;object-fit:contain">`:'📦'}</div><small>${esc(preview.dataset.mode||'Genérico')}</small><h3>${esc(d.name||'Tu producto')}</h3><b>${esc(d.price||'Precio pendiente')} ${esc(d.discount)}</b><p>${esc(d.copy||'El texto de tu anuncio aparecerá aquí.')}</p><span class="zwtCTA">${esc(d.cta)}</span></article>`;};
+   }
+   if(type==='clipper'){const original=document.querySelector('.mediaPreview');if(original){preview.querySelector('.zwtPreviewContent').replaceChildren(original);original.id='zwtVideoPreview';const advanced=document.createElement('details');advanced.className='zwtOptions';advanced.innerHTML='<summary>Subtítulos y herramientas avanzadas</summary>';const actions=original.querySelector('[data-media-action=srt_auto]')?.closest('.mediaActions');if(actions)advanced.append(actions);const thumb=original.querySelector('[data-media-action=thumbnail]');if(thumb)advanced.append(thumb);original.append(advanced);}}
+   if(type==='sites'){const options=document.createElement('details');options.className='zwtOptions';options.innerHTML='<summary>Objetivo, SEO y estilo · planificación</summary><label>Objetivo<input placeholder="Qué debe lograr el sitio"></label><label>Monetización<input placeholder="Contenido, afiliación o AdSense"></label><label>SEO<input placeholder="Palabras clave y público"></label><label>Estilo<input placeholder="Dirección visual"></label><label>Motor<select><option>AUTO · flujo ZAR actual</option><option>ZAR</option><option disabled>LOVABLE · no conectado</option></select></label><small>Preferencias locales de planificación; no activan una integración nueva.</small>';document.querySelector('#zwSites [data-form=site]')?.after(options);}
+  }
+  if(type==='dropshipping'&&!document.getElementById('zwtShopify')){const c=j.commerce||{},box=document.createElement('section');box.id='zwtShopify';box.innerHTML=`<h2>SHOPIFY</h2><p>${c.shopify?.shop?'Conectado · '+esc(c.shopify.shop.name||'tienda verificada'):'No conectado / sin verificación actual'}</p><button data-ca-op="commerce_shopify_sync" data-value="{}" class="zoBtn">Sincronizar / verificar</button><p>Publicar requiere producto revisado y conexión verificada.</p>`;target.append(box);}
+ }
+ function projectCard(type,p){const r=p.result||{},name=p.name||p.title||r.project?.title||p.payload?.master_brief||p.id;const image=p.image_url||p.thumbnail_url||r.thumbnail?.url;const url=safeURL(image);return `<article class="zwtProjectCard"><div class="zwtProjectImage">${url?`<img loading="lazy" src="${esc(url)}" alt="">`:type==='dropshipping'?'📦':type==='sites'?'🌐':'🎬'}</div><h3>${esc(name)}</h3><p>${esc(p.state||p.status||'Sin estado')} · ${esc(p.domain||r.format||p.supplier_id||'Sin datos')}</p><small>${esc(p.updated_at||p.created_at||'Fecha no disponible')}</small>${type==='dropshipping'?`<p>Coste: ${esc(p.cost)} · Venta: ${esc(p.pricing?.sale_price)} · Margen: ${esc(p.pricing?.margin)} · Stock: ${esc(p.stock)}</p><button class="zoBtn" data-ca-op="select_product" data-value="${esc(JSON.stringify({id:p.id}))}">Ver / editar producto</button>`:`<button data-zwt-project="${esc(p.id)}">Abrir / preview</button>`}<button disabled title="Revisar proyecto y usar el flujo existente de publicación">Publicar · revisión</button></article>`;}
+ function start(){
+  if(embedded&&catalog[embedded]){embeddedStart(embedded);return;}
+  const main=document.querySelector('.main');if(!main)return;
+  const bar=document.createElement('nav');bar.id='zarWorkspaceTabs';bar.setAttribute('aria-label','Pestañas de ZAR');bar.setAttribute('role','tablist');
+  const panes=document.createElement('section');panes.id='zarWorkspacePanes';panes.hidden=true;
+  main.querySelector('.top')?.after(bar);bar.after(panes);
+  const tabs=new Map([['home',{id:'home',loaded:true}]]);let active='home';
+  function save(){try{sessionStorage.setItem('zar_workspace_tabs_v1',JSON.stringify({tabs:[...tabs.keys()],active}))}catch{}}
+  function render(){bar.replaceChildren();for(const [id,t] of tabs){const item=document.createElement('div');item.className='zwtTab'+(id===active?' active':'');const b=document.createElement('button');b.type='button';b.setAttribute('role','tab');b.setAttribute('aria-selected',String(id===active));b.textContent=catalog[id].join(' ');b.onclick=()=>activate(id);item.append(b);if(id!=='home'){const x=document.createElement('button');x.className='zwtClose';x.textContent='×';x.setAttribute('aria-label','Cerrar '+catalog[id][1]);x.onclick=()=>close(id);item.append(x);}bar.append(item);}bar.querySelector('.active')?.scrollIntoView({block:'nearest',inline:'nearest'});}
+  function activate(id){if(!tabs.has(id))return;active=id;const t=tabs.get(id);if(id!=='home'&&!t.frame){const f=document.createElement('iframe');f.className='zwtPane';f.title=catalog[id][1];f.src='/?zar_workspace='+encodeURIComponent(id);f.addEventListener('load',()=>{f.contentWindow?.postMessage({zarWorkspace:true,active:active===id},location.origin);});panes.append(f);t.frame=f;}
+   for(const [key,row] of tabs)if(row.frame){row.frame.hidden=key!==id;row.frame.contentWindow?.postMessage({zarWorkspace:true,active:key===id},location.origin);}panes.hidden=id==='home';document.body.classList.toggle('zarTabsActive',id!=='home');window.closeMobileDrawer?.();render();save();}
+  function open(id){if(!catalog[id])return;if(!tabs.has(id))tabs.set(id,{id});activate(id);}
+  function close(id){if(id==='home'||!tabs.has(id))return;const keys=[...tabs.keys()],index=keys.indexOf(id);tabs.get(id).frame?.remove();tabs.delete(id);if(active===id)activate(keys[index-1]||'home');else{render();save();}}
+  window.WorkspaceTabsManager={open,activate,close,getState:()=>({tabs:[...tabs.keys()],active})};
+  for(const [fn,id] of Object.entries(hooks))if(typeof window[fn]==='function'||['showSites','showDropshipping','showClipper'].includes(fn))window[fn]=()=>open(id);
+  if(window.ZARSkills)window.ZARSkills.open=()=>open('learning');
+  const shortcuts=document.createElement('div');shortcuts.className='zwtLaunchers';shortcuts.innerHTML=['sites','dropshipping','clipper'].map(id=>`<button data-zwt-open="${id}">${catalog[id].join(' ')}</button>`).join('');document.querySelector('.side')?.append(shortcuts);
+  const mobile=document.querySelector('#mobileDrawer .mobileMenuSection');if(mobile)for(const id of ['sites','dropshipping','clipper']){const b=document.createElement('button');b.className='mobileMenuItem';b.dataset.zwtOpen=id;b.textContent=catalog[id].join(' ');mobile.append(b);}
+  document.addEventListener('click',e=>{const b=e.target.closest('[data-zwt-open]');if(b)open(b.dataset.zwtOpen);const chat=e.target.closest('.side button');if(chat&&/Chat/.test(chat.textContent)&&!chat.textContent.includes('Nueva'))activate('home');});
+  window.addEventListener('message',e=>{if(e.origin!==location.origin||!e.data?.zarWorkspace)return;const match=[...tabs.values()].find(t=>t.frame?.contentWindow===e.source);if(!match)return;if(e.data.action==='close')close(match.id);if(e.data.action==='newChat'){activate('home');window.newChat?.();}if(e.data.action==='restore'){activate('home');window.restoreConversation?.(e.data.id);}});
+  try{const saved=JSON.parse(sessionStorage.getItem('zar_workspace_tabs_v1')||'null');for(const id of saved?.tabs||[])if(catalog[id]&&!tabs.has(id))tabs.set(id,{id});active=catalog[saved?.active]?saved.active:'home';}catch{}
+  activate(active);
+ }
+ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start,{once:true});else start();
+})();
