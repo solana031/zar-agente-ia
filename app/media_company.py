@@ -243,10 +243,15 @@ def produce_local(scope_id, task_id):
 
 def _narrator():
     from . import voice_pro
+    text = "Esta es la voz del narrador. Una historia comienza con una idea y cobra vida en cada escena."
     if not voice_pro._eleven_configured() and not voice_pro._f5_url():
-        return None
+        from . import voice_tts
+        if not voice_tts._api_key():
+            return None
+        audio, mime = voice_tts.synthesize(text)
+        return audio, mime, "Gemini"
     from .media_adapters import VoiceAdapter
-    return VoiceAdapter().synthesize("Esta es la voz del narrador. Una historia comienza con una idea y cobra vida en cada escena.")
+    return VoiceAdapter().synthesize(text)
 
 
 def process_one(scope_id):
