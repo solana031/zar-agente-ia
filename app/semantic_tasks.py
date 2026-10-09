@@ -8,7 +8,7 @@ def plan(message):
     text=str(message or '').strip();low=text.casefold()
     research=bool(re.search(r'\b(investiga(?:r)?|investigación|analiza|compara|averigua|busca (?:ayudas|informaci[oó]n)|estudio|investigaci[oó]n)\b',low))
     report=bool(re.search(r'\b(haz(?:me)?|crea|prepara|genera|redacta|mete|pon)\b.{0,55}\b(informe|documento|presentaci[oó]n|hoja|presupuesto|tabla)\b',low))
-    send=bool(re.search(r'\b(env[ií]a(?:selo|sela|melo|mela|lo|le|me)?|m[aá]nda(?:selo|sela|melo|mela|lo|le|me)?|enviar)\b',low))
+    send=bool(re.search(r'\b(env[ií]a(?:selo|sela|melo|mela|lo|le|me)?|m[aá]nda(?:selo|sela|melo|mela|lo|le|me)?|enviar(?:lo|la|me|selo|sela)?)\b',low))
     if research and send:report=True
     resolve=bool(re.search(r'\b(correo|email|direcci[oó]n)\s+de\s+\w',low))
     attach=bool(re.search(r'\b(adjunta(?:r)?|usa el documento|a[nñ]ade las fotos)\b',low))
