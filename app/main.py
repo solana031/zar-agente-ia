@@ -49,6 +49,8 @@ from app.youtube_publish import register_youtube
 
 app = Flask(__name__)
 register_youtube(app)
+from .company_workspace import blueprint as company_workspace_blueprint
+app.register_blueprint(company_workspace_blueprint)
 
 # Clave de sesión estable: si Railway reinicia el proceso durante un OAuth,
 # la sesión y el estado PKCE no se invalidan. Si no hay variable de entorno,

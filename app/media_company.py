@@ -286,8 +286,8 @@ def process_one(scope_id):
                     return 'Media: capacidad '+agent+' pausada.'
                 client = _client()
                 brief=record['payload']['master_brief']
-                if record.get('project'):
-                    brief += '\n\nPREFERENCIAS DE PRODUCCIÓN ZAR (duración objetivo, no medida):\n'+json.dumps(record['project'],ensure_ascii=False,sort_keys=True)
+                # Options already live in checkpoint/project_config. Feeding them
+                # as novel paragraphs creates unintended scenes and paid assets.
                 cp = client.advance(record.get("checkpoint") or {}, brief, persist,
                                     narrator=_narrator)
                 persist(cp)

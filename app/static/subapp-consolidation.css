@@ -1,0 +1,29 @@
+.zarSubappGuide { padding:12px 14px; margin:10px 0 16px; border:1px solid #765632; border-radius:12px; background:#241c14; color:#eee0cc; }
+.zarSubappGuide strong { font-size:14px; color:#edc891; }
+.zarSubappGuide p,.zarSubappEmpty { font-size:13px; line-height:1.55; color:#cbbb9f; }
+.zarSubappGuide p { margin:6px 0 10px; }
+.zarSubappGuide ol { display:flex; flex-wrap:wrap; gap:6px; list-style:none; counter-reset:subapp; padding:0; margin:0; }
+.zarSubappGuide li { counter-increment:subapp; padding:5px 9px; border-radius:8px; background:#342718; font-size:12px; line-height:1.4; }
+.zarSubappGuide li::before { content:counter(subapp) ' · '; color:#e4ba7d; }
+#zarCommerceAgency,#zwSites,[data-zar-media] { min-width:0; overflow-wrap:anywhere; }
+#zarCommerceAgency nav { display:flex; flex-wrap:wrap; gap:6px; margin:12px 0; }
+#zarCommerceAgency nav button { margin:0; }
+#zarCommerceAgency form,#zwSites form { display:flex; flex-wrap:wrap; align-items:end; gap:10px; padding:12px; border:1px solid #57412b; border-radius:10px; background:#1d1812; }
+#zarCommerceAgency form > label,.zarSubappField { display:flex; flex-direction:column; gap:6px; flex:1 1 190px; min-width:0; font-size:12px; line-height:1.4; color:#d9c6aa; }
+#zarCommerceAgency form input:not([type=hidden]):not([type=checkbox]),#zarCommerceAgency form select,#zarCommerceAgency form textarea,#zwSites form input,#zwSites form select,#zwSites form textarea { width:100%; min-width:0; box-sizing:border-box; min-height:40px; border:1px solid #725333; border-radius:8px; padding:8px 10px; background:#17120e; color:#f0e6d8; font-size:14px; }
+#zarCommerceAgency form label:has(input[type=checkbox]) { flex-direction:row; align-items:center; }
+#zarCommerceAgency button,#zwSites button,[data-zar-media] button { max-width:100%; white-space:normal; overflow-wrap:anywhere; line-height:1.35; }
+#zarCommerceAgency pre,#zwSites pre { max-width:100%; box-sizing:border-box; padding:10px; border-radius:8px; background:#16120f; font-size:12px; }
+#zwSites > summary { font-size:16px; color:#edc891; padding:10px 0; }
+.zarSubappEmpty { padding:12px; border:1px dashed #6e5437; border-radius:10px; }
+@media(max-width:600px) {
+ .zarSubappGuide { padding:10px; margin:8px 0 12px; }
+ .zarSubappGuide li { flex:1 1 95px; }
+ #zarCommerceAgency form,#zwSites form { padding:10px; }
+ #zarCommerceAgency form > label,.zarSubappField { flex-basis:100%; }
+ #zarCommerceAgency button,#zwSites button,[data-zar-media] button { min-height:44px; }
+ #zarCommerceAgency nav button { flex:1 1 110px; }
+ #zwSites form input,#zarCommerceAgency form input:not([type=hidden]):not([type=checkbox]),#zwSites form textarea,#zarCommerceAgency form textarea,#zwSites form select,#zarCommerceAgency form select { font-size:16px; }
+ [data-zar-media] .mediaActions { gap:8px; }
+ [data-zar-media] .mediaActions > button { flex:1 1 140px; }
+}

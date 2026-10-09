@@ -29,6 +29,16 @@ class FakeClient:
 def configured(monkeypatch):
     client=FakeClient(); monkeypatch.setattr(media,'_client',lambda:client); return client
 
+def test_production_options_are_not_ingested_as_story_paragraphs(scope,monkeypatch):
+    client=configured(monkeypatch)
+    story='Una semilla brota al amanecer.'
+    task=media.queue_story(scope,story,options={'duration':5,'format':'9:16','max_scenes':1})
+    media.produce_local(scope,task['id'])
+    media.process_one(scope)
+    assert client.briefs == [story]
+    record=media._read(scope,task['id'])
+    assert record['project']['max_scenes'] == 1
+
 def finished(scope,monkeypatch):
     c=configured(monkeypatch); task=media.queue_story(scope,'Historia completa')
     media.produce_local(scope,task['id']); media.process_one(scope); media.process_one(scope)
@@ -73,7 +83,7 @@ def test_edit_regenerates_without_reusing_old_mp4(scope,monkeypatch):
 
 def test_publish_confirmation_ownership_no_duplicates(scope,monkeypatch):
     t,c=finished(scope,monkeypatch); sent=[]
-    monkeypatch.setattr(media,'tiktok_direct_post',lambda url,caption,confirmed:sent.append(url) or {'ok':True,'publish_id':'social-1'})
+    monkeypatch.setattr(media,'tiktok_direct_post',lambda url,caption,confirmed,privacy:sent.append(url) or {'ok':True,'publish_id':'social-1'})
     assert media.publish(scope,t['id'],'','tiktok')['requires_review'] and not sent
     with pytest.raises(ValueError): media.video_path('other-user',t['id'])
     assert media.publish(scope,t['id'],'https://zar.invalid/signed.mp4','tiktok',confirmed=True)['ok']
@@ -85,7 +95,7 @@ def test_app_jobs_video_and_signed_social_export(scope,monkeypatch):
     t,c=finished(scope,monkeypatch); web=main.app.test_client()
     assert web.get('/health').json['ok'] and web.get('/api/holdings/media/jobs').json['tasks'][-1]['status']=='PRODUCED'
     assert web.get('/api/holdings/media/video/'+t['id']).mimetype=='video/mp4'
-    sent=[]; monkeypatch.setattr(media,'tiktok_direct_post',lambda url,caption,confirmed:sent.append(url) or {'ok':True})
+    sent=[]; monkeypatch.setattr(media,'tiktok_direct_post',lambda url,caption,confirmed,privacy:sent.append(url) or {'ok':True})
     payload={'task_id':t['id'],'platform':'tiktok','confirmed':'false'}
     assert web.post('/api/holdings/media/publish',json=payload).json['requires_review'] and not sent
     payload.update(confirmed=True,video_url='https://evil.invalid/fake.mp4')
@@ -98,7 +108,7 @@ def test_app_jobs_video_and_signed_social_export(scope,monkeypatch):
 
 def test_version_consistency():
     root=Path(__file__).parents[1]
-    assert {root.joinpath(p).read_text().strip() for p in ('VERSION','VERSION.txt','app/VERSION.txt')}=={'33.3.8'}
+    assert {root.joinpath(p).read_text().strip() for p in ('VERSION','VERSION.txt','app/VERSION.txt')}=={'33.3.17'}
 
 def test_reels_resume_existing_container_once(scope,monkeypatch):
     t,c=finished(scope,monkeypatch)
