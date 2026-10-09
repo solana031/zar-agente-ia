@@ -375,6 +375,8 @@ def fetch_webpage(url, max_chars=18000):
             allow_redirects=True,
         )
         r.raise_for_status()
+        if 'application/pdf' in r.headers.get('Content-Type','').lower() or r.content.startswith(b'%PDF-'):
+            return {'ok':False,'status':r.status_code,'error':'PDF requiere extracción documental; no se interpreta su binario como HTML.'}
         parser = _TextParser()
         parser.feed(r.text)
         text = "\n".join(parser.parts)

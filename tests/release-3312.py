@@ -43,6 +43,8 @@ class Release3312(base['Release3310']):
   task=self.create('Hazme un estudio de las ayudas, vivienda protegida y sorteos de vivienda a los que podría acceder un joven de 26 años que vive en Majadahonda. Hazme un informe resumido con enlaces y prepáralo para enviarlo a mi propio email.')
   self.assertEqual(len(task['subtasks']),9)
   self.assertEqual(task['entities']['recipient'],'SELF')
+  self.assertIn('Majadahonda',task['topic'])
+  self.assertIn('vivienda protegida',task['topic'])
   self.assertFalse(task['plan_confirmed'])
  def test_cancelled_plan_cannot_resume(self):
   t=self.create('Investiga vivienda y envíamelo a mi propio email');tasks.cancel_plan(self.scope,t['id'])

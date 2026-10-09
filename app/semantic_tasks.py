@@ -24,7 +24,7 @@ def plan(message):
     if re.search(r'\bmi (?:propio )?(?:email|correo)\b',low):contact='SELF'
     if contact:contact=re.sub(r'\s+por\s+(?:email|correo).*$', '',contact,flags=re.I).strip()
     topic=re.sub(r'^(investiga|analiza|compara|averigua)\s+','',text,flags=re.I)
-    topic=re.split(r'[,;]|\by después\b|\bdespués\b|\by (?:haz|crea|prepara|envía|manda)',topic,flags=re.I)[0].strip()
+    topic=re.split(r'(?:[.;]\s*|,\s*|\by después\s+|\bdespués\s+|\by\s+)(?=(?:hazme|haz|crea|prepara|prepáralo|redacta|env[ií]a\w*|manda\w*)\b)',topic,flags=re.I)[0].strip()
     kinds=[]
     if research:kinds.append('RESEARCH')
     if report:kinds.append('CREATE_REPORT')
