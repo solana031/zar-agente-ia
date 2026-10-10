@@ -2,7 +2,7 @@
 import io,re,html
 from .file_store import FileStore,DuplicateFileError
 
-TEMPLATES={'BUSINESS_REPORT','MARKET_RESEARCH','FINANCIAL_REPORT','PROJECT_REPORT','PROPOSAL','TECHNICAL_REPORT','GENERAL_REPORT'}
+TEMPLATES={'BUSINESS_REPORT','MARKET_RESEARCH','FINANCIAL_REPORT','PROJECT_REPORT','PROPOSAL','TECHNICAL_REPORT','GENERAL_REPORT','RESEARCH','BUSINESS','FINANCIAL','EXECUTIVE'}
 
 def create(title,text,kind='pdf',sources=None,source_task=None,contacts=None,projects=None,template='GENERAL_REPORT',charts=None):
     sources=sources or [];text=str(text or '');title=str(title or 'Informe ZAR')[:180]
@@ -13,21 +13,8 @@ def create(title,text,kind='pdf',sources=None,source_task=None,contacts=None,pro
     headings=[line.lstrip('# ').strip() for line in text.splitlines() if line.startswith('#')]
     output=io.BytesIO()
     if kind=='pdf':
-        from reportlab.platypus import SimpleDocTemplate,Paragraph,Spacer,PageBreak,Table,TableStyle,Image
-        from reportlab.lib.styles import getSampleStyleSheet
-        from reportlab.lib import colors
-        styles=getSampleStyleSheet();styles['Title'].textColor=colors.HexColor('#173854');styles['Heading1'].textColor=colors.HexColor('#173854')
-        story=[Paragraph(html.escape(title),styles['Title']),Spacer(1,24),Paragraph('ZAR · '+template.replace('_',' '),styles['Heading2']),PageBreak(),Paragraph('Índice',styles['Heading1'])]+[Paragraph(html.escape(heading),styles['BodyText']) for heading in headings]+[Spacer(1,18)]
-        for line in full.splitlines():
-            if not line.strip():story.append(Spacer(1,8));continue
-            if '\t' in line:
-                table=Table([[Paragraph(html.escape(cell),styles['BodyText']) for cell in line.split('\t')]],hAlign='LEFT');table.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,-1),colors.HexColor('#f0f2f4')),('GRID',(0,0),(-1,-1),.3,colors.lightgrey),('VALIGN',(0,0),(-1,-1),'TOP')]));story.append(table);continue
-            style=styles['Heading1'] if line.startswith('#') else styles['BodyText']
-            escaped=html.escape(line.lstrip('# '));escaped=re.sub(r'https?://[^\s<>]+',lambda m:'<link href="'+m.group()+'" color="#173854">'+m.group()+'</link>',escaped);story.append(Paragraph(escaped,style))
-        for spec,data in chart_images:story.extend([Spacer(1,16),Paragraph(html.escape(spec.get('title','Gráfico')),styles['Heading2']),Image(io.BytesIO(data),width=480,height=278)])
-        def footer(canvas,doc):
-            canvas.setFont('Helvetica',8);canvas.drawString(40,25,'ZAR · '+title[:70]);canvas.drawRightString(555,25,str(doc.page))
-        SimpleDocTemplate(output,title=title,author='ZAR',topMargin=50,bottomMargin=45).build(story,onFirstPage=footer,onLaterPages=footer)
+        from .document_renderer import render_pdf
+        output.write(render_pdf(title,text,template,sources,chart_images))
         mime='application/pdf'
     elif kind=='docx':
         from docx import Document

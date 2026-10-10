@@ -110,7 +110,7 @@ def actor(scope):
 def operate(data):
     if not isinstance(data, dict):
         raise ValueError('Acción inválida')
-    if data.get('action', 'read') not in {'prepare_account', 'open', 'read', 'back', 'forward', 'reload', 'page', 'click', 'fill', 'upload', 'download', 'close'}:
+    if data.get('action', 'read') not in {'prepare_account', 'open', 'new_page', 'close_page', 'read', 'back', 'forward', 'reload', 'page', 'click', 'fill', 'upload', 'download', 'close'}:
         raise ValueError('Acción inválida')
     if len(json.dumps(data)) > 12000:
         raise ValueError('Acción demasiado grande')
@@ -123,7 +123,7 @@ def operate(data):
         page = operate({'action': 'open', 'url': plan['url']})
         page['account_check'] = plan
         return page
-    if action == 'open':
+    if action in {'open','new_page'}:
         data = dict(data, url=browser_network.public_url(data.get('url', '')))
     scope = get_current_user()
     if action == 'close':

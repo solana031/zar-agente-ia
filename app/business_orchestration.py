@@ -278,7 +278,7 @@ def mutate(scope, action, data):
             o["approvals"].append({"id": secrets.token_hex(12), "item": item[:300], "provider": provider[:150],
                 "price": str(price), "tax": None if tax is None else str(tax), "total": str(total),
                 "currency": currency, "state": "PENDING", "created_at": now,
-                "execution_state": "NO DISPONIBLE", "note": "Propuesta local. Falta checkout verificable; aprobación solo reserva fondos."})
+                "business":str(data.get("business","")), "execution_state": "NO DISPONIBLE", "note": "Propuesta local. Falta checkout verificable; aprobación solo reserva fondos."})
         elif action in {"approve", "reject", "cancel"}:
             p = next(p for p in o["approvals"] if p["id"] == data["id"])
             if action == "approve":
@@ -289,6 +289,16 @@ def mutate(scope, action, data):
                     raise ValueError("Aprobación bloqueada por modo/STOP GLOBAL.")
                 if p["state"] != "PENDING" or data.get("confirmed") is not True or str(data.get("total")) != p["total"]:
                     raise ValueError("Confirmación explícita del total requerido.")
+                budgets=d.get('treasury_budgets',{})
+                if budgets:
+                    business=p.get('business');budget=budgets.get(business)
+                    if not budget:raise ValueError('Selecciona un negocio con presupuesto antes de aprobar.')
+                    if budget['currency']!=p['currency']:raise ValueError('Moneda distinta al presupuesto; no se convierte automáticamente.')
+                    total=Decimal(p['total'])
+                    approved=[x for x in o['approvals'] if x.get('business')==business and x.get('state') in {'APPROVED','EXECUTED'}]
+                    day=now[:10];month=now[:7]
+                    def committed(prefix):return sum((Decimal(x['total']) for x in approved if str(x.get('updated_at') or x.get('created_at','')).startswith(prefix)),Decimal(0))
+                    if total>Decimal(budget['max_action']) or committed(day)+total>Decimal(budget['max_day']) or committed(month)+total>Decimal(budget['max_month']) or committed('')+total>Decimal(budget['assigned']):raise ValueError('La solicitud excede los límites o presupuesto del negocio.')
                 before = Decimal(wallet(d)["balances"].get(p["currency"], {}).get("available", "0"))
                 if before < Decimal(p["total"]):
                     raise ValueError("Saldo contable insuficiente.")

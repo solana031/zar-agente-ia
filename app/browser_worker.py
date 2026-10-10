@@ -58,6 +58,15 @@ def run():
                 break
             if action == 'open':
                 page.goto(data['url'], wait_until='domcontentloaded', timeout=30000)
+            elif action == 'new_page':
+                if len(context.pages)>=8:raise ValueError('Maximum browser pages reached')
+                page=context.new_page()
+                page.goto(data['url'],wait_until='domcontentloaded',timeout=30000)
+            elif action == 'close_page':
+                if len(context.pages)<=1:raise ValueError('Keep at least one browser page')
+                target=context.pages[int(data['index'])]
+                target.close()
+                if page==target:page=context.pages[-1]
             elif action in ('back', 'forward', 'reload'):
                 getattr(page, {'back': 'go_back', 'forward': 'go_forward', 'reload': 'reload'}[action])(wait_until='domcontentloaded', timeout=30000)
             elif action == 'page':
