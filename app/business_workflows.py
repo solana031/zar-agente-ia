@@ -73,9 +73,12 @@ def operate(scope, action, data):
     if action=='site_create': return site_projects.create(scope,data)
     if action in {'site_native_demo','site_readiness','site_native_publish'}:
         from . import sites_native
-        if action=='site_native_demo': return sites_native.build_demo(scope,data,request.host_url)
+        import os
+        origin=os.environ.get('PUBLIC_BASE_URL') or request.host_url
+        if request.headers.get('X-Forwarded-Proto','').split(',')[0].strip()=='https' and origin.startswith('http://'): origin='https://'+origin[7:]
+        if action=='site_native_demo': return sites_native.build_demo(scope,data,origin)
         if action=='site_readiness': return sites_native.readiness(scope,data['id'])
-        return sites_native.publish(scope,data['id'],data.get('confirmed'))
+        return sites_native.publish(scope,data['id'],data.get('confirmed'),origin)
     if action=='site_analyze': return site_projects.analyze(scope,data['id'])
     if action=='site_build':
         from . import business_orchestration

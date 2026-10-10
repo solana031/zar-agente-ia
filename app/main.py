@@ -518,6 +518,11 @@ def _guard():
     allowed = {"login","health","oauth2callback","connect_google","connect_gmail","holdings_media_public_video_api","distributed_nodes.poll","distributed_nodes.claim","distributed_nodes.health","distributed_nodes.inference","agency_stripe_webhook"}
     if request.endpoint in allowed or request.path.startswith("/static/"):
         return None
+    if request.endpoint in {'holdings_site_page','holdings_site_asset'}:
+        from .sites_native import public_request
+        args=request.view_args or {}
+        if public_request(args.get('slug',''),args.get('filename','index.html')):
+            return None
     if _auth_enabled() and not _authorized():
         if request.path.startswith("/api/"):
             return jsonify({"error":"No autenticado"}), 401

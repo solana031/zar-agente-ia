@@ -12,6 +12,7 @@ class NativeSitesTests(unittest.TestCase):
             result=sites_native.build_demo('owner',{'name':'Productividad <demo>'},'https://zar.example')
             row=result['project'];root=Path(tmp)/'holdings_public_sites'/row['slug']
             self.assertEqual(row['state'],'PREVIEW');self.assertEqual(len(list(root.glob('*.html'))),7)
+            self.assertFalse(sites_native.public_request(row['slug']))
             self.assertIn('noindex,nofollow',(root/'index.html').read_text(encoding='utf-8'))
             sitemap=ElementTree.parse(root/'sitemap.xml');self.assertEqual(len(sitemap.getroot()),7)
             self.assertEqual(site_projects.analyze('owner',row['id'])['score'],100)
@@ -20,6 +21,11 @@ class NativeSitesTests(unittest.TestCase):
             with self.assertRaises(ValueError): sites_native.publish('owner',row['id'])
             published=sites_native.publish('owner',row['id'],True)
             self.assertEqual(published['state'],'PUBLISHED');self.assertIn('index,follow',(root/'index.html').read_text(encoding='utf-8'))
+            self.assertTrue(sites_native.public_request(row['slug']))
+            self.assertTrue(sites_native.public_request(row['slug'],'sitemap.xml'))
+            self.assertFalse(sites_native.public_request(row['slug'],'published.json'))
+            self.assertFalse(sites_native.public_request('../'+row['slug']))
+            self.assertFalse(sites_native.public_request(row['slug'],'../registry.json'))
             self.assertFalse(sites_native.readiness('owner',row['id'])['approval_guaranteed'])
             self.assertIn('privacy_reviewed',sites_native.readiness('owner',row['id'])['blockers'])
     def test_separate_builds_keep_originals(self):

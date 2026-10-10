@@ -19,7 +19,7 @@
    const subtitles={sites:'Creación, gestión y monetización de sitios web',dropshipping:'Productos, proveedores, publicación y rentabilidad',clipper:'Generación, edición y publicación de clips para redes'};
    shell.innerHTML=`<h1>${catalog[type][0]} ${catalog[type][1]}</h1><p>${subtitles[type]}</p><nav><button data-zwt-jump="create">${type==='clipper'?'Nueva historia':type==='sites'?'Nuevo sitio':'Buscar producto'}</button><button data-zwt-jump="projects">Ver proyectos</button><button data-zwt-jump="preview">Preview</button>${type==='sites'?'<button data-zwt-jump="import">Importar proyecto</button><button disabled title="Requiere proyecto y destino de publicación configurado">Publicar · revisar destino</button>':''}</nav>`;
    document.getElementById('orchestrationWorkspaceInner')?.prepend(shell);
-   window.addEventListener('zar-workflow-state',e=>decorateBusiness(type,e.detail));
+   window.addEventListener('zar-workflow-state',e=>requestAnimationFrame(()=>decorateBusiness(type,e.detail)));
    new MutationObserver(()=>{const debug=document.getElementById('zoDebug');if(debug&&!debug.open)debug.open=true;}).observe(document.getElementById('orchestrationWorkspaceInner'),{childList:true,subtree:true});
    window.zarWorkflowRefresh?.();
   }

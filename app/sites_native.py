@@ -68,7 +68,7 @@ def readiness(scope, project_id):
     return {'status':'READY_FOR_REVIEW' if all(checks.values()) else 'ACTION_REQUIRED','checks':checks,'last_checked':holdings._now(),
             'blockers':[k for k,v in checks.items() if not v],'approval_guaranteed':False,'content_sufficiency':'HUMAN_REVIEW_REQUIRED','note':'Checklist técnico; no demuestra elegibilidad ni aprobación de Google. ads.txt exige publisher ID real y despliegue en la raíz del dominio.'}
 
-def publish(scope, project_id, confirmed=False):
+def publish(scope, project_id, confirmed=False, public_origin=None):
     if confirmed is not True: raise ValueError('Confirma publicación de esta demo en la URL pública de ZAR.')
     if holdings.read(scope).get('global_stop'): raise ValueError('STOP GLOBAL activo.')
     decision=jev_decision.proposal(scope,{'source_agent':'SiteBuilderAgent','task':'Publicar demo editorial','action':'publish native site','resources':['local_static_host'],'expected_cost':0,'expected_revenue':None,'risk':.3,'urgency':.5})
@@ -76,10 +76,22 @@ def publish(scope, project_id, confirmed=False):
     row=site_projects.get(scope,project_id)
     if row.get('source_kind')!='NATIVE_DEMO': raise ValueError('Publicación nativa limitada a demos originales; importaciones conservadas.')
     root=sites_company._public_root()/row['slug']
+    base=public_origin.rstrip('/')+'/holdings/site/'+row['slug']+'/' if public_origin else row['canonical']
     for f in row['files']:
         if f.endswith('.html'):
-            path=root/f;path.write_text(path.read_text(encoding='utf-8').replace('content="noindex,nofollow"','content="index,follow"'),encoding='utf-8')
-    (root/'robots.txt').write_text('User-agent: *\nAllow: /\nSitemap: '+row['canonical']+'sitemap.xml\n',encoding='utf-8')
-    result=site_projects.patch(scope,project_id,state='PUBLISHED',published_at=holdings._now(),deployment={'provider':'RAILWAY_EXISTING','url':row['canonical'],'status':'PUBLISHED','source':'native_static_files'},content_review_required=True)
+            path=root/f;path.write_text(path.read_text(encoding='utf-8').replace(row['canonical'],base).replace('content="noindex,nofollow"','content="index,follow"'),encoding='utf-8')
+    sitemap=root/'sitemap.xml';sitemap.write_text(sitemap.read_text(encoding='utf-8').replace(row['canonical'],base),encoding='utf-8')
+    (root/'robots.txt').write_text('User-agent: *\nAllow: /\nSitemap: '+base+'sitemap.xml\n',encoding='utf-8')
+    manifest=root/'published.json';temp=manifest.with_suffix('.tmp')
+    temp.write_text(json.dumps({'files':row['files'],'published_at':holdings._now()}),encoding='utf-8');temp.replace(manifest)
+    result=site_projects.patch(scope,project_id,state='PUBLISHED',canonical=base,published_at=holdings._now(),deployment={'provider':'RAILWAY_EXISTING','url':base,'status':'PUBLISHED','source':'native_static_files'},content_review_required=True)
     jev_decision.decision_state(scope,decision['id'],'USER_CONFIRMED_NATIVE_PUBLICATION')
     return result
+
+def public_request(slug, filename='index.html'):
+    if not re.fullmatch(r'[a-zA-Z0-9_-]{1,80}',slug): return False
+    if filename not in {'index.html','about.html','contact.html','privacy.html','robots.txt','sitemap.xml',*[s+'.html' for s,_,_ in ARTICLES]}: return False
+    try:
+        marker=sites_company._public_root()/slug/'published.json'
+        return filename in json.loads(marker.read_text(encoding='utf-8')).get('files',[])
+    except (OSError,ValueError,TypeError): return False
