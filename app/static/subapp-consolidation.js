@@ -1,6 +1,6 @@
 /* Presentation only: internal company IDs and action contracts remain unchanged. */
 (() => {
-  const labels = {'ZAR Commerce':'ZAR Dropshipping','ZAR Media':'ZAR Clipper'};
+  const labels = {'ZAR Commerce':'ZAR Reselling','ZAR Media':'ZAR Clipper'};
   function text(el, value) { if (el && el.textContent !== value) el.textContent = value; }
   function guide(host, key, title, steps, description) {
     if (!host || host.querySelector(`[data-subapp-guide="${key}"]`)) return;

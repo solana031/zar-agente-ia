@@ -65,7 +65,7 @@ def create(scope, data, files=()):
         'source_kind':'UPLOAD' if imported else 'DOMAIN' if domain else 'IDEA',
         'state':'READY' if imported else 'DRAFT', 'created_at':holdings._now(), 'updated_at':holdings._now(),
         'relative_url':'/holdings/site/'+slug+'/' if imported else None,
-        'adsense_status':'POR CONFIGURAR', 'deployment':None, 'files':list(imported), 'agents':[],
+        'adsense_status':'ACTION_REQUIRED', 'deployment':None, 'files':list(imported), 'agents':[],
         'metrics':None, 'error':None, 'content_review_required':True, 'safe_preview':True}
     with holdings.transaction(scope):
         rows = sites_company._read_registry(scope)
@@ -109,7 +109,7 @@ def build(scope, project_id):
 
 class SEOInspector(HTMLParser):
     def __init__(self):
-        super().__init__(); self.title=False; self.description=False; self.h1=0; self.images=0; self.alt=0; self.viewport=False
+        super().__init__(); self.title=False; self.description=False; self.h1=0; self.images=0; self.alt=0; self.viewport=False; self.canonical=False; self.opengraph=False; self.twitter=False
     def handle_starttag(self,tag,attrs):
         a=dict(attrs)
         if tag=='title': self.title=True
@@ -117,6 +117,9 @@ class SEOInspector(HTMLParser):
         if tag=='meta' and a.get('name')=='description': self.description=bool(a.get('content'))
         if tag=='meta' and a.get('name')=='viewport': self.viewport=True
         if tag=='img': self.images+=1; self.alt+=int('alt' in a)
+        if tag=='link' and a.get('rel')=='canonical': self.canonical=bool(a.get('href'))
+        if tag=='meta' and a.get('property')=='og:title': self.opengraph=bool(a.get('content'))
+        if tag=='meta' and a.get('name')=='twitter:card': self.twitter=bool(a.get('content'))
 
 
 def analyze(scope, project_id):
@@ -126,8 +129,12 @@ def analyze(scope, project_id):
         raise ValueError('Dominio inventariado: importa el HTML/proyecto para análisis local; no se descargan URLs arbitrarias.')
     parser=SEOInspector();parser.feed(file.read_text(encoding='utf-8',errors='replace'))
     checks={'title':parser.title,'description':parser.description,'single_h1':parser.h1==1,
-            'viewport':parser.viewport,'images_with_alt':parser.alt==parser.images}
+            'viewport':parser.viewport,'images_with_alt':parser.alt==parser.images,'canonical':parser.canonical,
+            'opengraph':parser.opengraph,'twitter_card':parser.twitter,
+            'sitemap':(file.parent/'sitemap.xml').exists(),'robots':(file.parent/'robots.txt').exists()}
     result={'source':'local_html','checked_at':holdings._now(),'checks':checks,
+        'score':round(100*sum(checks.values())/len(checks)),
+        'issues':[{'check':k,'priority':'HIGH' if k in {'title','description','single_h1'} else 'MEDIUM','fix':'Completar '+k+' y volver a analizar'} for k,v in checks.items() if not v],
         'next_steps':[k for k,v in checks.items() if not v], 'ranking_prediction':None}
     patch(scope,project_id,seo=result)
     return result

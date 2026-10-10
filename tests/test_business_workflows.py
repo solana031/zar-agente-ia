@@ -38,9 +38,10 @@ class GoogleSession:
 
 
 class FakeDrama:
-    def __init__(self):self.briefs=[]
+    def __init__(self):self.briefs=[];self.configs=[]
     def advance(self,cp,brief,persist,narrator=None):
         self.briefs.append(brief)
+        self.configs.append(dict(cp.get('project_config') or {}))
         cp.update(stage='done',status='done',progress=100,project_id='real-provider-project',tasks=[])
         persist(cp);return cp
     def download_final(self,cp,path):path.write_bytes(b'\x00\x00\x00\x18ftypisom'+b'0'*40)
@@ -71,9 +72,9 @@ class WorkflowTests(unittest.TestCase):
         with patch.dict(os.environ,{'JEV_API_KEY':'OFFLINE_ONLY'}),patch.object(jev,'decide',return_value={'fallback':False,'state':'ONLINE','answers':{'route':{'choice':'APPROVE','confidence':.9}}}):
             row=jev.proposal(self.scope,self.proposal(action='pagar dominio',expected_cost=10,expected_revenue=30),use_provider=True)
             self.assertEqual(row['decision'],'ESCALATE');self.assertEqual(row['output']['expected_profit'],'20')
-            self.assertEqual(next(x for x in inventory(holdings.read(self.scope)) if x['name']=='JEV')['state'],'LISTO')
+            self.assertEqual(next(x for x in inventory(holdings.read(self.scope)) if x['name']=='JEV')['state'],'READY')
             with patch.dict(os.environ,{'JEV_API_KEY':'CHANGED_OFFLINE_KEY'}):
-                self.assertEqual(next(x for x in inventory(holdings.read(self.scope)) if x['name']=='JEV')['state'],'POR CONFIGURAR')
+                self.assertEqual(next(x for x in inventory(holdings.read(self.scope)) if x['name']=='JEV')['state'],'READY')
 
     def test_jev_rejects_nonfinite_and_unexpected_fields(self):
         for data in (self.proposal(expected_cost='NaN'),self.proposal(risk=float('inf')),self.proposal(api_key='secret')):
@@ -141,8 +142,9 @@ class WorkflowTests(unittest.TestCase):
         with patch.object(media,'_client',return_value=fake):
             media.produce_local(self.scope,task['id']);media.process_one(self.scope)
         record=media._read(self.scope,task['id']);self.assertEqual(record['project_state'],'REVIEW')
-        self.assertIn('The full story',fake.briefs[0]);self.assertIn('16:9',fake.briefs[0])
-        self.assertIsNone(record['costs']['actual']);self.assertTrue(record['agent_trace'])
+        self.assertEqual('The full story',fake.briefs[0]);self.assertEqual(fake.configs[0]['aspect_ratio'],'16:9')
+        self.assertEqual(fake.configs[0]['video_resolution'],'1280x720')
+        self.assertIsNone(record['costs']['total_cost']);self.assertEqual(record['costs']['source'],'NO_VERIFIED_USAGE_LOGS');self.assertTrue(record['agent_trace'])
         projects.controls(self.scope,task['id'],'ready',{'confirmed':True})
         self.assertEqual(media._read(self.scope,task['id'])['project_state'],'READY')
         media.edit_story(self.scope,task['id'],'Revised script')
@@ -198,7 +200,7 @@ class WorkflowTests(unittest.TestCase):
             media.produce_local(self.scope,task['id']);media.process_one(self.scope)
         with self.assertRaises(ValueError):media.publish(self.scope,task['id'],'','youtube',confirmed=True)
         projects.controls(self.scope,task['id'],'ready',{'confirmed':True})
-        with patch('app.media_adapters.PublishingAdapter.youtube',return_value={'ok':True,'platform':'youtube','id':'offline-id','pending_publish':False}) as upload:
+        with patch('app.media_adapters.PublishingAdapter.prepare_youtube',return_value={'ok':True,'upload_capability':True,'status':'READY_FOR_REVIEW'}), patch('app.media_adapters.PublishingAdapter.youtube',return_value={'ok':True,'platform':'youtube','id':'offline-id','pending_publish':False}) as upload:
             media.publish(self.scope,task['id'],'','youtube',confirmed=True)
             media.publish(self.scope,task['id'],'','youtube',confirmed=True)
             self.assertEqual(upload.call_count,1)

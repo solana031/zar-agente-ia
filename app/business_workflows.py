@@ -71,6 +71,11 @@ def operate(scope, action, data):
             raise ValueError('Confirma consulta al modelo TypeSafe con cuota del proveedor.')
         return jev_decision.proposal(scope,data.get('proposal'),use_provider=data.get('use_provider') is True)
     if action=='site_create': return site_projects.create(scope,data)
+    if action in {'site_native_demo','site_readiness','site_native_publish'}:
+        from . import sites_native
+        if action=='site_native_demo': return sites_native.build_demo(scope,data,request.host_url)
+        if action=='site_readiness': return sites_native.readiness(scope,data['id'])
+        return sites_native.publish(scope,data['id'],data.get('confirmed'))
     if action=='site_analyze': return site_projects.analyze(scope,data['id'])
     if action=='site_build':
         from . import business_orchestration
