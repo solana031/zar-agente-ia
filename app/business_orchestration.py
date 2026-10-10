@@ -166,7 +166,7 @@ def view(scope):
     o = ensure(d)
     return {**deepcopy(o), "orchestrators": {name:{"domain":domain,"agents":[a["id"] for a in o["agents"].values() if a.get("domain")==domain],"trading_authority":False} for domain,name in ORCHESTRATORS.items()}, "wallet": wallet(d), "global_stop": d.get("global_stop", False),
             "connectors": inventory(d),
-            "ledger": d.get("ledger", [])[-100:][::-1]}
+            "ledger": d.get("ledger", [])[-100:][::-1], "budgets":d.get("treasury_budgets",{})}
 
 
 def mutate(scope, action, data):
@@ -174,7 +174,16 @@ def mutate(scope, action, data):
         d = holdings.read(scope)
         o = ensure(d)
         now = holdings._now()
-        if action == "deposit":
+        if action == "budget":
+            business=str(data.get("business",""))
+            if business not in {"sites","reselling","clipper","agency","infrastructure","marketing"}:raise ValueError("Negocio no permitido.")
+            currency=str(data.get("currency","EUR")).upper()
+            if currency not in {"EUR","USD","GBP"}:raise ValueError("Moneda no permitida.")
+            limits={key:Decimal(str(data.get(key))) for key in ("assigned","max_action","max_day","max_month")}
+            if any(not x.is_finite() or x<0 or x!=x.quantize(Decimal("0.01")) for x in limits.values()):raise ValueError("Límites no negativos con dos decimales requeridos.")
+            limits={key:str(value) for key,value in limits.items()}
+            d.setdefault("treasury_budgets",{})[business]={**limits,"currency":currency,"updated_at":now,"external_spending":"CONFIRM","note":"Límites declarados; no aportan fondos ni habilitan pagos."}
+        elif action == "deposit":
             amount = money(data.get("amount"))
             reference = str(data.get("reference", "")).strip()[:100]
             if not reference:

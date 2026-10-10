@@ -5967,7 +5967,7 @@ def preview_file(file_id):
         return jsonify({"error":"El archivo no está disponible en el almacenamiento."}), 404
     mime = (item.get("mime") or mimetypes.guess_type(str(path))[0] or "application/octet-stream").lower()
     ext = path.suffix.lower()
-    if mime in {"text/plain", "text/csv"} or ext in {".txt", ".csv"}:
+    if mime in {"text/plain", "text/csv"} or ext in {".txt", ".csv", ".md", ".markdown"}:
         text = path.read_text(encoding="utf-8", errors="replace")
         if ext == ".csv" or mime == "text/csv":
             import csv, io
@@ -5999,6 +5999,7 @@ def preview_file(file_id):
                     vals=["" if v is None else str(v) for v in row]
                     if any(vals): rows.append('<tr>'+''.join('<td>'+html_lib.escape(v)+'</td>' for v in vals)+'</tr>')
                 chunks.append('<h3>'+html_lib.escape(ws.title)+'</h3><table>'+''.join(rows)+'</table>')
+            wb.close()
             return jsonify({"ok":True,"kind":"html","html":'<div class="docPreview">'+''.join(chunks or ['<p>Hoja de cálculo vacía.</p>'])+'</div>'})
         except Exception as exc:
             return jsonify({"ok":False,"error":"No se pudo generar la vista previa XLSX: "+str(exc)}), 200
@@ -6013,6 +6014,8 @@ def preview_file(file_id):
             return jsonify({"ok":True,"kind":"html","html":'<div class="docPreview">'+''.join(parts or ['<p>Presentación sin texto extraíble.</p>'])+'</div>'})
         except Exception as exc:
             return jsonify({"ok":False,"error":"No se pudo generar la vista previa PPTX: "+str(exc)}), 200
+    if not (mime.startswith(("image/", "video/", "audio/")) or mime == "application/pdf"):
+        return jsonify({"ok":True,"kind":"unsupported","html":"<div class=\"docPreview\"><h2>Vista previa no disponible</h2><p>"+html_lib.escape(mime)+" · "+str(path.stat().st_size)+" bytes</p></div>"})
     return send_file(path, mimetype=mime, as_attachment=False, download_name=item.get("name", "archivo"))
 
 @app.get("/api/files/<file_id>/download")
