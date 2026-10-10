@@ -161,8 +161,11 @@ def operate(data):
         from . import holdings, identity_center
         with holdings.transaction(scope):
             state = holdings.read(scope)
-            identity_center.queue(identity_center.ensure(state), 'BROWSER', 'HUMAN_INTERVENTION', result.get('reason', ''),
-                result.get('url', ''), ['Abrir ZAR Browser. CAPTCHA, 2FA, credenciales o términos requieren intervención personal.'])
+            from urllib.parse import urlsplit
+            host=urlsplit(result.get('url','')).hostname or 'runtime'
+            row=identity_center.queue(identity_center.ensure(state), 'BROWSER', 'HUMAN_INTERVENTION:'+host, result.get('reason', ''),
+                result.get('url', ''), ['Revisar la página oficial de '+host+' con la identidad operativa. CAPTCHA, 2FA, credenciales o términos requieren intervención personal.','CONTINUAR comprueba la página real; no concede acceso ni crea una cuenta.'])
+            row.update(last_checked=holdings._now(),account='zaragente031@gmail.com')
             holdings.write(scope, state)
     return result
 

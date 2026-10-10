@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import patch
 from app.browser_network import public_url, public_addresses
-from app.browser_worker import policy
+from app.browser_worker import policy,human_gate
 
 
 class BrowserGuards(unittest.TestCase):
@@ -43,6 +43,7 @@ class BrowserGuards(unittest.TestCase):
             self.assertEqual(client.post('/api/browser', json={'action':'read'}).status_code, 403)
             self.assertEqual(other.post('/api/browser', headers={'X-ZAR-Browser-CSRF':csrf}, json={'action':'read'}).status_code, 403)
             execute.assert_not_called()
+
             self.assertEqual(client.post('/api/browser', headers={'X-ZAR-Browser-CSRF':csrf}, json={'action':'read'}).status_code, 200)
         with patch('app.cloud_auth.connected', return_value=False), patch('app.zar_browser.operate') as execute:
             self.assertEqual(client.post('/api/browser', headers={'X-ZAR-Browser-CSRF':csrf}, json={'action':'read'}).status_code, 403)
@@ -51,6 +52,13 @@ class BrowserGuards(unittest.TestCase):
              patch('app.jev_decision.evaluate', return_value={'decision':'CONFIRM'}), patch('app.zar_browser.operate') as execute:
             self.assertEqual(client.post('/api/browser', headers={'X-ZAR-Browser-CSRF':csrf}, json={'action':'click','confirmed':'true'}).status_code, 409)
             execute.assert_not_called()
+
+
+    def test_provider_challenges_are_not_ready(self):
+        self.assertTrue(human_gate('Just a moment...','Checking browser security'))
+        self.assertTrue(human_gate('Login','Verify you are human'))
+        self.assertTrue(human_gate('Google','2-step verification'))
+        self.assertFalse(human_gate('Example Domain','This domain is for use in documentation.'))
 
 
 if __name__ == '__main__':

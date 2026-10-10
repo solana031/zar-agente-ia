@@ -19,6 +19,10 @@ def policy(label, action):
     return 'CONFIRM'
 
 
+def human_gate(title, text):
+    return bool(re.search(r'captcha|verify you are human|2-step verification|verificaci[oó]n en dos pasos|passkey|checking your browser|security verification', text, re.I) or re.fullmatch(r'just a moment\.{0,3}|security check', title.strip(), re.I))
+
+
 def run():
     from playwright.sync_api import sync_playwright
     p = sync_playwright().start()
@@ -112,7 +116,7 @@ def run():
                 controls = []
             else:
                 visible = re.sub(r'\b(?:eyJ[A-Za-z0-9_.-]{30,}|sk-[A-Za-z0-9_-]{15,}|AIza[A-Za-z0-9_-]{20,})\b', '[REDACTED]', visible)
-            challenge = bool(re.search(r'captcha|verify you are human|2-step verification|verificaci[oó]n en dos pasos|passkey', visible, re.I))
+            challenge = human_gate(page.title(), visible)
             url = urlsplit(page.url)
             print(json.dumps({'ok': True, 'status': 'ACTION_REQUIRED' if challenge else 'READY',
                 'reason': 'CAPTCHA / autenticación humana detectada' if challenge else '',

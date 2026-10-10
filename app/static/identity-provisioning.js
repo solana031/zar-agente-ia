@@ -6,10 +6,18 @@
  const input=(n,l,v='')=>`<label>${l}<input name="${n}" value="${esc(v)}"></label>`;
  const link=(email,service='core')=>'/connect/google?'+new URLSearchParams({purpose:'zar',force:'1',email,service});
  async function post(action,data){const r=await fetch('/api/holdings/workflows/'+action,{method:'POST',headers:{'Content-Type':'application/json','X-ZAR-Business-CSRF':csrf},body:JSON.stringify(data)});const j=await r.json();if(!r.ok||!j.ok)throw Error(j.error||'Proveedor no confirmó');return j.result;}
+ function refreshStaleGoogle(){
+  const checked=Date.parse(state.google.last_verified||''),now=Date.now();
+  if(state.google.status!=='ACTIVE'||state.google.email!=='zaragente031@gmail.com'||!Number.isFinite(checked)||now-checked<600000)return;
+  // Shared timestamp prevents each open workspace from repeating the same probes.
+  const key='zar-google-read-verification:'+state.google.email;
+  try{if(now-Number(localStorage.getItem(key)||0)<600000)return;localStorage.setItem(key,String(now));}catch{return;}
+  post('identity_center_verify',{}).then(()=>update()).catch(err=>{const notice=document.getElementById('zarIdentityNotice');if(notice)notice.textContent='Verificación automática: '+err.message;});
+ }
  function render(j){
   const parent=document.getElementById('orchestrationWorkspaceInner');if(!parent||!j.identity_center)return;csrf=j.csrf;state=j.identity_center;
   let h=document.getElementById('zarIdentityCenter');if(!h){h=document.createElement('section');h.id='zarIdentityCenter';h.className='workspaceCard';parent.append(h);}
-  if(h.dataset.editing)return;const next=JSON.stringify(state);if(next===signature&&h.innerHTML)return;signature=next;const address=state.google.email||'';
+  refreshStaleGoogle();if(h.dataset.editing)return;const next=JSON.stringify(state);if(next===signature&&h.innerHTML)return;signature=next;const address=state.google.email||'';
   h.innerHTML=`<style>#zarIdentityCenter form{display:flex;flex-wrap:wrap;gap:10px;padding:12px 0}#zarIdentityCenter label{display:flex;flex-direction:column;flex:1 1 160px;min-width:0}#zarIdentityCenter input,#zarIdentityCenter textarea,#zarIdentityCenter select{max-width:100%;padding:8px;background:#101b2d;color:#eee;border:1px solid #456;border-radius:5px}#zarIdentityCenter textarea{min-height:110px}#zarIdentityCenter article{padding:10px;border-bottom:1px solid #345}#zarIdentityCenter .identityGrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px}#zarIdentityCenter a{overflow-wrap:anywhere}</style>
    <h2>ACTIVAR ZAR · Identidad y cuentas</h2><p>La cuenta Google/Gmail propia de ZAR ya existe. Registra su email y conecta esa cuenta; no se crea otra.</p>
    <form data-identity-register>${input('email','Email real de ZAR',address)}<button class="zoBtn">Registrar cuenta existente</button></form>

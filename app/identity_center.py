@@ -310,6 +310,15 @@ def operate(scope,action,data):
             if a['status']=='DONE':return deepcopy(a)
             service=a['service'];plan_id=a.get('plan_id')
         if service=='GOOGLE':return verify_google(scope)
+        if service=='BROWSER':
+            from .zar_browser import operate as browser_operate
+            result=browser_operate({'action':'read'})
+            with holdings.transaction(scope):
+                d=holdings.read(scope);s=ensure(d);a=next(x for x in s['human_actions'] if x['id']==data['id'])
+                verified=result.get('status')=='READY' and bool(a.get('url')) and result.get('url')==a['url']
+                a.update(status='DONE' if verified else 'ACTION_REQUIRED',last_checked=holdings._now(),verification='Página real accesible; la cuenta/integración se verifica por separado' if verified else 'La página aún requiere intervención o Browser está en otra URL.')
+                holdings.write(scope,d)
+            return deepcopy(a)
         if service in {'DRAMACLAW','CLOUDINARY'}:
             from . import media_company
             proof=media_company.status()

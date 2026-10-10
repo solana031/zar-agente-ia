@@ -136,4 +136,8 @@ def inventory(state=None):
                        next_step='API verificada; revisar el resultado real del proyecto antes de publicar.' if proof.get('api_ready') else proof.get('error'))
         elif row['name']=='Proveedor' and row['state']=='POR CONFIGURAR':
             row.update(status='ACTION_REQUIRED',next_step='Seleccionar proveedor real compatible con el adapter existente: catálogo, cotización, pedido y seguimiento. No hay proveedor seleccionado.')
+        elif row['name']=='Google Maps' and not row.get('configured'):
+            row.update(state='READY',status='READY',provider='OpenStreetMap + enlaces Google Maps',
+                       capabilities=['osm_map','coordinate_selection','google_maps_route_link'],missing_requirements=[],
+                       next_step='Mapa y rutas mediante enlaces disponibles sin clave. La búsqueda Google Places es opcional y no está conectada.')
     return rows
