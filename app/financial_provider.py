@@ -1,5 +1,16 @@
 """Financial execution contract. Stripe collection is not treasury money transfer."""
 class FinancialProvider:
+    def getAccounts(self):return []
+    def getBalances(self):return self.balance()
+    def getTransactions(self):return []
+    def getExpenses(self):return []
+    def getCards(self):return []
+    def createPaymentDraft(self,*args,**kwargs):raise ValueError('Verified WRITE capability required.')
+    def executePayment(self,*args,**kwargs):return self.createPayment(*args,**kwargs)
+    def getPaymentStatus(self,*args,**kwargs):return self.paymentStatus(*args,**kwargs)
+    def cancelPayment(self,*args,**kwargs):raise ValueError('Verified cancellation capability required.')
+    def getFundingInstructions(self,*args,**kwargs):return self.depositInstructions()
+    def getCapabilities(self):return self.capabilities()
     def capabilities(self):
         return {'status':'ACTION_REQUIRED','balance':False,'deposit':False,'payment':False,'refund':False,'account':'zaragente031@gmail.com','human_action':'ACTIVAR PROVEEDOR FINANCIERO ZAR','next_step':'Seleccionar proveedor de tesorería y completar su alta oficial, identidad/KYC, banco, términos y autorización de pagos. Stripe Checkout existente sirve para cobros; no habilita transferencias.'}
     def balance(self):return {'amount':None,'status':'NOT_CONFIGURED'}

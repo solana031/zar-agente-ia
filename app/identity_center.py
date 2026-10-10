@@ -226,6 +226,22 @@ def _setup_actions(s):
         if a['service']=='YOUTUBE':a.update(suggested_name='ZAR Agente IA',suggested_handle='@zaragente031')
         a['status']='HUMAN_ACTION_REQUIRED'
 
+def verified_existing_mp4(scope,reason):
+    """Resolve only the scoped task explicitly named in a historical blocker."""
+    from . import media_company
+    from .media_fallback import probe
+    from subprocess import TimeoutExpired
+    for task_id in re.findall(r'\b[0-9a-f]{16}\b',str(reason)):
+        try:
+            media_company._task(scope,task_id)
+            record=media_company._read(scope,task_id)
+            path=media_company._path(scope,task_id).with_suffix('.mp4')
+            if record.get('status')!='PRODUCED' or record.get('artifact')!=path.name or not path.is_file() or path.is_symlink():continue
+            return {'task_id':task_id,**probe(path)}
+        except (ValueError,KeyError,OSError,TimeoutExpired):continue
+    return None
+
+
 def view(scope):
     from .business_connectors import inventory
     d=holdings.read(scope);s=deepcopy(ensure(d));_setup_actions(s);nodes=inventory(d)
@@ -311,7 +327,7 @@ def operate(scope,action,data):
             service=a['service'];plan_id=a.get('plan_id')
         if service=='GOOGLE':return verify_google(scope)
         if service=='FINANCIAL_PROVIDER':
-            from .financial_provider import FinancialProvider
+            from .revolut_business import RevolutBusinessAdapter as FinancialProvider
             proof=FinancialProvider().capabilities()
             with holdings.transaction(scope):
                 d=holdings.read(scope);s=ensure(d);a=next(x for x in s['human_actions'] if x['id']==data['id'])
@@ -336,6 +352,12 @@ def operate(scope,action,data):
                 configured=result.get('configured',False) if service=='DRAMACLAW' else (result.get('media_storage') or {}).get('configured') and (result.get('media_storage') or {}).get('provider')=='cloudinary'
                 # Configuration presence cannot resolve a failed render or prove storage uploads.
                 verified=service=='DRAMACLAW' and proof.get('api_ready') and a.get('action')!='OBSERVED_BLOCKER'
+                if service=='DRAMACLAW' and a.get('action')=='OBSERVED_BLOCKER':
+                    media_proof=verified_existing_mp4(scope,a.get('reason',''))
+                    if media_proof:
+                        a.update(status='DONE',last_checked=holdings._now(),verification='MP4 VERIFIED: archivo existente y ffprobe. IndexTTS2 ERROR / OPTIONAL; su fallo se conserva.',media_proof=media_proof)
+                        holdings.write(scope,d)
+                        return deepcopy(a)
                 a.update(status='DONE' if verified else 'ACTION_REQUIRED',last_checked=holdings._now(),
                          verification='API health verified; render checked separately' if verified else 'Configuration present; original operation still requires verification' if configured else 'Configuration missing')
                 holdings.write(scope,d)

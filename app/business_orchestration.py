@@ -163,7 +163,7 @@ def wallet(d):
 
 def view(scope):
     from .financial_events import sync_existing, summary
-    from .financial_provider import FinancialProvider
+    from .revolut_business import RevolutBusinessAdapter as FinancialProvider
     sync_existing(scope)
     with holdings.transaction(scope):
         state=holdings.read(scope)
@@ -174,15 +174,40 @@ def view(scope):
             action=queue(center,'FINANCIAL_PROVIDER',proof['human_action'],proof['next_step'],'',['Elegir proveedor de tesorería.','Completar personalmente identidad/KYC, banco y términos en el portal oficial.','Configurar credenciales solo en servidor y verificar capacidad de ejecución antes de habilitar pagos.'])
             action.update(group='PAYMENTS',account='zaragente031@gmail.com')
             holdings.write(scope,state)
+        else:
+            proof=FinancialProvider().capabilities()
+            for action in center['human_actions']:
+                if action.get('service')=='FINANCIAL_PROVIDER' and action.get('status')!='DONE':
+                    action.update(title=proof['human_action'],reason=proof['next_step'],url='https://business.revolut.com/',group='PAYMENTS',account='zaragente031@gmail.com',instructions=[proof['next_step']])
+            holdings.write(scope,state)
     d = holdings.read(scope)
     o = ensure(d)
     return {**deepcopy(o), "orchestrators": {name:{"domain":domain,"agents":[a["id"] for a in o["agents"].values() if a.get("domain")==domain],"trading_authority":False} for domain,name in ORCHESTRATORS.items()}, "wallet": wallet(d), "global_stop": d.get("global_stop", False),
             "connectors": inventory(d),
             "ledger": d.get("ledger", [])[-100:][::-1], "budgets":d.get("treasury_budgets",{}),
-            "financial_events":summary(d), "financial_provider":FinancialProvider().capabilities()}
+            "financial_events":summary(d), "financial_provider":FinancialProvider().capabilities(),
+            "provider_snapshot":d.get('financial_provider_snapshot'),"billing_sync":d.get('billing_sync',{})}
 
 
 def mutate(scope, action, data):
+    if action in {'provider_sync','provider_funding','relayclaw_sync'}:
+        identity=holdings.read(scope).get('identity_center',{}).get('google',{})
+        if identity.get('status')!='ACTIVE' or identity.get('email')!='zaragente031@gmail.com':
+            raise ValueError('ACTION_REQUIRED: sesión Google operativa ZAR verificada antes de consultar datos financieros.')
+    if action=='provider_funding':
+        from .revolut_business import RevolutBusinessAdapter
+        adapter=RevolutBusinessAdapter()
+        account_id=str(data.get('account_id',''))
+        if account_id not in {x['id'] for x in adapter.getAccounts()}:raise ValueError('Cuenta no verificada.')
+        return {'funding_instructions':adapter.getFundingInstructions(account_id)}
+    if action=='provider_sync':
+        from .revolut_business import sync
+        sync(scope)
+        return view(scope)
+    if action=='relayclaw_sync':
+        from .relayclaw_usage_sync import sync
+        sync(scope)
+        return view(scope)
     with holdings.transaction(scope):
         d = holdings.read(scope)
         o = ensure(d)
