@@ -2,7 +2,7 @@
 (() => {
   let snapshot, csrf='', tab='Nichos', productId='', leadId='', editing=false, signature='';
   const esc=x=>String(x??'NO DISPONIBLE').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  const pre=x=>`<pre style="white-space:pre-wrap;overflow-wrap:anywhere;max-height:360px;overflow:auto">${esc(JSON.stringify(x,null,2))}</pre>`;
+  const pre=x=>`<details class="zarDataDetails"><summary>Datos y trazabilidad · desplegar</summary><pre style="white-space:pre-wrap;overflow-wrap:anywhere;max-height:360px;overflow:auto">${esc(JSON.stringify(x,null,2))}</pre></details>`;
   const input=(name,label,value='',type='text')=>`<label>${esc(label)} <input name="${name}" type="${type}" ${type==='number'?'step="any"':''} value="${esc(value??'')}" style="max-width:100%"></label>`;
   const area=(name,label,value='')=>`<label>${esc(label)}<textarea name="${name}" rows="3" style="width:100%;box-sizing:border-box">${esc(value)}</textarea></label>`;
   const hidden=(name,value)=>`<input type="hidden" name="${name}" value="${esc(value)}">`;
@@ -14,7 +14,7 @@
   async function post(op,data){
     const r=await fetch('/api/holdings/workflows/'+op,{method:'POST',headers:{'Content-Type':'application/json','X-ZAR-Business-CSRF':csrf},body:JSON.stringify(data)});
     const result=await r.json();if(!r.ok||!result.ok)throw Error(result.error||'No disponible');
-    editing=false;signature='';await window.zarWorkflowRefresh?.();await window.zarBusinessRefresh?.();notice(JSON.stringify(result.result));return result.result;
+    editing=false;signature='';await window.zarWorkflowRefresh?.();await window.zarBusinessRefresh?.();notice(JSON.stringify(result.result));if(result.result?.download_url?.startsWith('/api/files/')){const link=document.createElement('a');link.href=result.result.download_url;link.textContent='Abrir propuesta PDF guardada en ZAR';link.target='_blank';link.rel='noopener';document.getElementById('caNotice')?.append(link);}return result.result;
   }
   function productDetail(c){
     const p=c.products.find(x=>x.id===productId);if(!p)return '';
@@ -59,14 +59,14 @@
   }
   function agency(a){
     const lead=a.leads.find(x=>x.id===leadId);
-    return `<h2>Web Agency · CRM</h2>${form('agency_lead',input('name','Negocio real')+input('sector','Sector')+input('city','Ciudad')+input('address','Dirección pública')+input('phone','Teléfono público')+input('email','Email público')+input('website','Web existente')+input('source_url','Fuente pública')+area('services','Servicios reales')+area('branding','Branding confirmado'),'Registrar lead')}
+    return `<h2>ZAR Web Agency · CRM</h2>${form('agency_lead',input('name','Negocio real')+input('sector','Sector')+input('city','Ciudad')+input('address','Dirección pública')+input('phone','Teléfono público')+input('email','Email público')+input('website','Web existente')+input('source_url','Fuente pública')+area('services','Servicios reales')+area('branding','Branding confirmado'),'Registrar lead')}
       ${form('agency_discover',input('query','Google Maps: sector / ciudad')+input('limit','Máximo resultados',10,'number'),'Buscar leads Maps','Consulta limitada a Google Places; puede consumir cuota. No envía contactos.')}
       <div style="display:flex;gap:10px;overflow:auto">${['LEAD','RESEARCH','DEMO','CONTACTED','REPLIED','NEGOTIATING','WON','LOST','DO_NOT_CONTACT'].map(s=>`<section class="zhCard" style="min-width:160px"><b>${s}</b>${a.leads.filter(x=>x.state===s).map(x=>`<p>${action('select_lead',x.name,{id:x.id})}</p>`).join('')}</section>`).join('')}</div>
       ${lead?`<article class="zhCard"><h3>${esc(lead.name)} · ${esc(lead.state)}</h3>${pre(lead)}
       ${form('agency_lead',hidden('id',lead.id)+input('name','Nombre',lead.name)+input('sector','Sector',lead.sector)+input('city','Ciudad',lead.city)+input('email','Email público revisado',lead.email||'')+area('services','Servicios reales',lead.services||'')+area('branding','Branding',lead.branding||''),'Editar lead')}
       ${action('agency_research','Investigar fuentes públicas',{lead_id:lead.id})}
       ${form('agency_pricing',hidden('lead_id',lead.id)+input('cost','Coste estimado','','number')+input('minimum','MINIMUM','','number')+input('target','TARGET total incluido','','number')+input('premium','PREMIUM','','number')+input('currency','Moneda','EUR')+input('taxes','Impuestos incluidos conocidos','','number')+area('scope','Alcance/supuestos y fiscalidad revisados'),'Guardar propuesta')}
-      ${form('agency_demo',hidden('lead_id',lead.id)+input('price','Precio propuesto','','number'),'Crear demo específica local')}
+      ${action('agency_proposal_pdf','Crear propuesta PDF en Files',{lead_id:lead.id})}${form('agency_demo',hidden('lead_id',lead.id)+input('price','Precio propuesto','','number'),'Crear demo específica local')}
       ${form('agency_outreach',hidden('lead_id',lead.id)+input('preview_url','URL compartible revisada (opcional)'),'Preparar outreach; no enviar')}
       ${action('agency_inbound_sync','Leer respuestas Gmail y clasificar',{lead_id:lead.id})}
       ${(lead.emails||[]).filter(x=>!x.sent).map(d=>form('agency_send',hidden('lead_id',lead.id)+hidden('draft_id',d.id)+pre({to:d.to,subject:d.subject,body:d.body,send_intent:d.send_intent}),'Enviar este borrador por Gmail','Confirmas destinatario, asunto, texto e identidad ZAR revisados; este envío es real.')).join('')}
@@ -78,14 +78,15 @@
       ${action('agency_payment_sync','Verificar pago con Stripe',{lead_id:lead.id})}
       ${form('agency_receipt',hidden('lead_id',lead.id)+input('amount','Cobro bancario real','','number')+input('bank_reference','Referencia bancaria'),'Registrar cobro Wallet','Confirmas recepción bancaria real de un pago live verificado; test mode no suma ingresos.')}
       ${form('agency_delivery',hidden('lead_id',lead.id)+input('url','URL HTTPS del proyecto entregado')+area('notes','Notas de entrega'),'Registrar entrega revisada','Confirmas revisión y entrega real del proyecto pagado; no se despliega desde este control.')}
-      ${lead.demo?.relative_url?`<a href="${esc(lead.demo.relative_url)}" target="_blank" rel="noopener">Abrir demo compartible</a>`:''}</article>`:''}${pre(a.payments)}`;
+      ${lead.demo?.relative_url?action('agency_site_handoff','Copiar demo a ZAR Sites',{lead_id:lead.id}):''}${lead.demo?.relative_url?`<a href="${esc(lead.demo.relative_url)}" target="_blank" rel="noopener">Abrir demo compartible</a>`:''}</article>`:''}${pre(a.payments)}`;
   }
   function render(j){
     snapshot=j;csrf=j.csrf;const workspace=document.getElementById('orchestrationWorkspaceInner');if(!workspace)return;
     let host=document.getElementById('zarCommerceAgency');if(!host){host=document.createElement('section');host.id='zarCommerceAgency';host.className='workspaceCard';workspace.append(host);}
     if(editing)return;const next=JSON.stringify([j.commerce,j.agency,tab,productId,leadId]);if(next===signature)return;signature=next;
     const c=j.commerce||{niches:[],products:[],suppliers:[],listings:[],orders:[],quotes:[],fulfillments:[],operations:[]};
-    host.innerHTML=`<h2>ZAR Commerce</h2><p id="caNotice" role="status"></p><nav>${['Nichos','Productos','Proveedores','Catálogo','Pedidos','Fulfillment','Ventas','Márgenes','Devoluciones','Agentes','BusinessOrchestrator'].map(x=>action('tab',x,{name:x})).join('')}</nav>${commerce(c)}${agency(j.agency||{leads:[],payments:[]})}`;
+    host.innerHTML=`<h2>ZAR Reselling</h2><p id="caNotice" role="status"></p><nav>${['Nichos','Productos','Proveedores','Catálogo','Pedidos','Fulfillment','Ventas','Márgenes','Devoluciones','Agentes','BusinessOrchestrator'].map(x=>action('tab',x,{name:x})).join('')}</nav><section data-ca-commerce>${commerce(c)}</section><section data-ca-agency>${agency(j.agency||{leads:[],payments:[]})}</section>`;
+    window.dispatchEvent(new CustomEvent('zar-business-rendered',{detail:j}));
   }
   window.addEventListener('zar-workflow-state',e=>render(e.detail));
   document.addEventListener('input',e=>{if(e.target.closest('#zarCommerceAgency form'))editing=true;});

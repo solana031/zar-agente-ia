@@ -60,6 +60,32 @@ def operate(scope, action, data):
     if action=='agency_inbound':
         from .agency_events import inbound
         return inbound(scope,data)
+    if action=='agency_proposal_pdf':
+        from . import agency_crm, artifact_engine
+        from .user_scope import get_current_user
+        if get_current_user()!=scope: raise ValueError('Propietario de artefacto no válido.')
+        lead=next(x for x in agency_crm.view(scope)['leads'] if x['id']==data['lead_id'])
+        proposal=next((x for x in lead.get('proposals',[]) if x['id']==lead.get('proposal_id')),None)
+        if not proposal: raise ValueError('Guarda una propuesta y su alcance primero.')
+        body='\n'.join(['# Contexto y revisión preliminar','Negocio: '+lead['name'],'Sector: '+str(lead.get('sector') or 'Sin datos'),'Web registrada: '+str(lead.get('website') or 'Sin datos'),
+            'Revisión basada en datos registrados; no se afirma haber auditado técnicamente una web externa.',
+            '# Alcance y trabajo recomendado',proposal['scope'],'# Presupuesto estimado',
+            'MINIMUM: '+proposal['minimum']+' '+proposal['currency'],'TARGET: '+proposal['target']+' '+proposal['currency'],
+            'PREMIUM: '+proposal['premium']+' '+proposal['currency'],'Impuestos registrados: '+str(proposal.get('taxes') or 'Sin datos'),
+            'Estimación del operador, no oferta aceptada, factura ni ingreso.', '# Entrega y revisión',
+            'Revisar requisitos, contenido, derechos y condiciones con el cliente antes de contratar. No se ha enviado este documento.'])
+        return artifact_engine.create('Propuesta · '+lead['name']+' · '+proposal['id'][:8],body,template='PROPOSAL',source_task='agency:'+lead['id']+':'+proposal['id'],contacts=[lead['id']],sources=(lead.get('research') or {}).get('sources',[]))
+    if action=='agency_site_handoff':
+        from . import agency_crm
+        from pathlib import Path
+        import os, re
+        lead=next(x for x in agency_crm.view(scope)['leads'] if x['id']==data['lead_id'])
+        slug=(lead.get('demo') or {}).get('slug','')
+        if not re.fullmatch(r'[a-zA-Z0-9_-]{1,80}',slug): raise ValueError('Crea y revisa una demo local primero.')
+        file=Path(os.environ.get('ZAR_DATA_DIR','/data'))/'holdings_public_demos'/slug/'index.html'
+        if not file.is_file() or file.stat().st_size>20*1024*1024: raise ValueError('Demo ausente o demasiado grande.')
+        project=site_projects.create(scope,{'name':lead['name']+' · Agency','code':file.read_text(encoding='utf-8')})
+        return site_projects.patch(scope,project['id'],agency_source_lead_id=lead['id'],content_review_required=True)
     if action.startswith('agency_'):
         from .agency_crm import operate as agency_operate
         return agency_operate(scope,action.removeprefix('agency_'),data)
