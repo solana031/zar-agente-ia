@@ -310,6 +310,14 @@ def operate(scope,action,data):
             if a['status']=='DONE':return deepcopy(a)
             service=a['service'];plan_id=a.get('plan_id')
         if service=='GOOGLE':return verify_google(scope)
+        if service=='FINANCIAL_PROVIDER':
+            from .financial_provider import FinancialProvider
+            proof=FinancialProvider().capabilities()
+            with holdings.transaction(scope):
+                d=holdings.read(scope);s=ensure(d);a=next(x for x in s['human_actions'] if x['id']==data['id'])
+                a.update(status='ACTION_REQUIRED',last_checked=holdings._now(),verification=proof['next_step'])
+                holdings.write(scope,d)
+            return deepcopy(a)
         if service=='BROWSER':
             from .zar_browser import operate as browser_operate
             result=browser_operate({'action':'read'})

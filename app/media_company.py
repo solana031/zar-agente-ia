@@ -136,6 +136,17 @@ def _save(scope_id, task_id, record):
             json.dump(record, handle, ensure_ascii=False)
             handle.flush(); os.fsync(handle.fileno())
         os.replace(temp, path)
+        costs=record.get('costs') or {}
+        if costs.get('billing_verified') is True and costs.get('source')=='RELAYCLAW_USAGE_API' and costs.get('external_id') and costs.get('total_cost') is not None:
+            from .financial_events import ingest
+            try:
+                ingest(scope_id,'cost',{'provider':'RelayClaw','business':'media','amount':costs['total_cost'],'currency':costs.get('currency'),'timestamp':costs.get('timestamp'),'source':'RELAYCLAW_USAGE_API','external_id':costs['external_id'],'task_id':task_id},provider_verified=True)
+            except (ValueError, ArithmeticError):
+                # Billing reconciliation must never hide or rerun a completed render.
+                with holdings.transaction(scope_id):
+                    billing_state=holdings.read(scope_id)
+                    billing_state.setdefault('financial_ingestion_errors',{})[task_id]='ERROR: reconcile provider billing evidence'
+                    holdings.write(scope_id,billing_state)
     finally:
         temp.unlink(missing_ok=True)
 

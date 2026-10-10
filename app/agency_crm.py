@@ -228,4 +228,8 @@ def operate(scope,action,data):
                 transition(lead,'WON',{});result=lead['delivery']
             else:raise ValueError('Operación Agency no disponible.')
         crm['operations'].append({'id':uuid.uuid4().hex,'timestamp':holdings._now(),'action':action,'lead_id':data.get('lead_id')})
-        holdings.write(scope,d);return deepcopy(result)
+        holdings.write(scope,d)
+        if action=='receipt':
+            from .financial_events import sync_existing
+            sync_existing(scope)
+        return deepcopy(result)

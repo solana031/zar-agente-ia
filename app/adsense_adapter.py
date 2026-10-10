@@ -171,4 +171,6 @@ def confirm_received(scope, reference, bank_reference, confirmed=False):
         p = next(x for x in d['adsense']['payments'] if x['reference']==reference)
         p.update(classification='RECEIVED',receipt_verified=True,bank_reference=bank_reference[:200],received_at=holdings._now())
         holdings.write(scope,d)
+        from .financial_events import sync_existing
+        sync_existing(scope)
         return p

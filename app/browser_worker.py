@@ -20,7 +20,15 @@ def policy(label, action):
 
 
 def human_gate(title, text):
-    return bool(re.search(r'captcha|verify you are human|2-step verification|verificaci[oó]n en dos pasos|passkey|checking your browser|security verification', text, re.I) or re.fullmatch(r'just a moment\.{0,3}|security check', title.strip(), re.I))
+    return security_state(title,text)!='READY'
+
+def security_state(title,text):
+    if re.search(r'captcha|verify you are human|checking your browser|security verification',text,re.I) or re.fullmatch(r'just a moment\.{0,3}|security check',title.strip(),re.I):return 'CAPTCHA'
+    if re.search(r'2-step verification|two.factor authentication|verificaci[oó]n en dos pasos|passkey',text,re.I):return '2FA'
+    if re.fullmatch(r'access denied|forbidden|acceso denegado',title.strip(),re.I):return 'BLOCKED'
+    if re.fullmatch(r'payment required|pago requerido|checkout',title.strip(),re.I):return 'PAYMENT_REQUIRED'
+    if re.fullmatch(r'log.?in|sign.?in|iniciar sesi[oó]n',title.strip(),re.I):return 'LOGIN_REQUIRED'
+    return 'READY'
 
 
 def run():
@@ -128,7 +136,8 @@ def run():
             challenge = human_gate(page.title(), visible)
             url = urlsplit(page.url)
             print(json.dumps({'ok': True, 'status': 'ACTION_REQUIRED' if challenge else 'READY',
-                'reason': 'CAPTCHA / autenticación humana detectada' if challenge else '',
+                'reason': security_state(page.title(),visible)+' · intervención personal requerida' if challenge else '',
+                'security_state':security_state(page.title(),visible),
                 'url': url.scheme + '://' + url.netloc + url.path, 'title': page.title(),
                 'text': visible, 'controls': controls,
                 'pages': [{'index': i, 'title': x.title()} for i, x in enumerate(context.pages)],

@@ -162,11 +162,24 @@ def wallet(d):
 
 
 def view(scope):
+    from .financial_events import sync_existing, summary
+    from .financial_provider import FinancialProvider
+    sync_existing(scope)
+    with holdings.transaction(scope):
+        state=holdings.read(scope)
+        from .identity_center import ensure as identity, queue
+        center=identity(state)
+        if not any(a.get('service')=='FINANCIAL_PROVIDER' and a.get('status')!='DONE' for a in center['human_actions']):
+            proof=FinancialProvider().capabilities()
+            action=queue(center,'FINANCIAL_PROVIDER',proof['human_action'],proof['next_step'],'',['Elegir proveedor de tesorería.','Completar personalmente identidad/KYC, banco y términos en el portal oficial.','Configurar credenciales solo en servidor y verificar capacidad de ejecución antes de habilitar pagos.'])
+            action.update(group='PAYMENTS',account='zaragente031@gmail.com')
+            holdings.write(scope,state)
     d = holdings.read(scope)
     o = ensure(d)
     return {**deepcopy(o), "orchestrators": {name:{"domain":domain,"agents":[a["id"] for a in o["agents"].values() if a.get("domain")==domain],"trading_authority":False} for domain,name in ORCHESTRATORS.items()}, "wallet": wallet(d), "global_stop": d.get("global_stop", False),
             "connectors": inventory(d),
-            "ledger": d.get("ledger", [])[-100:][::-1], "budgets":d.get("treasury_budgets",{})}
+            "ledger": d.get("ledger", [])[-100:][::-1], "budgets":d.get("treasury_budgets",{}),
+            "financial_events":summary(d), "financial_provider":FinancialProvider().capabilities()}
 
 
 def mutate(scope, action, data):
@@ -304,7 +317,7 @@ def mutate(scope, action, data):
                     raise ValueError("Saldo contable insuficiente.")
                 p.update(state="APPROVED", balance_before=str(before), balance_after=str(before-Decimal(p["total"])))
             else:
-                if p.get('quote_id') and p.get('execution_state') in {'REQUESTED','REVIEW_REQUIRED','ORDERED','ORDERED_AWAITING_RECEIPT','CHARGED'}:
+                if p.get('execution_state') in {'REQUESTED','REVIEW_REQUIRED','ORDERED','ORDERED_AWAITING_RECEIPT','CHARGED'}:
                     raise ValueError('Pedido enviado/ambiguo: no liberar reserva sin reconciliación del proveedor.')
                 if p["state"] not in {"PENDING", "APPROVED"}:
                     raise ValueError("Propuesta ya cerrada.")
@@ -315,6 +328,13 @@ def mutate(scope, action, data):
         o["decisions"].append({"timestamp": now, "action": action, "mode": o["mode"], "execution_authority": False})
         o["decisions"] = o["decisions"][-500:]
         holdings.write(scope, d)
+        if action == 'prepare':
+            from .jev_decision import evaluate
+            proposal=o['approvals'][-1]
+            gate=evaluate(scope,{'action':'PAYMENT','agent':'Treasury','task_id':proposal['id'],'cost':proposal['total']})
+            updated=holdings.read(scope)
+            updated['orchestration']['approvals'][-1]['jev_decision']=gate
+            holdings.write(scope,updated)
     return view(scope)
 
 

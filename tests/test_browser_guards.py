@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import patch
 from app.browser_network import public_url, public_addresses
-from app.browser_worker import policy,human_gate
+from app.browser_worker import policy,human_gate,security_state
 
 
 class BrowserGuards(unittest.TestCase):
@@ -59,6 +59,11 @@ class BrowserGuards(unittest.TestCase):
         self.assertTrue(human_gate('Login','Verify you are human'))
         self.assertTrue(human_gate('Google','2-step verification'))
         self.assertFalse(human_gate('Example Domain','This domain is for use in documentation.'))
+
+    def test_distinct_human_states(self):
+        for title,text,status in [('Login','','LOGIN_REQUIRED'),('Google','2-step verification','2FA'),('Page','Verify you are human','CAPTCHA'),('Access denied','','BLOCKED'),('Checkout','','PAYMENT_REQUIRED')]:
+            self.assertEqual(security_state(title,text),status)
+            self.assertTrue(human_gate(title,text))
 
 
 if __name__ == '__main__':
