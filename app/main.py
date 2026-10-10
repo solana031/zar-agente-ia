@@ -1936,6 +1936,9 @@ def holdings_media_direct_api(operation):
         elif operation=='pause': result=media_surface.pause(scope,data.get('task_id'))
         elif operation=='retry': result=media_company.produce_local(scope,data.get('task_id'))
         elif operation=='retry_stage': result=media_surface.retry_stage(scope,data.get('task_id'))
+        elif operation=='audio_fallback':
+            from .media_fallback import queue
+            result=queue(scope,data.get('task_id'),data.get('confirmed'))
         elif operation=='subtitles': result=media_surface.subtitles(scope,data)
         elif operation=='thumbnail': result=media_surface.thumbnail(scope,data)
         elif operation=='configuration':

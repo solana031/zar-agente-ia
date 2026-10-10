@@ -162,10 +162,17 @@ def _result(task, record):
               "rendered_at":record.get('rendered_at'),"renders":record.get('renders',[]),"publications":record.get('publications',[])}
     result.update(submission_state=('READY' if record.get('artifact') else 'UNKNOWN' if cp.get('error_code') in {'submission_unknown','task_missing','task_status'} else 'FAILED' if cp.get('status')=='blocked' else cp.get('submission_state') or 'PROCESSING'), editor_spec=record.get('editor_spec',{}), error_code=cp.get('error_code'), submission_error=cp.get('last_submission_error'),
                   submission_message=cp.get('submission_message'), active_tasks=cp.get('active_tasks') or ([cp['active_task']] if cp.get('active_task') else []))
+    result['fallback']=record.get('fallback')
+    if record.get('fallback',{}).get('status')=='DONE':
+        result.update(stage='done',stage_label='render del frame existente',progress=100,production_provider='DramaClaw frame + ZAR FFmpeg')
     from .dramaclaw_client import STAGES
     index = STAGES.index(stage) if stage in STAGES else 0
     result['pipeline'] = [{'stage': name, 'status': 'READY' if i < index or cp.get('status') == 'done' else 'FAILED' if i == index and cp.get('status') == 'blocked' else 'RUNNING' if i == index and record.get('status') == 'PRODUCING' else 'PENDING'} for i, name in enumerate(STAGES) if name != 'done']
     result['diagnostic'] = {'provider': 'DramaClawAPI' if 'DramaClawAPI' in str(cp.get('error')) else 'DramaClaw', 'stage': stage, 'error': cp.get('error'), 'missing_requirement': 'Model Gateway credential (dramaclaw-api)' if 'credenciales' in str(cp.get('error')) else None}
+    if record.get('fallback',{}).get('status')=='DONE':
+        result.update(error_code=None,submission_error=None,submission_message=None,
+                      diagnostic={'provider':'ZAR FFmpeg','stage':'done','error':None,'missing_requirement':None})
+        result['pipeline'] += [{'stage':'fallback_audio_existing','status':'READY'},{'stage':'fallback_render','status':'READY'}]
     if 'insufficient_user_quota' in str(cp.get('error')):
         result['diagnostic'].update(provider='RelayClaw',missing_requirement='Saldo de cuenta RelayClaw',action_required='Activar crédito personalmente; no repetir generación sin saldo.')
     if record.get("artifact"):
@@ -243,9 +250,9 @@ def produce_local(scope_id, task_id):
         return {"ok": True, "task_id": task_id, "status": record["status"], **_result(task, record)}
 
 
-def _narrator():
+def _narrator(text=None):
     from . import voice_pro
-    text = "Esta es la voz del narrador. Una historia comienza con una idea y cobra vida en cada escena."
+    text = text or "Esta es la voz del narrador. Una historia comienza con una idea y cobra vida en cada escena."
     if not voice_pro._eleven_configured() and not voice_pro._f5_url():
         from . import voice_tts
         if not voice_tts._api_key():
@@ -282,6 +289,11 @@ def process_one(scope_id):
                 record["checkpoint"] = cp
                 _save(scope_id, task["id"], record)
             try:
+                if record.get('fallback',{}).get('status') in {'QUEUED','RUNNING'}:
+                    from .media_fallback import render
+                    render(scope_id,task,record)
+                    _mirror(scope_id,task,record)
+                    return 'Media: render del frame existente confirmado.'
                 from .media_projects import STAGE_AGENT
                 agent=STAGE_AGENT.get((record.get('checkpoint') or {}).get('stage','project'),'StoryAgent')
                 if state.get('orchestration',{}).get('agents',{}).get(agent,{}).get('state') in {'PAUSED','OFF'}:

@@ -2,6 +2,6 @@ FROM mirror.gcr.io/library/python:3.13-slim-bookworm@sha256:a1165e272e578941b84a
 ENV PYTHONUNBUFFERED=1 PLAYWRIGHT_BROWSERS_PATH=/opt/zar-browsers
 WORKDIR /app
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt && python -m playwright install --with-deps chromium && useradd --create-home zarbrowser
+RUN pip install --no-cache-dir -r requirements.txt && python -m playwright install --with-deps chromium && apt-get update && apt-get install -y --no-install-recommends ffmpeg fonts-dejavu-core && rm -rf /var/lib/apt/lists/* && useradd --create-home zarbrowser
 COPY . .
 CMD ["sh", "-c", "exec gunicorn --bind 0.0.0.0:${PORT:-8080} --workers 1 --threads 4 --timeout 300 app.main:app"]
