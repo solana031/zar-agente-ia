@@ -5312,6 +5312,9 @@ def voice_live_token():
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)[:900]}), 500
 
+from . import studio_music
+studio_music.register(app)
+
 @app.get("/api/studio/audio/projects")
 def studio_audio_projects():
     return jsonify({"ok":True,"projects":audio_list_projects()})
