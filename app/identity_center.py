@@ -306,7 +306,7 @@ def operate(scope,action,data):
     if action=='prepare':return provider_plan(scope,data.get('service'))
     if action=='record_blocker':
         service=str(data.get('service','')).upper()
-        if service not in {'SHOPIFY','INSTAGRAM','TIKTOK','ADSENSE','STRIPE','LOVABLE','DRAMACLAW','CLOUDINARY','RELAYCLAW'}:raise ValueError('Servicio no permitido.')
+        if service not in {'SHOPIFY','INSTAGRAM','TIKTOK','ADSENSE','STRIPE','LOVABLE','DRAMACLAW','CLOUDINARY','RELAYCLAW','FINANCIAL_PROVIDER'}:raise ValueError('Servicio no permitido.')
         reason=str(data.get('reason','')).strip()[:1500]
         if not reason:raise ValueError('Indica el bloqueo observado; no introduzcas credenciales.')
         with holdings.transaction(scope):
@@ -371,7 +371,7 @@ def operate(scope,action,data):
                 message=str(error)
             with holdings.transaction(scope):
                 d=holdings.read(scope);s=ensure(d);a=next(x for x in s['human_actions'] if x['id']==data['id'])
-                a.update(status='DONE' if proof.get('verified') else 'ACTION_REQUIRED',last_checked=holdings._now(),verification=message)
+                a.update(status='DONE' if proof.get('verified') and a.get('action')!='OBSERVED_BLOCKER' else 'ACTION_REQUIRED',last_checked=holdings._now(),verification=message)
                 holdings.write(scope,d)
             return deepcopy(a)
         if service=='BROWSER':

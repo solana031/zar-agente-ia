@@ -5,6 +5,8 @@ from unittest.mock import Mock, patch
 from app.wise_business import WiseBusinessAdapter
 from app.financial_provider import selected_provider
 from app.business_orchestration import reconcile_balances
+from app import holdings, identity_center
+import tempfile
 
 
 class WiseReadTests(unittest.TestCase):
@@ -57,3 +59,15 @@ class WiseReadTests(unittest.TestCase):
 
     def test_failed_snapshot_is_not_reconciled(self):
         self.assertEqual(reconcile_balances({'financial_provider_snapshot':{'verified':False}})['status'],'ACTION_REQUIRED')
+
+    def test_funding_blocker_survives_verified_read(self):
+        with tempfile.TemporaryDirectory() as folder, patch.dict(os.environ,{'ZAR_DATA_DIR':folder}):
+            scope='wise-blocker-fixture'
+            d=holdings.read(scope);center=identity_center.ensure(d)
+            center['google'].update(status='ACTIVE',email='zaragente031@gmail.com')
+            holdings.write(scope,d)
+            row=identity_center.operate(scope,'record_blocker',{'service':'FINANCIAL_PROVIDER','reason':'Funding setup requires owner review; READ already works.'})
+            with patch('app.financial_provider.sync_selected',return_value={'verified':True}):
+                result=identity_center.operate(scope,'continue',{'id':row['id']})
+            self.assertEqual(result['status'],'ACTION_REQUIRED')
+            self.assertEqual(result['reason'],'Funding setup requires owner review; READ already works.')

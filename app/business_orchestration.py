@@ -180,7 +180,7 @@ def view(scope):
             holdings.write(scope,state)
         else:
             for action in center['human_actions']:
-                if action.get('service')=='FINANCIAL_PROVIDER' and action.get('status')!='DONE':
+                if action.get('service')=='FINANCIAL_PROVIDER' and action.get('status')!='DONE' and action.get('action')!='OBSERVED_BLOCKER':
                     action.update(title=proof['human_action'],reason=proof['next_step'],url=proof.get('url','https://business.revolut.com/'),group='PAYMENTS',account='zaragente031@gmail.com',instructions=[proof['next_step']])
             holdings.write(scope,state)
     d = holdings.read(scope)
@@ -189,6 +189,7 @@ def view(scope):
     snapshot=d.get('financial_provider_snapshot') or {}
     if snapshot.get('provider')==financial.get('provider') and snapshot.get('verified') and snapshot.get('status')=='CONNECTED':
         financial.update(status='CONNECTED',verified=True,balance=True,last_sync=snapshot.get('last_sync'),
+            human_action='VERIFICAR FONDOS / EXTRACTOS DEL PROVEEDOR',
             next_step='READ de cuenta y saldo verificado. Fondos/extractos requieren verificación separada; PAY deshabilitado.')
     return {**deepcopy(o), "orchestrators": {name:{"domain":domain,"agents":[a["id"] for a in o["agents"].values() if a.get("domain")==domain],"trading_authority":False} for domain,name in ORCHESTRATORS.items()}, "wallet": wallet(d), "global_stop": d.get("global_stop", False),
             "connectors": inventory(d),

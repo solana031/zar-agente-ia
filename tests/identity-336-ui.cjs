@@ -13,7 +13,11 @@ const {chromium}=require('playwright');
    if(path.endsWith('request')){state.plans=[{service:'SHOPIFY',identity:state.google.email,status:'HUMAN_ACTION_REQUIRED',configuration:[]}];state.human_actions=[{id:'human-shop',service:'SHOPIFY',action:'SETUP',status:'ACTION_REQUIRED',instructions:['Seleccionar plan personalmente'],reason:'Billing humano',url:'https://www.shopify.com/free-trial'}];}
    return route.fulfill({contentType:'application/json',body:JSON.stringify({ok:true,result:{status:path.endsWith('continue')?'ACTION_REQUIRED':'CONFIRMED',message_id:'offline-message'}})});
   });
-  await page.goto('https://zar.invalid/');await page.addScriptTag({content:fs.readFileSync('app/static/identity-provisioning.js','utf8')});
+  await page.goto('https://zar.invalid/');
+  // The shared sender/confirmation components are mocked at this isolated component boundary.
+  // No email is sent: the route above captures the complete draft request.
+  await page.addScriptTag({content:"window.ZarUI={confirm:async()=>true};window.ZarMailIdentity={choose:async()=>'zar.offline@gmail.com'};"});
+  await page.addScriptTag({content:fs.readFileSync('app/static/identity-provisioning.js','utf8')});
   async function render(){await page.evaluate(s=>{window.__identity=s;window.zarWorkflowRefresh=async()=>window.dispatchEvent(new CustomEvent('zar-workflow-state',{detail:{csrf:'offline',identity_center:window.__identity}}));zarWorkflowRefresh();},state);}
   await render();assert.match(await page.locator('#zarIdentityCenter').innerText(),/ya existe/);assert.equal(await page.locator('a[href*=signup]').count(),0);
   await page.locator('[data-identity-register] [name=email]').fill('zar.offline@gmail.com');await page.locator('[data-identity-register] button').click();
@@ -23,7 +27,7 @@ const {chromium}=require('playwright');
   await page.locator('[data-human]').click();await page.waitForFunction(()=>document.getElementById('zarIdentityNotice').textContent.includes('ACTION_REQUIRED'));
   await page.locator('[data-mail-compose] [name=to]').fill('recipient@example.test');await page.locator('[data-mail-compose] [name=subject]').fill('Reviewed draft');await page.locator('[data-mail-compose] [name=body]').fill('Offline body');
   const tid=await page.locator('[name=transaction_id]').inputValue();await page.locator('[data-mail-compose] button').click();await page.waitForFunction(()=>document.getElementById('zarMailResult').textContent.includes('offline-message'));
-  const sent=writes.find(x=>x.path.endsWith('identity_mail_draft'));assert.equal(sent.data.transaction_id,tid);assert.equal(sent.data.confirmed,true);
+  const sent=writes.find(x=>x.path.endsWith('identity_mail_draft'));assert.equal(sent.data.transaction_id,tid);assert.equal(sent.data.confirmed,true);assert.equal(sent.data.sender_identity,'zar.offline@gmail.com');
   assert.equal(await page.locator('#zarIdentityCenter input[type=password]').count(),0);assert.deepEqual(errors,[]);
   assert.ok(await page.locator('#zarIdentityCenter').isVisible());console.log('PASS existing identity/onboarding/human actions/Mail UI',width);await page.close();
  }}finally{await browser.close();}})().catch(e=>{console.error(e);process.exitCode=1});
