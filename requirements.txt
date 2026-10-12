@@ -1,4 +1,5 @@
 Flask>=3.0,<4
+tzdata>=2025.2; sys_platform == "win32"
 playwright==1.63.0
 requests>=2.32,<3
 google-api-python-client>=2.180,<3

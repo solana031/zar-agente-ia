@@ -7,13 +7,8 @@ try:
 except Exception:
     get_ffmpeg_exe = None
 
-DATA_DIR = Path(os.environ.get('ZAR_DATA_DIR','/data'))
-VIDEO_DIR = DATA_DIR / 'video_creator'
-PROJECTS_DIR = VIDEO_DIR / 'projects'
-MEDIA_DIR = VIDEO_DIR / 'media'
-MUSIC_DIR = VIDEO_DIR / 'music'
-OUTPUT_DIR = VIDEO_DIR / 'outputs'
-for p in (PROJECTS_DIR, MEDIA_DIR, MUSIC_DIR, OUTPUT_DIR): p.mkdir(parents=True, exist_ok=True)
+from . import scoped_media
+
 LOCK = threading.RLock()
 MAX_VIDEO_UPLOAD = int(os.environ.get('ZAR_VIDEO_MAX_UPLOAD_MB','2048')) * 1024 * 1024
 
@@ -71,12 +66,12 @@ def save_project(p):
     tmp.write_text(json.dumps({k:v for k,v in p.items() if k!='_path'}, ensure_ascii=False, indent=2), encoding='utf-8')
     tmp.replace(p['_path'])
 
-def project_path(pid): return PROJECTS_DIR / f'{pid}.json'
-def output_path(pid): return OUTPUT_DIR / f'{pid}.mp4'
+def project_path(pid): return scoped_media.file_path('video_creator','projects',f'{pid}.json')
+def output_path(pid): return scoped_media.file_path('video_creator','outputs',f'{pid}.mp4')
 
 def list_projects():
     out=[]
-    for f in sorted(PROJECTS_DIR.glob('*.json'), key=lambda x:x.stat().st_mtime, reverse=True):
+    for f in scoped_media.projects('video_creator'):
         try:
             p=json.loads(f.read_text(encoding='utf-8')); p['_path']=str(f); out.append({k:v for k,v in p.items() if k!='_path'})
         except Exception: pass
@@ -169,13 +164,13 @@ def add_media(pid, file_storage):
     if not (mime.startswith('image/') or mime.startswith('video/') or ext in allowed_img or ext in allowed_vid): raise ValueError('Solo se admiten fotos y vídeos.')
     data=file_storage.read()
     if len(data)>MAX_VIDEO_UPLOAD: raise ValueError(f'El archivo supera el límite de {MAX_VIDEO_UPLOAD//(1024*1024)} MB.')
-    mid=uuid.uuid4().hex; name=safe_name(file_storage.filename); stored=f'{mid}{ext or ".bin"}'; path=MEDIA_DIR/stored; path.write_bytes(data)
+    mid=uuid.uuid4().hex; name=safe_name(file_storage.filename); stored=f'{mid}{ext or ".bin"}'; path=scoped_media.directory('video_creator','media')/stored; path.write_bytes(data)
     kind='image' if (mime.startswith('image/') or ext in allowed_img) else 'video'
     item={'id':mid,'name':name,'stored_name':stored,'kind':kind,'mime':mime,'size':len(data),'duration':None}
     _normalize_media_item(item, len(p['media']))
     p['media'].append(item); p['updated_at']=now_iso(); save_project(p); return item
 
-def media_path(item): return MEDIA_DIR / item['stored_name']
+def media_path(item): return scoped_media.file_path('video_creator','media',item['stored_name'])
 
 def delete_media(pid, media_index):
     p=get_project(pid)
@@ -391,7 +386,7 @@ def generate_music(project_id, mood='cinematic', duration=30, seed=None):
     duration=max(5,min(int(duration or 30),600))
     seed=int(seed or int(uuid.uuid4().hex[:8],16)); rng=random.Random(seed)
     meta=MOODS[mood]; bpm=meta['bpm']; beat=60.0/bpm; sr=44100; n=int(duration*sr)
-    wav_path=MUSIC_DIR/f'{project_id}_{mood}_{seed}.wav'
+    wav_path=scoped_media.directory('video_creator','music')/f'{project_id}_{mood}_{seed}.wav'
     chords=[[0,4,7],[5,9,0],[7,11,2],[0,4,7]]
     buf=bytearray()
     for i in range(n):
@@ -488,7 +483,7 @@ def render_project(pid, music=True):
     if not p: raise ValueError('Proyecto no encontrado.')
     if not p.get('media'): raise ValueError('Añade al menos una foto o un vídeo.')
     preset=PRESETS.get(p.get('preset','youtube'),PRESETS['youtube']); fps=preset['fps']; w=preset['w']; h=preset['h']; duration_img=float(p.get('image_duration',3.2))
-    work=VIDEO_DIR/f'work_{pid}_{uuid.uuid4().hex}'; work.mkdir(parents=True,exist_ok=True)
+    work=scoped_media.directory('video_creator')/f'work_{pid}_{uuid.uuid4().hex}'; work.mkdir(parents=True,exist_ok=True)
     clips=[]
     try:
         ordered=list(p['media'])

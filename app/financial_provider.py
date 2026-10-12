@@ -31,13 +31,9 @@ def execute_reserved(scope, approval_id, provider, *, confirmed=False):
     with holdings.transaction(scope):
         d=holdings.read(scope);o=d['orchestration'];p=next(x for x in o['approvals'] if x['id']==approval_id)
         if d.get('global_stop') or o['mode'] not in {'ACTIVE','SUPERVISED'} or p['state']!='APPROVED' or p.get('execution_state')!='NO DISPONIBLE':raise ValueError('Reservation/mode not executable.')
-        budget=d.get('treasury_budgets',{}).get(p.get('business'))
-        if not budget or budget['currency']!=p['currency'] or Decimal(p['total'])>Decimal(budget['max_action']):raise ValueError('Current budget required.')
-        approved=[x for x in o['approvals'] if x.get('business')==p['business'] and x['state'] in {'APPROVED','EXECUTED'}]
-        from .business_orchestration import wallet
+        from .business_orchestration import wallet, validate_budget
+        validate_budget(d,p,required=True)
         if Decimal(wallet(d)['balances'].get(p['currency'],{}).get('available','0'))<0:raise ValueError('Book funds no longer sufficient.')
-        for key,prefix in [('assigned',''),('max_day',holdings._now()[:10]),('max_month',holdings._now()[:7])]:
-            if sum((Decimal(x['total']) for x in approved if str(x.get('updated_at') or x['created_at']).startswith(prefix)),Decimal(0))>Decimal(budget[key]):raise ValueError('Current limits exceeded.')
         p.update(execution_state='REQUESTED',updated_at=holdings._now());holdings.write(scope,d)
     try:result=provider.createPayment(dict(p),idempotency_key=approval_id)
     except Exception:result={'status':'UNKNOWN'}

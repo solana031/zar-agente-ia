@@ -177,6 +177,7 @@ def _test(function):
 for name, function in list(globals().items()):
     if name.startswith('test_') and callable(function):
         setattr(BusinessControlTests, name, _test(function))
+        function.__test__ = False  # Collected through unittest with its isolated storage setup.
 
 if __name__ == '__main__':
     unittest.main()

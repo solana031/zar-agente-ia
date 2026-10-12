@@ -431,10 +431,18 @@ def _team_query():
     return {"teamId": team} if team else {}
 
 
-def deploy_vercel(scope_id, slug):
+def deploy_vercel(scope_id, slug, *, confirmed=False):
+    from . import jev_decision
+    if confirmed is not True:
+        raise ValueError("Confirma la publicación pública de este sitio en Vercel.")
+    decision = jev_decision.evaluate(scope_id, {'action': 'SITE_PUBLISH', 'agent': 'SiteBuilderAgent'})
+    if decision['decision'] == 'DENY':
+        raise ValueError("Publicación bloqueada por JEV / STOP GLOBAL.")
     row = next((x for x in _read_registry(scope_id) if x.get("slug") == slug), None)
     if not row:
         raise KeyError("Sitio no encontrado.")
+    if not re.fullmatch(r'[a-zA-Z0-9_-]{1,80}', str(slug or '')):
+        raise ValueError("Sitio no válido.")
     root = _public_root() / slug
     if not root.exists():
         raise FileNotFoundError("Archivos del sitio no encontrados.")
@@ -446,7 +454,7 @@ def deploy_vercel(scope_id, slug):
     payload = {"name": project, "project": project, "files": files, "target": "production", "projectSettings": {"framework": None}}
     r = requests.post("https://api.vercel.com/v13/deployments", headers=_vercel_headers(), params=_team_query(), json=payload, timeout=75)
     if not r.ok:
-        raise RuntimeError(f"Vercel HTTP {r.status_code}: {r.text[:900]}")
+        raise RuntimeError(f"Vercel no confirmó el despliegue (HTTP {r.status_code}).")
     data = r.json(); url = data.get("url") or ""
     reg = _read_registry(scope_id)
     for x in reg:

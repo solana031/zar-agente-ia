@@ -327,7 +327,7 @@ def operate(scope,action,data):
                 raise ValueError('Pedido ya preparado/enviado; resolver antes de repetir.')
             decision=economic_gate(scope,'OrderAgent','Supplier order','Purchase quoted supplier order',q['total'],order['id'])
             d['jev_decisions']=holdings.read(scope).get('jev_decisions',[]);holdings.write(scope,d)
-            control.mutate(scope,'prepare',{'item':q['quantity'].__str__()+' × '+q['sku'],'provider':q['supplier_id'],
+            control.mutate(scope,'prepare',{'business':'reselling','item':q['quantity'].__str__()+' × '+q['sku'],'provider':q['supplier_id'],
                 'price':fmt(Decimal(q['total'])-Decimal(q['taxes'])),'tax':q['taxes'],'currency':q['currency']})
             fresh=holdings.read(scope);d['orchestration']=fresh['orchestration']
             approval=d['orchestration']['approvals'][-1]
@@ -360,6 +360,7 @@ def execute_order(scope,d,c,data):
     if any(control.ensure(d)['agents'].get(a,{}).get('state') in {'OFF','PAUSED'} for a in ('OrderAgent','FulfillmentAgent')):raise ValueError('OrderAgent/FulfillmentAgent pausado.')
     if order.get('supplier_intent'):return {'state':'REVIEW_REQUIRED','intent':order['supplier_intent'],'note':'No se reenvía intención ambigua.'}
     if d.get('global_stop') or control.ensure(d)['mode'] in {'OFF','SHADOW'} or approval['state']!='APPROVED':raise ValueError('Aprobación económica y reserva Wallet requeridas.')
+    control.validate_budget(d,approval)
     if Decimal(control.wallet(d)['balances'].get(q['currency'],{}).get('available','0'))<0:raise ValueError('Wallet ha cambiado y no cubre compromisos; no ejecutar.')
     if approval.get('quote_id')!=q['id'] or approval['total']!=q['total'] or approval['currency']!=q['currency'] or datetime.fromisoformat(q['expires_at'])<=datetime.now(timezone.utc):
         raise ValueError('Quote/aprobación cambiados o caducados; no ejecutar.')

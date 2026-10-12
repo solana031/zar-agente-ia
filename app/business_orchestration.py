@@ -189,6 +189,21 @@ def view(scope):
             "provider_snapshot":d.get('financial_provider_snapshot'),"billing_sync":d.get('billing_sync',{})}
 
 
+def validate_budget(d, proposal, *, required=False):
+    """Recheck current limits at approval and again at the provider boundary."""
+    budgets=d.get('treasury_budgets',{})
+    if not budgets and not required:return
+    business=proposal.get('business');budget=budgets.get(business)
+    if not budget:raise ValueError('Selecciona un negocio con presupuesto antes de aprobar.')
+    if budget['currency']!=proposal['currency']:raise ValueError('Moneda distinta al presupuesto; no se convierte automáticamente.')
+    total=Decimal(proposal['total']);now=holdings._now()
+    counted=[x for x in ensure(d)['approvals'] if x.get('id')!=proposal.get('id') and x.get('business')==business and x.get('currency')==proposal['currency'] and x.get('state') in {'APPROVED','EXECUTED','SETTLED'}]
+    if total>Decimal(budget['max_action']):raise ValueError('La solicitud excede el límite por acción del negocio.')
+    for key,prefix in [('assigned',''),('max_day',now[:10]),('max_month',now[:7])]:
+        used=sum((Decimal(x['total']) for x in counted if str(x.get('approved_at') or x.get('updated_at') or x.get('created_at','')).startswith(prefix)),Decimal(0))
+        if used+total>Decimal(budget[key]):raise ValueError('La solicitud excede los límites o presupuesto del negocio.')
+
+
 def mutate(scope, action, data):
     if action in {'provider_sync','provider_funding','relayclaw_sync'}:
         identity=holdings.read(scope).get('identity_center',{}).get('google',{})
@@ -327,20 +342,11 @@ def mutate(scope, action, data):
                     raise ValueError("Aprobación bloqueada por modo/STOP GLOBAL.")
                 if p["state"] != "PENDING" or data.get("confirmed") is not True or str(data.get("total")) != p["total"]:
                     raise ValueError("Confirmación explícita del total requerido.")
-                budgets=d.get('treasury_budgets',{})
-                if budgets:
-                    business=p.get('business');budget=budgets.get(business)
-                    if not budget:raise ValueError('Selecciona un negocio con presupuesto antes de aprobar.')
-                    if budget['currency']!=p['currency']:raise ValueError('Moneda distinta al presupuesto; no se convierte automáticamente.')
-                    total=Decimal(p['total'])
-                    approved=[x for x in o['approvals'] if x.get('business')==business and x.get('state') in {'APPROVED','EXECUTED'}]
-                    day=now[:10];month=now[:7]
-                    def committed(prefix):return sum((Decimal(x['total']) for x in approved if str(x.get('updated_at') or x.get('created_at','')).startswith(prefix)),Decimal(0))
-                    if total>Decimal(budget['max_action']) or committed(day)+total>Decimal(budget['max_day']) or committed(month)+total>Decimal(budget['max_month']) or committed('')+total>Decimal(budget['assigned']):raise ValueError('La solicitud excede los límites o presupuesto del negocio.')
+                validate_budget(d,p)
                 before = Decimal(wallet(d)["balances"].get(p["currency"], {}).get("available", "0"))
                 if before < Decimal(p["total"]):
                     raise ValueError("Saldo contable insuficiente.")
-                p.update(state="APPROVED", balance_before=str(before), balance_after=str(before-Decimal(p["total"])))
+                p.update(state="APPROVED", approved_at=now, balance_before=str(before), balance_after=str(before-Decimal(p["total"])))
             else:
                 if p.get('execution_state') in {'REQUESTED','REVIEW_REQUIRED','ORDERED','ORDERED_AWAITING_RECEIPT','CHARGED'}:
                     raise ValueError('Pedido enviado/ambiguo: no liberar reserva sin reconciliación del proveedor.')

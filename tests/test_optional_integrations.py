@@ -95,7 +95,10 @@ def test_jev_real_contract_and_malformed_fallback(monkeypatch):
     assert jev_decision.decide('state', questions)['state'] == 'DEGRADED'
     monkeypatch.delenv('JEV_API_KEY')
     monkeypatch.delenv('TYPESAFE_API_KEY', raising=False)
-    assert jev_decision.status()['state'] == 'NOT_CONFIGURED'
+    assert jev_decision.status()['state'] == 'READY'
+    assert jev_decision.status()['hosted_state'] == 'OPTIONAL'
+    assert jev_decision.status()['configured'] is False
+    assert jev_decision.status()['execution_authority'] is False
 
 
 def test_conway_missing_runtime_and_codex_policy(tmp_path, monkeypatch):

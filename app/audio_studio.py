@@ -2,10 +2,7 @@ import os, json, math, wave, uuid, random, subprocess
 from pathlib import Path
 from datetime import datetime, timezone
 
-DATA_DIR=Path(os.environ.get('ZAR_DATA_DIR','/data'))
-ROOT=DATA_DIR/'audio_studio'
-PROJECTS=ROOT/'projects'; TRACKS=ROOT/'tracks'; OUTPUTS=ROOT/'outputs'
-for p in (PROJECTS,TRACKS,OUTPUTS): p.mkdir(parents=True,exist_ok=True)
+from . import scoped_media
 
 GENRE_FAMILIES={
  # Electronic / club
@@ -85,7 +82,7 @@ EFFECTS=['clean','telephone','radio','echo','robot','deep','bright','wide']
 
 
 def _now(): return datetime.now(timezone.utc).isoformat()
-def _path(pid): return PROJECTS/f'{pid}.json'
+def _path(pid): return scoped_media.file_path('audio_studio','projects',f'{pid}.json')
 def _load(pid):
  p=_path(pid)
  if not p.exists(): raise ValueError('Proyecto de audio no encontrado.')
@@ -115,7 +112,7 @@ def create_project(name='', genre='pop', bpm=None, duration=30, root=60, key='C'
 
 def list_projects():
  out=[]
- for f in sorted(PROJECTS.glob('*.json'), key=lambda x:x.stat().st_mtime, reverse=True):
+ for f in scoped_media.projects('audio_studio'):
   try: out.append(json.loads(f.read_text(encoding='utf-8')))
   except Exception: pass
  return out
@@ -160,7 +157,7 @@ def render_base(pid, genre=None,bpm=None,duration=None,root=None,instruments=Non
  motif2=[rng.choice([-1,0,1,2,3]) for _ in range(8)]
  sync=rng.choice([0,1,2,3])
  swing=(rng.uniform(.0,.08) if profile in ('trap','drill','lofi','reggaeton') else rng.uniform(0,.035))
- 
+
  # Genre-specific arrangement decisions.
  classical = profile=='classical'
  cinematic = profile=='cinematic'
@@ -186,11 +183,11 @@ def render_base(pid, genre=None,bpm=None,duration=None,root=None,instruments=Non
  elif profile=='techno': default_insts=['kick','hat','bass','synth','pad']
  else: default_insts=['kick','snare','hat','bass','piano','pad','lead']
  if not instruments: instruments=default_insts
- 
+
  def note_freq(degree, octave=0):
   sem=scale[degree%len(scale)] + 12*octave
   return root*(2**(sem/12))
- 
+
  for i in range(n):
   t=i/sr; bi=int(t/beat); phase=t%beat; bar_i=int(t/bar); step=bi%4; six=int((phase/(beat/4))%4); x=0.0
   section=(bar_i//4)%4
@@ -199,7 +196,7 @@ def render_base(pid, genre=None,bpm=None,duration=None,root=None,instruments=Non
   chord_root=note_freq(deg,-1)
   swing_shift=(beat/4)*swing if six%2 else 0
   local_phase=max(0,phase-swing_shift)
-  
+
   if not classical and not cinematic:
    # Drums: materially different grooves by style.
    kick_steps={
@@ -236,7 +233,7 @@ def render_base(pid, genre=None,bpm=None,duration=None,root=None,instruments=Non
      hat_on=(bi%2==0 or six in (1,3) or (bar_i+bi)%3==0)
     else: hat_on=(bi%2==0 or energy>.72)
     if hat_on and local_phase<.045: x += (.028 if profile in ('house','techno') else .035)*math.exp(-70*local_phase)*(rng.random()*2-1)
-  
+
   # Bass / 808. Trap and drill get stronger sub movement; dance styles get shorter notes.
   if ('bass' in instruments or '808' in instruments) and not classical:
    f=chord_root
@@ -246,7 +243,7 @@ def render_base(pid, genre=None,bpm=None,duration=None,root=None,instruments=Non
    amp=.105 if '808' in instruments else (.078 if profile in ('hardcore','hardstyle','gabber','frenchcore','speedcore','techno') else .065)
    if step==3 and profile in ('trap','drill'): f*=rng.choice([.75,1,1.25])
    x += amp*_osc(wave_kind,f,t)*_env(local_phase,length,.02,.12)
-  
+
   # Harmony / instruments.
   if 'pad' in instruments or 'strings' in instruments:
    if classical:
@@ -287,7 +284,7 @@ def render_base(pid, genre=None,bpm=None,duration=None,root=None,instruments=Non
   if classical and 'strings' in instruments:
    md=(motif[bi%8]+motif2[(bar_i+2)%8])%len(scale)
    x += .018*_osc('tri',note_freq(md,1),t)*_env(local_phase,beat*1.7,.05,.25)
-  
+
   # Family-specific timbral accent so adjacent genres do not collapse into the same sound.
   if profile in ('hardcore','hardstyle','gabber','frenchcore','speedcore') and 'synth' in instruments:
    if six in (0,2) and local_phase < beat*.45:
@@ -308,8 +305,8 @@ def render_base(pid, genre=None,bpm=None,duration=None,root=None,instruments=Non
   x=max(-.9,min(.9,x*energy))
   fade=min(1,t/.15,(dur-t)/.4 if t>dur-.4 else 1)
   buf[i]=x*max(0,fade)*float(p.get('master',.9))
- 
- path=OUTPUTS/f'{pid}_{seed}.wav'
+
+ path=scoped_media.directory('audio_studio','outputs')/f'{pid}_{seed}.wav'
  pcm=bytearray()
  for x in buf:
   s=int(max(-1,min(1,x))*32767); pcm += s.to_bytes(2,'little',signed=True)*2
@@ -328,8 +325,8 @@ def save_settings(pid, patch):
 
 
 def apply_voice_effect(pid, file_storage, effect='clean'):
- p=_load(pid); effect=effect if effect in EFFECTS else 'clean'; ext=Path(file_storage.filename or 'voice.webm').suffix or '.webm'; src=TRACKS/f'{uuid.uuid4().hex}{ext}'; file_storage.save(src)
- out=OUTPUTS/f'{pid}_voice_{effect}_{uuid.uuid4().hex[:8]}.wav'
+ p=_load(pid); effect=effect if effect in EFFECTS else 'clean'; ext=Path(file_storage.filename or 'voice.webm').suffix or '.webm'; src=scoped_media.directory('audio_studio','tracks')/f'{uuid.uuid4().hex}{ext}'; file_storage.save(src)
+ out=scoped_media.directory('audio_studio','outputs')/f'{pid}_voice_{effect}_{uuid.uuid4().hex[:8]}.wav'
  filters={'clean':'anull','telephone':'highpass=f=350,lowpass=f=3200,acompressor','radio':'highpass=f=700,lowpass=f=2800,acrusher=bits=8:mix=0.18','echo':'aecho=0.8:0.88:120:0.28','robot':'aecho=0.8:0.7:80:0.22,chorus=0.5:0.9:45:0.25:0.45:2','deep':'asetrate=44100*0.86,aresample=44100,atempo=1.1628','bright':'highpass=f=120,treble=g=5','wide':'stereotools=mlev=0.8:mlev2=0.8'}
  cmd=['ffmpeg','-y','-i',str(src),'-af',filters[effect],str(out)]
  try: subprocess.run(cmd,check=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=180)

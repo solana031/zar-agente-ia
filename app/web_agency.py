@@ -46,9 +46,25 @@ def build_demo(scope_id, lead, price_eur=490):
     services=html.escape(str(lead.get("services") or "Servicios pendientes de revisión"))
     doc=f'''<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{safe_name} · {safe_sector}</title><meta name="description" content="Demo para {safe_name}, {safe_sector}, {safe_addr}"><style>:root{{--bg:#09090b;--card:#111113;--fg:#fafafa;--muted:#a1a1aa;--line:#27272a;--accent:#fafafa}}*{{box-sizing:border-box}}body{{margin:0;background:var(--bg);color:var(--fg);font-family:Inter,ui-sans-serif,system-ui,sans-serif}}.wrap{{max-width:1080px;margin:auto;padding:28px}}nav{{display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1px solid var(--line)}}.badge,.btn{{border:1px solid var(--line);border-radius:10px;padding:10px 14px;background:#18181b;color:#fff;text-decoration:none}}.hero{{padding:90px 0 60px;display:grid;grid-template-columns:1.35fr .65fr;gap:34px;align-items:center}}h1{{font-size:clamp(42px,7vw,82px);line-height:.94;letter-spacing:-.055em;margin:0 0 20px}}p{{color:var(--muted);font-size:18px;line-height:1.6}}.card{{border:1px solid var(--line);background:var(--card);border-radius:18px;padding:24px}}.grid{{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin:32px 0}}.cta{{display:flex;gap:10px;flex-wrap:wrap}}footer{{border-top:1px solid var(--line);margin-top:60px;padding:30px 0;color:var(--muted)}}@media(max-width:720px){{.hero,.grid{{grid-template-columns:1fr}}.hero{{padding-top:55px}}}}</style></head><body><div class="wrap"><nav><b>{safe_name}</b><span class="badge">Demo profesional</span></nav><section class="hero"><div><div class="badge" style="display:inline-block">{safe_addr}</div><h1>{safe_name} · {safe_sector}</h1><p>Servicios del negocio, aportados para esta demo: {services}. Ubicación: {safe_addr}.</p><div class="cta"><a class="btn" href="#contacto">Contactar</a><a class="btn" href="#servicios">Ver servicios</a></div></div><div class="card"><b>Información</b><p>{safe_addr}</p><p>{phone or 'Contacto directo y horario del negocio'}</p></div></section><section id="servicios" class="grid"><div class="card"><h3>Servicios</h3><p>{services}</p></div><div class="card"><h3>Ubicación</h3><p>{safe_addr}</p></div><div class="card"><h3>Contacto</h3><p>{phone or "Contacto pendiente de revisión"}</p></div></section><section id="contacto" class="card"><h2>¿Hablamos?</h2><p>Esta es una demo inicial creada para {safe_name}. El contenido final se adapta contigo antes de publicar.</p></section><footer>Demo creada por ZAR Web Agency · Sistema visual inspirado en principios de componentes accesibles tipo shadcn/ui.</footer></div></body></html>'''
     (root/"index.html").write_text(doc,encoding="utf-8")
+    (root / "owner.json").write_text(json.dumps({"scope": scope_id}), encoding="utf-8")
     result={"slug":slug,"relative_url":f"/holdings/demo/{slug}/","price_eur":float(price_eur),"lead":lead}
     holdings.update_company(scope_id,"web_agency",action=f"Demo creada para {name}",event="DEMO",event_detail=f"{name} · {price_eur:.0f} EUR")
     return result
+
+
+def owns_demo(scope_id, slug):
+    """Private demos require provenance; never infer ownership from a guessed slug."""
+    if not re.fullmatch(r'[a-zA-Z0-9_-]{1,80}', str(slug or '')):
+        return False
+    marker=Path(os.environ.get('ZAR_DATA_DIR','/data'))/'holdings_public_demos'/slug/'owner.json'
+    try:
+        return json.loads(marker.read_text(encoding='utf-8')).get('scope')==scope_id
+    except FileNotFoundError:
+        # Preserve access to pre-marker demos with scoped CRM provenance.
+        state=holdings.read(scope_id)
+        return any((lead.get('demo') or {}).get('slug')==slug for lead in state.get('agency_crm',{}).get('leads',[]))
+    except (OSError,ValueError,TypeError):
+        return False
 
 
 def prepare_outreach(scope_id, lead, demo_url, price_eur=490):

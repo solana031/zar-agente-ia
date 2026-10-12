@@ -65,7 +65,8 @@ def test_commerce_scout_without_purchase(monkeypatch, tmp_path):
     r=commerce_company.scout('commerce-user','producto prueba',39.90)
     assert r['ok'] and r['purchase_authority'] is False
     assert r['candidates'][0]['cost']==12.50
-    assert r['candidates'][0]['margin']['profit']>0
+    assert r['candidates'][0]['margin']['profit'] is None
+    assert r['candidates'][0]['margin']['shipping'] is None
 
 
 def test_sites_builds_public_assets(monkeypatch, tmp_path):

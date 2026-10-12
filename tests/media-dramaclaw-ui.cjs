@@ -17,6 +17,7 @@ if(r.request().method()==='POST'){const data=r.request().postDataJSON();posts.pu
 return r.fulfill({contentType:'application/json',body:JSON.stringify(result)});});
 await page.goto('https://zar.test/');
 await page.setContent('<div id="panel"><div id="panelBody"></div></div>');
+await page.addScriptTag({content:fs.readFileSync('app/static/zar-ui.js','utf8')});
 await page.addScriptTag({content:`const panel=document.getElementById('panel'),body=document.getElementById('panelBody');function openPanel(){}function closePanel(){}function zsStopLiveSync(){}\n${source}`});
 await page.evaluate(()=>showHoldings());await page.waitForFunction(()=>document.getElementById('zhMediaJobStatus')?.textContent.includes('guion'));
 assert.equal(await page.inputValue('#zhMediaTopic'),'Historia íntegra');
@@ -26,10 +27,10 @@ job={...job,status:'PRODUCED',result:{...job.result,stage:'done',progress:100,pr
 await page.evaluate(()=>zhRefresh());assert.equal(await page.locator('#zhMediaVideo').count(),1);
 await page.evaluate(()=>{window.savedVideo=document.getElementById('zhMediaVideo')});await page.evaluate(()=>zhRefresh());assert.equal(await page.evaluate(()=>window.savedVideo===document.getElementById('zhMediaVideo')),true);
 assert.match(await page.locator('#zhMediaLinks').textContent(),/DramaClaw/);
-page.once('dialog',d=>d.dismiss());await page.evaluate(()=>zhPublishLastMedia('tiktok'));assert.equal(posts.filter(x=>x.path.endsWith('/publish')).length,0);
-page.once('dialog',d=>d.accept());await page.evaluate(()=>zhPublishLastMedia('tiktok'));assert.equal(posts.at(-1).data.confirmed,true);
+await page.evaluate(()=>{void zhPublishLastMedia('tiktok')});await page.locator('[data-zar-cancel]').click();assert.equal(posts.filter(x=>x.path.endsWith('/publish')).length,0);
+await page.evaluate(()=>{void zhPublishLastMedia('tiktok')});await page.locator('[data-zar-ok]').click();await page.getByRole('button',{name:'Sí, estoy seguro',exact:true}).click();await page.waitForFunction(()=>!document.querySelector('.zarDialogOverlay'));assert.equal(posts.at(-1).data.confirmed,true);
 const brief='  Inicio\n'+'Detalle á\n'.repeat(1600)+'FIN  ';assert.equal(await page.locator('#zhMediaTopic').isVisible(),true);assert.equal(await page.locator('#zhMediaTopic').isEditable(),true);await page.locator('#zhMediaTopic').evaluate((el,value)=>{el.value=value;el.dispatchEvent(new Event('input',{bubbles:true}))},brief);await page.evaluate(()=>zhQueueMedia());assert.equal(posts.findLast(x=>x.path.endsWith('/queue')).data.topic,brief);
-job={...job,status:'PRODUCED'};await page.evaluate(()=>zhRefresh());page.once('dialog',d=>d.accept('Nuevo final'));await page.evaluate(()=>zhEditLastMedia());assert.deepEqual(posts.slice(-2).map(x=>x.path),['/api/holdings/media/edit','/api/holdings/media/produce']);
+job={...job,status:'PRODUCED'};await page.evaluate(()=>zhRefresh());await page.evaluate(()=>{void zhEditLastMedia()});await page.locator('[data-zar-answer]').fill('Nuevo final');await page.locator('[data-zar-ok]').click();await page.waitForFunction(()=>!zhMediaBusy);assert.deepEqual(posts.slice(-2).map(x=>x.path),['/api/holdings/media/edit','/api/holdings/media/produce']);
 const duplicates=await page.evaluate(()=>{const ids=[...document.querySelectorAll('[id]')].map(x=>x.id);return ids.filter((id,i)=>ids.indexOf(id)!==i)});assert.deepEqual(duplicates,[]);assert.deepEqual(errors,[]);
 await page.evaluate(()=>closeHoldings());console.log('PASS: inline/static JS; Holdings/Media DOM; full brief; persisted refresh; progress; stable MP4; edit; explicit publication confirmation; IDs');
 }finally{await browser.close()}})().catch(e=>{console.error(e);process.exit(1)});

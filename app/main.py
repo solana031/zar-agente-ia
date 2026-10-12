@@ -2123,7 +2123,9 @@ def holdings_sites_create_api():
 @app.post('/api/holdings/sites/deploy')
 def holdings_sites_deploy_api():
     data=request.get_json(silent=True) or {}
-    try: return jsonify(sites_company.deploy_vercel(_user_scope_id(),data.get('slug') or ''))
+    if data.get('confirmed') is not True:
+        return jsonify(ok=False,error='Confirma la publicación pública de este sitio en Vercel.'),409
+    try: return jsonify(sites_company.deploy_vercel(_user_scope_id(),data.get('slug') or '',confirmed=True))
     except Exception as exc: return jsonify({'ok':False,'error':str(exc)}),400
 
 @app.post('/api/holdings/sites/domains/search')
@@ -2168,7 +2170,7 @@ def holdings_sites_network_api():
 @app.post('/api/holdings/sites/domains/buy')
 def holdings_sites_domain_buy_api():
     data=request.get_json(silent=True) or {}
-    try: return jsonify(sites_company.buy_domain(_user_scope_id(),data.get('slug') or '',data.get('domain') or '',data.get('expected_price') or 0,confirmed=bool(data.get('confirmed'))))
+    try: return jsonify(sites_company.buy_domain(_user_scope_id(),data.get('slug') or '',data.get('domain') or '',data.get('expected_price') or 0,confirmed=data.get('confirmed') is True))
     except Exception as exc: return jsonify({'ok':False,'error':str(exc)}),400
 
 @app.post('/api/holdings/sites/adsense/sync')
@@ -2180,14 +2182,18 @@ def holdings_sites_adsense_sync_api():
 def holdings_demo_page(slug):
     safe=re.sub(r'[^a-zA-Z0-9_-]+','',slug)[:80]
     if safe != slug: return 'Demo no válida',400
+    if not web_agency.owns_demo(_user_scope_id(),slug): return 'Demo no encontrada',404
     path=Path(os.environ.get('ZAR_DATA_DIR','/data'))/'holdings_public_demos'/safe/'index.html'
     if not path.exists(): return 'Demo no encontrada',404
-    return send_file(path, mimetype='text/html')
+    return site_projects_preview(send_file(path, mimetype='text/html'))
 
 @app.get('/holdings/site/<slug>/')
 def holdings_site_page(slug):
     safe=re.sub(r'[^a-zA-Z0-9_-]+','',slug)[:80]
     if safe != slug: return 'Sitio no válido',400
+    from .sites_native import public_request
+    if not public_request(slug) and not any(x.get('slug') == slug for x in sites_company._read_registry(_user_scope_id())):
+        return 'Sitio no encontrado',404
     path=Path(os.environ.get('ZAR_DATA_DIR','/data'))/'holdings_public_sites'/safe/'index.html'
     if not path.exists(): return 'Sitio no encontrado',404
     return site_projects_preview(send_file(path,mimetype='text/html'))
@@ -2196,6 +2202,9 @@ def holdings_site_page(slug):
 def holdings_site_asset(slug,filename):
     safe=re.sub(r'[^a-zA-Z0-9_-]+','',slug)[:80]
     if safe != slug or '..' in filename or filename.startswith('/') or '\\' in filename: return 'Ruta no válida',400
+    from .sites_native import public_request
+    if not public_request(slug,filename) and not any(x.get('slug') == slug for x in sites_company._read_registry(_user_scope_id())):
+        return 'Archivo no encontrado',404
     root=(Path(os.environ.get('ZAR_DATA_DIR','/data'))/'holdings_public_sites'/safe).resolve()
     path=(root/filename).resolve()
     if root not in path.parents and path != root: return 'Ruta no válida',400
@@ -5370,8 +5379,10 @@ def studio_audio_voice_effect(pid):
 @app.get("/api/studio/audio/projects/<pid>/preview")
 def studio_audio_preview(pid):
     name=Path(request.args.get('file','')).name
-    path=Path(os.environ.get('ZAR_DATA_DIR','/data'))/'audio_studio'/'outputs'/name
-    if not path.exists() or pid not in path.name:return jsonify({"ok":False,"error":"Audio no encontrado."}),404
+    from . import scoped_media
+    try: path=scoped_media.file_path('audio_studio','outputs',name) if name else None
+    except ValueError: return jsonify(ok=False,error='Audio no encontrado.'),404
+    if not path or not path.exists() or not path.name.startswith(pid+'_'):return jsonify({"ok":False,"error":"Audio no encontrado."}),404
     return send_file(str(path),mimetype='audio/wav',as_attachment=False,download_name=path.name,conditional=True,etag=True,max_age=0)
 
 @app.get("/api/studio/time")
@@ -5403,13 +5414,45 @@ def studio_weather():
 def calendar_month_api():
     """Return events for a calendar month so the Zar calendar can render a full grid."""
     from .google_calendar import month_events
+    token=session.setdefault('calendar_csrf',secrets.token_urlsafe(32))
     try:
         year=int(request.args.get("year") or datetime.now().year)
         month=int(request.args.get("month") or datetime.now().month)
         if month < 1 or month > 12: raise ValueError("Mes no válido.")
-        return jsonify({"ok":True,"year":year,"month":month,"events":month_events(year,month)})
+        return jsonify({"ok":True,"year":year,"month":month,"events":month_events(year,month),"csrf":token})
     except Exception as exc:
-        return jsonify({"ok":False,"error":str(exc)}),400
+        return jsonify({"ok":False,"error":"No se pudo consultar Google Calendar. Revisa la conexión y el mes seleccionado.","csrf":token}),400
+
+@app.post('/api/calendar/create')
+def calendar_create_api():
+    """Create only the reviewed event in the current user's primary calendar."""
+    token=session.get('calendar_csrf')
+    if not token or not secrets.compare_digest(token,request.headers.get('X-ZAR-Calendar-CSRF','')):
+        return jsonify(ok=False,error='Recarga Calendario antes de crear el evento.'),403
+    data=request.get_json(silent=True)
+    if not isinstance(data,dict):
+        return jsonify(ok=False,error='Los datos del evento no son válidos.'),400
+    if data.get('confirmed') is not True:
+        return jsonify(ok=False,error='Revisa y confirma el evento antes de guardarlo en Google Calendar.'),409
+    from . import google_calendar
+    from googleapiclient.errors import HttpError
+    try:
+        values={key:data.get(key,default) for key,default in [('summary',''),('start_iso',''),('end_iso',''),('description',''),('location',''),('all_day',False)]}
+        google_calendar.event_body(**values)
+        decision=jev_decision.evaluate(_user_scope_id(),{'action':'CALENDAR_CREATE','agent':'CalendarUI'})
+        if decision.get('decision')=='DENY':
+            return jsonify(ok=False,error='JEV bloquea la creación del evento. Revisa el estado de pausa global.'),403
+        event=google_calendar.create_event(**values)
+        return jsonify(ok=True,event={key:event.get(key) for key in ('id','summary','description','location','start','end','htmlLink')})
+    except ValueError as exc:
+        return jsonify(ok=False,error=str(exc)),400
+    except PermissionError as exc:
+        return jsonify(ok=False,error=str(exc)),403
+    except HttpError as exc:
+        status=403 if getattr(exc.resp,'status',None) in (401,403) else 502
+        return jsonify(ok=False,error='Google Calendar no confirmó la creación. Revisa los permisos y el calendario antes de reintentar.'),status
+    except Exception:
+        return jsonify(ok=False,error='No se pudo confirmar la creación. Comprueba Google Calendar antes de reintentar para evitar duplicados.'),502
 
 @app.get("/api/calendar/upcoming")
 def calendar_upcoming_api():
@@ -5665,7 +5708,9 @@ def video_project_render(pid):
             _write_job(job_id, "done", reply=result.get("preview_url"), action=result)
         except Exception as exc:
             _write_job(job_id, "error", error=str(exc))
-    threading.Thread(target=worker, daemon=True).start()
+    from contextvars import copy_context
+    context = copy_context()
+    threading.Thread(target=context.run, args=(worker,), daemon=True).start()
     return jsonify({"ok":True,"job_id":job_id})
 
 @app.get("/api/video/projects/<pid>")

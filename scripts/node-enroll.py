@@ -5,6 +5,8 @@ import os
 from contextlib import redirect_stdout
 from pathlib import Path
 import secrets
+import csv
+import subprocess
 import sys
 from urllib.parse import urlparse
 ROOT = Path(__file__).resolve().parents[1]
@@ -40,7 +42,14 @@ def configure(root, url):
     tmp = root / ('.env.local.'+secrets.token_hex(8))
     try:
         fd = os.open(tmp,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
-        with os.fdopen(fd,'w') as out: out.write('\n'.join(result)+'\n'); out.flush(); os.fsync(out.fileno())
+        with os.fdopen(fd,'w') as out:
+            if os.name == 'nt':
+                identity = subprocess.check_output(['whoami','/user','/fo','csv','/nh'], text=True,
+                                                   creationflags=subprocess.CREATE_NO_WINDOW)
+                sid = next(csv.reader([identity.strip()]))[1]
+                subprocess.run(['icacls',str(tmp),'/inheritance:r','/grant:r','*'+sid+':F'],
+                               check=True, capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW)
+            out.write('\n'.join(result)+'\n'); out.flush(); os.fsync(out.fileno())
         os.replace(tmp,path)
     finally:
         if tmp.exists(): tmp.unlink()

@@ -274,8 +274,29 @@ def view(scope):
         verified_row=next((item for item in s['integrations'] if item['service']==row['service']),None)
         if verified_row:row['status']=verified_row['status']
     s['workspace_organization']='NOT_VERIFIED; Gmail does not establish managed Workspace membership'
+    s['human_action_groups']=human_action_groups(s)
     s['connect_url']=connect_url(s['google']['email']) if s['google'].get('email') else None
     return s
+
+def human_action_groups(state):
+    """One actionable card per service/account; retain every original audit row."""
+    groups={}
+    for row in state.get('human_actions',[]):
+        if row.get('status')=='DONE':continue
+        account=row.get('account') or ('solana031@gmail.com' if row.get('service')=='LOVABLE' else state.get('google',{}).get('email') or 'zaragente031@gmail.com')
+        key=(row.get('service'),account,row.get('url') if row.get('service')=='BROWSER' else None)
+        groups.setdefault(key,[]).append(row)
+    result=[]
+    for (_,account,_),rows in groups.items():
+        primary=max(rows,key=lambda x:(x.get('action')=='OBSERVED_BLOCKER',x.get('last_checked') or x.get('created_at') or ''))
+        item=deepcopy(primary)
+        item.update(account=account,related_ids=[x['id'] for x in rows],
+                    related_blockers=list(dict.fromkeys(x.get('reason','') for x in rows if x.get('reason'))))
+        item['instructions']=list(dict.fromkeys(item.get('instructions') or []))
+        item['exact_step']=next(iter(item['instructions']),item.get('reason','Verificar integración.'))
+        result.append(item)
+    return result
+
 
 def operate(scope,action,data):
     if any(k in data for k in ('password','token','access_token','refresh_token','secret')):raise ValueError('Solo metadatos públicos y referencias; nunca credenciales.')
@@ -326,6 +347,17 @@ def operate(scope,action,data):
             if a['status']=='DONE':return deepcopy(a)
             service=a['service'];plan_id=a.get('plan_id')
         if service=='GOOGLE':return verify_google(scope)
+        if service=='RELAYCLAW':
+            from .business_orchestration import mutate
+            result=mutate(scope,'relayclaw_sync',{}).get('billing_sync',{}).get('RelayClaw',{})
+            with holdings.transaction(scope):
+                d=holdings.read(scope);s=ensure(d);a=next(x for x in s['human_actions'] if x['id']==data['id'])
+                a.update(status='DONE' if result.get('status')=='VERIFIED' else 'ACTION_REQUIRED',
+                         last_checked=holdings._now(),verification=result.get('reason'),reason=result.get('reason') or 'La API no confirmó cargos monetarios.')
+                if result.get('rows_without_money'):
+                    a['instructions']=['Obtener una factura o exportación oficial con importe, moneda e identificador de cargo. No convertir tokens/cuota a dinero.','Reintentar Sincronizar cargos RelayClaw cuando el proveedor exponga cargos monetarios verificables.']
+                holdings.write(scope,d)
+            return deepcopy(a)
         if service=='FINANCIAL_PROVIDER':
             from .revolut_business import RevolutBusinessAdapter as FinancialProvider
             proof=FinancialProvider().capabilities()

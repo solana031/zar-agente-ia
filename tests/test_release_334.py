@@ -89,7 +89,7 @@ class MailTests(unittest.TestCase):
         self.env.stop();assert self.tmp.resolve().is_relative_to(self.root);shutil.rmtree(self.tmp)
     def test_oauth_required(self):
         with patch('app.gmail.is_connected',return_value=False),patch('app.gmail.send_message') as send:
-            with self.assertRaises(ValueError):agency_mail.send(self.scope,{'lead_id':self.lead['id'],'draft_id':'draft','confirmed':True})
+            with self.assertRaises(ValueError):agency_mail.send(self.scope,{'lead_id':self.lead['id'],'draft_id':'draft','confirmed':True,'sender_identity':'zar@example.test'})
             send.assert_not_called()
         with patch('app.gmail.is_connected',return_value=False):
             self.assertEqual(agency_mail.verify(self.scope)['state'],'POR CONFIGURAR')
@@ -103,13 +103,13 @@ class MailTests(unittest.TestCase):
             self.assertEqual(inbound.call_args.args[1]['message_id'],'b')
     def test_real_confirmed_send_is_idempotent(self):
         with patch('app.gmail.is_connected',return_value=True),patch('app.gmail.gmail_status',return_value={'email':'zar@example.test'}),patch('app.gmail.send_message',return_value={'id':'sent-mock','threadId':'thread'}) as send:
-            payload={'lead_id':self.lead['id'],'draft_id':'draft','confirmed':True}
+            payload={'lead_id':self.lead['id'],'draft_id':'draft','confirmed':True,'sender_identity':'zar@example.test'}
             agency_mail.send(self.scope,payload);agency_mail.send(self.scope,payload)
             self.assertEqual(send.call_count,1)
         self.assertEqual(holdings.read(self.scope)['agency_crm']['leads'][0]['state'],'CONTACTED')
     def test_ambiguous_send_never_retries(self):
         with patch('app.gmail.is_connected',return_value=True),patch('app.gmail.gmail_status',return_value={'email':'zar@example.test'}),patch('app.gmail.send_message',side_effect=TimeoutError) as send:
-            payload={'lead_id':self.lead['id'],'draft_id':'draft','confirmed':True}
+            payload={'lead_id':self.lead['id'],'draft_id':'draft','confirmed':True,'sender_identity':'zar@example.test'}
             with self.assertRaises(ValueError):agency_mail.send(self.scope,payload)
             self.assertEqual(agency_mail.send(self.scope,payload)['send_intent'],'REVIEW_REQUIRED')
             self.assertEqual(send.call_count,1)
@@ -126,7 +126,7 @@ class MailTests(unittest.TestCase):
         with patch('app.gmail.get_message',return_value=message):
             agency_events.inbound(self.scope,{'lead_id':self.lead['id'],'message_id':message['id'],'auto_classify':True})
         with patch('app.gmail.is_connected',return_value=True),patch('app.gmail.send_message') as send:
-            with self.assertRaises(ValueError):agency_mail.send(self.scope,{'lead_id':self.lead['id'],'draft_id':'draft','confirmed':True})
+            with self.assertRaises(ValueError):agency_mail.send(self.scope,{'lead_id':self.lead['id'],'draft_id':'draft','confirmed':True,'sender_identity':'zar@example.test'})
             send.assert_not_called()
     def test_outside_and_ambiguous_offers_require_review(self):
         lead=holdings.read(self.scope)['agency_crm']['leads'][0]

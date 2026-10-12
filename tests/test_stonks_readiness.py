@@ -100,7 +100,9 @@ def test_signal_uses_only_fully_closed_bars(tmp_path,timeframe):
           {'t':(now-timedelta(seconds=30)).isoformat(),'o':100,'h':102,'l':99,'c':101}]
     ns['_alpaca_paper_request']=Mock(return_value={'is_open':True})
     ns['_alpaca_market_request']=Mock(return_value={'bars':{'AAPL':rows}})
-    signal,_=ns['_stonks_current_signal']('AAPL',timeframe=timeframe)
+    with ns['app'].test_request_context('/'):
+        ns['session']['zar_user_id']='TEST-closed-bars'
+        signal,_=ns['_stonks_current_signal']('AAPL',timeframe=timeframe)
     assert signal['bars']==1 and signal['bar_time']==rows[0]['t']
 
 

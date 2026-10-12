@@ -358,44 +358,40 @@ def recalculate(scope_id):
     with transaction(scope_id):
         d = read(scope_id)
         for key in COMPANIES:
-            revenue = pending = costs = 0.0
-            sales = 0
+            by_currency = {}
             for x in d.get("ledger") or []:
-                if x.get("company") != key:
+                if x.get("company") != key or x.get("test_mode") or x.get("is_test"):
                     continue
+                currency = str(x.get("currency") or "EUR").upper()
+                m = by_currency.setdefault(currency, {"revenue_collected":0.0,"revenue_pending":0.0,"costs":0.0,"profit_realized":0.0,"sales":0})
                 amt = float(x.get("amount") or 0)
-                kind = x.get("kind")
-                status = x.get("status")
-                if kind == "revenue":
-                    if status == "collected":
-                        revenue += amt; sales += 1
-                    elif status == "pending":
-                        pending += amt
-                elif kind in {"cost", "expense"} and status == "collected":
-                    costs += abs(amt)
+                if x.get("kind") == "revenue":
+                    if x.get("status") == "collected":m["revenue_collected"] += amt;m["sales"] += 1
+                    elif x.get("status") == "pending":m["revenue_pending"] += amt
+                elif x.get("kind") in {"cost","expense"} and x.get("status") == "collected":m["costs"] += abs(amt)
+            for m in by_currency.values():
+                m["profit_realized"] = m["revenue_collected"] - m["costs"]
+                for k in m:m[k] = round(m[k],6)
             c = d["companies"][key]
-            c["metrics"].update({
-                "revenue_collected": round(revenue, 6),
-                "revenue_pending": round(pending, 6),
-                "costs": round(costs, 6),
-                "profit_realized": round(revenue - costs, 6),
-                "sales": sales,
-            })
-        return write(scope_id, d)
+            # Legacy EUR consumers (including domain budgets) must never spend foreign balances.
+            c["metrics"].update(by_currency.get("EUR", {"revenue_collected":0.0,"revenue_pending":0.0,"costs":0.0,"profit_realized":0.0,"sales":0}))
+            c["metrics"].update(currency="EUR",by_currency=by_currency,has_evidence=bool(by_currency))
+        return write(scope_id,d)
 
 
 def public_view(scope_id):
     d = recalculate(scope_id)
     out = deepcopy(d)
+    totals = {}
+    fields = ("revenue_collected","revenue_pending","costs","profit_realized")
     for c in out["companies"].values():
         c["journal"] = (c.get("journal") or [])[-20:][::-1]
         c["queue"] = (c.get("queue") or [])[-30:][::-1]
+        for currency,m in c.get("metrics",{}).get("by_currency",{}).items():
+            total=totals.setdefault(currency,{k:0.0 for k in fields})
+            for k in fields:total[k]=round(total[k]+float(m.get(k) or 0),6)
     out["ledger"] = (out.get("ledger") or [])[-100:][::-1]
-    totals = {"revenue_collected": 0.0, "revenue_pending": 0.0, "costs": 0.0, "profit_realized": 0.0}
-    for c in out["companies"].values():
-        for k in totals:
-            totals[k] += float(c.get("metrics", {}).get(k) or 0)
-    out["totals"] = {k: round(v, 6) for k, v in totals.items()}
+    out["totals"] = {**totals.get("EUR",{k:0.0 for k in fields}),"currency":"EUR","by_currency":totals,"has_evidence":bool(totals)}
     return out
 
 

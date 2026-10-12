@@ -1,3 +1,4 @@
+import os
 """Directed coordinator contract tests; no external connection or paid operation."""
 import importlib.util
 import json
@@ -148,7 +149,12 @@ def test_enrollment_secret_persists_and_permissions(tmp_path):
     data = (tmp_path/'.env.local').read_text()
     assert 'UNRELATED=preserved' in data and 'ZAR_NODE_TOKEN=' in data
     assert 'token' not in first and len(first['token_hash'])==64
-    assert (tmp_path/'.env.local').stat().st_mode & 0o777==0o600
+    if os.name != 'nt':
+        assert (tmp_path/'.env.local').stat().st_mode & 0o777==0o600
+    else:
+        import subprocess
+        acl = subprocess.check_output(['icacls',str(tmp_path/'.env.local')],text=True)
+        assert '(I)' not in acl  # No inherited grants exposing the token to other users.
     with pytest.raises(ValueError): module.configure(tmp_path,'http://untrusted.example')
 
 
