@@ -2,6 +2,7 @@
 import html
 import json
 import re
+from urllib.parse import urlparse
 from pathlib import Path
 from . import holdings, site_projects, sites_company
 from . import jev_decision
@@ -64,8 +65,16 @@ def readiness(scope, project_id):
     checks={'home':(root/'index.html').exists(),'articles':len([f for f in row.get('files',[]) if f.endswith('.html') and f not in {'index.html','about.html','contact.html','privacy.html'}])>=3,
             'about':(root/'about.html').exists(),'contact':(root/'contact.html').exists(),'privacy_reviewed':row.get('privacy_reviewed') is True,
             'content_reviewed':row.get('content_review_required') is False,'sitemap':(root/'sitemap.xml').exists(),'robots':(root/'robots.txt').exists(),
-            'published':row.get('state')=='PUBLISHED','https_url':str(row.get('canonical','')).startswith('https://'),'publisher_id':bool(re.fullmatch(r'pub-\d{16}',sites_company._publisher_id()))}
-    return {'status':'READY_FOR_REVIEW' if all(checks.values()) else 'ACTION_REQUIRED','checks':checks,'last_checked':holdings._now(),
+            'published':row.get('state')=='PUBLISHED','https_url':str(row.get('canonical','')).startswith('https://'),'publisher_id':bool(re.fullmatch(r'pub-\d{16}',sites_company._publisher_id())),
+            'adsense_domain':bool(row.get('domain')) and urlparse(row.get('canonical','')).hostname == row.get('domain') and urlparse(row.get('canonical','')).path in {'','/'}}
+    domain={'name':row.get('domain') or None,'status':'DNS_REQUIRED' if row.get('domain') else 'NO_DOMAIN',
+            'https':'NOT_VERIFIED','dns':'NOT_VERIFIED',
+            'human_action':'COMPRAR / CONECTAR DOMINIO PARA ZAR SITES',
+            'steps':['Conectar un dominio propio; no comprar automáticamente.',
+                     'Configurar el destino público y DNS del hosting antes de verificar HTTPS.',
+                     'Verificar HTTPS, canonical, sitemap y robots en la raíz del dominio.',
+                     'Revisar contenido y privacidad; registrar sitio en AdSense existente y publicar ads.txt con publisher real.']}
+    return {'status':'READY_FOR_REVIEW' if all(checks.values()) else 'ACTION_REQUIRED','checks':checks,'domain':domain,'last_checked':holdings._now(),
             'blockers':[k for k,v in checks.items() if not v],'approval_guaranteed':False,'content_sufficiency':'HUMAN_REVIEW_REQUIRED','note':'Checklist técnico; no demuestra elegibilidad ni aprobación de Google. ads.txt exige publisher ID real y despliegue en la raíz del dominio.'}
 
 def publish(scope, project_id, confirmed=False, public_origin=None):
@@ -90,7 +99,7 @@ def publish(scope, project_id, confirmed=False, public_origin=None):
 
 def public_request(slug, filename='index.html'):
     if not re.fullmatch(r'[a-zA-Z0-9_-]{1,80}',slug): return False
-    if filename not in {'index.html','about.html','contact.html','privacy.html','robots.txt','sitemap.xml',*[s+'.html' for s,_,_ in ARTICLES]}: return False
+    if filename not in {'index.html','about.html','contact.html','privacy.html','robots.txt','sitemap.xml',*[s+'.html' for s,_,_ in ARTICLES]} and not re.fullmatch(r'article-[a-f0-9]{16}\.html',filename): return False
     try:
         marker=sites_company._public_root()/slug/'published.json'
         return filename in json.loads(marker.read_text(encoding='utf-8')).get('files',[])

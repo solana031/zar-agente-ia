@@ -83,9 +83,11 @@ def apply_event(event):
         agency_crm.operate(scope,'payment_sync',{'lead_id':lead['id']})
         d=holdings.read(scope);crm=agency_crm.ensure(d)
         payment=agency_crm.find(crm['payments'],payment['id'])
-        if event.get('livemode') is True and obj.get('livemode') is True and payment['state']=='PENDING':
+        if isinstance(event.get('livemode'),bool) and event.get('livemode') is obj.get('livemode') and payment['state']=='PENDING':
             if event['type']=='checkout.session.async_payment_failed': payment['state']='FAILED'
         crm.setdefault('stripe_events',[]).append(event['id'])
+        crm['stripe_webhook_status']={'status':'VERIFIED','environment':'live' if event.get('livemode') is True else 'sandbox',
+            'event_id':event['id'],'event_type':event['type'],'payment_state':payment['state'],'last_checked':holdings._now()}
         holdings.write(scope,d)
         return {'state':payment['state']}
 

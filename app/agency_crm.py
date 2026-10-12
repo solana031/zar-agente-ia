@@ -47,7 +47,11 @@ class PaymentAdapter:
         if not isinstance(value,dict) or not value.get('id'):raise ValueError('Stripe no confirmó recurso.')
         return value
     def verify(self):
-        x=self.call('/account');return {k:x.get(k) for k in ('id','country','charges_enabled','payouts_enabled')}
+        x=self.call('/account')
+        result={k:x.get(k) for k in ('id','country','charges_enabled','payouts_enabled')}
+        result.update(api_verified=True, test_mode=os.environ.get('STRIPE_SECRET_KEY','').startswith(('sk_test_','rk_test_')),
+                      checked_at=holdings._now())
+        return result
     def checkout(self,scope,lead,proposal,key):
         amount=Decimal(proposal['target'])
         # Current quotes support EUR/USD/GBP, all two-decimal currencies.
@@ -61,8 +65,11 @@ class PaymentAdapter:
             'line_items[0][price_data][product_data][name]':'ZAR Web Agency · '+lead['name'][:120]}
         x=self.call('/checkout/sessions','POST',data,key)
         return {'provider_id':x['id'],'url':secure_url(x.get('url')),'state':'PENDING','amount':proposal['target'],
-            'currency':proposal['currency'],'test_mode':x.get('livemode') is not True,'provider':'Stripe','timestamp':holdings._now()}
-    def payment(self,session_id):return self.call('/checkout/sessions/'+session_id,data={'expand[]':'payment_intent.latest_charge'})
+            'currency':proposal['currency'],'test_mode':x.get('livemode') is not True,
+            'environment':'live' if x.get('livemode') is True else 'sandbox','provider':'Stripe','timestamp':holdings._now()}
+    def payment(self,session_id):
+        sandbox=os.environ.get('STRIPE_SECRET_KEY','').startswith(('sk_test_','rk_test_'))
+        return self.call('/checkout/sessions/'+session_id,data={} if sandbox else {'expand[]':'payment_intent.latest_charge'})
 
 def view(scope):
     with holdings.transaction(scope):
@@ -123,7 +130,10 @@ def operate(scope,action,data):
             d['companies']=holdings.read(scope)['companies']
             d.setdefault('verified_connectors',{})['Google Maps']=verification('Google Maps','LISTO','bounded Places text search')
         elif action=='payment_probe':
-            result=PaymentAdapter().verify();d.setdefault('verified_connectors',{})['Payment']=verification('Payment','LISTO','Stripe account read; checkout not tested')
+            result=PaymentAdapter().verify();crm['provider_status']=result
+            live_ready=not result['test_mode'] and result.get('charges_enabled') is True
+            d.setdefault('verified_connectors',{})['Payment']=verification('Payment','LISTO' if live_ready else 'POR CONFIGURAR',
+                'Sandbox API verificada; cobros reales deshabilitados' if result['test_mode'] else 'Stripe API verificada; capacidad de cobro '+str(result.get('charges_enabled')))
             from .business_orchestration import note_verified_account
             note_verified_account(d,'Payment',result['id'],'STRIPE_SECRET_KEY','Stripe account read')
         else:
@@ -198,9 +208,11 @@ def operate(scope,action,data):
                 if value.get('id')!=payment['provider_id'] or metadata.get('scope')!=scope or metadata.get('lead')!=lead['id'] or metadata.get('proposal')!=proposal['id']:
                     raise ValueError('Checkout no corresponde al scope/propuesta.')
                 if value.get('amount_total')!=int(Decimal(payment['amount'])*100) or value.get('currency','').upper()!=payment['currency']:raise ValueError('Pago difiere de propuesta.')
-                if value.get('livemode') is not True:payment.update(state='PENDING',test_mode=True,note='Stripe test mode: no ingreso real.')
+                if value.get('livemode') is not True:
+                    state='PAID_TEST' if value.get('payment_status')=='paid' else 'EXPIRED' if value.get('status')=='expired' else 'PENDING'
+                    payment.update(state=state,test_mode=True,environment='sandbox',note='TEST REVENUE · sin ingreso real ni saldo contable.')
                 else:
-                    payment['test_mode']=False
+                    payment.update(test_mode=False,environment='live')
                     intent=value.get('payment_intent') or {};charge=intent.get('latest_charge') if isinstance(intent,dict) else None
                     payment['payment_intent_id']=intent.get('id') if isinstance(intent,dict) else intent
                     payment['charge_id']=charge.get('id') if isinstance(charge,dict) else charge

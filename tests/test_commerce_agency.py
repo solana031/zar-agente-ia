@@ -194,6 +194,10 @@ class BusinessTests(unittest.TestCase):
             agency.operate(self.scope,'checkout',{'lead_id':lead['id'],'confirmed':True,'total':'300.00'})
         value={'id':'cs_offline','metadata':{'scope':self.scope,'lead':lead['id'],'proposal':p['id']},'amount_total':30000,'currency':'eur','payment_status':'paid','livemode':False}
         with patch.object(agency.PaymentAdapter,'payment',return_value=value):agency.operate(self.scope,'payment_sync',{'lead_id':lead['id']})
+        test_payment=agency.view(self.scope)['payments'][0]
+        self.assertEqual(test_payment['state'],'PAID_TEST')
+        self.assertEqual(test_payment['environment'],'sandbox')
+        self.assertEqual(holdings.read(self.scope)['ledger'],[])
         with self.assertRaises(ValueError):agency.operate(self.scope,'receipt',{'lead_id':lead['id'],'amount':300,'bank_reference':'offline-bank','confirmed':True})
         value['livemode']=True
         with patch.object(agency.PaymentAdapter,'payment',return_value=value):agency.operate(self.scope,'payment_sync',{'lead_id':lead['id']})
@@ -201,6 +205,25 @@ class BusinessTests(unittest.TestCase):
         agency.operate(self.scope,'receipt',{'lead_id':lead['id'],'amount':290,'bank_reference':'offline-bank','confirmed':True})
         agency.operate(self.scope,'receipt',{'lead_id':lead['id'],'amount':290,'bank_reference':'offline-bank','confirmed':True})
         self.assertEqual(len(holdings.read(self.scope)['ledger']),1)
+    def test_signed_sandbox_webhook_is_idempotent_and_not_cash(self):
+        from app import agency_events
+        import hashlib,hmac,json,time
+        lead=self.lead();p=self.proposal(lead)
+        checkout={'provider_id':'cs_test_offline','url':'https://checkout.stripe.com/offline','state':'PENDING','amount':'300.00','currency':'EUR','test_mode':True,'provider':'Stripe'}
+        with patch.object(agency.PaymentAdapter,'checkout',return_value=checkout):
+            agency.operate(self.scope,'checkout',{'lead_id':lead['id'],'confirmed':True,'total':'300.00'})
+        value={'id':checkout['provider_id'],'metadata':{'scope':self.scope,'lead':lead['id'],'proposal':p['id']},'amount_total':30000,'currency':'eur','payment_status':'paid','livemode':False}
+        event={'id':'evt_offline_signed','type':'checkout.session.completed','livemode':False,'data':{'object':value}}
+        raw=json.dumps(event).encode();stamp=str(int(time.time()));secret='offline_fixture_only'
+        digest=hmac.new(secret.encode(),stamp.encode()+b'.'+raw,hashlib.sha256).hexdigest()
+        with patch.dict(os.environ,{'STRIPE_WEBHOOK_SECRET':secret}), patch.object(agency.PaymentAdapter,'payment',return_value=value) as read:
+            verified=agency_events.verify_event(raw,'t='+stamp+',v1='+digest)
+            self.assertEqual(agency_events.apply_event(verified)['state'],'PAID_TEST')
+            self.assertEqual(agency_events.apply_event(verified),{'duplicate':True})
+            self.assertEqual(read.call_count,1)
+            with self.assertRaises(ValueError):agency_events.verify_event(raw+b' ','t='+stamp+',v1='+digest)
+        self.assertEqual(holdings.read(self.scope)['ledger'],[])
+        self.assertEqual(len(agency.view(self.scope)['stripe_events']),1)
     def test_automaton_local_pricing_and_shadow(self):
         supplier,product=self.product()
         control.mutate(self.scope,'mode',{'mode':'SHADOW'})

@@ -36,6 +36,9 @@ def view(scope):
 
 
 def operate(scope, action, data):
+    if action.startswith('site_article_'):
+        from . import sites_editorial
+        return sites_editorial.view(scope, data['id']) if action == 'site_article_list' else sites_editorial.operate(scope, action.removeprefix('site_article_'), data)
     if action=='canva_status':
         from .canva_adapter import CanvaAdapter
         return CanvaAdapter().status(scope)

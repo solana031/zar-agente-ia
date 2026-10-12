@@ -294,8 +294,17 @@ def human_action_groups(state):
                     related_blockers=list(dict.fromkeys(x.get('reason','') for x in rows if x.get('reason'))))
         item['instructions']=list(dict.fromkeys(item.get('instructions') or []))
         item['exact_step']=next(iter(item['instructions']),item.get('reason','Verificar integración.'))
+        service=item.get('service')
+        optional=service=='FINANCIAL_PROVIDER' and 'advanced' in item.get('reason','').lower() and '60' in item.get('reason','')
+        item.update(requirement='OPTIONAL' if optional else 'REQUIRED',priority='P3' if optional else 'P0' if service=='ADSENSE' else 'P1',
+                    business_impact={'ADSENSE':'Sites · habilitar revisión de monetización','STRIPE':'Agency / Sites · cobrar',
+                        'SHOPIFY':'Reselling · vender','SUPPLIER':'Reselling · abastecer','RELAYCLAW':'Clipper · conciliar costes',
+                        'FINANCIAL_PROVIDER':'Fondos bancarios avanzados; READ ya funciona'}.get(service,'Acceso operativo del servicio'),
+                    time_estimate='Depende de revisión del proveedor; sin estimación verificable',
+                    cost='60 EUR de alta Advanced; no contratado' if optional else 'Sin coste confirmado')
+        if optional:item['title']='WISE ADVANCED · OPCIONAL';item['exact_step']='Mantener Basic READ. Activar Advanced solo si un negocio necesita datos bancarios y Pablo decide contratarlo.'
         result.append(item)
-    return result
+    return sorted(result,key=lambda x:(x['requirement']=='OPTIONAL',x['priority'],x.get('service','')))
 
 
 def operate(scope,action,data):

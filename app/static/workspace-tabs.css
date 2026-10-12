@@ -40,3 +40,9 @@ body.zarEmbedded[data-workspace-type] #panel.panel{inset:0!important;left:0!impo
 @media(max-width:720px){#chatContent .zarDockItem{min-height:64px!important}#chatContent .zarDockItem b{font-size:10px!important}#chatContent .zarDockItem small{font-size:8px!important}}
 
 #chatContent .zarHomeCenter .zarWordmark{font-size:24px!important;letter-spacing:.18em!important;white-space:nowrap!important}
+#zarArticleForm{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;max-width:100%}
+#zarArticleForm label{display:flex;flex-direction:column;gap:6px;min-width:0}
+#zarArticleForm label:has(textarea){grid-column:1/-1}
+#zarArticleForm input,#zarArticleForm select,#zarArticleForm textarea{width:100%;min-width:0;box-sizing:border-box}
+#zarArticleForm input[type=checkbox]{width:auto;align-self:flex-start}
+@media(max-width:600px){#zarArticleForm{grid-template-columns:minmax(0,1fr)}}
