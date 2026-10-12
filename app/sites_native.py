@@ -67,8 +67,8 @@ def readiness(scope, project_id):
             'content_reviewed':row.get('content_review_required') is False,'sitemap':(root/'sitemap.xml').exists(),'robots':(root/'robots.txt').exists(),
             'published':row.get('state')=='PUBLISHED','https_url':str(row.get('canonical','')).startswith('https://'),'publisher_id':bool(re.fullmatch(r'pub-\d{16}',sites_company._publisher_id())),
             'adsense_domain':bool(row.get('domain')) and urlparse(row.get('canonical','')).hostname == row.get('domain') and urlparse(row.get('canonical','')).path in {'','/'}}
-    domain={'name':row.get('domain') or None,'status':'DNS_REQUIRED' if row.get('domain') else 'NO_DOMAIN',
-            'https':'NOT_VERIFIED','dns':'NOT_VERIFIED',
+    domain={'name':row.get('domain') or None,'status':row.get('domain_setup',{}).get('status','DOMAIN_ENTERED' if row.get('domain') else 'NO_DOMAIN'),
+            'https':row.get('domain_setup',{}).get('https','NOT_VERIFIED'),'dns':row.get('domain_setup',{}).get('dns','NOT_VERIFIED'),
             'human_action':'COMPRAR / CONECTAR DOMINIO PARA ZAR SITES',
             'steps':['Conectar un dominio propio; no comprar automáticamente.',
                      'Configurar el destino público y DNS del hosting antes de verificar HTTPS.',

@@ -36,6 +36,10 @@ def view(scope):
 
 
 def operate(scope, action, data):
+    if action in {'site_domain_save','site_domain_status','site_domain_verify'}:
+        from . import sites_domains
+        if action == 'site_domain_verify': return sites_domains.verify(scope,data)
+        return sites_domains.save(scope,data) if action == 'site_domain_save' else sites_domains.view(scope,data['id'])
     if action.startswith('site_article_'):
         from . import sites_editorial
         return sites_editorial.view(scope, data['id']) if action == 'site_article_list' else sites_editorial.operate(scope, action.removeprefix('site_article_'), data)

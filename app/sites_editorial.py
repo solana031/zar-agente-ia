@@ -3,6 +3,7 @@ import html
 import json
 import re
 import uuid
+from datetime import date
 from . import holdings, site_projects, sites_company, sites_native
 
 
@@ -18,7 +19,9 @@ def view(scope, project_id):
     return {'project_id': row['id'], 'articles': row.get('editorial_articles', []),
             'analytics': 'NOT_CONNECTED', 'revenue': None,
             'publication_requires_confirmation': True,
-            'plan': [{'topic': row.get('topic') or row['name'], 'keyword': 'guía práctica',
+            'plan': [{'topic': a['title'], 'keyword': a.get('keyword'), 'intent': a.get('intent','INFORMATIONAL'),
+                      'status': a.get('editorial_stage','DRAFT'), 'publish_date': a.get('publish_date'),
+                      'internal_links': a.get('internal_links',[])} for a in row.get('editorial_articles',[])] or [{'topic': row.get('topic') or row['name'], 'keyword': 'guía práctica',
                       'internal_links': [f for f in row.get('files', []) if f.endswith('.html')],
                       'status': 'SUGGESTION_NOT_PUBLISHED'}]}
 
@@ -33,6 +36,18 @@ def operate(scope, op, data):
             raise ValueError('Artículo inválido.')
         article = next((a for a in articles if a['id'] == article_id), None)
         if op == 'save':
+            stage = str(data.get('editorial_stage') or 'DRAFT')
+            if stage not in {'IDEA','RESEARCH','DRAFT','EDIT','SEO_CHECK','PREVIEW','READY'}:
+                raise ValueError('Etapa editorial inválida; publicar exige confirmación independiente.')
+            intent = str(data.get('intent') or 'INFORMATIONAL')
+            if intent not in {'INFORMATIONAL','COMMERCIAL','NAVIGATIONAL'}:
+                raise ValueError('Intención editorial inválida.')
+            publish_date = str(data.get('publish_date') or '')
+            if publish_date: date.fromisoformat(publish_date)
+            links = data.get('internal_links') or []
+            if isinstance(links, str): links = [x.strip() for x in links.split(',') if x.strip()]
+            if not isinstance(links,list) or any(x not in row.get('files',[]) or not x.endswith('.html') for x in links):
+                raise ValueError('Selecciona enlaces de páginas existentes del sitio.')
             title = str(data.get('title') or '').strip()[:160]
             body = str(data.get('body') or '').strip()
             if not title or not body or len(body) > 30000:
@@ -44,9 +59,11 @@ def operate(scope, op, data):
                 article = {'id': uuid.uuid4().hex[:16], 'created_at': holdings._now(), 'state': 'DRAFT'}
                 articles.append(article)
             article.update(title=title, body=body, keyword=str(data.get('keyword') or '')[:160],
+                           editorial_stage=stage, intent=intent, publish_date=publish_date or None, internal_links=list(dict.fromkeys(links)),
                            is_test=data.get('is_test') is True, updated_at=holdings._now(), pending_changes=True)
             filename = 'draft-' + article['id'] + '.html'
             content = ''.join('<p>'+html.escape(p)+'</p>' for p in body.split('\n') if p.strip())
+            content += ''.join('<p><a href="'+html.escape(f,quote=True)+'">'+html.escape(f.removesuffix('.html').replace('-',' '))+'</a></p>' for f in article['internal_links'])
             (root / filename).write_text(sites_native.document(row['name'], filename, title, body[:155],
                                        '<article>'+content+'</article>', row['canonical']), encoding='utf-8')
             article['preview_url'] = row['relative_url'] + filename
@@ -67,6 +84,7 @@ def operate(scope, op, data):
             files = list(manifest['files'])
             if op == 'publish':
                 content = ''.join('<p>'+html.escape(p)+'</p>' for p in article['body'].split('\n') if p.strip())
+                content += ''.join('<p><a href="'+html.escape(f,quote=True)+'">'+html.escape(f.removesuffix('.html').replace('-',' '))+'</a></p>' for f in article.get('internal_links',[]))
                 (root / filename).write_text(sites_native.document(row['name'], filename, article['title'],
                     article['body'][:155], '<article>'+content+'</article>', row['canonical'], True), encoding='utf-8')
                 if filename not in files: files.append(filename)
