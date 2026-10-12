@@ -36,6 +36,9 @@ def view(scope):
 
 
 def operate(scope, action, data):
+    if action.startswith('reposnews_'):
+        from . import reposnews
+        return reposnews.operate(scope, action.removeprefix('reposnews_'), data)
     if action in {'site_domain_save','site_domain_status','site_domain_verify'}:
         from . import sites_domains
         if action == 'site_domain_verify': return sites_domains.verify(scope,data)

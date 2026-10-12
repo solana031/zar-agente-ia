@@ -110,6 +110,11 @@ def _migrate_legacy_owner():
         pass
 
 @app.before_request
+def _reposnews_public_host():
+    from .reposnews import public_dispatch
+    return public_dispatch()
+
+@app.before_request
 def _set_scope():
     uid = _user_scope_id()
     set_current_user(uid)
@@ -1836,6 +1841,8 @@ business_orchestration.register(app, _user_scope_id)
 from . import business_workflows
 from .site_projects import preview_headers as site_projects_preview
 business_workflows.register(app, _user_scope_id)
+from . import reposnews
+reposnews.register(app, _user_scope_id)
 from . import agency_events
 agency_events.register(app)
 

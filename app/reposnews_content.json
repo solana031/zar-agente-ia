@@ -1,0 +1,107 @@
+[
+  {
+    "id": "uv",
+    "repo": "astral-sh/uv",
+    "category": "Developer Tools",
+    "license": "MIT OR Apache-2.0",
+    "language": "Rust",
+    "website": "https://docs.astral.sh/uv/",
+    "sources": [
+      "https://github.com/astral-sh/uv",
+      "https://docs.astral.sh/uv/getting-started/features/",
+      "https://docs.astral.sh/uv/getting-started/installation/",
+      "https://api.github.com/repos/astral-sh/uv"
+    ],
+    "title_es": "uv: un entorno Python reproducible, sin confundir rapidez con reproducibilidad",
+    "title_en": "uv: building a reproducible Python workflow beyond installation speed",
+    "summary_es": "Guía para empezar con proyectos, dependencias y lockfiles; límites y comprobaciones antes de migrar.",
+    "summary_en": "A practical introduction to projects, dependencies and lockfiles, including checks before migration.",
+    "body_es": "## Qué es y para qué sirve\nuv es un gestor de paquetes y proyectos Python de Astral, escrito en Rust. Reúne operaciones de entornos, dependencias, versiones de Python y herramientas. Su utilidad editorial aquí es simplificar un flujo concreto: que otra persona pueda abrir tu proyecto y reconstruir su entorno.\n## Señales observadas, no tendencias inventadas\nEl repositorio y su documentación oficial se han consultado para esta guía. Una cifra acumulada de estrellas no demuestra crecimiento reciente. No disponemos todavía de dos snapshots comparables para calcular velocidad de estrellas; el interés de esta selección es su utilidad técnica.\n## Requisitos e instalación\nNecesitas terminal y una instalación compatible de Python si eliges PyPI. La documentación ofrece instaladores independientes y gestores de paquetes. La opción siguiente procede del método PyPI; no se ha ejecutado en este artículo.\n```sh\npip install uv\nuv --version\n```\n## Primer proyecto\nLa documentación describe este flujo básico. Ejecútalo en una carpeta nueva, no encima de un proyecto existente sin copia.\n```sh\nuv init example\ncd example\nuv add ruff\nuv run ruff check\nuv lock\nuv sync\n```\n## Cómo comprobar el resultado\nRevisa pyproject.toml y uv.lock, confirma qué versión de Python utiliza el entorno y ejecuta tus pruebas. Un comando que termina correctamente no garantiza compatibilidad de todas tus dependencias. En CI, reproduce el entorno con el mismo lockfile y registra la versión de la herramienta.\n## Ventajas y límites\nEl proyecto integra varias tareas y comparte caché de dependencias. La rapidez anunciada por sus autores no es una medición de ReposNews. Antes de migrar, revisa índices privados, dependencias nativas y los pasos de despliegue de tu equipo.\n## Alternativas y decisión\npip con entornos virtuales puede bastar para proyectos pequeños; Poetry representa otro enfoque de gestión. Compara tu flujo actual con un proyecto piloto antes de sustituir herramientas. Licencia: MIT o Apache-2.0, según el repositorio; revisa los textos oficiales y las licencias de las dependencias por separado.",
+    "body_en": "## What it does\nuv is Astral's Rust-based Python package and project manager. It brings environment creation, dependencies, Python versions and command-line tools into one workflow. The practical aim of this guide is reproducibility: another developer should be able to reconstruct a project environment.\n## Evidence rather than hype\nWe checked the official repository and documentation. Total stars are not a measure of recent growth, and we do not yet have comparable snapshots for star velocity. This is an editorial selection based on usefulness, not a verified trending ranking.\n## Requirements and installation\nThe PyPI route needs a terminal and a compatible Python installation. Official documentation also provides standalone installers and package-manager options. These commands follow the documented PyPI method; they were not executed for this article.\n```sh\npip install uv\nuv --version\n```\n## A first project\nStart in a new directory rather than overwriting an existing project. The documented project workflow includes these commands.\n```sh\nuv init example\ncd example\nuv add ruff\nuv run ruff check\nuv lock\nuv sync\n```\n## Check the outcome\nInspect pyproject.toml and uv.lock, check the selected Python version and run your tests. A successful installation does not prove that every dependency works. Rebuild from the same lockfile in CI and record the tool version.\n## Benefits and trade-offs\nCombining tasks and sharing a dependency cache can simplify daily work. Performance claims belong to the project authors; ReposNews has not benchmarked them. Before migration, test private indexes, native dependencies and your deployment pipeline.\n## Alternatives\npip with virtual environments may be sufficient for a small project; Poetry offers a different project-management approach. Use a pilot before replacing a working setup. The repository offers MIT or Apache-2.0 licensing; consult the original texts and review dependency licenses separately.",
+    "state": "READY",
+    "published": false,
+    "checked_at": "2026-10-13",
+    "trend": "NOT_MEASURED",
+    "installation_tested": false,
+    "observed": {
+      "full_name": "astral-sh/uv",
+      "stargazers_count": 90665,
+      "forks_count": 3649,
+      "pushed_at": "2026-10-12T23:36:11Z",
+      "archived": false,
+      "language": "Rust",
+      "default_branch": "main",
+      "checked_at": "2026-10-13"
+    }
+  },
+  {
+    "id": "playwright",
+    "repo": "microsoft/playwright",
+    "category": "Automation",
+    "license": "Apache-2.0",
+    "language": "TypeScript",
+    "website": "https://playwright.dev/",
+    "sources": [
+      "https://github.com/microsoft/playwright",
+      "https://playwright.dev/docs/intro",
+      "https://github.com/microsoft/playwright/blob/main/LICENSE",
+      "https://api.github.com/repos/microsoft/playwright"
+    ],
+    "title_es": "Playwright: una primera prueba de navegador que comprueba comportamiento",
+    "title_en": "Playwright: a first browser test that checks actual behaviour",
+    "summary_es": "Cómo iniciar pruebas web, leer resultados y evitar confundir una prueba simulada con validación de producción.",
+    "summary_en": "Start a web test, inspect its outcome and distinguish mocked checks from production verification.",
+    "body_es": "## Qué es\nPlaywright es el proyecto de Microsoft para automatizar navegadores y probar aplicaciones web. Su documentación distingue el runner Playwright Test de la librería de automatización. Esta guía utiliza el runner: organiza pruebas, aserciones y resultados.\n## Para qué sirve\nUn caso útil es comprobar que un usuario llega a una página y puede realizar su acción principal. Tener capturas bonitas no basta: conviene verificar un resultado visible, como un título o un estado guardado.\n## Actividad y fuentes\nLa selección procede del repositorio y de la documentación oficial. No afirmamos que esté creciendo por un número acumulado de estrellas. La metadata de GitHub puede consultarse por separado, con fecha; todavía no hay una serie histórica de crecimiento.\n## Instalación\nLa guía oficial parte de Node.js y de un gestor de paquetes compatible. Comprueba los requisitos vigentes en la documentación enlazada. El asistente prepara un proyecto de pruebas.\n```sh\nnpm init playwright@latest\nnpx playwright test\n```\n## Primer ejemplo\nEste ejemplo sigue el patrón documentado; no demuestra conectividad con tu propia aplicación.\n```js\nimport { test, expect } from '@playwright/test';\ntest('home', async ({ page }) => {\n  await page.goto('https://playwright.dev/');\n  await expect(page).toHaveTitle(/Playwright/);\n});\n```\n## Cómo evaluar el resultado\nEjecuta la prueba, examina fallos y revisa el reporte. Si interceptas una API con respuestas simuladas, documenta esa limitación: no has verificado el servicio real. Para móvil, comprueba el viewport efectivo y no solo el tamaño de la ventana.\n## Ventajas y limitaciones\nLocators, esperas automáticas y aislamiento facilitan pruebas repetibles. Aun así, selectores frágiles, autenticación y servicios externos necesitan diseño cuidadoso. No automatices pagos ni aceptaciones legales como parte de una prueba rutinaria.\n## Alternativas\nSelenium y Cypress son opciones que puedes comparar con los requisitos de tu equipo. La decisión depende de navegadores, lenguaje, infraestructura y mantenimiento. Playwright se distribuye con Apache-2.0; consulta la licencia oficial antes de redistribuirlo.",
+    "body_en": "## What it is\nPlaywright is Microsoft's browser automation and web testing project. Its documentation distinguishes the Playwright Test runner from the automation library. This guide uses the runner to organise tests, assertions and results.\n## A useful first task\nCheck that a visitor reaches a page and can perform its main action. A screenshot alone is not a behavioural assertion: look for a visible result such as a page heading or a saved state.\n## Activity and evidence\nOur selection is based on the official repository and documentation. We do not infer recent growth from total stars. GitHub metadata can be checked separately with a timestamp; a historical growth series is not available yet.\n## Installation\nThe official guide starts with Node.js and a supported package manager. Check its current requirements before installing. The setup wizard creates a test project.\n```sh\nnpm init playwright@latest\nnpx playwright test\n```\n## First example\nThis follows the documented test pattern. It does not verify your own application's services.\n```js\nimport { test, expect } from '@playwright/test';\ntest('home', async ({ page }) => {\n  await page.goto('https://playwright.dev/');\n  await expect(page).toHaveTitle(/Playwright/);\n});\n```\n## Evaluate the outcome\nRun the test, investigate failures and inspect the report. If an API is mocked, say so: the real provider has not been tested. Mobile checks should assert the effective viewport rather than assume that resizing a window changes it.\n## Benefits and limitations\nLocators, automatic waiting and isolation support repeatable checks. Fragile selectors, authentication and third-party services still require careful design. Payments and legal acceptance should not be incidental test steps.\n## Alternatives\nSelenium and Cypress are alternatives to assess against your team's browser, language and infrastructure requirements. Maintenance matters as much as a quick demonstration. Playwright uses Apache-2.0; read the official license before redistribution.",
+    "state": "READY",
+    "published": false,
+    "checked_at": "2026-10-13",
+    "trend": "NOT_MEASURED",
+    "installation_tested": false,
+    "observed": {
+      "full_name": "microsoft/playwright",
+      "stargazers_count": 97562,
+      "forks_count": 6593,
+      "pushed_at": "2026-10-12T23:41:17Z",
+      "archived": false,
+      "language": "TypeScript",
+      "default_branch": "main",
+      "checked_at": "2026-10-13"
+    }
+  },
+  {
+    "id": "fastapi",
+    "repo": "fastapi/fastapi",
+    "category": "Web",
+    "license": "MIT",
+    "language": "Python",
+    "website": "https://fastapi.tiangolo.com/",
+    "sources": [
+      "https://github.com/fastapi/fastapi",
+      "https://fastapi.tiangolo.com/tutorial/first-steps/",
+      "https://fastapi.tiangolo.com/tutorial/",
+      "https://api.github.com/repos/fastapi/fastapi"
+    ],
+    "title_es": "FastAPI: tu primera API Python y las comprobaciones que faltan antes de producción",
+    "title_en": "FastAPI: a first Python API and what still needs checking before production",
+    "summary_es": "Una ruta mínima, documentación interactiva y una lista práctica de límites de un servidor de desarrollo.",
+    "summary_en": "A minimal route, interactive documentation and a practical look at development-server limitations.",
+    "body_es": "## Qué es\nFastAPI es un framework Python para construir APIs. Utiliza anotaciones de tipos y ofrece documentación interactiva. Un punto de partida útil es una API pequeña que reciba solicitudes y devuelva datos; no necesitas convertir toda tu aplicación en servicios separados.\n## Para qué sirve\nPuedes probar un endpoint de lectura, revisar su respuesta y utilizar la documentación generada para explorar el contrato. El ejemplo es deliberadamente pequeño: no incluye base de datos, autenticación ni pagos.\n## Fuentes y señales\nHemos consultado el repositorio y el tutorial oficial. No presentamos estrellas históricas como velocidad de crecimiento. Las releases y la actividad son observaciones que el pipeline puede registrar, pero no sustituyen una evaluación de calidad o seguridad.\n## Instalación\nEl tutorial recomienda un entorno virtual y la instalación del conjunto estándar. Consulta su versión mínima de Python antes de seguirlo. Estos comandos no se ejecutaron para redactar la guía.\n```sh\npython -m pip install \"fastapi[standard]\"\n```\n## Primera ruta\nGuarda este ejemplo en main.py y arranca el servidor de desarrollo indicado por la documentación.\n```python\nfrom fastapi import FastAPI\napp = FastAPI()\n@app.get('/')\ndef read_root():\n    return {'message': 'Hello'}\n```\n```sh\nfastapi dev main.py\n```\n## Verificación manual\nVisita la dirección local que muestra la terminal y abre /docs. Comprueba que la respuesta coincide con tu contrato y ensaya errores de entrada en una ruta propia. La documentación interactiva no significa que tu API esté protegida.\n## Ventajas y límites\nLos tipos y los esquemas hacen explícitas muchas expectativas. La lógica empresarial, permisos y pruebas siguen siendo responsabilidad del proyecto. Un servidor de desarrollo no es un despliegue: revisa autenticación, validación, secretos, límites, logs y manejo de errores antes de exponerlo.\n## Alternativas\nFlask o Django pueden encajar mejor cuando ya dispones de una aplicación o necesitas otras piezas. Evalúa requisitos y experiencia del equipo antes de migrar. El repositorio indica licencia MIT; revisa también las dependencias y los servicios que añadas.",
+    "body_en": "## What it is\nFastAPI is a Python framework for building APIs. It uses type annotations and provides interactive documentation. A small endpoint that accepts a request and returns data is a useful starting point; there is no need to split an entire application into services.\n## Where it helps\nTry a read endpoint, inspect its response and use generated documentation to explore its contract. This example deliberately excludes databases, authentication and payments.\n## Evidence and signals\nWe checked the official repository and tutorial. Historical stars are not star velocity. Releases and activity can be recorded by the discovery pipeline, but they do not prove software quality or security.\n## Installation\nThe tutorial recommends a virtual environment and the standard dependency set. Check its current minimum Python version before proceeding. These commands were not executed as part of writing this article.\n```sh\npython -m pip install \"fastapi[standard]\"\n```\n## First route\nSave this example as main.py, then start the development server described in the documentation.\n```python\nfrom fastapi import FastAPI\napp = FastAPI()\n@app.get('/')\ndef read_root():\n    return {'message': 'Hello'}\n```\n```sh\nfastapi dev main.py\n```\n## Check it manually\nOpen the local address shown in the terminal, then visit /docs. Confirm the response matches your contract and try invalid inputs on your own route. Interactive documentation does not mean that the API is secured.\n## Benefits and limits\nTypes and schemas make expectations explicit. Business logic, permissions and testing remain project responsibilities. A development server is not a production deployment: review authentication, validation, secrets, rate limits, logging and error handling before exposing it.\n## Alternatives\nFlask or Django may be a better fit for an existing application or a broader set of requirements. Evaluate the team's needs before migrating. The repository uses MIT licensing; also check dependencies and services you add.",
+    "state": "READY",
+    "published": false,
+    "checked_at": "2026-10-13",
+    "trend": "NOT_MEASURED",
+    "installation_tested": false,
+    "observed": {
+      "full_name": "fastapi/fastapi",
+      "stargazers_count": 103063,
+      "forks_count": 10024,
+      "pushed_at": "2026-10-08T12:29:28Z",
+      "archived": false,
+      "language": "Python",
+      "default_branch": "master",
+      "checked_at": "2026-10-13"
+    }
+  }
+]
