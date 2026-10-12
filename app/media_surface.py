@@ -32,6 +32,7 @@ def edit(scope, data):
     with media._job_lock(scope,task_id) as locked:
         if not locked: raise ValueError('Etapa activa; espera antes de editar.')
         record=media._read(scope,task_id);cp=record.get('checkpoint',{})
+        if record.get('archived_at'):raise ValueError('Proyecto archivado; restaurar primero.')
         if record.get('status') in {'PRODUCING','PUBLISHING'} or cp.get('pending') or cp.get('active_task') or cp.get('active_tasks'):
             raise ValueError('Resuelve la tarea activa antes de editar; se conservan sus IDs.')
         if record.get('checkpoint'):
@@ -62,6 +63,7 @@ def retry_stage(scope, task_id):
     with media._job_lock(scope,task_id) as locked:
         if not locked: raise ValueError('Etapa activa; espera antes de reintentar.')
         record=media._read(scope,task_id);cp=record.get('checkpoint') or {}
+        if record.get('archived_at'):raise ValueError('Proyecto archivado; restaurar primero.')
         if cp.get('pending') or cp.get('active_tasks'): raise ValueError('Resuelve el envío pendiente antes de reintentar; no se duplicará.')
         active=cp.get('active_task')
         if not active or active.get('status') not in {'failed','cancelled'}: raise ValueError('Solo se puede reintentar una etapa con fallo confirmado.')

@@ -15,6 +15,7 @@ def queue(scope, task_id, confirmed=False):
     with media._job_lock(scope,task_id) as locked:
         if not locked: raise ValueError('Etapa activa.')
         record=media._read(scope,task_id);cp=record.get('checkpoint',{})
+        if record.get('archived_at'):raise ValueError('Proyecto archivado; render bloqueado.')
         if record.get('artifact'): return {'status':'PRODUCED','task_id':task_id}
         if cp.get('stage')!='audio' or cp.get('pending'):
             raise ValueError('Fallback disponible únicamente tras un fallo confirmado de audio.')

@@ -359,11 +359,19 @@ def operate(scope,action,data):
                 holdings.write(scope,d)
             return deepcopy(a)
         if service=='FINANCIAL_PROVIDER':
-            from .revolut_business import RevolutBusinessAdapter as FinancialProvider
-            proof=FinancialProvider().capabilities()
+            from .financial_provider import selected_provider, sync_selected
+            google=holdings.read(scope).get('identity_center',{}).get('google',{})
+            if google.get('status')!='ACTIVE' or google.get('email')!='zaragente031@gmail.com':
+                raise ValueError('ACTION_REQUIRED: sesión Google operativa ZAR verificada antes de consultar datos financieros.')
+            try:
+                proof=sync_selected(scope)
+                message='Cuenta y saldo READ verificados; PAY deshabilitado. Instrucciones bancarias y extractos pendientes de capacidad separada.'
+            except ValueError as error:
+                proof=selected_provider().capabilities()
+                message=str(error)
             with holdings.transaction(scope):
                 d=holdings.read(scope);s=ensure(d);a=next(x for x in s['human_actions'] if x['id']==data['id'])
-                a.update(status='ACTION_REQUIRED',last_checked=holdings._now(),verification=proof['next_step'])
+                a.update(status='DONE' if proof.get('verified') else 'ACTION_REQUIRED',last_checked=holdings._now(),verification=message)
                 holdings.write(scope,d)
             return deepcopy(a)
         if service=='BROWSER':

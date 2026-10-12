@@ -1,4 +1,18 @@
 """Financial execution contract. Stripe collection is not treasury money transfer."""
+def selected_provider():
+    import os
+    if os.environ.get('FINANCIAL_PROVIDER', 'revolut').lower() == 'wise':
+        from .wise_business import WiseBusinessAdapter
+        return WiseBusinessAdapter()
+    from .revolut_business import RevolutBusinessAdapter
+    return RevolutBusinessAdapter()
+
+
+def sync_selected(scope):
+    from .revolut_business import sync
+    return sync(scope, selected_provider())
+
+
 class FinancialProvider:
     def getAccounts(self):return []
     def getBalances(self):return self.balance()

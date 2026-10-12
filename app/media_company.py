@@ -160,6 +160,7 @@ def _task(scope_id, task_id):
 
 
 def _result(task, record):
+    from .media_recovery import assess
     cp = record.get("checkpoint") or {}
     stage = cp.get("stage", "create")
     result = {"stage": stage, "stage_label": _LABELS.get(stage, stage), "progress": cp.get("progress", 0),
@@ -195,6 +196,7 @@ def _result(task, record):
         result["previous_preview_url"]="/api/holdings/media/video/"+task["id"]+"?revision=previous"
     if record.get("publish"):
         result["publish"] = record["publish"]
+    result['recovery'] = assess(record)
     return result
 
 
@@ -247,6 +249,8 @@ def produce_local(scope_id, task_id):
         if not locked:
             return {"ok": True, "task_id": task_id, "status": "PRODUCING"}
         record = _read(scope_id, task_id) or {"payload": task["payload"], "checkpoint": {}}
+        if record.get('archived_at'):
+            raise ValueError('Proyecto archivado; restaurar primero no autoriza generación.')
         project=record.get('project')
         if project and not record.get('checkpoint'):
             record['checkpoint']={'project_config':{'spine_template':'narrated','narration_style':'third_person',
@@ -281,6 +285,8 @@ def process_one(scope_id):
     # Canonical checkpoint wins over a stale Holdings mirror after an interrupted write.
     for task in state["companies"]["media"].get("queue", []):
         record = _read(scope_id, task["id"])
+        if record.get('archived_at'):
+            continue
         if record.get("status") == "PUBLISHING":
             with _job_lock(scope_id, task["id"]) as locked:
                 if locked:
@@ -413,6 +419,8 @@ def publish(scope_id, task_id, video_url, platform, caption="", confirmed=False,
         record = _read(scope_id, task_id)
         if holdings.read(scope_id).get('global_stop'):
             raise ValueError('STOP GLOBAL activo; publicación bloqueada.')
+        if record.get('archived_at'):
+            raise ValueError('Proyecto archivado; publicación bloqueada.')
         if record.get('project') and not record.get('review_approved'):
             raise ValueError('Aprueba revisión del vídeo antes de publicar.')
         if record.get("publish"):

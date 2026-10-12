@@ -65,7 +65,19 @@ def controls(scope, task_id, action, data):
         if not locked: raise ValueError('Proyecto ocupado; espera a que termine la etapa.')
         record=media._read(scope,task_id)
         cp=record.get('checkpoint') or {}
-        if action=='inspect':
+        if record.get('archived_at') and action not in {'inspect','archive','restore'}:
+            raise ValueError('Proyecto archivado; restaurar antes de editar o generar.')
+        if action in {'archive', 'restore'}:
+            if record.get('status') in {'PRODUCING','PUBLISHING'}:
+                raise ValueError('Espera o pausa el avance antes de archivar; no se cancelan tareas externas.')
+            if action == 'archive':
+                if data.get('confirmed') is not True:
+                    raise ValueError('Confirma archivo reversible; se conserva toda la evidencia.')
+                record['archived_at'] = holdings._now()
+                record['is_test'] = data.get('is_test') is True
+            else:
+                record.pop('archived_at', None)
+        elif action=='inspect':
             if not cp.get('project_id'): raise ValueError('POR CONFIGURAR / proyecto todavía no creado en DramaClaw.')
             snapshot=DramaClawAdapter(media._client()).inspect(cp)
             assigned={x['name']:x for x in record.get('characters',[])}

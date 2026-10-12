@@ -32,7 +32,10 @@ class RelayClawUsageSync:
                 unknown+=1;continue
             ingest(scope,'cost',{'provider':'RelayClaw','business':'media','amount':row['amount'],'currency':row['currency'],'external_id':str(row['id']),'timestamp':row['timestamp'],'source':'RELAYCLAW_USAGE_API','task_id':row.get('job_id'),'metadata':{'model':row.get('model_name')}},provider_verified=True)
             added+=1
-        return {'status':'ACTION_REQUIRED' if unknown else 'VERIFIED','rows_checked':len(rows),'rows_verified':added,'rows_without_money':unknown,'reason':'Sin conversión de cuota a dinero. Lectura limitada a la página devuelta; no afirma histórico completo.'}
+        return {'status':'ACTION_REQUIRED' if unknown else 'VERIFIED','usage_status':'USAGE_VERIFIED',
+            'cost_status':'COST_UNVERIFIED' if unknown else 'VERIFIED' if added else 'NO_DATA',
+            'human_action':'IMPORTAR FACTURA/EXPORT RELAYCLAW' if unknown else None,
+            'rows_checked':len(rows),'rows_verified':added,'rows_without_money':unknown,'reason':'Sin conversión de cuota a dinero. Lectura limitada a la página devuelta; no afirma histórico completo. Las recargas son financiación prepagada, no cargos por generación.'}
 
 
 def sync(scope):

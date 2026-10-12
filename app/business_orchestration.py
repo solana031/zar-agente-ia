@@ -163,30 +163,63 @@ def wallet(d):
 
 def view(scope):
     from .financial_events import sync_existing, summary
-    from .revolut_business import RevolutBusinessAdapter as FinancialProvider
+    from .financial_provider import selected_provider as FinancialProvider
     sync_existing(scope)
     with holdings.transaction(scope):
         state=holdings.read(scope)
         from .identity_center import ensure as identity, queue
         center=identity(state)
+        proof=FinancialProvider().capabilities()
+        bank=state.get('financial_provider_snapshot') or {}
+        if bank.get('verified') and bank.get('provider')==proof.get('provider'):
+            proof.update(human_action='VERIFICAR FONDOS / EXTRACTOS DEL PROVEEDOR',
+                next_step='Cuenta y saldo READ verificados. Consultar instrucciones reales de ingreso en el portal y disponibilidad de extractos por API; no ordenar servicios de pago ni habilitar PAY.')
         if not any(a.get('service')=='FINANCIAL_PROVIDER' and a.get('status')!='DONE' for a in center['human_actions']):
-            proof=FinancialProvider().capabilities()
-            action=queue(center,'FINANCIAL_PROVIDER',proof['human_action'],proof['next_step'],'',['Elegir proveedor de tesorería.','Completar personalmente identidad/KYC, banco y términos en el portal oficial.','Configurar credenciales solo en servidor y verificar capacidad de ejecución antes de habilitar pagos.'])
+            action=queue(center,'FINANCIAL_PROVIDER',proof['human_action'],proof['next_step'],proof.get('url','https://business.revolut.com/'),[proof['next_step']])
             action.update(group='PAYMENTS',account='zaragente031@gmail.com')
             holdings.write(scope,state)
         else:
-            proof=FinancialProvider().capabilities()
             for action in center['human_actions']:
                 if action.get('service')=='FINANCIAL_PROVIDER' and action.get('status')!='DONE':
-                    action.update(title=proof['human_action'],reason=proof['next_step'],url='https://business.revolut.com/',group='PAYMENTS',account='zaragente031@gmail.com',instructions=[proof['next_step']])
+                    action.update(title=proof['human_action'],reason=proof['next_step'],url=proof.get('url','https://business.revolut.com/'),group='PAYMENTS',account='zaragente031@gmail.com',instructions=[proof['next_step']])
             holdings.write(scope,state)
     d = holdings.read(scope)
     o = ensure(d)
+    financial=FinancialProvider().capabilities()
+    snapshot=d.get('financial_provider_snapshot') or {}
+    if snapshot.get('provider')==financial.get('provider') and snapshot.get('verified') and snapshot.get('status')=='CONNECTED':
+        financial.update(status='CONNECTED',verified=True,balance=True,last_sync=snapshot.get('last_sync'),
+            next_step='READ de cuenta y saldo verificado. Fondos/extractos requieren verificación separada; PAY deshabilitado.')
     return {**deepcopy(o), "orchestrators": {name:{"domain":domain,"agents":[a["id"] for a in o["agents"].values() if a.get("domain")==domain],"trading_authority":False} for domain,name in ORCHESTRATORS.items()}, "wallet": wallet(d), "global_stop": d.get("global_stop", False),
             "connectors": inventory(d),
             "ledger": d.get("ledger", [])[-100:][::-1], "budgets":d.get("treasury_budgets",{}),
-            "financial_events":summary(d), "financial_provider":FinancialProvider().capabilities(),
-            "provider_snapshot":d.get('financial_provider_snapshot'),"billing_sync":d.get('billing_sync',{})}
+            "financial_events":summary(d), "financial_provider":financial,
+            "provider_snapshot":d.get('financial_provider_snapshot'),"billing_sync":d.get('billing_sync',{}),
+            "reconciliation":reconcile_balances(d)}
+
+
+def reconcile_balances(d):
+    """Compare observed bank balances with books; never mutate or blend currencies."""
+    snapshot=d.get('financial_provider_snapshot') or {}
+    if not snapshot.get('verified') or snapshot.get('status')!='CONNECTED':
+        return {'status':'ACTION_REQUIRED','currencies':[], 'note':'Saldo bancario no verificado.'}
+    observed={}
+    for account in snapshot.get('accounts',[]):
+        currency=account.get('currency');value=account.get('balance')
+        if not currency or value is None:continue
+        amount=Decimal(str(value))
+        if not amount.is_finite():raise ValueError('Saldo bancario inválido.')
+        observed[currency]=observed.get(currency,Decimal(0))+amount
+    books=wallet(d)['balances'];rows=[]
+    for currency,amount in observed.items():
+        b=books.get(currency,{})
+        accounting=Decimal(b.get('manual_funding','0'))+Decimal(b.get('revenue','0'))-Decimal(b.get('expenses','0'))
+        delta=amount-accounting
+        rows.append({'currency':currency,'provider_balance':str(amount),'accounting_balance':str(accounting),
+            'reserved':b.get('committed','0'),'available':b.get('available','0'),'delta':str(delta),
+            'status':'MATCHED' if delta==0 else 'UNRECONCILED'})
+    return {'status':'UNRECONCILED' if any(x['status']=='UNRECONCILED' for x in rows) else 'MATCHED' if rows else 'ACTION_REQUIRED',
+        'currencies':rows,'last_sync':snapshot.get('last_sync'),'note':'Comparación por moneda; no se ajusta el ledger automáticamente.'}
 
 
 def validate_budget(d, proposal, *, required=False):
@@ -210,13 +243,13 @@ def mutate(scope, action, data):
         if identity.get('status')!='ACTIVE' or identity.get('email')!='zaragente031@gmail.com':
             raise ValueError('ACTION_REQUIRED: sesión Google operativa ZAR verificada antes de consultar datos financieros.')
     if action=='provider_funding':
-        from .revolut_business import RevolutBusinessAdapter
-        adapter=RevolutBusinessAdapter()
+        from .financial_provider import selected_provider
+        adapter=selected_provider()
         account_id=str(data.get('account_id',''))
-        if account_id not in {x['id'] for x in adapter.getAccounts()}:raise ValueError('Cuenta no verificada.')
+        if account_id not in {str(x['id']) for x in adapter.getBalances()}:raise ValueError('Cuenta no verificada.')
         return {'funding_instructions':adapter.getFundingInstructions(account_id)}
     if action=='provider_sync':
-        from .revolut_business import sync
+        from .financial_provider import sync_selected as sync
         sync(scope)
         return view(scope)
     if action=='relayclaw_sync':
