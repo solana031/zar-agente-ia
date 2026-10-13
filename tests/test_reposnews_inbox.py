@@ -27,6 +27,29 @@ class InstagramInboxTest(unittest.TestCase):
   entry['changes']=[{'field':'comments','value':event}]
   self.assertEqual(inbox.receive(payload),[])
   self.assertFalse(rn.read().get('instagram_last_authorized_message'))
+ def test_recovery_preserves_item_and_grants_only_two_extra_attempts(self):
+  item=inbox.receive(self.event())[0]
+  inbox.update(item,status='FAILED',attempts=2,error='AI_HTTP_503; legacy',failed_stage='IDENTIFYING')
+  original=rn.read()['instagram_inbox'][0].copy()
+  inbox.recover_existing(item)
+  row=rn.read()['instagram_inbox'][0]
+  for field in ('id','external_id','sender','source_url','received_at','attempts'):
+   self.assertEqual(row[field],original[field])
+  self.assertEqual(row['attempt_limit'],4);self.assertEqual(len(row['error_history']),1)
+  inbox.update(item,status='FAILED_RETRYABLE')
+  with self.assertRaises(ValueError):inbox.recover_existing(item)
+ def test_permalink_recovery_skips_optional_media_and_classifies_503(self):
+  item=inbox.receive(self.event(text='',attachments=[{'type':'share','payload':{'url':'https://www.instagram.com/reel/fixture/'}}]))[0]
+  inbox.update(item,status='FAILED',attempts=2);inbox.recover_existing(item)
+  with patch('app.jev_decision.proposal',return_value={'decision':'ALLOW'}),patch.object(inbox,'analyze_media') as media,patch.object(inbox,'public_discovery',return_value={'status':'PUBLIC_TEXT_AVAILABLE','text':'Example tool'}),patch.object(inbox,'resolve_entity',side_effect=ValueError('AI_PROVIDER_503')):
+   inbox.process(item);media.assert_not_called()
+  row=rn.read()['instagram_inbox'][0]
+  self.assertEqual(row['status'],'RECEIVED');self.assertEqual(row['attempts'],3)
+  self.assertEqual(row['error_diagnostic']['component'],'IDENTIFYING')
+  self.assertEqual(row['error_diagnostic']['provider'],'Gemini')
+  self.assertEqual(row['error_diagnostic']['http'],503)
+ def test_no_accessible_permalink_text_does_not_invent_a_project(self):
+  self.assertEqual(inbox.resolve_entity('')['reason'],'NO_ACCESSIBLE_DISCOVERY_TEXT')
  def test_oauth_not_configured_and_invalid_state(self):
   with patch.dict(os.environ,{'INSTAGRAM_APP_ID':'','INSTAGRAM_APP_SECRET':''}):
    self.assertEqual(self.client.get('/api/reposnews/instagram/connect').status_code,409)
@@ -160,7 +183,7 @@ class InstagramInboxTest(unittest.TestCase):
  def test_shared_permalink_only_is_honest(self):
   item=inbox.receive(self.event(text='https://www.instagram.com/reel/fixture',attachments=[{'type':'share','payload':{'url':'https://www.instagram.com/reel/fixture'}}]))[0]
   with patch('app.jev_decision.proposal',return_value={'decision':'ALLOW'}),patch.object(inbox,'analyze_media',return_value={}),patch.object(inbox,'public_discovery',return_value={'status':'LOGIN_REQUIRED'}):inbox.process(item)
-  row=rn.read()['instagram_inbox'][0];self.assertEqual(row['status'],'NEEDS_DISAMBIGUATION');self.assertEqual(row['error'],'NO_ACCESSIBLE_DISCOVERY_TEXT');self.assertEqual(rn.read()['articles'],[])
+  row=rn.read()['instagram_inbox'][0];self.assertEqual(row['status'],'FAILED_SOURCE');self.assertEqual(row['error'],'NO_ACCESSIBLE_DISCOVERY_TEXT');self.assertEqual(rn.read()['articles'],[])
 
  def test_entity_resolves_name_only_with_official_backlink(self):
   candidate={'name':'open-webui','full_name':'open-webui/open-webui','homepage':'https://openwebui.com/','fork':False}
@@ -202,7 +225,7 @@ class InstagramInboxTest(unittest.TestCase):
   with patch('app.jev_decision.proposal',return_value={'decision':'ALLOW'}),patch.object(inbox,'analyze_media',return_value={}),patch.object(inbox,'research',side_effect=ValueError('fixture')) as research:
    for _ in range(4):inbox.process(item)
    self.assertEqual(research.call_count,2)
-  row=rn.read()['instagram_inbox'][0];self.assertEqual(row['status'],'FAILED');self.assertEqual(row['attempts'],2)
+  row=rn.read()['instagram_inbox'][0];self.assertEqual(row['status'],'FAILED_SOURCE');self.assertEqual(row['attempts'],2)
  def test_builder_rejects_invented_installation(self):
   generated={k:('word '*260 if k.startswith('body') else 'Fixture title') for k in ('title_es','title_en','summary_es','summary_en','body_es','body_en')};generated['commands']=['pip install invented']
   with patch.object(inbox,'generate_json',return_value=generated):
