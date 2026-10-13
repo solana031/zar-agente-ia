@@ -7,7 +7,7 @@ from app import reposnews as rn,reposnews_inbox as inbox
 class InstagramInboxTest(unittest.TestCase):
  def setUp(self):
   self.tmp=tempfile.TemporaryDirectory();self.env=patch.dict(os.environ,{'ZAR_DATA_DIR':self.tmp.name,'INSTAGRAM_IG_USER_ID':'account','INSTAGRAM_REPOSNEWS_SENDERS':'sender','INSTAGRAM_APP_SECRET':'fixture-secret','INSTAGRAM_WEBHOOK_VERIFY_TOKEN':'fixture-verify'});self.env.start()
-  rn.write({'owner':'owner','articles':[]});self.app=Flask(__name__);self.app.secret_key='fixture-session';inbox.register(self.app,lambda:'owner');self.client=self.app.test_client()
+  rn.write({'owner':'owner','articles':[]});self.app=Flask(__name__);self.app.secret_key='fixture-session';inbox.register(self.app,lambda:'owner');self.client=self.app.test_client();self.client.environ_base['HTTP_ACCEPT']='application/json'
  def tearDown(self):self.env.stop();self.tmp.cleanup()
  def event(self,text='https://github.com/example/project',mid='one',sender='sender',attachments=None):
   return {'object':'instagram','entry':[{'id':'account','messaging':[{'sender':{'id':sender},'recipient':{'id':'account'},'message':{'mid':mid,'text':text,'attachments':attachments or []}}]}]}
@@ -18,25 +18,54 @@ class InstagramInboxTest(unittest.TestCase):
  def test_oauth_missing_scope_does_not_store_token(self):
   with self.client.session_transaction() as session:session['reposnews_ig_state']={'value':'fixture-state','expires':9999999999}
   token=Mock(ok=True);token.json.return_value={'access_token':'fixture-token','user_id':'account'}
-  identity=Mock(ok=True);identity.json.return_value={'user_id':'account','username':'zaragente031'}
-  permissions=Mock(ok=True);permissions.json.return_value={'data':[{'permission':inbox.PERMISSIONS[0],'status':'granted'},{'permission':inbox.PERMISSIONS[1],'status':'declined'}]}
-  with patch.dict(os.environ,{'INSTAGRAM_APP_ID':'fixture-app'}),patch.object(inbox.requests,'post',return_value=token),patch.object(inbox.requests,'get',side_effect=[identity,permissions]):
+  identity=Mock(ok=True);identity.json.return_value={'user_id':'12345','username':'zaragente031'}
+  permissions=Mock(ok=True,status_code=200);permissions.json.return_value={'data':[{'permission':inbox.PERMISSIONS[0],'status':'granted'},{'permission':inbox.PERMISSIONS[1],'status':'declined'}]}
+  with patch.dict(os.environ,{'INSTAGRAM_APP_ID':'fixture-app'}),patch.object(inbox.requests,'post',return_value=token),patch.object(inbox.requests,'get',side_effect=[identity,permissions,Mock(ok=True,json=lambda:{'data':[]}),Mock(ok=False,status_code=403,json=lambda:{'error':{'code':10,'message':'Permission denied'}})]):
    response=self.client.get('/api/reposnews/instagram/callback?state=fixture-state&code=fixture')
   self.assertEqual(response.status_code,400);self.assertEqual(response.json['denied'],[inbox.PERMISSIONS[1]])
   self.assertFalse((rn._path().parent/'instagram-oauth').exists())
  def test_oauth_stores_only_verified_operational_identity_and_scopes(self):
   with self.client.session_transaction() as session:session['reposnews_ig_state']={'value':'fixture-state','expires':9999999999}
   token=Mock(ok=True);token.json.return_value={'access_token':'fixture-token','user_id':'account'}
-  identity=Mock(ok=True);identity.json.return_value={'user_id':'account','username':'zaragente031'}
-  permissions=Mock(ok=True);permissions.json.return_value={'data':[{'permission':p,'status':'granted'} for p in inbox.PERMISSIONS]}
-  with patch.dict(os.environ,{'INSTAGRAM_APP_ID':'fixture-app'}),patch.object(inbox.requests,'post',return_value=token),patch.object(inbox.requests,'get',side_effect=[identity,permissions]):
+  identity=Mock(ok=True);identity.json.return_value={'user_id':'12345','username':'zaragente031'}
+  permissions=Mock(ok=True,status_code=200);permissions.json.return_value={'data':[{'permission':p,'status':'granted'} for p in inbox.PERMISSIONS]}
+  with patch.dict(os.environ,{'INSTAGRAM_APP_ID':'fixture-app'}),patch.object(inbox.requests,'post',side_effect=[token,Mock(ok=True,json=lambda:{'success':True})]),patch.object(inbox.requests,'get',side_effect=[identity,permissions,Mock(ok=True,json=lambda:{'data':[]}),Mock(ok=True,json=lambda:{'data':[]})]):
    self.assertEqual(self.client.get('/api/reposnews/instagram/callback?state=fixture-state&code=fixture').status_code,302)
   self.assertNotIn('fixture-token',(rn._path().parent/'instagram-oauth').read_text())
   result=inbox.integration();self.assertEqual(result['permissions']['status'],'VERIFIED');self.assertEqual(result['oauth'],'CONNECTED')
-  self.assertNotIn('fixture-token',json.dumps(result));self.assertEqual(result['facebook_page']['status'],'ACTION_REQUIRED')
+  self.assertNotIn('fixture-token',json.dumps(result));self.assertEqual(result['facebook_page']['status'],'NOT_REQUIRED_FOR_INSTAGRAM_LOGIN')
  def test_capability_tracks_permalink_without_claiming_full_media(self):
   inbox.receive(self.event(text='',attachments=[{'type':'share','payload':{'url':'https://www.instagram.com/reel/fixture/'}}]))
   result=inbox.integration();self.assertEqual(result['reel_access'],'PERMALINK_ONLY');self.assertEqual(result['last_event']['status'],'RECEIVED')
+
+ def test_permission_endpoint_unavailable_uses_read_only_capabilities(self):
+  unavailable=Mock(ok=False,status_code=400,json=lambda:{'error':{'code':100,'error_subcode':33,'type':'GraphMethodException','message':'Unsupported request fixture-token'}})
+  with patch.object(inbox.requests,'get',side_effect=[unavailable,Mock(ok=True,json=lambda:{'data':[]}),Mock(ok=True,json=lambda:{'data':[]})]) as get:
+   result=inbox.verify_capabilities('fixture-token','12345')
+  self.assertEqual(result['granted'],list(inbox.PERMISSIONS));self.assertEqual(result['verification_method'],'FUNCTIONAL_CAPABILITY_TEST')
+  self.assertEqual(result['permission_endpoint']['code'],100);self.assertNotIn('fixture-token',json.dumps(result))
+  self.assertTrue(get.call_args_list[-1].args[0].endswith('/me/conversations'))
+  self.assertEqual(get.call_args_list[-1].kwargs['params']['fields'],'id')
+
+ def test_subscription_requires_provider_acknowledgement(self):
+  with patch.object(inbox.requests,'post',return_value=Mock(ok=True,json=lambda:{'success':False})):
+   self.assertEqual(inbox.subscribe_messages('fixture-token','12345')['status'],'UNKNOWN')
+  with patch.object(inbox.requests,'post',return_value=Mock(ok=True,json=lambda:{'success':True})) as post:
+   self.assertEqual(inbox.subscribe_messages('fixture-token','12345')['status'],'VERIFIED')
+   self.assertEqual(post.call_args.kwargs['data'],{'subscribed_fields':'messages'})
+
+ def test_browser_failure_redirects_without_code_or_token(self):
+  with self.client.session_transaction() as session:session['reposnews_ig_state']={'value':'fixture-state','expires':9999999999}
+  with patch.dict(os.environ,{'INSTAGRAM_APP_ID':'fixture-app'}),patch.object(inbox.requests,'post',return_value=Mock(ok=False,status_code=400,json=lambda:{'error':{'code':100,'message':'Bad request'}})):
+   response=self.client.get('/api/reposnews/instagram/callback?state=fixture-state&code=fixture',headers={'Accept':'text/html'})
+  self.assertEqual(response.status_code,302);self.assertEqual(response.location,'/?zar_workspace=sites#reposnewsEditor')
+  self.assertEqual(rn.read()['instagram_callback']['status'],'ERROR')
+
+ def test_personal_instagram_is_not_persisted(self):
+  with self.client.session_transaction() as session:session['reposnews_ig_state']={'value':'fixture-state','expires':9999999999}
+  with patch.dict(os.environ,{'INSTAGRAM_APP_ID':'fixture-app'}),patch.object(inbox.requests,'post',return_value=Mock(ok=True,json=lambda:{'access_token':'fixture-token','user_id':'12345'})),patch.object(inbox.requests,'get',return_value=Mock(ok=True,json=lambda:{'username':'personal','user_id':'12345'})):
+   self.assertEqual(self.client.get('/api/reposnews/instagram/callback?state=fixture-state&code=fixture').status_code,400)
+  self.assertFalse((rn._path().parent/'instagram-oauth-pending').exists())
  def test_discard_survives_late_worker_updates(self):
   item=inbox.receive(self.event())[0];inbox.update(item,status='DISCARDED');inbox.update(item,status='READY')
   self.assertEqual(rn.read()['instagram_inbox'][0]['status'],'DISCARDED')

@@ -22,6 +22,46 @@ _started=False
 _lock=threading.Lock()
 MAX_BYTES=25*1024*1024
 
+def safe_meta_error(response, token=''):
+    try:error=response.json().get('error',{})
+    except (ValueError,AttributeError):error={}
+    message=str(error.get('message',''))[:500]
+    if token:message=message.replace(token,'[REDACTED]')
+    message=re.sub(r'https?://\S+|[A-Za-z0-9_-]{24,}', '[REDACTED]',safe_caption(message))[:240]
+    return {'http':response.status_code,'code':error.get('code') if isinstance(error.get('code'),int) else None,
+            'subcode':error.get('error_subcode') if isinstance(error.get('error_subcode'),int) else None,
+            'type':re.sub(r'[^A-Za-z0-9_]','',str(error.get('type','')))[:60],'message':message}
+
+def verify_capabilities(token, user_id):
+    headers={'Authorization':'Bearer '+token}
+    try:legacy=requests.get('https://graph.instagram.com/v26.0/me/permissions',headers=headers,timeout=20)
+    except requests.RequestException:legacy=None
+    check={'requested':list(PERMISSIONS),'verification_method':'FUNCTIONAL_CAPABILITY_TEST','checked_at':holdings._now(),
+           'permission_endpoint':{'http':legacy.status_code if legacy is not None else None},'basic':'UNKNOWN','manage_messages':'UNKNOWN','granted':[],'denied':[]}
+    if legacy is None:check['permission_endpoint']['message']='PERMISSION_ENDPOINT_UNAVAILABLE'
+    elif not legacy.ok:check['permission_endpoint']=safe_meta_error(legacy,token)
+    # These are read-only calls. Never fetch bodies, recipients or message contents.
+    for label,path,params in [('basic','me/media',{'fields':'id','limit':1}),
+                              ('manage_messages','me/conversations',{'platform':'instagram','fields':'id','limit':1})]:
+        response=requests.get('https://graph.instagram.com/v26.0/'+path,params=params,headers=headers,timeout=20)
+        valid=response.ok and isinstance(response.json().get('data'),list)
+        check[label]='VERIFIED' if valid else 'DENIED' if response.status_code in (401,403) else 'UNKNOWN'
+        if not valid:check[label+'_error']=safe_meta_error(response,token)
+    for label,permission in zip(('basic','manage_messages'),PERMISSIONS):
+        if check[label]=='VERIFIED':check['granted'].append(permission)
+        elif check[label]=='DENIED':check['denied'].append(permission)
+    return check
+
+def subscribe_messages(token, user_id):
+    if not re.fullmatch(r'[0-9]+',str(user_id)):return {'status':'UNKNOWN','reason':'INVALID_ACCOUNT_ID'}
+    url='https://graph.instagram.com/v26.0/'+str(user_id)+'/subscribed_apps'
+    headers={'Authorization':'Bearer '+token}
+    response=requests.post(url,headers=headers,data={'subscribed_fields':'messages'},timeout=20)
+    if not response.ok or response.json().get('success') is not True:
+        return {'status':'UNKNOWN','error':safe_meta_error(response,token)}
+    # The API's explicit success confirms subscription for this token's app/account.
+    return {'status':'VERIFIED','fields':['messages'],'method':'OFFICIAL_ACCOUNT_SUBSCRIPTION','checked_at':holdings._now()}
+
 def credentials():
     from . import oauth_vault
     path=rn._path().parent/'instagram-oauth'
@@ -50,11 +90,12 @@ def integration():
     permission_check=data.get('instagram_permission_check',{})
     granted=auth.get('granted_permissions',permission_check.get('granted',[]))
     return {'account':'zaragente031@gmail.com','status':'CONFIGURED_UNVERIFIED' if configured else 'ACTION_REQUIRED',
-        'facebook_page':{'status':'CONNECTED' if link.get('verified_at') and link.get('id') else 'ACTION_REQUIRED','id':link.get('id'),'name':link.get('name')},
+        'facebook_page':{'status':'CONNECTED' if link.get('verified_at') and link.get('id') else 'NOT_REQUIRED_FOR_INSTAGRAM_LOGIN','id':link.get('id'),'name':link.get('name')},
         'meta_app':'CONFIGURED_UNVERIFIED' if os.environ.get('INSTAGRAM_APP_ID') and os.environ.get('INSTAGRAM_APP_SECRET') else 'ACTION_REQUIRED',
         'oauth':'CONNECTED' if auth.get('verified_at') and auth.get('access_token') else 'ACTION_REQUIRED',
         'permissions':{'requested':list(PERMISSIONS),'granted':granted,'denied':auth.get('denied_permissions',permission_check.get('denied',[])),'status':'VERIFIED' if set(PERMISSIONS).issubset(granted) else 'UNVERIFIED'},
         'last_event':{'timestamp':last.get('received_at'),'status':last.get('status')},
+        'capabilities':permission_check,'subscription':data.get('instagram_subscription',{'status':'UNVERIFIED'}),'callback':data.get('instagram_callback',{}),
         'reel_access':last.get('access_level','UNVERIFIED'),
         'account_type':data.get('instagram_account',{}).get('account_type','UNVERIFIED'),
         'messaging':'EVENT_RECEIVED' if data.get('instagram_last_event') else 'UNVERIFIED','webhook':'VERIFIED' if data.get('instagram_webhook_verified_at') else 'SIGNED_ENDPOINT_AVAILABLE','auto_ingest':'ENABLED_FOR_ALLOWLIST' if configured else 'NOT_CONFIGURED',
@@ -70,8 +111,8 @@ def human_action(scope):
         data=holdings.read(scope);center=identity_center.ensure(data)
         row=identity_center.queue(center,'INSTAGRAM','CONNECT_REPOSNEWS','@zaragente031 profesional verificada; falta app/OAuth/webhook Meta para recibir mensajes.',
             'https://developers.facebook.com/apps/',[
-            'Registro Meta for Developers completado; aceptar personalmente las condiciones finales de creación de la app ZAR ReposNews Integration y de la Página ZAR.',
-            'Reutilizar/crear app Instagram API con Instagram Login para @zaragente031; no usar cuenta personal para mensajes.',
+            'Reutilizar la app ZAR ReposNews Integration y el evaluador Instagram ya aceptado. No hace falta Página Facebook para Instagram Login.',
+            'Verificar identidad, lectura básica y conversaciones de @zaragente031 con los dos scopes autorizados.',
             'Configurar callback /api/reposnews/instagram/callback y webhook /api/reposnews/instagram/webhook en la producción canónica.',
             'Guardar App ID, App Secret y Verify Token solo en Railway; conectar OAuth con basic + manage_messages.',
             'Autorizar el Instagram-scoped sender ID de Pablo; comprobar un evento firmado real. No se publica automáticamente.'])
@@ -380,28 +421,43 @@ def register(app,scope_fn=None):
         try:rn.state(scope_fn())
         except ValueError:abort(403)
         pending=session.pop('reposnews_ig_state',{})
-        if pending.get('expires',0)<time.time() or not hmac.compare_digest(pending.get('value',''),request.args.get('state','')):return '',403
-        if not request.args.get('code'):return jsonify(error='OAUTH_CANCELLED'),400
+        def finish(error=None, detail=None, http_status=400):
+            with holdings.transaction('reposnews-editorial'):
+                data=rn.read();data['instagram_callback']={'status':'ERROR' if error else 'CONNECTED','message':
+                    ('Instagram autorizó la cuenta, pero no se completó '+error+'. Consulta el diagnóstico seguro en Inbox.') if error else 'Instagram conectado y capacidades de lectura verificadas.',
+                    'error':error,'detail':detail or {},'checked_at':holdings._now()};rn.write(data)
+            if error and request.accept_mimetypes.best=='application/json':return jsonify(error=error,**(detail or {})),http_status
+            return redirect('/?zar_workspace=sites#reposnewsEditor')
+        if pending.get('expires',0)<time.time() or not hmac.compare_digest(pending.get('value',''),request.args.get('state','')):return finish('OAUTH_STATE_INVALID',http_status=403)
+        if not request.args.get('code'):return finish('OAUTH_CANCELLED')
         callback=os.environ.get('INSTAGRAM_REDIRECT_URI','https://web-production-a9565.up.railway.app/api/reposnews/instagram/callback')
         try:
             r=requests.post('https://api.instagram.com/oauth/access_token',data={'client_id':os.environ['INSTAGRAM_APP_ID'],'client_secret':os.environ['INSTAGRAM_APP_SECRET'],'grant_type':'authorization_code','redirect_uri':callback,'code':request.args['code']},timeout=25)
-            if not r.ok:return jsonify(error='OAUTH_EXCHANGE_FAILED'),400
-            token=r.json();identity=requests.get('https://graph.instagram.com/v26.0/me',params={'fields':'user_id,username'},headers={'Authorization':'Bearer '+token['access_token']},timeout=20)
-            if not identity.ok:return jsonify(error='IDENTITY_NOT_VERIFIED'),400
+            if not r.ok:return finish('OAUTH_EXCHANGE_FAILED',safe_meta_error(r))
+            token=r.json();access=token['access_token']
+            identity=requests.get('https://graph.instagram.com/v26.0/me',params={'fields':'user_id,username'},headers={'Authorization':'Bearer '+access},timeout=20)
+            if not identity.ok:return finish('IDENTITY_NOT_VERIFIED',safe_meta_error(identity,access))
             who=identity.json()
-            if who.get('username')!='zaragente031':return jsonify(error='ZAR_ACCOUNT_REQUIRED: no se conecta la identidad personal.'),400
-            permissions=requests.get('https://graph.instagram.com/v26.0/me/permissions',headers={'Authorization':'Bearer '+token['access_token']},timeout=20)
-            if not permissions.ok:return jsonify(error='PERMISSIONS_NOT_VERIFIED'),400
-            records=permissions.json().get('data',[])
-            granted=[x['permission'] for x in records if x.get('status')=='granted' and x.get('permission') in PERMISSIONS]
-            denied=[x['permission'] for x in records if x.get('status')=='declined' and x.get('permission') in PERMISSIONS]
-            with holdings.transaction('reposnews-editorial'):
-                data=rn.read();data['instagram_permission_check']={'requested':list(PERMISSIONS),'granted':granted,'denied':denied,'checked_at':holdings._now()};rn.write(data)
-            if not set(PERMISSIONS).issubset(granted):return jsonify(error='REQUIRED_PERMISSIONS_NOT_GRANTED',requested=list(PERMISSIONS),granted=granted,denied=denied),400
+            if who.get('username')!='zaragente031':return finish('ZAR_ACCOUNT_REQUIRED')
             from . import oauth_vault
-            oauth_vault.persist(rn._path().parent/'instagram-oauth',json.dumps({'access_token':token['access_token'],'user_id':str(who.get('user_id') or who.get('id') or token['user_id']),'username':who['username'],'verified_at':holdings._now(),'requested_permissions':list(PERMISSIONS),'granted_permissions':granted,'denied_permissions':denied}),rn._path().parent)
-        except (ValueError,KeyError,requests.RequestException):return jsonify(error='OAUTH_CONNECTION_FAILED'),400
-        return redirect('/?zar_workspace=sites')
+            user_id=str(who.get('user_id') or who.get('id') or token['user_id'])
+            record={'access_token':access,'user_id':user_id,'username':who['username'],'requested_permissions':list(PERMISSIONS),'identity_verified_at':holdings._now()}
+            # Preserve a valid identity token encrypted even if capability checks fail.
+            pending_path=rn._path().parent/'instagram-oauth-pending'
+            oauth_vault.persist(pending_path,json.dumps(record),rn._path().parent)
+            check=verify_capabilities(access,user_id)
+            with holdings.transaction('reposnews-editorial'):
+                data=rn.read();data['instagram_permission_check']=check;rn.write(data)
+            if not set(PERMISSIONS).issubset(check['granted']):return finish('REQUIRED_CAPABILITIES_NOT_VERIFIED',check)
+            record.update(verified_at=holdings._now(),granted_permissions=check['granted'],denied_permissions=check['denied'],verification_method=check['verification_method'],capabilities=check)
+            oauth_vault.persist(rn._path().parent/'instagram-oauth',json.dumps(record),rn._path().parent)
+            pending_path.unlink(missing_ok=True)
+            subscription=subscribe_messages(access,user_id)
+            with holdings.transaction('reposnews-editorial'):
+                data=rn.read();data['instagram_subscription']=subscription;rn.write(data)
+            if subscription['status']!='VERIFIED':return finish('MESSAGES_SUBSCRIPTION_NOT_VERIFIED',subscription)
+        except (ValueError,KeyError,TypeError,AttributeError,OSError,requests.RequestException):return finish('OAUTH_CONNECTION_FAILED')
+        return finish()
 
     @app.route('/api/reposnews/instagram/webhook',methods=['GET','POST'])
     def reposnews_instagram_webhook():
