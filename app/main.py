@@ -538,7 +538,8 @@ register_node_coordinator(app)
 
 @app.get("/health")
 def health():
-    return jsonify({"ok": True, "service": "zar", "version": (Path(__file__).parent / "VERSION.txt").read_text().strip()})
+    from .reposnews import summary
+    return jsonify({"ok": True, "service": "zar", "version": (Path(__file__).parent / "VERSION.txt").read_text().strip(), "reposnews":summary()})
 
 @app.route("/login", methods=["GET","POST"])
 def login():
@@ -1843,6 +1844,16 @@ from .site_projects import preview_headers as site_projects_preview
 business_workflows.register(app, _user_scope_id)
 from . import reposnews
 reposnews.register(app, _user_scope_id)
+if os.environ.get('RAILWAY_PROJECT_ID') == '33af08fe-7e2e-4df3-afb5-c5a1ac41b2f5':
+    reposnews_owner = reposnews.bootstrap()
+    def _verify_reposnews_after_start():
+        try:
+            reposnews.operate(reposnews_owner, 'verify', {})
+        except ValueError:
+            app.logger.info('ReposNews: DNS/HTTPS verification pending; drafts remain private.')
+    reposnews_verification = threading.Timer(30, _verify_reposnews_after_start)
+    reposnews_verification.daemon = True
+    reposnews_verification.start()
 from . import agency_events
 agency_events.register(app)
 

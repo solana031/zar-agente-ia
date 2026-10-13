@@ -32,6 +32,43 @@
       "language": "Rust",
       "default_branch": "main",
       "checked_at": "2026-10-13"
+    },
+    "latest_release": {
+      "tag": "0.13.0",
+      "url": "https://github.com/astral-sh/uv/releases/tag/0.13.0",
+      "published_at": "2026-10-09T19:49:55Z",
+      "checked_at": "2026-10-13"
+    },
+    "repository_url": "https://github.com/astral-sh/uv",
+    "official_docs": "https://docs.astral.sh/uv/",
+    "source_checked_at": "2026-10-13",
+    "last_reviewed": "2026-10-13",
+    "translation_status": "REVIEWED",
+    "status": "READY",
+    "provenance": [
+      {
+        "claim": "installation and requirements",
+        "source": "https://docs.astral.sh/uv/getting-started/features/",
+        "checked_at": "2026-10-13"
+      },
+      {
+        "claim": "license and repository identity",
+        "source": "https://github.com/astral-sh/uv",
+        "checked_at": "2026-10-13"
+      },
+      {
+        "claim": "latest release",
+        "source": "https://github.com/astral-sh/uv/releases/tag/0.13.0",
+        "checked_at": "2026-10-13"
+      }
+    ],
+    "fact_check": {
+      "status": "REVIEWED_AGAINST_OFFICIAL_SOURCES",
+      "at": "2026-10-13",
+      "commands": "DOCUMENTED_NOT_EXECUTED",
+      "release": "0.13.0",
+      "license": "MIT OR Apache-2.0",
+      "translation": "ES_EN_REVIEWED"
     }
   },
   {
@@ -51,8 +88,8 @@
     "title_en": "Playwright: a first browser test that checks actual behaviour",
     "summary_es": "Cómo iniciar pruebas web, leer resultados y evitar confundir una prueba simulada con validación de producción.",
     "summary_en": "Start a web test, inspect its outcome and distinguish mocked checks from production verification.",
-    "body_es": "## Qué es\nPlaywright es el proyecto de Microsoft para automatizar navegadores y probar aplicaciones web. Su documentación distingue el runner Playwright Test de la librería de automatización. Esta guía utiliza el runner: organiza pruebas, aserciones y resultados.\n## Para qué sirve\nUn caso útil es comprobar que un usuario llega a una página y puede realizar su acción principal. Tener capturas bonitas no basta: conviene verificar un resultado visible, como un título o un estado guardado.\n## Actividad y fuentes\nLa selección procede del repositorio y de la documentación oficial. No afirmamos que esté creciendo por un número acumulado de estrellas. La metadata de GitHub puede consultarse por separado, con fecha; todavía no hay una serie histórica de crecimiento.\n## Instalación\nLa guía oficial parte de Node.js y de un gestor de paquetes compatible. Comprueba los requisitos vigentes en la documentación enlazada. El asistente prepara un proyecto de pruebas.\n```sh\nnpm init playwright@latest\nnpx playwright test\n```\n## Primer ejemplo\nEste ejemplo sigue el patrón documentado; no demuestra conectividad con tu propia aplicación.\n```js\nimport { test, expect } from '@playwright/test';\ntest('home', async ({ page }) => {\n  await page.goto('https://playwright.dev/');\n  await expect(page).toHaveTitle(/Playwright/);\n});\n```\n## Cómo evaluar el resultado\nEjecuta la prueba, examina fallos y revisa el reporte. Si interceptas una API con respuestas simuladas, documenta esa limitación: no has verificado el servicio real. Para móvil, comprueba el viewport efectivo y no solo el tamaño de la ventana.\n## Ventajas y limitaciones\nLocators, esperas automáticas y aislamiento facilitan pruebas repetibles. Aun así, selectores frágiles, autenticación y servicios externos necesitan diseño cuidadoso. No automatices pagos ni aceptaciones legales como parte de una prueba rutinaria.\n## Alternativas\nSelenium y Cypress son opciones que puedes comparar con los requisitos de tu equipo. La decisión depende de navegadores, lenguaje, infraestructura y mantenimiento. Playwright se distribuye con Apache-2.0; consulta la licencia oficial antes de redistribuirlo.",
-    "body_en": "## What it is\nPlaywright is Microsoft's browser automation and web testing project. Its documentation distinguishes the Playwright Test runner from the automation library. This guide uses the runner to organise tests, assertions and results.\n## A useful first task\nCheck that a visitor reaches a page and can perform its main action. A screenshot alone is not a behavioural assertion: look for a visible result such as a page heading or a saved state.\n## Activity and evidence\nOur selection is based on the official repository and documentation. We do not infer recent growth from total stars. GitHub metadata can be checked separately with a timestamp; a historical growth series is not available yet.\n## Installation\nThe official guide starts with Node.js and a supported package manager. Check its current requirements before installing. The setup wizard creates a test project.\n```sh\nnpm init playwright@latest\nnpx playwright test\n```\n## First example\nThis follows the documented test pattern. It does not verify your own application's services.\n```js\nimport { test, expect } from '@playwright/test';\ntest('home', async ({ page }) => {\n  await page.goto('https://playwright.dev/');\n  await expect(page).toHaveTitle(/Playwright/);\n});\n```\n## Evaluate the outcome\nRun the test, investigate failures and inspect the report. If an API is mocked, say so: the real provider has not been tested. Mobile checks should assert the effective viewport rather than assume that resizing a window changes it.\n## Benefits and limitations\nLocators, automatic waiting and isolation support repeatable checks. Fragile selectors, authentication and third-party services still require careful design. Payments and legal acceptance should not be incidental test steps.\n## Alternatives\nSelenium and Cypress are alternatives to assess against your team's browser, language and infrastructure requirements. Maintenance matters as much as a quick demonstration. Playwright uses Apache-2.0; read the official license before redistribution.",
+    "body_es": "## Qué es\nPlaywright es el proyecto de Microsoft para automatizar navegadores y probar aplicaciones web. Su documentación distingue el runner Playwright Test de la librería de automatización. Esta guía utiliza el runner: organiza pruebas, aserciones y resultados.\n## Para qué sirve\nUn caso útil es comprobar que un usuario llega a una página y puede realizar su acción principal. Tener capturas bonitas no basta: conviene verificar un resultado visible, como un título o un estado guardado.\n## Actividad y fuentes\nLa selección procede del repositorio y de la documentación oficial. No afirmamos que esté creciendo por un número acumulado de estrellas. La metadata de GitHub puede consultarse por separado, con fecha; todavía no hay una serie histórica de crecimiento.\n## Instalación\nLa guía oficial parte de Node.js y de un gestor de paquetes compatible. Comprueba los requisitos vigentes en la documentación enlazada. El asistente prepara un proyecto de pruebas.\n```sh\nnpm init playwright@latest\nnpx playwright test\n```\n## Primer ejemplo\nEste ejemplo sigue el patrón documentado; no demuestra conectividad con tu propia aplicación.\n```js\nimport { test, expect } from '@playwright/test';\ntest('home', async ({ page }) => {\n  await page.goto('https://playwright.dev/');\n  await expect(page).toHaveTitle(/Playwright/);\n});\n```\n## Cómo evaluar el resultado\nEjecuta la prueba, examina fallos y revisa el reporte. Si interceptas una API con respuestas simuladas, documenta esa limitación: no has verificado el servicio real. Para móvil, comprueba el viewport efectivo y no solo el tamaño de la ventana.\n## Ventajas y limitaciones\nLocators, esperas automáticas y aislamiento facilitan pruebas repetibles. Aun así, selectores frágiles, autenticación y servicios externos necesitan diseño cuidadoso. No automatices pagos ni aceptaciones legales como parte de una prueba rutinaria.\n## Alternativas\nSelenium y Cypress son opciones que puedes comparar con los requisitos de tu equipo. La decisión depende de navegadores, lenguaje, infraestructura y mantenimiento. Playwright se distribuye con Apache-2.0; consulta la licencia oficial antes de redistribuirlo.\n## Compatibilidad revisada\nLa documentación actual indica Node.js 22.x, 24.x o 26.x; Windows 11 o Windows Server 2019, macOS 14 o posterior, y versiones concretas de Debian y Ubuntu. Consulta la matriz oficial para tu sistema: no basta con que npm complete la instalación.",
+    "body_en": "## What it is\nPlaywright is Microsoft's browser automation and web testing project. Its documentation distinguishes the Playwright Test runner from the automation library. This guide uses the runner to organise tests, assertions and results.\n## A useful first task\nCheck that a visitor reaches a page and can perform its main action. A screenshot alone is not a behavioural assertion: look for a visible result such as a page heading or a saved state.\n## Activity and evidence\nOur selection is based on the official repository and documentation. We do not infer recent growth from total stars. GitHub metadata can be checked separately with a timestamp; a historical growth series is not available yet.\n## Installation\nThe official guide starts with Node.js and a supported package manager. Check its current requirements before installing. The setup wizard creates a test project.\n```sh\nnpm init playwright@latest\nnpx playwright test\n```\n## First example\nThis follows the documented test pattern. It does not verify your own application's services.\n```js\nimport { test, expect } from '@playwright/test';\ntest('home', async ({ page }) => {\n  await page.goto('https://playwright.dev/');\n  await expect(page).toHaveTitle(/Playwright/);\n});\n```\n## Evaluate the outcome\nRun the test, investigate failures and inspect the report. If an API is mocked, say so: the real provider has not been tested. Mobile checks should assert the effective viewport rather than assume that resizing a window changes it.\n## Benefits and limitations\nLocators, automatic waiting and isolation support repeatable checks. Fragile selectors, authentication and third-party services still require careful design. Payments and legal acceptance should not be incidental test steps.\n## Alternatives\nSelenium and Cypress are alternatives to assess against your team's browser, language and infrastructure requirements. Maintenance matters as much as a quick demonstration. Playwright uses Apache-2.0; read the official license before redistribution.\n## Compatibility check\nThe current documentation lists Node.js 22.x, 24.x or 26.x; Windows 11 or Windows Server 2019, macOS 14 or later, and specific Debian and Ubuntu releases. Check the official matrix for your platform: a successful npm installation is not enough.",
     "state": "READY",
     "published": false,
     "checked_at": "2026-10-13",
@@ -67,6 +104,43 @@
       "language": "TypeScript",
       "default_branch": "main",
       "checked_at": "2026-10-13"
+    },
+    "latest_release": {
+      "tag": "v1.64.0",
+      "url": "https://github.com/microsoft/playwright/releases/tag/v1.64.0",
+      "published_at": "2026-10-07T20:40:43Z",
+      "checked_at": "2026-10-13"
+    },
+    "repository_url": "https://github.com/microsoft/playwright",
+    "official_docs": "https://playwright.dev/",
+    "source_checked_at": "2026-10-13",
+    "last_reviewed": "2026-10-13",
+    "translation_status": "REVIEWED",
+    "status": "READY",
+    "provenance": [
+      {
+        "claim": "installation and requirements",
+        "source": "https://playwright.dev/docs/intro",
+        "checked_at": "2026-10-13"
+      },
+      {
+        "claim": "license and repository identity",
+        "source": "https://github.com/microsoft/playwright",
+        "checked_at": "2026-10-13"
+      },
+      {
+        "claim": "latest release",
+        "source": "https://github.com/microsoft/playwright/releases/tag/v1.64.0",
+        "checked_at": "2026-10-13"
+      }
+    ],
+    "fact_check": {
+      "status": "REVIEWED_AGAINST_OFFICIAL_SOURCES",
+      "at": "2026-10-13",
+      "commands": "DOCUMENTED_NOT_EXECUTED",
+      "release": "v1.64.0",
+      "license": "Apache-2.0",
+      "translation": "ES_EN_REVIEWED"
     }
   },
   {
@@ -102,6 +176,43 @@
       "language": "Python",
       "default_branch": "master",
       "checked_at": "2026-10-13"
+    },
+    "latest_release": {
+      "tag": "0.143.0",
+      "url": "https://github.com/fastapi/fastapi/releases/tag/0.143.0",
+      "published_at": "2026-10-08T12:29:29Z",
+      "checked_at": "2026-10-13"
+    },
+    "repository_url": "https://github.com/fastapi/fastapi",
+    "official_docs": "https://fastapi.tiangolo.com/",
+    "source_checked_at": "2026-10-13",
+    "last_reviewed": "2026-10-13",
+    "translation_status": "REVIEWED",
+    "status": "READY",
+    "provenance": [
+      {
+        "claim": "installation and requirements",
+        "source": "https://fastapi.tiangolo.com/tutorial/first-steps/",
+        "checked_at": "2026-10-13"
+      },
+      {
+        "claim": "license and repository identity",
+        "source": "https://github.com/fastapi/fastapi",
+        "checked_at": "2026-10-13"
+      },
+      {
+        "claim": "latest release",
+        "source": "https://github.com/fastapi/fastapi/releases/tag/0.143.0",
+        "checked_at": "2026-10-13"
+      }
+    ],
+    "fact_check": {
+      "status": "REVIEWED_AGAINST_OFFICIAL_SOURCES",
+      "at": "2026-10-13",
+      "commands": "DOCUMENTED_NOT_EXECUTED",
+      "release": "0.143.0",
+      "license": "MIT",
+      "translation": "ES_EN_REVIEWED"
     }
   }
 ]

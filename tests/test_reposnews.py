@@ -31,4 +31,22 @@ class ReposNewsTest(unittest.TestCase):
   self.assertEqual(self.get('/ads.txt').status_code,200);self.assertNotIn(b'/uv/',self.get('/sitemap.xml').data)
   self.assertIn(b'https://www.reposnews.com/es/',self.get('/es/').data)
  def test_escape(self):self.assertNotIn('<script>',str(rn.body_html('<script>alert(1)</script>')))
+ def test_bootstrap_reload(self):
+  rn._path().unlink();scope=rn.bootstrap();first=rn.state(scope);ids=[a['id'] for a in first['articles']]
+  import importlib
+  importlib.reload(rn);rn.bootstrap();again=rn.state(scope)
+  self.assertEqual(ids,[a['id'] for a in again['articles']]);self.assertEqual(len(ids),3)
+  self.assertTrue(all(not a['published'] and a['status']=='READY' for a in again['articles']))
+  for a in again['articles']:
+   self.assertTrue(a['history']);self.assertTrue(a['seo']['en']['canonical']);self.assertTrue(a['latest_release']['url'])
+  self.assertFalse(again['readiness']['checks']['CONTENT']);self.assertEqual(again['readiness']['status'],'ACTION_REQUIRED')
+ def test_history(self):
+  data=rn.read();data['articles']=[rn.article_defaults(a) for a in data['articles']];rn.write(data)
+  result=rn.operate('owner','save',{'id':'uv','title_es':'Titulo revisado','reason':'Corrección editorial','state':'REVIEW'})
+  self.assertIn('title_es',result['articles'][0]['history'][-1]['fields']);self.assertFalse(result['articles'][0]['published'])
+ def test_legal_draft_isolation(self):
+  rn.operate('owner','legal_save',{'controller':'PRIVATE UNREVIEWED'})
+  r=self.get('/es/legal/');self.assertEqual(r.status_code,200);self.assertNotIn(b'PRIVATE UNREVIEWED',r.data);self.assertIn(b'ACTION_REQUIRED',r.data)
+ def test_breadcrumb_and_related(self):
+  r=self.c.get('/reposnews-preview/en/playwright');self.assertEqual(r.status_code,200);self.assertIn(b'BreadcrumbList',r.data);self.assertIn(b'Related guides',r.data)
 if __name__=='__main__':unittest.main()
