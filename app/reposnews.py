@@ -224,6 +224,9 @@ def metadata(row):
 def operate(scope, op, payload):
     if op=='init': return initialize(scope)
     if op=='legal_diagnostic': return legal_diagnostic(scope)
+    if op=='instagram_reverify':
+        from . import reposnews_inbox
+        state(scope);reposnews_inbox.reverify_connection();return state(scope)
     if op in {'inbox_retry','inbox_discard','inbox_resolve'}:
         from . import reposnews_inbox
         state(scope)

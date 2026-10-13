@@ -66,6 +66,20 @@ class InstagramInboxTest(unittest.TestCase):
   with patch.dict(os.environ,{'INSTAGRAM_APP_ID':'fixture-app'}),patch.object(inbox.requests,'post',return_value=Mock(ok=True,json=lambda:{'access_token':'fixture-token','user_id':'12345'})),patch.object(inbox.requests,'get',return_value=Mock(ok=True,json=lambda:{'username':'personal','user_id':'12345'})):
    self.assertEqual(self.client.get('/api/reposnews/instagram/callback?state=fixture-state&code=fixture').status_code,400)
   self.assertFalse((rn._path().parent/'instagram-oauth-pending').exists())
+
+ def test_reverify_recovers_encrypted_token_without_code_exchange(self):
+  from app import oauth_vault
+  root=rn._path().parent
+  oauth_vault.persist(root/'instagram-oauth-pending',json.dumps({'access_token':'fixture-token','user_id':'12345','username':'zaragente031'}),root)
+  with patch.object(inbox.requests,'get',side_effect=[Mock(ok=True,json=lambda:{'username':'zaragente031'}),Mock(ok=False,status_code=400,json=lambda:{'error':{'code':100}}),Mock(ok=True,json=lambda:{'data':[]}),Mock(ok=True,json=lambda:{'data':[]})]),patch.object(inbox.requests,'post',return_value=Mock(ok=True,json=lambda:{'success':True})) as post:
+   result=inbox.reverify_connection()
+  self.assertEqual(result['status'],'CONNECTED');self.assertTrue((root/'instagram-oauth').exists())
+  self.assertTrue(post.call_args.args[0].endswith('/12345/subscribed_apps'))
+  self.assertNotIn('fixture-token',json.dumps(result));self.assertNotIn('fixture-token',(root/'instagram-oauth').read_text())
+
+ def test_reverify_missing_token_never_requests_oauth(self):
+  with patch.object(inbox.requests,'get') as get,patch.object(inbox.requests,'post') as post:
+   self.assertEqual(inbox.reverify_connection()['error'],'TOKEN_UNAVAILABLE');get.assert_not_called();post.assert_not_called()
  def test_discard_survives_late_worker_updates(self):
   item=inbox.receive(self.event())[0];inbox.update(item,status='DISCARDED');inbox.update(item,status='READY')
   self.assertEqual(rn.read()['instagram_inbox'][0]['status'],'DISCARDED')
