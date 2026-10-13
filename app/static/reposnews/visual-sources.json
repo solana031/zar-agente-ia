@@ -1,0 +1,17 @@
+{
+  "uv": {
+    "source": "https://github.com/astral-sh/uv/assets/1309177/629e59c0-9c6e-4013-9ad4-adb2bcf5080d",
+    "asset": "uv-official.svg",
+    "attribution": "Astral Software Inc. — MIT"
+  },
+  "fastapi": {
+    "source": "https://fastapi.tiangolo.com/img/logo-margin/logo-teal.png",
+    "asset": "fastapi-official.png",
+    "attribution": "Sebastián Ramírez — MIT"
+  },
+  "playwright": {
+    "source": "https://playwright.dev/img/playwright-logo.svg",
+    "asset": "playwright-official.svg",
+    "attribution": "Microsoft — Apache-2.0"
+  }
+}

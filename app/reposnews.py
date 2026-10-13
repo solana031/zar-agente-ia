@@ -25,7 +25,7 @@ def legal_status(data):
         'privacy_contact':('REQUIRED','Contacto para consultas y derechos; puede ser el email operativo existente'),
         'activity_mode':('REQUIRED','Confirmar actividad económica/monetización prevista o exclusivamente no comercial; dato administrativo'),
         'entity_type':('REQUIRED','Persona física o entidad; determina aplicabilidad del registro; dato administrativo'),
-        'address':('REQUIRED' if economic else 'OPTIONAL','Domicilio o establecimiento de contacto para actividad económica; se publicará solo si corresponde'),
+        'address':('REQUIRED' if economic else 'OPTIONAL','Domicilio administrativo privado; no se muestra en las páginas públicas'),
         'tax_id':('REQUIRED' if economic else 'NOT_APPLICABLE','Identificación fiscal para actividad económica, artículo 10 LSSI; no subir documentos'),
         'registration':('REQUIRED' if legal.get('entity_type')=='REGISTERED_ENTITY' else 'NOT_APPLICABLE','Datos registrales únicamente si existe entidad inscrita'),
         'processing_basis':('REQUIRED','Base jurídica de conexión/seguridad y atención de consultas actuales; revisión del titular'),
@@ -77,7 +77,7 @@ def readiness(data):
             'MOBILE':True,'SITEMAP':True,'ROBOTS':True,'ADS.TXT':data.get('domain_status')=='ACTIVE',
             'ORIGINAL_CONTENT':bool(data.get('articles')),
             'ADSENSE_ACCOUNT':data.get('adsense_verification',{}).get('web_enabled') is True,
-            'ADSENSE_SITE':data.get('adsense_verification',{}).get('site_status') in {'REQUIRES_REVIEW','READY'}}
+            'ADSENSE_SITE':data.get('adsense_verification',{}).get('site_status') in {'REQUIRES_REVIEW','REVIEW_REQUESTED','READY'}}
     checks['PRIVACY']=checks['LEGAL'];checks['PUBLIC_CONTENT']=checks.pop('CONTENT')
     return {'checks':checks,'status':'READY_TO_SUBMIT' if all(checks.values()) else 'ACTION_REQUIRED',
             'blockers':[k for k,v in checks.items() if not v],
@@ -166,6 +166,8 @@ def initialize(scope):
             data['search_console_sitemap']='SUBMITTED · https://www.reposnews.com/sitemap.xml · indexing UNKNOWN'
             data.setdefault('legal',{}).setdefault('privacy_contact','zaragente031@gmail.com')
             data.setdefault('adsense_verification',{'account':'OPEN','publisher':'MATCHED','product':'YOUTUBE_INACTIVE','web_enabled':False,'site_status':'WEB_UPGRADE_REQUIRED','checked_at':'2026-10-13','source':'Existing owner dashboard + https://support.google.com/adsense/answer/9247020','submitted':False,'upgrade_form':'PREPARED_NOT_SUBMITTED · https://www.reposnews.com/'})
+            if data.get('publisher')=='pub-4119869448727531' and data.get('adsense_verification',{}).get('site_status')=='WEB_UPGRADE_REQUIRED':
+                data['adsense_verification'].update(web_enabled=True,site_status='REVIEW_REQUESTED',submitted=True,checked_at='2026-10-13',source='Owner dashboard: site verified and review requested with explicit approval',upgrade_form='COMPLETED')
             candidate_file=Path(__file__).with_name('reposnews_candidates.json')
             if candidate_file.exists(): data.setdefault('next_editorial_candidates',json.loads(candidate_file.read_text(encoding='utf-8')))
             priorities={'astral-sh/ruff':(1,'Continuidad práctica de uv: calidad y formato de código Python.'),'jqlang/jq':(2,'Herramienta transversal para inspeccionar respuestas JSON de APIs.'),'vitejs/vite':(3,'Primeros pasos frontend que complementan la guía de FastAPI.')}
@@ -350,11 +352,29 @@ def render(lang='es', slug='', preview=False):
     title=article['title_'+lang] if article else {'es':'ReposNews · Repositorios, herramientas y guías','en':'ReposNews · Repositories, tools and guides'}[lang]
     description=article['summary_'+lang] if article else ('Análisis y guías sobre proyectos tecnológicos con fuentes verificadas.' if lang=='es' else 'Project analysis and practical guides backed by official sources.')
     if slug in pages: title={'about':('Sobre ReposNews','About ReposNews'),'contact':('Contacto','Contact'),'privacy':('Privacidad','Privacy'),'cookies':('Cookies','Cookies'),'legal':('Aviso legal','Legal notice'),'repositories':('Repositorios','Repositories'),'guides':('Guías','Guides'),'trends':('Actividad','Activity')}[slug][0 if lang=='es' else 1]+' · ReposNews'
-    return render_template('reposnews.html',lang=lang,rows=rows,article=article,body=body_html(article['body_'+lang]) if article else None,slug=slug,preview=preview,base=base,title=title,description=description,origin=ORIGIN,path=path,data=data,query=query,category=category,categories=categories,legal_status=legal_status(data))
+    return render_template('reposnews.html',lang=lang,rows=rows,article=article,body=body_html(article['body_'+lang]) if article else None,slug=slug,preview=preview,base=base,title=title,description=description,origin=ORIGIN,path=path,official_covers={'uv':'uv-official.svg','fastapi':'fastapi-official.png','playwright':'playwright-official.svg'},public_legal=public_legal_profile(data),query=query,category=category,categories=categories,legal_status={'status':legal_status(data)['status']})
+
+
+def public_legal_profile(data):
+    """Public allowlist; private identity and contact fields never reach templates."""
+    legal=data.get('legal') or {}
+    approved=legal_status(data)['status']=='LEGAL_READY'
+    def safe(value):
+        text=str(value or '')
+        for key in ('address','tax_id','registration','privacy_contact'):
+            private=str(legal.get(key) or '').strip()
+            if private: text=re.sub(re.escape(private),'',text,flags=re.IGNORECASE)
+        text=re.sub(r'\b(?:[0-9]{8}[A-Za-z]|[XYZxyz][0-9]{7}[A-Za-z])\b','',text)
+        return text.strip()
+    return {'controller':safe(legal.get('controller')) if approved else '',
+            'email':'zaragente031@gmail.com',
+            'processing_basis':safe(legal.get('processing_basis')) if approved else '',
+            'retention':safe(legal.get('retention')) if approved else '',
+            'ready':approved}
 
 
 def media(asset):
-    if asset not in {'editorial.css','favicon.svg','home.png','uv.png','playwright.png','fastapi.png'}: abort(404)
+    if asset not in {'editorial.css','favicon.svg','home.png','uv.png','playwright.png','fastapi.png','uv-official.svg','fastapi-official.png','playwright-official.svg'}: abort(404)
     response=send_file(Path(__file__).parent/'static'/'reposnews'/asset,max_age=86400)
     response.headers['X-Content-Type-Options']='nosniff'
     return response

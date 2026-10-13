@@ -10,6 +10,19 @@ class ReposNewsTest(unittest.TestCase):
   self.app=Flask(__name__,template_folder=str(Path('app/templates').resolve()));self.app.before_request(rn.public_dispatch);rn.register(self.app,lambda:'owner');self.c=self.app.test_client()
  def tearDown(self): self.env.stop();self.tmp.cleanup()
  def get(self,path):return self.c.get(path,base_url=rn.ORIGIN)
+ def test_public_economic_profile_never_exposes_private_identity(self):
+  data=rn.read();data['legal']={'controller':'Approved owner','address':'PRIVATE STREET 999','tax_id':'12345678Z','registration':'PRIVATE REGISTER','privacy_contact':'private@example.test','activity_mode':'ECONOMIC','entity_type':'PERSON','processing_basis':'Approved basis 12345678Z','retention':'Approved retention PRIVATE STREET 999','providers_reviewed':True};data['legal_reviewed']=True
+  for a in data['articles']:a['published']=True
+  rn.write(data)
+  self.assertEqual(rn.legal_status(data)['status'],'LEGAL_READY')
+  for lang in ('es','en'):
+   for page in ('','legal/','privacy/','cookies/','contact/','about/','repositories/','guides/',('repositorios/' if lang=='es' else 'repositories/')+'uv/'):
+    response=self.get('/'+lang+'/'+page);self.assertEqual(response.status_code,200)
+    for private in ('PRIVATE STREET 999','12345678Z','PRIVATE REGISTER','private@example.test'):self.assertNotIn(private,response.get_data(as_text=True))
+   preview=self.c.get('/reposnews-preview/'+lang+'/legal').get_data(as_text=True)
+   self.assertNotIn('12345678Z',preview);self.assertNotIn('PRIVATE STREET 999',preview)
+  self.assertEqual(rn.read()['legal'],data['legal'])
+  profile=rn.public_legal_profile(data);self.assertEqual(profile['email'],'zaragente031@gmail.com');self.assertEqual(profile['controller'],'Approved owner');self.assertNotIn('tax_id',profile)
  def test_private_drafts(self):
   self.assertEqual(self.get('/es/repositorios/uv/').status_code,404)
   self.assertNotIn(b'uv:',self.get('/es/').data)
