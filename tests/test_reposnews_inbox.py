@@ -50,6 +50,21 @@ class InstagramInboxTest(unittest.TestCase):
   self.assertEqual(row['error_diagnostic']['http'],503)
  def test_no_accessible_permalink_text_does_not_invent_a_project(self):
   self.assertEqual(inbox.resolve_entity('')['reason'],'NO_ACCESSIBLE_DISCOVERY_TEXT')
+ def test_public_metadata_extracts_head_clues(self):
+  meta=inbox.extract_public_metadata('<title>Project: Example</title><meta property="og:description" content="Tool: Example"><meta property="og:image" content="https://example.com/a.png"><script>private junk</script>')
+  self.assertIn('Example',meta['text']);self.assertNotIn('private junk',meta['text']);self.assertTrue(meta['og:image'])
+ def test_deterministic_resolution_does_not_require_ai(self):
+  with patch.object(inbox,'generate_json') as ai,patch.object(rn,'github',return_value={'items':[{'name':'Example','full_name':'org/Example','homepage':'https://example.com'}],'total_count':1}),patch.object(inbox,'homepage_confirms_repository',return_value=True):
+   result=inbox.resolve_entity('Project: Example',deterministic_only=True)
+  ai.assert_not_called();self.assertEqual(result['repo'],'org/Example')
+ def test_metadata_recovery_once_preserves_identity(self):
+  item=inbox.receive(self.event())[0];inbox.update(item,status='FAILED_SOURCE',attempts=4)
+  original=rn.read()['instagram_inbox'][0].copy();inbox.recover_metadata_once(item)
+  row=rn.read()['instagram_inbox'][0]
+  for key in ('id','external_id','source_url','sender','received_at'):self.assertEqual(row[key],original[key])
+  self.assertEqual(row['attempt_limit'],5)
+  inbox.update(item,status='FAILED_SOURCE')
+  with self.assertRaises(ValueError):inbox.recover_metadata_once(item)
  def test_oauth_not_configured_and_invalid_state(self):
   with patch.dict(os.environ,{'INSTAGRAM_APP_ID':'','INSTAGRAM_APP_SECRET':''}):
    self.assertEqual(self.client.get('/api/reposnews/instagram/connect').status_code,409)

@@ -233,7 +233,7 @@ def operate(scope, op, payload):
     if op=='instagram_subscription_inspect':
         from . import reposnews_inbox
         state(scope);reposnews_inbox.inspect_subscription();return state(scope)
-    if op in {'inbox_retry','inbox_discard','inbox_resolve','inbox_recover'}:
+    if op in {'inbox_retry','inbox_discard','inbox_resolve','inbox_recover','inbox_metadata_recover'}:
         from . import reposnews_inbox
         state(scope)
         item_id=str(payload.get('id') or '')
@@ -245,6 +245,8 @@ def operate(scope, op, payload):
             if not row or row.get('status')!='NEEDS_DISAMBIGUATION':raise ValueError('Este item no requiere aclaración.')
             if row.get('attempts',0)>=2:raise ValueError('Límite de dos intentos alcanzado; no se consume más cuota automáticamente.')
             reposnews_inbox.update(item_id,status='RECEIVED',caption=reposnews_inbox.safe_caption(row.get('caption','')+'\nProyecto aclarado: '+name),clarified_project=name)
+        elif op=='inbox_metadata_recover':
+            reposnews_inbox.recover_metadata_once(item_id)
         elif op=='inbox_recover':
             reposnews_inbox.recover_existing(item_id)
         elif op=='inbox_retry':
