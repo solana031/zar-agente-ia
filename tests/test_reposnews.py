@@ -32,7 +32,7 @@ class ReposNewsTest(unittest.TestCase):
   self.assertEqual(self.c.get('/',base_url=rn.ORIGIN,headers={'Accept-Language':'en-US,en;q=.8'}).location,'/en/')
   self.c.set_cookie('reposnews_lang','es',domain='www.reposnews.com');self.assertEqual(self.c.get('/',base_url=rn.ORIGIN,headers={'Accept-Language':'en'}).location,'/es/')
  def test_preview(self):
-  r=self.c.get('/reposnews-preview/es/uv');self.assertEqual(r.status_code,200);self.assertIn('noindex',r.headers['X-Robots-Tag']);self.assertIn(b'pip install uv',r.data)
+  r=self.c.get('/reposnews-preview/es/uv');self.assertEqual(r.status_code,200);self.assertIn('noindex',r.headers['X-Robots-Tag']);self.assertIn(b'pip install uv',r.data);self.assertIn(b'href="/reposnews-preview/en/uv"',r.data)
  def test_scope(self):
   with self.assertRaises(ValueError):rn.state('other')
  def test_confirmation(self):
