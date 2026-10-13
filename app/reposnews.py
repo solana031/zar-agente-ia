@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import quote
 import requests
-from flask import abort, redirect, render_template, request, Response
+from flask import abort, redirect, render_template, request, Response, send_file
 from markupsafe import Markup
 from . import holdings, site_projects
 
@@ -34,6 +34,7 @@ def legal_status(data):
     missing=[k for k,(level,_) in fields.items() if level=='REQUIRED' and not legal.get(k)]
     if legal.get('activity_mode') not in {'ECONOMIC','NONCOMMERCIAL'}: missing=list(dict.fromkeys(missing+['activity_mode']))
     if legal.get('entity_type') not in {'PERSON','REGISTERED_ENTITY'}: missing=list(dict.fromkeys(missing+['entity_type']))
+    if legal.get('privacy_contact') and not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+',legal['privacy_contact']): missing=list(dict.fromkeys(missing+['privacy_contact']))
     return {'status':'LEGAL_INCOMPLETE' if missing else 'LEGAL_READY' if data.get('legal_reviewed') else 'LEGAL_REVIEW_REQUIRED',
             'fields':{k:{'level':level,'purpose':purpose,'complete':bool(legal.get(k))} for k,(level,purpose) in fields.items()},
             'missing_required':missing,'missing_optional':[k for k,(level,_) in fields.items() if level=='OPTIONAL' and not legal.get(k)],
@@ -122,17 +123,54 @@ def state(scope):
     return {k:v for k,v in data.items() if k!='owner'}|{'readiness':readiness(data),'legal_status':legal_status(data)}
 
 
+def legal_diagnostic(scope):
+    """Owner-only, read-only discovery. Return presence flags, never legal values."""
+    state(scope)
+    root=_path().parent.parent
+    paths=set(_path().parent.glob('*'))
+    users=root/'users'
+    if users.exists():
+        paths.update(users.glob('*/holdings/sites/registry.json'))
+        paths.update(users.glob('*/reposnews/*'))
+    results=[]
+    keys=('controller','address','tax_id','registration','privacy_contact','activity_mode','entity_type','processing_basis','retention','providers_reviewed')
+    for path in sorted(paths):
+        if not path.is_file() or path.stat().st_size>5_000_000: continue
+        try: document=json.loads(path.read_text(encoding='utf-8'))
+        except (ValueError,OSError): continue
+        def visit(value, context=False):
+            if isinstance(value,dict):
+                context=context or value.get('domain') in HOSTS or value.get('name')=='ReposNews' or path.parent.name=='reposnews'
+                if context and isinstance(value.get('legal'),dict):
+                    legal=value['legal']
+                    results.append({'source':str(path.relative_to(root)), 'canonical':path==_path(),
+                                    'owner_matches':value.get('owner',scope)==scope,
+                                    'fields':{k:bool(legal.get(k)) for k in keys},
+                                    'reviewed':value.get('legal_reviewed') is True})
+                for child in value.values():
+                    if isinstance(child,(dict,list)): visit(child,context)
+            elif isinstance(value,list):
+                for child in value: visit(child,context)
+        visit(document)
+    return {'status':'DIAGNOSED','files_examined':len(paths),'copies':results,'values_redacted':True,
+            'canonical_scope_matches':read().get('owner')==scope}
+
+
 def initialize(scope):
     with holdings.transaction('reposnews-editorial'):
         data=read()
         if data.get('owner'):
             state(scope)
             data['articles']=[article_defaults(a) for a in data.get('articles',[])]
-            data.setdefault('search_console_status','NOT_CONFIGURED · owner session shows welcome/no property')
+            data['search_console_status']='VERIFIED · sc-domain:reposnews.com · solana031@gmail.com · 2026-10-13'
+            data['search_console_sitemap']='SUBMITTED · https://www.reposnews.com/sitemap.xml · indexing UNKNOWN'
             data.setdefault('legal',{}).setdefault('privacy_contact','zaragente031@gmail.com')
             data.setdefault('adsense_verification',{'account':'OPEN','publisher':'MATCHED','product':'YOUTUBE_INACTIVE','web_enabled':False,'site_status':'WEB_UPGRADE_REQUIRED','checked_at':'2026-10-13','source':'Existing owner dashboard + https://support.google.com/adsense/answer/9247020','submitted':False,'upgrade_form':'PREPARED_NOT_SUBMITTED · https://www.reposnews.com/'})
             candidate_file=Path(__file__).with_name('reposnews_candidates.json')
             if candidate_file.exists(): data.setdefault('next_editorial_candidates',json.loads(candidate_file.read_text(encoding='utf-8')))
+            priorities={'astral-sh/ruff':(1,'Continuidad práctica de uv: calidad y formato de código Python.'),'jqlang/jq':(2,'Herramienta transversal para inspeccionar respuestas JSON de APIs.'),'vitejs/vite':(3,'Primeros pasos frontend que complementan la guía de FastAPI.')}
+            for candidate in data.get('next_editorial_candidates',[]):
+                if candidate['repo'] in priorities: candidate['editorial_priority'],candidate['priority_reason']=priorities[candidate['repo']]
             review_file=Path(__file__).with_name('reposnews_review.json')
             if review_file.exists():
                 for review in json.loads(review_file.read_text(encoding='utf-8')):
@@ -173,6 +211,7 @@ def metadata(row):
 
 def operate(scope, op, payload):
     if op=='init': return initialize(scope)
+    if op=='legal_diagnostic': return legal_diagnostic(scope)
     with holdings.transaction('reposnews-editorial'):
         state(scope);data=read()
         if not data.get('owner'): raise ValueError('Crea primero el proyecto ReposNews.')
@@ -188,8 +227,8 @@ def operate(scope, op, payload):
             if proposal['decision']=='REJECT': raise ValueError('JEV rechazó publicación.')
             for a in data['articles']:
                 if a['id'] not in plan['ids']: continue
-                a['published_snapshot']={k:v for k,v in a.items() if k!='published_snapshot'}
                 a.update(published=True,published_at=holdings._now(),state='PUBLISHED',status='PUBLISHED')
+                a['published_snapshot']={k:v for k,v in a.items() if k not in {'published_snapshot','history'}}
                 a['history']=(a.get('history',[])+[{'at':holdings._now(),'fields':['published','state'],'reason':'Publicación conjunta ES/EN confirmada'}])[-60:]
             jev_decision.decision_state(scope,proposal['id'],'USER_CONFIRMED_EDITORIAL_CHANGE')
             write(data);return state(scope)
@@ -220,9 +259,9 @@ def operate(scope, op, payload):
             legal={k:str(payload.get(k,'')).strip()[:limit] for k,limit in keys.items()}
             legal['providers_reviewed']=payload.get('providers_reviewed') is True
             candidate=data|{'legal':legal,'legal_reviewed':payload.get('reviewed') is True}
-            if payload.get('reviewed') is True and legal_status(candidate)['missing_required']:
-                raise ValueError('Faltan campos necesarios: '+', '.join(legal_status(candidate)['missing_required']))
-            data['legal']=legal;data['legal_reviewed']=payload.get('reviewed') is True;data['legal_updated_at']=holdings._now()
+            missing=legal_status(candidate)['missing_required']
+            data['legal']=legal;data['legal_reviewed']=payload.get('reviewed') is True and not missing;data['legal_updated_at']=holdings._now()
+            data['legal_save_notice']='Guardado privado. Faltan: '+', '.join(missing) if missing else 'Datos guardados. '+('LEGAL_READY' if data['legal_reviewed'] else 'Pendiente de aprobación del titular.')
         elif op=='discover':
             query=str(payload.get('query') or 'topic:developer-tools archived:false').strip()
             if not query or len(query)>160: raise ValueError('Consulta de hasta 160 caracteres.')
@@ -269,8 +308,8 @@ def operate(scope, op, payload):
                     from . import jev_decision
                     d=jev_decision.proposal(scope,{'source_agent':'SiteBuilderAgent','task':'Publicar artículo ReposNews ES/EN','action':'publish article','resources':['reposnews.com'],'expected_cost':0,'expected_revenue':None,'risk':.3,'urgency':.5})
                     if d['decision']=='REJECT': raise ValueError('JEV rechazó publicación.')
-                    article['published_snapshot']={k:v for k,v in article.items() if k!='published_snapshot'}
                     article['published']=True;article['published_at']=holdings._now();article['state']='PUBLISHED';article['status']='PUBLISHED'
+                    article['published_snapshot']={k:v for k,v in article.items() if k not in {'published_snapshot','history'}}
                     jev_decision.decision_state(scope,d['id'],'USER_CONFIRMED_EDITORIAL_CHANGE')
                 else: article['published']=False;article['state']='ARCHIVED';article['status']='ARCHIVED'
                 article['history']=(article.get('history',[])+[{'at':holdings._now(),'fields':['published','state'],'reason':'Confirmación explícita: '+op+' ES + EN'}])[-60:]
@@ -286,7 +325,9 @@ def body_html(body):
             if in_code: out.append('<div class="code"><button type="button" data-copy>Copiar / Copy</button><pre><code>'+html.escape('\n'.join(code))+'</code></pre></div>');code=[]
             in_code=not in_code;continue
         if in_code: code.append(line);continue
-        if line.startswith('## '): out.append('<h2>'+html.escape(line[3:])+'</h2>')
+        if line.startswith('## '):
+            heading=line[3:];anchor=re.sub(r'[^a-z0-9]+','-',heading.casefold()).strip('-')
+            out.append('<h2 id="'+anchor+'">'+html.escape(heading)+'</h2>')
         elif line.strip(): out.append('<p>'+html.escape(line)+'</p>')
     if in_code: out.append('<pre><code>'+html.escape('\n'.join(code))+'</code></pre>')
     return Markup(''.join(out))
@@ -295,18 +336,28 @@ def body_html(body):
 def render(lang='es', slug='', preview=False):
     data=read();all_rows=data.get('articles',[])
     rows=all_rows if preview else [a.get('published_snapshot',a) for a in all_rows if a.get('published')]
+    categories=sorted({a['category'] for a in rows})
     article=next((a for a in rows if a['id']==slug),None) if slug else None
     pages={'about','contact','privacy','cookies','legal','repositories','guides','trends'}
     if slug and not article and slug not in pages: abort(404)
     query=str(request.args.get('q',''))[:120].casefold()
     if query: rows=[a for a in rows if query in ' '.join(str(a.get(k,'')) for k in ('repo','category','title_'+lang,'body_'+lang)).casefold()]
+    category=str(request.args.get('category',''))[:80]
+    if category: rows=[a for a in rows if a['category']==category]
     base='/reposnews-preview/' if preview else '/'
     path=lang+'/'+('repositorios/' if lang=='es' else 'repositories/')+slug if article else lang+'/'+slug
     path=path.rstrip('/')+'/'
     title=article['title_'+lang] if article else {'es':'ReposNews · Repositorios, herramientas y guías','en':'ReposNews · Repositories, tools and guides'}[lang]
     description=article['summary_'+lang] if article else ('Análisis y guías sobre proyectos tecnológicos con fuentes verificadas.' if lang=='es' else 'Project analysis and practical guides backed by official sources.')
     if slug in pages: title={'about':('Sobre ReposNews','About ReposNews'),'contact':('Contacto','Contact'),'privacy':('Privacidad','Privacy'),'cookies':('Cookies','Cookies'),'legal':('Aviso legal','Legal notice'),'repositories':('Repositorios','Repositories'),'guides':('Guías','Guides'),'trends':('Actividad','Activity')}[slug][0 if lang=='es' else 1]+' · ReposNews'
-    return render_template('reposnews.html',lang=lang,rows=rows,article=article,body=body_html(article['body_'+lang]) if article else None,slug=slug,preview=preview,base=base,title=title,description=description,origin=ORIGIN,path=path,data=data,query=query,legal_status=legal_status(data))
+    return render_template('reposnews.html',lang=lang,rows=rows,article=article,body=body_html(article['body_'+lang]) if article else None,slug=slug,preview=preview,base=base,title=title,description=description,origin=ORIGIN,path=path,data=data,query=query,category=category,categories=categories,legal_status=legal_status(data))
+
+
+def media(asset):
+    if asset not in {'editorial.css','favicon.svg','home.png','uv.png','playwright.png','fastapi.png'}: abort(404)
+    response=send_file(Path(__file__).parent/'static'/'reposnews'/asset,max_age=86400)
+    response.headers['X-Content-Type-Options']='nosniff'
+    return response
 
 
 def public_dispatch():
@@ -314,6 +365,7 @@ def public_dispatch():
     if host not in HOSTS: return None
     if host=='reposnews.com': return redirect(ORIGIN+request.path,code=308)
     path=request.path.strip('/')
+    if path.startswith('media/reposnews/'): return media(path.removeprefix('media/reposnews/'))
     if path in {'robots.txt','sitemap.xml','ads.txt'}:
         data=read()
         if path=='robots.txt': return Response('User-agent: *\nAllow: /\nSitemap: '+ORIGIN+'/sitemap.xml\n',mimetype='text/plain')
@@ -340,6 +392,7 @@ def public_dispatch():
 
 
 def register(app, scope_fn):
+    app.add_url_rule('/media/reposnews/<asset>','reposnews_media',media)
     @app.get('/reposnews-preview/<lang>/')
     @app.get('/reposnews-preview/<lang>/<slug>')
     def reposnews_preview(lang,slug=''):

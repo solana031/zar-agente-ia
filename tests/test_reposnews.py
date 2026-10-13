@@ -75,4 +75,31 @@ class ReposNewsTest(unittest.TestCase):
  def test_private_optional_legal_fields(self):
   data=rn.read();data.update(legal={'controller':'Fixture owner','privacy_contact':'fixture@example.test','activity_mode':'NONCOMMERCIAL','entity_type':'PERSON','processing_basis':'Fixture basis','retention':'Fixture retention','providers_reviewed':True,'tax_id':'PRIVATE_TAX','address':'PRIVATE_ADDRESS'},legal_reviewed=True);rn.write(data)
   r=self.get('/es/legal/');self.assertNotIn(b'PRIVATE_TAX',r.data);self.assertNotIn(b'PRIVATE_ADDRESS',r.data)
+ def test_partial_legal_is_saved_without_approval(self):
+  result=rn.operate('owner','legal_save',{'controller':'Fixture draft owner','reviewed':True})
+  self.assertEqual(result['legal']['controller'],'Fixture draft owner');self.assertFalse(result['legal_reviewed']);self.assertEqual(result['legal_status']['status'],'LEGAL_INCOMPLETE');self.assertIn('Guardado privado',result['legal_save_notice'])
+ def test_complete_legal_survives_restart(self):
+  import importlib
+  legal={'controller':'Fixture owner','privacy_contact':'fixture@example.test','activity_mode':'ECONOMIC','entity_type':'PERSON','address':'Fixture address','tax_id':'TEST_ONLY','processing_basis':'Fixture basis','retention':'Fixture retention','providers_reviewed':True,'reviewed':True}
+  rn.operate('owner','legal_save',legal)
+  importlib.reload(rn);rn.initialize('owner')
+  saved=rn.state('owner')
+  for key,value in legal.items():
+   if key!='reviewed':self.assertEqual(saved['legal'][key],value)
+  self.assertEqual(saved['legal_status']['status'],'LEGAL_READY')
+  self.assertIn('VERIFIED',saved['search_console_status'])
+ def test_diagnostic_redacts_and_finds_copy(self):
+  folder=rn._path().parent
+  secret={'owner':'owner','legal':{'controller':'PRIVATE_FIXTURE','tax_id':'PRIVATE_TAX'}}
+  (folder/'editorial.backup.json').write_text(json.dumps(secret))
+  result=rn.legal_diagnostic('owner')
+  self.assertTrue(any(c['fields']['controller'] for c in result['copies']))
+  self.assertNotIn('PRIVATE_FIXTURE',json.dumps(result));self.assertNotIn('PRIVATE_TAX',json.dumps(result))
+  with self.assertRaises(ValueError):rn.legal_diagnostic('another')
+ def test_media_isolation(self):
+  r=self.get('/media/reposnews/uv.png');self.assertEqual(r.status_code,200);self.assertEqual(r.mimetype,'image/png');r.close()
+  self.assertEqual(self.get('/media/reposnews/../index.html').status_code,404)
+  self.assertEqual(self.get('/media/reposnews/private.json').status_code,404)
+ def test_social_visuals(self):
+  r=self.c.get('/reposnews-preview/en/uv');self.assertIn(b'og:image',r.data);self.assertIn(b'summary_large_image',r.data);self.assertIn(b'/media/reposnews/uv.png',r.data)
 if __name__=='__main__':unittest.main()

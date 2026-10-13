@@ -53,6 +53,7 @@
     }catch(e){notify(e.message);}
   }
   document.addEventListener('input',e=>{if(e.target.closest('#zarBusinessWorkflows form'))editing=true;});
+  window.addEventListener('zar-reposnews-saved',()=>{editing=false;lastRendered='';});
   document.addEventListener('change',async e=>{if(e.target.id==='zwDecisionFilter'){filter=e.target.value;await refresh();}});
   document.addEventListener('submit',async e=>{
     const f=e.target;if(!f.matches('#zarBusinessWorkflows form'))return;e.preventDefault();const data=Object.fromEntries(new FormData(f));
