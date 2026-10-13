@@ -81,7 +81,7 @@ def readiness(data):
     checks['PRIVACY']=checks['LEGAL'];checks['PUBLIC_CONTENT']=checks.pop('CONTENT')
     return {'checks':checks,'status':'READY_TO_SUBMIT' if all(checks.values()) else 'ACTION_REQUIRED',
             'blockers':[k for k,v in checks.items() if not v],
-            'submission':'REVIEW_REQUESTED' if data.get('adsense_verification',{}).get('submitted') else 'NOT_SUBMITTED','cmp':'NOT_ACTIVE · Google-certified CMP required before serving ads',
+            'submission':'UNDER_REVIEW' if data.get('adsense_verification',{}).get('submitted') and data.get('adsense_verification',{}).get('site_status')!='READY' else 'APPROVED' if data.get('adsense_verification',{}).get('site_status')=='READY' else 'NOT_SUBMITTED','cmp':'NOT_ACTIVE · Google-certified CMP required before serving ads',
             'analytics':'NOT_CONNECTED','site_in_adsense':data.get('adsense_verification',{}).get('site_status','NOT_VERIFIED'),
             'content_assessment':'Contenido original publicado; la decisión de aprobación corresponde a Google.',
             'search_console':data.get('search_console_status','NOT_VERIFIED')}
