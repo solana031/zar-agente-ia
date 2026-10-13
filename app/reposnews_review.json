@@ -1,0 +1,134 @@
+[
+  {
+    "id": "uv",
+    "checked_at": "2026-10-13T13:01:04.216414+00:00",
+    "release": {
+      "tag": "0.13.0",
+      "url": "https://github.com/astral-sh/uv/releases/tag/0.13.0",
+      "published_at": "2026-10-09T19:49:55Z"
+    },
+    "links": [
+      {
+        "url": "https://github.com/astral-sh/uv",
+        "http_status": 200,
+        "final_url": "https://github.com/astral-sh/uv"
+      },
+      {
+        "url": "https://docs.astral.sh/uv/",
+        "http_status": 200,
+        "final_url": "https://docs.astral.sh/uv/"
+      },
+      {
+        "url": "https://github.com/astral-sh/uv/releases/tag/0.13.0",
+        "http_status": 200,
+        "final_url": "https://github.com/astral-sh/uv/releases/tag/0.13.0"
+      },
+      {
+        "url": "https://docs.astral.sh/uv/getting-started/features/",
+        "http_status": 200,
+        "final_url": "https://docs.astral.sh/uv/getting-started/features/"
+      },
+      {
+        "url": "https://docs.astral.sh/uv/getting-started/installation/",
+        "http_status": 200,
+        "final_url": "https://docs.astral.sh/uv/getting-started/installation/"
+      },
+      {
+        "url": "https://api.github.com/repos/astral-sh/uv",
+        "http_status": 200,
+        "final_url": "https://api.github.com/repos/astral-sh/uv"
+      }
+    ],
+    "commands": "VERIFIED_DOCUMENTED_NOT_EXECUTED",
+    "body_digest": "3554b1cc4a2056808830d88b9887cdba66ada56afc4eb4403f02c3e306c858af",
+    "status": "FINAL_REVIEW_PASS"
+  },
+  {
+    "id": "playwright",
+    "checked_at": "2026-10-13T13:01:07.739450+00:00",
+    "release": {
+      "tag": "v1.64.0",
+      "url": "https://github.com/microsoft/playwright/releases/tag/v1.64.0",
+      "published_at": "2026-10-07T20:40:43Z"
+    },
+    "links": [
+      {
+        "url": "https://github.com/microsoft/playwright",
+        "http_status": 200,
+        "final_url": "https://github.com/microsoft/playwright"
+      },
+      {
+        "url": "https://playwright.dev/",
+        "http_status": 200,
+        "final_url": "https://playwright.dev/"
+      },
+      {
+        "url": "https://github.com/microsoft/playwright/releases/tag/v1.64.0",
+        "http_status": 200,
+        "final_url": "https://github.com/microsoft/playwright/releases/tag/v1.64.0"
+      },
+      {
+        "url": "https://playwright.dev/docs/intro",
+        "http_status": 200,
+        "final_url": "https://playwright.dev/docs/intro"
+      },
+      {
+        "url": "https://github.com/microsoft/playwright/blob/main/LICENSE",
+        "http_status": 200,
+        "final_url": "https://github.com/microsoft/playwright/blob/main/LICENSE"
+      },
+      {
+        "url": "https://api.github.com/repos/microsoft/playwright",
+        "http_status": 200,
+        "final_url": "https://api.github.com/repos/microsoft/playwright"
+      }
+    ],
+    "commands": "VERIFIED_DOCUMENTED_NOT_EXECUTED",
+    "body_digest": "9b558a6f5c12573c389c77d5aaf275454cca82aff9f455660b95bdc07b266c08",
+    "status": "FINAL_REVIEW_PASS"
+  },
+  {
+    "id": "fastapi",
+    "checked_at": "2026-10-13T13:01:10.092166+00:00",
+    "release": {
+      "tag": "0.143.0",
+      "url": "https://github.com/fastapi/fastapi/releases/tag/0.143.0",
+      "published_at": "2026-10-08T12:29:29Z"
+    },
+    "links": [
+      {
+        "url": "https://github.com/fastapi/fastapi",
+        "http_status": 200,
+        "final_url": "https://github.com/fastapi/fastapi"
+      },
+      {
+        "url": "https://fastapi.tiangolo.com/",
+        "http_status": 200,
+        "final_url": "https://fastapi.tiangolo.com/"
+      },
+      {
+        "url": "https://github.com/fastapi/fastapi/releases/tag/0.143.0",
+        "http_status": 200,
+        "final_url": "https://github.com/fastapi/fastapi/releases/tag/0.143.0"
+      },
+      {
+        "url": "https://fastapi.tiangolo.com/tutorial/first-steps/",
+        "http_status": 200,
+        "final_url": "https://fastapi.tiangolo.com/tutorial/first-steps/"
+      },
+      {
+        "url": "https://fastapi.tiangolo.com/tutorial/",
+        "http_status": 200,
+        "final_url": "https://fastapi.tiangolo.com/tutorial/"
+      },
+      {
+        "url": "https://api.github.com/repos/fastapi/fastapi",
+        "http_status": 200,
+        "final_url": "https://api.github.com/repos/fastapi/fastapi"
+      }
+    ],
+    "commands": "VERIFIED_DOCUMENTED_NOT_EXECUTED",
+    "body_digest": "928a99db546b9cf1700ddc7329f7a2baadb87872b2ed8f7584fc58d82dce5dc5",
+    "status": "FINAL_REVIEW_PASS"
+  }
+]

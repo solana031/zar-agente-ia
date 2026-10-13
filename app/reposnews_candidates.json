@@ -1,0 +1,122 @@
+[
+  {
+    "repo": "astral-sh/ruff",
+    "category": "Python tooling",
+    "why_now": "Actividad pública observada: 2026-10-13T12:38:44Z",
+    "trend_signals": {
+      "stars_total": 50029,
+      "forks_total": 2496,
+      "pushed_at": "2026-10-13T12:38:44Z",
+      "star_growth": "NOT_MEASURED"
+    },
+    "editorial_interest": "Linter y formateador en un proyecto uv",
+    "article_angle": "Linter y formateador en un proyecto uv",
+    "sources": [
+      "https://github.com/astral-sh/ruff",
+      "https://api.github.com/repos/astral-sh/ruff",
+      "https://github.com/astral-sh/ruff/releases"
+    ],
+    "checked_at": "2026-10-13",
+    "state": "CANDIDATE_NOT_DRAFT"
+  },
+  {
+    "repo": "vitejs/vite",
+    "category": "Web tooling",
+    "why_now": "Actividad pública observada: 2026-10-13T12:27:53Z",
+    "trend_signals": {
+      "stars_total": 83348,
+      "forks_total": 8848,
+      "pushed_at": "2026-10-13T12:27:53Z",
+      "star_growth": "NOT_MEASURED"
+    },
+    "editorial_interest": "Un primer build frontend y límites del servidor de desarrollo",
+    "article_angle": "Un primer build frontend y límites del servidor de desarrollo",
+    "sources": [
+      "https://github.com/vitejs/vite",
+      "https://api.github.com/repos/vitejs/vite",
+      "https://github.com/vitejs/vite/releases"
+    ],
+    "checked_at": "2026-10-13",
+    "state": "CANDIDATE_NOT_DRAFT"
+  },
+  {
+    "repo": "vercel/next.js",
+    "category": "Web framework",
+    "why_now": "Actividad pública observada: 2026-10-13T12:17:54Z",
+    "trend_signals": {
+      "stars_total": 143161,
+      "forks_total": 34729,
+      "pushed_at": "2026-10-13T12:17:54Z",
+      "star_growth": "NOT_MEASURED"
+    },
+    "editorial_interest": "Cuándo usar un framework React y qué implica desplegarlo",
+    "article_angle": "Cuándo usar un framework React y qué implica desplegarlo",
+    "sources": [
+      "https://github.com/vercel/next.js",
+      "https://api.github.com/repos/vercel/next.js",
+      "https://github.com/vercel/next.js/releases"
+    ],
+    "checked_at": "2026-10-13",
+    "state": "CANDIDATE_NOT_DRAFT"
+  },
+  {
+    "repo": "ollama/ollama",
+    "category": "Local AI",
+    "why_now": "Actividad pública observada: 2026-10-13T04:51:43Z",
+    "trend_signals": {
+      "stars_total": 182993,
+      "forks_total": 18246,
+      "pushed_at": "2026-10-13T04:51:43Z",
+      "star_growth": "NOT_MEASURED"
+    },
+    "editorial_interest": "Requisitos reales para probar un modelo local sin promesas de rendimiento",
+    "article_angle": "Requisitos reales para probar un modelo local sin promesas de rendimiento",
+    "sources": [
+      "https://github.com/ollama/ollama",
+      "https://api.github.com/repos/ollama/ollama",
+      "https://github.com/ollama/ollama/releases"
+    ],
+    "checked_at": "2026-10-13",
+    "state": "CANDIDATE_NOT_DRAFT"
+  },
+  {
+    "repo": "jqlang/jq",
+    "category": "CLI tools",
+    "why_now": "Actividad pública observada: 2026-10-13T07:47:59Z",
+    "trend_signals": {
+      "stars_total": 35793,
+      "forks_total": 4369,
+      "pushed_at": "2026-10-13T07:47:59Z",
+      "star_growth": "NOT_MEASURED"
+    },
+    "editorial_interest": "Transformar JSON desde terminal con ejemplos pequeños",
+    "article_angle": "Transformar JSON desde terminal con ejemplos pequeños",
+    "sources": [
+      "https://github.com/jqlang/jq",
+      "https://api.github.com/repos/jqlang/jq",
+      "https://github.com/jqlang/jq/releases"
+    ],
+    "checked_at": "2026-10-13",
+    "state": "CANDIDATE_NOT_DRAFT"
+  },
+  {
+    "repo": "pola-rs/polars",
+    "category": "Data tooling",
+    "why_now": "Actividad pública observada: 2026-10-13T11:57:24Z",
+    "trend_signals": {
+      "stars_total": 40115,
+      "forks_total": 3165,
+      "pushed_at": "2026-10-13T11:57:24Z",
+      "star_growth": "NOT_MEASURED"
+    },
+    "editorial_interest": "Procesar datos tabulares y comprobar tipos antes de migrar",
+    "article_angle": "Procesar datos tabulares y comprobar tipos antes de migrar",
+    "sources": [
+      "https://github.com/pola-rs/polars",
+      "https://api.github.com/repos/pola-rs/polars",
+      "https://github.com/pola-rs/polars/releases"
+    ],
+    "checked_at": "2026-10-13",
+    "state": "CANDIDATE_NOT_DRAFT"
+  }
+]

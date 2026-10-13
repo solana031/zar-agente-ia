@@ -3,6 +3,7 @@ import html
 import json
 import os
 import re
+import hashlib
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import quote
@@ -14,6 +15,45 @@ from . import holdings, site_projects
 ORIGIN = 'https://www.reposnews.com'
 HOSTS = {'reposnews.com','www.reposnews.com'}
 STAGES = {'IDEA','RESEARCH','DRAFT','SOURCE_VERIFY','DRAFT_ES','REVIEW','EN_TRANSLATION','SEO','PREVIEW','READY','SCHEDULED','PUBLISHED','ARCHIVED'}
+
+
+def legal_status(data):
+    legal=data.get('legal',{})
+    economic=legal.get('activity_mode')!='NONCOMMERCIAL'
+    fields={
+        'controller':('REQUIRED','Nombre legal del titular y responsable del tratamiento; publicación tras aprobación'),
+        'privacy_contact':('REQUIRED','Contacto para consultas y derechos; puede ser el email operativo existente'),
+        'activity_mode':('REQUIRED','Confirmar actividad económica/monetización prevista o exclusivamente no comercial; dato administrativo'),
+        'entity_type':('REQUIRED','Persona física o entidad; determina aplicabilidad del registro; dato administrativo'),
+        'address':('REQUIRED' if economic else 'OPTIONAL','Domicilio o establecimiento de contacto para actividad económica; se publicará solo si corresponde'),
+        'tax_id':('REQUIRED' if economic else 'NOT_APPLICABLE','Identificación fiscal para actividad económica, artículo 10 LSSI; no subir documentos'),
+        'registration':('REQUIRED' if legal.get('entity_type')=='REGISTERED_ENTITY' else 'NOT_APPLICABLE','Datos registrales únicamente si existe entidad inscrita'),
+        'processing_basis':('REQUIRED','Base jurídica de conexión/seguridad y atención de consultas actuales; revisión del titular'),
+        'retention':('REQUIRED','Plazos o criterios reales para logs y correo; no inventar años'),
+        'providers_reviewed':('REQUIRED','Confirmar revisión de encargados, contratos y transferencias de Railway/Google; checkbox privado')}
+    missing=[k for k,(level,_) in fields.items() if level=='REQUIRED' and not legal.get(k)]
+    if legal.get('activity_mode') not in {'ECONOMIC','NONCOMMERCIAL'}: missing=list(dict.fromkeys(missing+['activity_mode']))
+    if legal.get('entity_type') not in {'PERSON','REGISTERED_ENTITY'}: missing=list(dict.fromkeys(missing+['entity_type']))
+    return {'status':'LEGAL_INCOMPLETE' if missing else 'LEGAL_READY' if data.get('legal_reviewed') else 'LEGAL_REVIEW_REQUIRED',
+            'fields':{k:{'level':level,'purpose':purpose,'complete':bool(legal.get(k))} for k,(level,purpose) in fields.items()},
+            'missing_required':missing,'missing_optional':[k for k,(level,_) in fields.items() if level=='OPTIONAL' and not legal.get(k)],
+            'sources':['https://www.boe.es/buscar/act.php?id=BOE-A-2002-13758#a10','https://www.aepd.es/preguntas-frecuentes/2-tus-obligaciones-como-responsable-del-tratamiento/6-el-deber-de-informacion']}
+
+
+def publication_plan(data, ids):
+    ids=list(dict.fromkeys(ids or []))
+    if not ids or len(ids)>10: raise ValueError('Selecciona de 1 a 10 guías.')
+    articles=[next((a for a in data.get('articles',[]) if a['id']==id),None) for id in ids]
+    if not all(articles): raise ValueError('Guía seleccionada no encontrada.')
+    seo=all(a.get('state')=='READY' and a.get('sources') and all(a.get(k) for k in ('title_es','title_en','summary_es','summary_en','body_es','body_en')) and all(a.get('seo',{}).get(l,{}).get('canonical') for l in ('es','en')) for a in articles)
+    legal=legal_status(data)['status']
+    projection={'articles':[{k:a.get(k) for k in ('id','state','updated_at','title_es','title_en','summary_es','summary_en','body_es','body_en','sources','seo')} for a in articles], 'legal':data.get('legal'), 'legal_reviewed':data.get('legal_reviewed')}
+    digest=hashlib.sha256(json.dumps(projection,sort_keys=True,ensure_ascii=False).encode()).hexdigest()
+    return {'ids':ids,'article_count':len(ids),'languages':['es','en'],'urls':[a['seo'][l]['canonical'] for a in articles for l in ('es','en')],
+            'titles':[a['title_es'] for a in articles],'seo':'PASS' if seo else 'WARNING','legal':legal,
+            'editorial_ready':bool(seo),'ready_to_publish':bool(seo and legal=='LEGAL_READY'),
+            'sitemap':'WILL_ADD_SELECTED_ES_EN_URLS','homepage':'WILL_SHOW_NEW_GUIDES_EDITORIAL_SELECTION',
+            'published_now':False,'confirmation_required':True,'digest':digest,'date':holdings._now()}
 
 
 def article_defaults(article):
@@ -32,13 +72,18 @@ def readiness(data):
     checks={'DOMAIN':data.get('domain_status')=='ACTIVE','HTTPS':data.get('domain_status')=='ACTIVE',
             'CONTENT':any(a.get('published') for a in data.get('articles',[])),
             'ABOUT':True,'CONTACT':True,'PRIVACY':bool(data.get('legal_reviewed')),
-            'LEGAL':bool(data.get('legal_reviewed')),'COOKIES':True,'NAVIGATION':True,
+            'LEGAL':legal_status(data)['status']=='LEGAL_READY','COOKIES':True,'NAVIGATION':True,
             'MOBILE':True,'SITEMAP':True,'ROBOTS':True,'ADS.TXT':data.get('domain_status')=='ACTIVE',
-            'ORIGINAL_CONTENT':bool(data.get('articles'))}
+            'ORIGINAL_CONTENT':bool(data.get('articles')),
+            'ADSENSE_ACCOUNT':data.get('adsense_verification',{}).get('web_enabled') is True,
+            'ADSENSE_SITE':data.get('adsense_verification',{}).get('site_status') in {'REQUIRES_REVIEW','READY'}}
+    checks['PRIVACY']=checks['LEGAL'];checks['PUBLIC_CONTENT']=checks.pop('CONTENT')
     return {'checks':checks,'status':'READY_TO_SUBMIT' if all(checks.values()) else 'ACTION_REQUIRED',
             'blockers':[k for k,v in checks.items() if not v],
             'submission':'NOT_SUBMITTED','cmp':'NOT_ACTIVE · Google-certified CMP required before serving ads',
-            'analytics':'NOT_CONNECTED','site_in_adsense':'NOT_VERIFIED'}
+            'analytics':'NOT_CONNECTED','site_in_adsense':data.get('adsense_verification',{}).get('site_status','NOT_VERIFIED'),
+            'content_assessment':'Tres guías originales permiten un lanzamiento editorial pequeño; Google no fija aquí un mínimo numérico ni garantiza aprobación.',
+            'search_console':data.get('search_console_status','NOT_VERIFIED')}
 
 
 def summary():
@@ -74,7 +119,7 @@ def write(data):
 def state(scope):
     data=read()
     if data.get('owner') and data['owner']!=scope: raise ValueError('Este proyecto pertenece a otra sesión autorizada.')
-    return {k:v for k,v in data.items() if k!='owner'}|{'readiness':readiness(data)}
+    return {k:v for k,v in data.items() if k!='owner'}|{'readiness':readiness(data),'legal_status':legal_status(data)}
 
 
 def initialize(scope):
@@ -83,6 +128,21 @@ def initialize(scope):
         if data.get('owner'):
             state(scope)
             data['articles']=[article_defaults(a) for a in data.get('articles',[])]
+            data.setdefault('search_console_status','NOT_CONFIGURED · owner session shows welcome/no property')
+            data.setdefault('legal',{}).setdefault('privacy_contact','zaragente031@gmail.com')
+            data.setdefault('adsense_verification',{'account':'OPEN','publisher':'MATCHED','product':'YOUTUBE_INACTIVE','web_enabled':False,'site_status':'WEB_UPGRADE_REQUIRED','checked_at':'2026-10-13','source':'Existing owner dashboard + https://support.google.com/adsense/answer/9247020','submitted':False,'upgrade_form':'PREPARED_NOT_SUBMITTED · https://www.reposnews.com/'})
+            candidate_file=Path(__file__).with_name('reposnews_candidates.json')
+            if candidate_file.exists(): data.setdefault('next_editorial_candidates',json.loads(candidate_file.read_text(encoding='utf-8')))
+            review_file=Path(__file__).with_name('reposnews_review.json')
+            if review_file.exists():
+                for review in json.loads(review_file.read_text(encoding='utf-8')):
+                    article=next((a for a in data['articles'] if a['id']==review['id']),None)
+                    if not article: continue
+                    digest=hashlib.sha256((article['body_es']+'\n'+article['body_en']).encode()).hexdigest()
+                    if digest!=review['body_digest']: continue # Preserve later human edits; do not certify a different manuscript.
+                    if article.get('final_review',{}).get('checked_at')==review['checked_at']: continue
+                    article['final_review']=review;article['source_checked_at']=review['checked_at'];article['last_reviewed']=review['checked_at'];article['latest_release']=review['release']
+                    article['history']=(article.get('history',[])+[{'at':holdings._now(),'fields':['final_review','source_checked_at','latest_release'],'reason':'Revisión final de fuentes oficiales; 6 enlaces verificados, ES/EN conservados.'}])[-60:]
             write(data);return state(scope)
         from . import sites_company
         row=next((r for r in sites_company._read_registry(scope) if r.get('domain') in HOSTS),None)
@@ -116,6 +176,23 @@ def operate(scope, op, payload):
     with holdings.transaction('reposnews-editorial'):
         state(scope);data=read()
         if not data.get('owner'): raise ValueError('Crea primero el proyecto ReposNews.')
+        if op=='dry_run': return publication_plan(data,payload.get('ids'))
+        if op=='publish_batch':
+            plan=publication_plan(data,payload.get('ids'))
+            if payload.get('confirmed') is not True or payload.get('approved_digest')!=plan['digest']:
+                raise ValueError('Confirmación explícita del resumen vigente requerida.')
+            if not plan['ready_to_publish']: raise ValueError('Completa revisión legal y editorial antes de publicar.')
+            if holdings.read(scope).get('global_stop'): raise ValueError('STOP GLOBAL activo.')
+            from . import jev_decision
+            proposal=jev_decision.proposal(scope,{'source_agent':'SiteBuilderAgent','task':'Publicación conjunta ReposNews ES/EN','action':'publish articles','resources':plan['urls'],'expected_cost':0,'risk':.3,'urgency':.5})
+            if proposal['decision']=='REJECT': raise ValueError('JEV rechazó publicación.')
+            for a in data['articles']:
+                if a['id'] not in plan['ids']: continue
+                a['published_snapshot']={k:v for k,v in a.items() if k!='published_snapshot'}
+                a.update(published=True,published_at=holdings._now(),state='PUBLISHED',status='PUBLISHED')
+                a['history']=(a.get('history',[])+[{'at':holdings._now(),'fields':['published','state'],'reason':'Publicación conjunta ES/EN confirmada'}])[-60:]
+            jev_decision.decision_state(scope,proposal['id'],'USER_CONFIRMED_EDITORIAL_CHANGE')
+            write(data);return state(scope)
         if op=='verify':
             from . import browser_network
             proxy=None
@@ -139,10 +216,12 @@ def operate(scope, op, payload):
             finally:
                 if proxy: proxy.shutdown();proxy.server_close()
         elif op=='legal_save':
-            keys={'controller':180,'address':500,'tax_id':80,'registration':300,'privacy_contact':180}
+            keys={'controller':180,'address':500,'tax_id':80,'registration':300,'privacy_contact':180,'activity_mode':30,'entity_type':30,'processing_basis':1500,'retention':1500}
             legal={k:str(payload.get(k,'')).strip()[:limit] for k,limit in keys.items()}
-            if payload.get('reviewed') is True and not all(legal.get(k) for k in ('controller','address','tax_id','privacy_contact')):
-                raise ValueError('Completa titular, domicilio, identificación fiscal y contacto; revisa su aplicabilidad antes de aprobar.')
+            legal['providers_reviewed']=payload.get('providers_reviewed') is True
+            candidate=data|{'legal':legal,'legal_reviewed':payload.get('reviewed') is True}
+            if payload.get('reviewed') is True and legal_status(candidate)['missing_required']:
+                raise ValueError('Faltan campos necesarios: '+', '.join(legal_status(candidate)['missing_required']))
             data['legal']=legal;data['legal_reviewed']=payload.get('reviewed') is True;data['legal_updated_at']=holdings._now()
         elif op=='discover':
             query=str(payload.get('query') or 'topic:developer-tools archived:false').strip()
@@ -185,6 +264,7 @@ def operate(scope, op, payload):
                 if payload.get('confirmed') is not True: raise ValueError('Publicación exige confirmación separada.')
                 if holdings.read(scope).get('global_stop'): raise ValueError('STOP GLOBAL activo.')
                 if op=='publish':
+                    if legal_status(data)['status']!='LEGAL_READY': raise ValueError('Revisión legal pendiente.')
                     if article['state']!='READY' or not article.get('sources') or not all(article.get(k) for k in ('title_es','title_en','body_es','body_en')): raise ValueError('Revisa fuentes y ambas versiones hasta READY.')
                     from . import jev_decision
                     d=jev_decision.proposal(scope,{'source_agent':'SiteBuilderAgent','task':'Publicar artículo ReposNews ES/EN','action':'publish article','resources':['reposnews.com'],'expected_cost':0,'expected_revenue':None,'risk':.3,'urgency':.5})
@@ -226,7 +306,7 @@ def render(lang='es', slug='', preview=False):
     title=article['title_'+lang] if article else {'es':'ReposNews · Repositorios, herramientas y guías','en':'ReposNews · Repositories, tools and guides'}[lang]
     description=article['summary_'+lang] if article else ('Análisis y guías sobre proyectos tecnológicos con fuentes verificadas.' if lang=='es' else 'Project analysis and practical guides backed by official sources.')
     if slug in pages: title={'about':('Sobre ReposNews','About ReposNews'),'contact':('Contacto','Contact'),'privacy':('Privacidad','Privacy'),'cookies':('Cookies','Cookies'),'legal':('Aviso legal','Legal notice'),'repositories':('Repositorios','Repositories'),'guides':('Guías','Guides'),'trends':('Actividad','Activity')}[slug][0 if lang=='es' else 1]+' · ReposNews'
-    return render_template('reposnews.html',lang=lang,rows=rows,article=article,body=body_html(article['body_'+lang]) if article else None,slug=slug,preview=preview,base=base,title=title,description=description,origin=ORIGIN,path=path,data=data,query=query)
+    return render_template('reposnews.html',lang=lang,rows=rows,article=article,body=body_html(article['body_'+lang]) if article else None,slug=slug,preview=preview,base=base,title=title,description=description,origin=ORIGIN,path=path,data=data,query=query,legal_status=legal_status(data))
 
 
 def public_dispatch():

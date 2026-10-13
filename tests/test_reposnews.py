@@ -6,7 +6,7 @@ from app import reposnews as rn
 class ReposNewsTest(unittest.TestCase):
  def setUp(self):
   self.tmp=tempfile.TemporaryDirectory();self.env=patch.dict(os.environ,{'ZAR_DATA_DIR':self.tmp.name});self.env.start()
-  self.rows=json.loads(Path('app/reposnews_content.json').read_text(encoding='utf-8'));rn.write({'owner':'owner','articles':self.rows,'domain_status':'ACTIVE','publisher':'pub-4119869448727531'})
+  self.rows=[rn.article_defaults(a) for a in json.loads(Path('app/reposnews_content.json').read_text(encoding='utf-8'))];rn.write({'owner':'owner','articles':self.rows,'domain_status':'ACTIVE','publisher':'pub-4119869448727531'})
   self.app=Flask(__name__,template_folder=str(Path('app/templates').resolve()));self.app.before_request(rn.public_dispatch);rn.register(self.app,lambda:'owner');self.c=self.app.test_client()
  def tearDown(self): self.env.stop();self.tmp.cleanup()
  def get(self,path):return self.c.get(path,base_url=rn.ORIGIN)
@@ -39,7 +39,7 @@ class ReposNewsTest(unittest.TestCase):
   self.assertTrue(all(not a['published'] and a['status']=='READY' for a in again['articles']))
   for a in again['articles']:
    self.assertTrue(a['history']);self.assertTrue(a['seo']['en']['canonical']);self.assertTrue(a['latest_release']['url'])
-  self.assertFalse(again['readiness']['checks']['CONTENT']);self.assertEqual(again['readiness']['status'],'ACTION_REQUIRED')
+  self.assertFalse(again['readiness']['checks']['PUBLIC_CONTENT']);self.assertEqual(again['readiness']['status'],'ACTION_REQUIRED')
  def test_history(self):
   data=rn.read();data['articles']=[rn.article_defaults(a) for a in data['articles']];rn.write(data)
   result=rn.operate('owner','save',{'id':'uv','title_es':'Titulo revisado','reason':'Corrección editorial','state':'REVIEW'})
@@ -49,4 +49,30 @@ class ReposNewsTest(unittest.TestCase):
   r=self.get('/es/legal/');self.assertEqual(r.status_code,200);self.assertNotIn(b'PRIVATE UNREVIEWED',r.data);self.assertIn(b'ACTION_REQUIRED',r.data)
  def test_breadcrumb_and_related(self):
   r=self.c.get('/reposnews-preview/en/playwright');self.assertEqual(r.status_code,200);self.assertIn(b'BreadcrumbList',r.data);self.assertIn(b'Related guides',r.data)
+ def test_legal_applicability(self):
+  l={'controller':'Fixture owner','privacy_contact':'fixture@example.test','activity_mode':'NONCOMMERCIAL','entity_type':'PERSON','processing_basis':'Test fixture basis','retention':'Fixture retention','providers_reviewed':True}
+  data={'legal':l,'legal_reviewed':True};self.assertEqual(rn.legal_status(data)['status'],'LEGAL_READY');self.assertEqual(rn.legal_status(data)['fields']['tax_id']['level'],'NOT_APPLICABLE')
+  l['activity_mode']='ECONOMIC';self.assertIn('tax_id',rn.legal_status(data)['missing_required']);self.assertIn('address',rn.legal_status(data)['missing_required'])
+  l['entity_type']='REGISTERED_ENTITY';self.assertIn('registration',rn.legal_status(data)['missing_required'])
+ def test_dry_run_no_write(self):
+  before=rn._path().read_bytes();plan=rn.operate('owner','dry_run',{'ids':['uv','playwright','fastapi']})
+  self.assertEqual(len(plan['urls']),6);self.assertEqual(plan['seo'],'PASS');self.assertFalse(plan['ready_to_publish']);self.assertEqual(before,rn._path().read_bytes())
+ def test_batch_confirmation_and_stale_plan(self):
+  data=rn.read();data.update(legal={'controller':'Fixture owner','privacy_contact':'fixture@example.test','activity_mode':'NONCOMMERCIAL','entity_type':'PERSON','processing_basis':'Fixture basis','retention':'Fixture retention','providers_reviewed':True},legal_reviewed=True);rn.write(data)
+  plan=rn.publication_plan(data,['uv','playwright','fastapi']);self.assertTrue(plan['ready_to_publish'])
+  with self.assertRaises(ValueError):rn.operate('owner','publish_batch',{'ids':plan['ids'],'approved_digest':plan['digest']})
+  data['articles'][0]['title_es']='Changed title';rn.write(data)
+  with self.assertRaises(ValueError):rn.operate('owner','publish_batch',{'ids':plan['ids'],'approved_digest':plan['digest'],'confirmed':True})
+ def test_fixture_batch_publish_and_unpublish(self):
+  data=rn.read();data.update(legal={'controller':'Fixture owner','privacy_contact':'fixture@example.test','activity_mode':'NONCOMMERCIAL','entity_type':'PERSON','processing_basis':'Fixture basis','retention':'Fixture retention','providers_reviewed':True},legal_reviewed=True);rn.write(data)
+  plan=rn.publication_plan(data,['uv','playwright','fastapi'])
+  with patch('app.holdings.read',return_value={'global_stop':False}),patch('app.jev_decision.proposal',return_value={'id':'fixture','decision':'ALLOW'}),patch('app.jev_decision.decision_state'):
+   rn.operate('owner','publish_batch',{'ids':plan['ids'],'approved_digest':plan['digest'],'confirmed':True})
+   xml=self.get('/sitemap.xml').data
+   for u in plan['urls']:self.assertIn(u.encode(),xml)
+   for id in plan['ids']:rn.operate('owner','unpublish',{'id':id,'confirmed':True})
+  self.assertEqual(len(rn.read()['articles']),3);self.assertTrue(all(not a['published'] for a in rn.read()['articles']));self.assertNotIn(b'/uv/',self.get('/sitemap.xml').data)
+ def test_private_optional_legal_fields(self):
+  data=rn.read();data.update(legal={'controller':'Fixture owner','privacy_contact':'fixture@example.test','activity_mode':'NONCOMMERCIAL','entity_type':'PERSON','processing_basis':'Fixture basis','retention':'Fixture retention','providers_reviewed':True,'tax_id':'PRIVATE_TAX','address':'PRIVATE_ADDRESS'},legal_reviewed=True);rn.write(data)
+  r=self.get('/es/legal/');self.assertNotIn(b'PRIVATE_TAX',r.data);self.assertNotIn(b'PRIVATE_ADDRESS',r.data)
 if __name__=='__main__':unittest.main()
