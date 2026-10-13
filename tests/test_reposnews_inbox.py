@@ -76,7 +76,26 @@ class InstagramInboxTest(unittest.TestCase):
  def test_shared_permalink_only_is_honest(self):
   item=inbox.receive(self.event(text='https://www.instagram.com/reel/fixture',attachments=[{'type':'share','payload':{'url':'https://www.instagram.com/reel/fixture'}}]))[0]
   with patch('app.jev_decision.proposal',return_value={'decision':'ALLOW'}),patch.object(inbox,'analyze_media',return_value={}),patch.object(inbox,'public_discovery',return_value={'status':'LOGIN_REQUIRED'}):inbox.process(item)
-  row=rn.read()['instagram_inbox'][0];self.assertEqual(row['status'],'ACTION_REQUIRED');self.assertIn('META_SHARED_URL_ONLY',row['error']);self.assertEqual(rn.read()['articles'],[])
+  row=rn.read()['instagram_inbox'][0];self.assertEqual(row['status'],'NEEDS_DISAMBIGUATION');self.assertEqual(row['error'],'NO_ACCESSIBLE_DISCOVERY_TEXT');self.assertEqual(rn.read()['articles'],[])
+
+ def test_entity_resolves_name_only_with_official_backlink(self):
+  candidate={'name':'open-webui','full_name':'open-webui/open-webui','homepage':'https://openwebui.com/','fork':False}
+  with patch.object(inbox,'generate_json',return_value={'name':'Open WebUI','ambiguous':False}),patch.object(rn,'github',return_value={'items':[candidate]}),patch.object(inbox,'homepage_confirms_repository',return_value=True):
+   result=inbox.resolve_entity('Reel: Open WebUI is a software project')
+  self.assertEqual(result['repo'],'open-webui/open-webui');self.assertEqual(result['status'],'RESOLVED')
+
+ def test_entity_does_not_choose_between_exact_candidates(self):
+  candidates=[{'name':'tool','full_name':owner+'/tool','homepage':'https://example.org/'} for owner in ('one','two')]
+  with patch.object(inbox,'generate_json',return_value={'name':'Tool','ambiguous':False}),patch.object(rn,'github',return_value={'items':candidates}),patch.object(inbox,'homepage_confirms_repository') as verify:
+   self.assertEqual(inbox.resolve_entity('Tool project')['status'],'NEEDS_DISAMBIGUATION');verify.assert_not_called()
+
+ def test_entity_rejects_uncorroborated_repository(self):
+  with patch.object(inbox,'generate_json',return_value={'name':'Tool','ambiguous':False}),patch.object(rn,'github',return_value={'items':[{'name':'tool','full_name':'one/tool','homepage':'https://example.org/'}]}),patch.object(inbox,'homepage_confirms_repository',return_value=False):
+   self.assertEqual(inbox.resolve_entity('Tool project')['reason'],'OFFICIAL_WEBSITE_NOT_CORROBORATED')
+
+ def test_entity_does_not_search_ambiguous_discovery(self):
+  with patch.object(inbox,'generate_json',return_value={'name':'Tool','ambiguous':True}),patch.object(rn,'github') as search:
+   self.assertEqual(inbox.resolve_entity('Several tools')['status'],'NEEDS_DISAMBIGUATION');search.assert_not_called()
  def test_public_fallback_never_reuses_authenticated_browser_or_stores_cookies(self):
   with patch('app.zar_browser.Actor') as actor:
    actor.return_value.run.return_value={'ok':True,'security_state':'READY','text':'Software https://github.com/example/project','storage':{'cookies':['fixture-private']},'screenshot':'fixture-private'}

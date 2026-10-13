@@ -224,12 +224,19 @@ def metadata(row):
 def operate(scope, op, payload):
     if op=='init': return initialize(scope)
     if op=='legal_diagnostic': return legal_diagnostic(scope)
-    if op in {'inbox_retry','inbox_discard'}:
+    if op in {'inbox_retry','inbox_discard','inbox_resolve'}:
         from . import reposnews_inbox
         state(scope)
         item_id=str(payload.get('id') or '')
         if not re.fullmatch('[a-f0-9]{24}',item_id): raise ValueError('Item inválido.')
-        if op=='inbox_retry':
+        if op=='inbox_resolve':
+            name=str(payload.get('name') or '').strip()
+            if not re.fullmatch(r'[\w .+-]{2,80}',name):raise ValueError('Indica un nombre de proyecto válido.')
+            row=next((x for x in read().get('instagram_inbox',[]) if x['id']==item_id),None)
+            if not row or row.get('status')!='NEEDS_DISAMBIGUATION':raise ValueError('Este item no requiere aclaración.')
+            if row.get('attempts',0)>=2:raise ValueError('Límite de dos intentos alcanzado; no se consume más cuota automáticamente.')
+            reposnews_inbox.update(item_id,status='RECEIVED',caption=reposnews_inbox.safe_caption(row.get('caption','')+'\nProyecto aclarado: '+name),clarified_project=name)
+        elif op=='inbox_retry':
             reposnews_inbox.process(item_id)
         else: reposnews_inbox.update(item_id,status='DISCARDED',processing_state='DISCARDED')
         return state(scope)
