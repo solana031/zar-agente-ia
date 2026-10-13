@@ -80,6 +80,18 @@ class InstagramInboxTest(unittest.TestCase):
  def test_reverify_missing_token_never_requests_oauth(self):
   with patch.object(inbox.requests,'get') as get,patch.object(inbox.requests,'post') as post:
    self.assertEqual(inbox.reverify_connection()['error'],'TOKEN_UNAVAILABLE');get.assert_not_called();post.assert_not_called()
+
+ def test_authorized_username_resolves_only_from_official_sender_metadata(self):
+  with patch.object(inbox,'credentials',return_value={'access_token':'fixture-token'}),patch.object(inbox.requests,'get',side_effect=[Mock(ok=True,json=lambda:{'data':[{'id':'conversation'}]}),Mock(ok=True,json=lambda:{'messages':{'data':[{'id':'message'}]}}),Mock(ok=True,json=lambda:{'from':{'username':'solana031','id':'98765'}})]) as get:
+   result=inbox.authorize_solana_sender()
+  self.assertEqual(result['id'],'98765');self.assertIn('98765',inbox.sender_ids())
+  self.assertEqual(get.call_args.kwargs['params'],{'fields':'from'})
+  self.assertNotIn('fixture-token',json.dumps(rn.read()))
+
+ def test_sender_resolver_never_authorizes_a_different_username(self):
+  with patch.object(inbox,'credentials',return_value={'access_token':'fixture-token'}),patch.object(inbox.requests,'get',side_effect=[Mock(ok=True,json=lambda:{'data':[{'id':'conversation'}]}),Mock(ok=True,json=lambda:{'messages':{'data':[{'id':'message'}]}}),Mock(ok=True,json=lambda:{'from':{'username':'stranger','id':'98765'}})]):
+   with self.assertRaises(ValueError):inbox.authorize_solana_sender()
+  self.assertNotIn('98765',inbox.sender_ids());self.assertFalse(rn.read().get('instagram_authorized_senders'))
  def test_discard_survives_late_worker_updates(self):
   item=inbox.receive(self.event())[0];inbox.update(item,status='DISCARDED');inbox.update(item,status='READY')
   self.assertEqual(rn.read()['instagram_inbox'][0]['status'],'DISCARDED')

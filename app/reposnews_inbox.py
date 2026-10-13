@@ -96,6 +96,36 @@ def reverify_connection():
         data=rn.read();data['instagram_callback']=result;rn.write(data)
     return result
 
+def sender_ids():
+    configured={x.strip() for x in os.environ.get('INSTAGRAM_REPOSNEWS_SENDERS','').split(',') if x.strip()}
+    return configured|{x['id'] for x in rn.read().get('instagram_authorized_senders',[]) if x.get('verified_at') and x.get('username')=='solana031' and re.fullmatch(r'[0-9]+',str(x.get('id','')))}
+
+def authorize_solana_sender():
+    """Resolve the explicitly approved username from message metadata, never bodies."""
+    auth=credentials()
+    if not auth.get('access_token'):raise ValueError('Conecta OAuth antes de autorizar el remitente.')
+    headers={'Authorization':'Bearer '+auth['access_token']}
+    def read(path,params):
+        response=requests.get('https://graph.instagram.com/v26.0/'+path,headers=headers,params=params,timeout=15)
+        if not response.ok:raise ValueError('Meta no permite verificar el remitente; no se amplía la lista autorizada.')
+        return response.json()
+    def valid_id(value):return isinstance(value,str) and re.fullmatch(r'[A-Za-z0-9_.:-]{1,300}',value)
+    conversations=read('me/conversations',{'platform':'instagram','fields':'id','limit':5}).get('data',[])
+    for conversation in conversations[:5]:
+        cid=conversation.get('id')
+        if not valid_id(cid):continue
+        messages=read(cid,{'fields':'messages'}).get('messages',{}).get('data',[])
+        for message in messages[:3]:
+            mid=message.get('id')
+            if not valid_id(mid):continue
+            sender=read(mid,{'fields':'from'}).get('from',{})
+            if sender.get('username','').lower()!='solana031' or not re.fullmatch(r'[0-9]+',str(sender.get('id',''))):continue
+            verified={'username':'solana031','id':str(sender['id']),'verified_at':holdings._now(),'source':'OFFICIAL_MESSAGE_SENDER_METADATA'}
+            with holdings.transaction('reposnews-editorial'):
+                data=rn.read();data['instagram_authorized_senders']=[verified];rn.write(data)
+            return verified
+    raise ValueError('Aún no hay metadata verificable de @solana031. Envía un mensaje a @zaragente031 y vuelve a verificar; no se aceptan desconocidos.')
+
 def credentials():
     from . import oauth_vault
     path=rn._path().parent/'instagram-oauth'
@@ -116,7 +146,7 @@ def safe_caption(value):
 
 def integration():
     auth=credentials()
-    configured=bool(auth.get('access_token') and auth.get('user_id') and all(os.environ.get(k) for k in ('INSTAGRAM_APP_SECRET','INSTAGRAM_WEBHOOK_VERIFY_TOKEN','INSTAGRAM_REPOSNEWS_SENDERS')))
+    configured=bool(auth.get('access_token') and auth.get('user_id') and sender_ids() and all(os.environ.get(k) for k in ('INSTAGRAM_APP_SECRET','INSTAGRAM_WEBHOOK_VERIFY_TOKEN')))
     data=rn.read()
     events=data.get('instagram_inbox',[])
     last=events[-1] if events else {}
@@ -135,7 +165,7 @@ def integration():
         'messaging':'EVENT_RECEIVED' if data.get('instagram_last_event') else 'UNVERIFIED','webhook':'VERIFIED' if data.get('instagram_webhook_verified_at') else 'SIGNED_ENDPOINT_AVAILABLE','auto_ingest':'ENABLED_FOR_ALLOWLIST' if configured else 'NOT_CONFIGURED',
         'media_access':'ONLY_MEDIA_GRANTED_BY_META','full_reels':'NOT_GUARANTEED','docs':DOCS,
         'oauth_available':bool(os.environ.get('INSTAGRAM_APP_ID') and os.environ.get('INSTAGRAM_APP_SECRET')),
-        'missing':([k for k in ('INSTAGRAM_APP_SECRET','INSTAGRAM_WEBHOOK_VERIFY_TOKEN','INSTAGRAM_REPOSNEWS_SENDERS') if not os.environ.get(k)]+(['INSTAGRAM_OAUTH'] if not auth.get('access_token') else [])),
+        'missing':([k for k in ('INSTAGRAM_APP_SECRET','INSTAGRAM_WEBHOOK_VERIFY_TOKEN') if not os.environ.get(k)]+(['INSTAGRAM_REPOSNEWS_SENDERS'] if not sender_ids() else [])+(['INSTAGRAM_OAUTH'] if not auth.get('access_token') else [])),
         'action':'Acceder/crear cuenta ZAR; convertir a profesional; conectar app Meta con instagram_business_basic + instagram_business_manage_messages; verificar webhook messages y autorizar el ID del remitente.'}
 
 def human_action(scope):
@@ -162,7 +192,7 @@ def verify_signature(raw,signature):
 def receive(payload):
     """Ignore unrelated/private conversations before storing anything. One item per mid."""
     account=str(credentials().get('user_id') or '')
-    senders={x.strip() for x in os.environ.get('INSTAGRAM_REPOSNEWS_SENDERS','').split(',') if x.strip()}
+    senders=sender_ids()
     accepted=[]
     if payload.get('object')!='instagram' or not account or not senders:return accepted
     with holdings.transaction('reposnews-editorial'):

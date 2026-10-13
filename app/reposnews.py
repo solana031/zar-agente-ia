@@ -227,6 +227,9 @@ def operate(scope, op, payload):
     if op=='instagram_reverify':
         from . import reposnews_inbox
         state(scope);reposnews_inbox.reverify_connection();return state(scope)
+    if op=='instagram_sender_authorize':
+        from . import reposnews_inbox
+        state(scope);reposnews_inbox.authorize_solana_sender();return state(scope)
     if op in {'inbox_retry','inbox_discard','inbox_resolve'}:
         from . import reposnews_inbox
         state(scope)
