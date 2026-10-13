@@ -520,7 +520,7 @@ def _authorized():
 
 @app.before_request
 def _guard():
-    allowed = {"login","health","oauth2callback","connect_google","connect_gmail","holdings_media_public_video_api","distributed_nodes.poll","distributed_nodes.claim","distributed_nodes.health","distributed_nodes.inference","agency_stripe_webhook"}
+    allowed = {"login","health","oauth2callback","connect_google","connect_gmail","holdings_media_public_video_api","distributed_nodes.poll","distributed_nodes.claim","distributed_nodes.health","distributed_nodes.inference","agency_stripe_webhook","reposnews_instagram_webhook"}
     if request.endpoint in allowed or request.path.startswith("/static/"):
         return None
     if request.endpoint in {'holdings_site_page','holdings_site_asset'}:
@@ -1844,8 +1844,12 @@ from .site_projects import preview_headers as site_projects_preview
 business_workflows.register(app, _user_scope_id)
 from . import reposnews
 reposnews.register(app, _user_scope_id)
+from . import reposnews_inbox
+reposnews_inbox.register(app, _user_scope_id)
 if os.environ.get('RAILWAY_PROJECT_ID') == '33af08fe-7e2e-4df3-afb5-c5a1ac41b2f5':
     reposnews_owner = reposnews.bootstrap()
+    reposnews_inbox.human_action(reposnews_owner)
+    reposnews_inbox.start_worker()
     def _verify_reposnews_after_start():
         try:
             reposnews.operate(reposnews_owner, 'verify', {})

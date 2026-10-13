@@ -1,0 +1,83 @@
+[
+  {
+    "id": "jev",
+    "repo": "typesafe-ai/typesafe-sdk-python",
+    "category": "AI Tools",
+    "language": "Python",
+    "license": "MIT",
+    "website": "https://docs.typesafe.ai/sdk/python",
+    "official_docs": "https://docs.typesafe.ai/sdk/python/",
+    "checked_at": "2026-10-13",
+    "source_checked_at": "2026-10-13",
+    "state": "READY",
+    "published": false,
+    "translation_status": "REVIEWED",
+    "review_kind": "SOURCE_REVIEW_2026_10_13",
+    "sources": [
+      "https://github.com/typesafe-ai/typesafe-sdk-python",
+      "https://github.com/typesafe-ai/typesafe-sdk-python/blob/main/README.md",
+      "https://docs.typesafe.ai/introduction",
+      "https://docs.typesafe.ai/sdk/python/"
+    ],
+    "title_es": "Jev: decisiones tipadas con el SDK oficial de TypeSafe",
+    "summary_es": "Cómo conectar el SDK de Python con Jev y separar decisiones estructuradas de respuestas generativas.",
+    "body_es": "## Qué es y qué repositorio estamos revisando\nJev es el modelo de decisiones de TypeSafe AI. El repositorio público revisado aquí es typesafe-ai/typesafe-sdk-python: contiene un cliente para su API, no los pesos del modelo ni un servidor Jev autoalojable. Esta distinción evita confundir una biblioteca con la infraestructura que ejecuta la inferencia.\n\n## Qué puedes hacer\nEl ejemplo oficial clasifica una solicitud de soporte mediante Choice. La aplicación proporciona el estado, una pregunta y las opciones admisibles; recibe una selección estructurada. Este patrón permite separar el enrutamiento de una tarea de la redacción de su respuesta. Que una salida tenga un tipo correcto no demuestra que la decisión sea acertada.\n\n## Instalación documentada\nEl README utiliza uv add typesafe-sdk. También documenta un extra http2 opcional. Debes configurar TYPESAFE_API_KEY en el entorno antes de crear TypeSafeClient. Una clave de ejemplo nunca debe sustituirse por una credencial real dentro del código publicado.\n\n## Primeros pasos\nConsulta el ejemplo de system_one en el README: envía un estado con un documento y define criterios de clasificación. Reproduce primero una pregunta sencilla y registra la opción recibida. Esta guía verifica la documentación pública; no afirma haber probado una llamada autenticada ni medido precisión, latencia o coste.\n\n## Ventajas, límites y alternativas\nEl SDK ofrece una interfaz específica para respuestas tipadas. La dependencia del servicio alojado implica gestionar autenticación y disponibilidad. Compara el enfoque con reglas deterministas cuando el problema sea sencillo, o con salidas estructuradas de un modelo generativo si necesitas contexto adicional. Para decisiones sensibles, conserva revisión humana y criterios verificables.\n\n## Fuentes y siguiente paso\nEmpieza por el README y la documentación oficial de Python. Verifica requisitos y versión en esas fuentes antes de desplegar. Las afirmaciones comerciales sobre rendimiento pertenecen al proveedor y no equivalen a resultados de tu aplicación.",
+    "title_en": "Jev: typed decisions with the official TypeSafe SDK",
+    "summary_en": "Connect the Python SDK to Jev while keeping structured decisions separate from generated prose.",
+    "body_en": "## The model and the public project\nJev is TypeSafe AI’s decision model. The public project examined here, typesafe-ai/typesafe-sdk-python, provides a client for the hosted API. It is not a distribution of model weights or a self-hosted Jev server. Start with this distinction when deciding what the repository actually enables.\n\n## What the workflow looks like\nThe official example uses Choice to classify a support request. An application supplies state, a question and allowed categories, then consumes the resulting selection. This is useful for routing work before composing a response. A correctly typed answer still needs evaluation against the task: structure alone does not establish decision accuracy.\n\n## Documented installation\nThe README installs the package with uv add typesafe-sdk and describes an optional http2 extra. Set TYPESAFE_API_KEY through your environment before instantiating TypeSafeClient. Keep production credentials outside source files and published examples. Follow the current Python documentation for environment requirements rather than guessing them.\n\n## A small first experiment\nUse the repository’s system_one example with a short document and a clear classification question. Inspect the selected option and test ambiguous inputs against expected outcomes. Our review checks public documentation; it does not claim an authenticated API run, a benchmark or a verified price for your workload.\n\n## Trade-offs and alternatives\nThe client makes typed decision calls accessible from Python, but depends on a hosted service and its authentication and availability. Deterministic rules can be a better fit for simple routing. Structured output from a general model is another comparison point when broader context matters. Sensitive decisions should retain human review and explicit acceptance criteria.\n\n## Where to go next\nRead the official README and Python SDK documentation together. Confirm the package version and supported request shapes before deployment. Vendor performance statements are claims to evaluate, not measurements of your own application."
+  },
+  {
+    "id": "automaton",
+    "repo": "Conway-Research/automaton",
+    "category": "AI Tools",
+    "language": "TypeScript",
+    "license": "MIT",
+    "website": "https://web4.ai",
+    "official_docs": "https://github.com/Conway-Research/automaton/blob/main/DOCUMENTATION.md",
+    "checked_at": "2026-10-13",
+    "source_checked_at": "2026-10-13",
+    "state": "READY",
+    "published": false,
+    "translation_status": "REVIEWED",
+    "review_kind": "SOURCE_REVIEW_2026_10_13",
+    "sources": [
+      "https://github.com/Conway-Research/automaton",
+      "https://github.com/Conway-Research/automaton/blob/main/README.md",
+      "https://github.com/Conway-Research/automaton/blob/main/DOCUMENTATION.md",
+      "https://github.com/Conway-Research/automaton/blob/main/DOCUMENTATION.md"
+    ],
+    "title_es": "Automaton de Conway: agente autónomo, permisos y costes antes de ejecutarlo",
+    "summary_es": "Una lectura práctica del repositorio Conway-Research/automaton y sus límites operativos.",
+    "body_es": "## Proyecto exacto\nEsta guía trata de Conway-Research/automaton, no de un autómata celular ni de otros proyectos con el mismo nombre. El repositorio describe un agente persistente con capacidad de actuar, modificar su configuración y utilizar infraestructura. Su licencia es MIT; los servicios externos y el consumo de recursos tienen condiciones independientes.\n\n## Cómo funciona\nLa arquitectura pública organiza un ciclo Think → Act → Observe. El contexto incluye identidad, historial y saldo de créditos. Un componente heartbeat realiza tareas periódicas. El repositorio también describe mecanismos de modificación del agente y replicación. Son capacidades documentadas por el proyecto, no una prueba de rentabilidad ni de funcionamiento de cada integración.\n\n## Obtener y preparar el código\nEl README indica clonar el repositorio, entrar en automaton y compilar con npm install y npm run build. Son instrucciones de la fuente, no comandos ejecutados durante esta revisión. Revisa las dependencias antes de instalar y trabaja primero en un entorno aislado.\n\n## Antes del primer arranque\nEl inicio operativo documentado es node dist/index.js --run. La fuente indica que el asistente inicial crea una wallet y prepara credenciales. Ese arranque tiene más consecuencias que leer el código: requiere comprender permisos y costes. No lo presentes como una demostración sin acceso externo; separa la inspección del repositorio de la activación del agente.\n\n## Usos y límites\nPuede servir para estudiar agentes continuos, observación de resultados y tareas programadas. El diseño de supervivencia por saldo no demuestra ingresos sostenibles. La autonomía y la modificación propia aumentan la necesidad de límites, auditoría y controles de recursos. No extrapoles sus descripciones a garantías de seguridad o éxito económico.\n\n## Alternativas y fuentes\nPara un flujo cerrado, compara esta arquitectura con un orquestador de tareas y herramientas autorizadas explícitamente. Consulta README, DOCUMENTATION y ARCHITECTURE oficiales. Evalúa cada proveedor por separado antes de dar permisos de ejecución o acceso financiero.",
+    "title_en": "Conway Automaton: inspect permissions and costs before running an autonomous agent",
+    "summary_en": "A practical reading of Conway-Research/automaton and its operational boundaries.",
+    "body_en": "## Identify the project first\nThis guide covers Conway-Research/automaton, rather than cellular automata or unrelated projects sharing the name. Its public repository describes a persistent agent able to act on infrastructure and change parts of its own setup. The code uses the MIT license; external services and resource consumption have separate requirements.\n\n## The documented architecture\nThe central loop is Think → Act → Observe. Context includes identity, history and a credit balance. A heartbeat component runs scheduled work. The repository also describes self-modification and replication. These are upstream design statements, not evidence that every integration works in your environment or that the agent earns a profit.\n\n## Get and prepare the source\nThe README starts by cloning the official repository, entering automaton and building with npm install and npm run build. These are documented instructions, not commands executed for this article. Inspect dependencies and choose an isolated development environment before installation.\n\n## Treat startup as a separate decision\nThe documented operational command is node dist/index.js --run. Upstream explains that the initial wizard creates a wallet and provisions credentials. Running it therefore involves more than reading source code. Understand permissions and cost exposure first; keep repository evaluation separate from granting the agent live capabilities.\n\n## Useful experiments and important limits\nThe project can inform experiments with continuous agents, scheduled work and observing tool outcomes. A balance-driven survival mechanism is not proof of sustainable revenue. Autonomy and self-modification make resource limits, auditing and access controls particularly important. Do not read the project description as a blanket guarantee of safety or economic results.\n\n## Compare narrower architectures\nFor a bounded workflow, consider a task orchestrator with explicitly authorized tools. Read the official README, DOCUMENTATION and ARCHITECTURE together, and assess each provider independently before granting execution or financial access."
+  },
+  {
+    "id": "dramaclaw",
+    "repo": "dramaclaw/dramaclaw",
+    "category": "AI Tools",
+    "language": "Python",
+    "license": "Elastic-2.0",
+    "website": "https://dramaclaw.ai",
+    "official_docs": "https://github.com/dramaclaw/dramaclaw/blob/main/docs/en/README.md",
+    "checked_at": "2026-10-13",
+    "source_checked_at": "2026-10-13",
+    "state": "READY",
+    "published": false,
+    "translation_status": "REVIEWED",
+    "review_kind": "SOURCE_REVIEW_2026_10_13",
+    "sources": [
+      "https://github.com/dramaclaw/dramaclaw",
+      "https://github.com/dramaclaw/dramaclaw/blob/main/README.md",
+      "https://github.com/dramaclaw/dramaclaw/blob/main/docs/en/getting-started/quickstart.md",
+      "https://github.com/dramaclaw/dramaclaw/blob/main/docs/en/README.md"
+    ],
+    "title_es": "DramaClaw: del guion al vídeo, con límites y licencia claros",
+    "summary_es": "Qué aporta el motor público de vídeo y cómo revisar su instalación oficial sin confundir código disponible con servicio gratuito.",
+    "body_es": "## Qué es\nDramaClaw es un motor AIGC cuyo repositorio público es dramaclaw/dramaclaw. Su documentación describe una cadena de producción desde guion y planificación hasta recursos audiovisuales y ensamblado. Esta guía usa únicamente fuentes públicas del proyecto; no documenta configuraciones privadas, credenciales ni servicios internos de ninguna instalación.\n\n## Qué puedes hacer\nLas funciones documentadas cubren preparación de historias, escenas, imágenes, voz y vídeo. La interfaz permite organizar el trabajo por proyectos. El resultado depende de los modelos y proveedores configurados, de los recursos de la máquina y del material de entrada. Una captura o una demostración del mantenedor no garantiza un render correcto en otro entorno.\n\n## Instalación oficial\nLa ruta recomendada utiliza Docker. El README actual diferencia compilar desde el código y descargar imágenes publicadas. Para la compilación describe dos repositorios hermanos: dramaclaw y dramaclaw-gateway. Consulta el Quick Start antes de utilizar tutoriales antiguos; los nombres de archivos y componentes pueden cambiar.\n\n## Primer proyecto\nTras instalar según la documentación, revisa la configuración de modelos y almacenamiento, utiliza una historia corta y comprueba cada etapa antes de ampliar el proyecto. Generación y alojamiento pueden tener costes independientes. Esta revisión no ejecuta una nueva generación ni promete un precio, duración o resolución que no estén comprobados.\n\n## Licencia y límites\nLa fuente indica Elastic License 2.0 y remite a sus condiciones y avisos. No debe describirse como una licencia MIT ni confundirse código disponible con ausencia de restricciones. Revisa especialmente las condiciones de ofrecer el software como servicio y los avisos de atribución antes de integrarlo en un producto público.\n\n## Alternativas y fuentes\nSi solo necesitas cortar material existente, un editor de vídeo convencional puede simplificar el trabajo. Si necesitas generación por escenas, evalúa proveedores y sus condiciones. Empieza por las funciones, el Quick Start y la licencia oficiales; distingue instrucciones documentadas de resultados realmente obtenidos.",
+    "title_en": "DramaClaw: from script to video, with clear licensing and limits",
+    "summary_en": "Review the public video engine and its official setup without assuming available source means free production.",
+    "body_en": "## What the public project provides\nDramaClaw’s official repository is dramaclaw/dramaclaw. Its documentation describes an AIGC production workflow spanning scripts, planning, audiovisual assets and assembly. This article relies exclusively on public project sources. It contains no private deployment configuration, credentials or internal endpoints from any installation.\n\n## Explore the workflow\nDocumented capabilities include stories, scenes, images, voice and video organized into projects. Outcomes depend on configured models and providers, machine resources and input material. A maintainer’s screenshot or demonstration is not a guarantee that another environment will produce the same output. Evaluate the workflow stage by stage.\n\n## Use the current installation guide\nDocker is the recommended route in the README. It distinguishes building from source from pulling published images. The source-build instructions currently use sibling dramaclaw and dramaclaw-gateway repositories. Check the official Quick Start before following older tutorials, because compose filenames and component requirements can change.\n\n## Start with a small project\nAfter following the documented installation, inspect model and storage settings and use a short story to validate the stages. Generation services and hosting may incur separate costs. This editorial review does not run another generation or claim a price, duration or resolution that has not been measured.\n\n## Read the licensing conditions\nThe project identifies Elastic License 2.0 and provides conditions and notices. Do not label it MIT or equate source availability with unrestricted use. Examine hosted-service restrictions and attribution requirements before integrating it into a public product. Different assets and dependencies may also carry their own notices.\n\n## Decide whether it fits\nA conventional editor can be simpler when you only need to cut existing footage. Scene-based generation calls for a separate assessment of model providers and their terms. Use the official feature guide, Quick Start and license as your starting point, and distinguish documented instructions from results actually verified."
+  }
+]

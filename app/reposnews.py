@@ -81,9 +81,9 @@ def readiness(data):
     checks['PRIVACY']=checks['LEGAL'];checks['PUBLIC_CONTENT']=checks.pop('CONTENT')
     return {'checks':checks,'status':'READY_TO_SUBMIT' if all(checks.values()) else 'ACTION_REQUIRED',
             'blockers':[k for k,v in checks.items() if not v],
-            'submission':'NOT_SUBMITTED','cmp':'NOT_ACTIVE · Google-certified CMP required before serving ads',
+            'submission':'REVIEW_REQUESTED' if data.get('adsense_verification',{}).get('submitted') else 'NOT_SUBMITTED','cmp':'NOT_ACTIVE · Google-certified CMP required before serving ads',
             'analytics':'NOT_CONNECTED','site_in_adsense':data.get('adsense_verification',{}).get('site_status','NOT_VERIFIED'),
-            'content_assessment':'Tres guías originales permiten un lanzamiento editorial pequeño; Google no fija aquí un mínimo numérico ni garantiza aprobación.',
+            'content_assessment':'Contenido original publicado; la decisión de aprobación corresponde a Google.',
             'search_console':data.get('search_console_status','NOT_VERIFIED')}
 
 
@@ -120,7 +120,8 @@ def write(data):
 def state(scope):
     data=read()
     if data.get('owner') and data['owner']!=scope: raise ValueError('Este proyecto pertenece a otra sesión autorizada.')
-    return {k:v for k,v in data.items() if k!='owner'}|{'readiness':readiness(data),'legal_status':legal_status(data)}
+    from . import reposnews_inbox
+    return {k:v for k,v in data.items() if k!='owner'}|{'instagram_integration':reposnews_inbox.integration(),'readiness':readiness(data),'legal_status':legal_status(data)}
 
 
 def legal_diagnostic(scope):
@@ -168,6 +169,12 @@ def initialize(scope):
             data.setdefault('adsense_verification',{'account':'OPEN','publisher':'MATCHED','product':'YOUTUBE_INACTIVE','web_enabled':False,'site_status':'WEB_UPGRADE_REQUIRED','checked_at':'2026-10-13','source':'Existing owner dashboard + https://support.google.com/adsense/answer/9247020','submitted':False,'upgrade_form':'PREPARED_NOT_SUBMITTED · https://www.reposnews.com/'})
             if data.get('publisher')=='pub-4119869448727531' and data.get('adsense_verification',{}).get('site_status')=='WEB_UPGRADE_REQUIRED':
                 data['adsense_verification'].update(web_enabled=True,site_status='REVIEW_REQUESTED',submitted=True,checked_at='2026-10-13',source='Owner dashboard: site verified and review requested with explicit approval',upgrade_form='COMPLETED')
+            priority_file=Path(__file__).with_name('reposnews_priority_drafts.json')
+            if priority_file.exists():
+                for draft in json.loads(priority_file.read_text(encoding='utf-8')):
+                    if not any(a['id']==draft['id'] or a['repo'].lower()==draft['repo'].lower() for a in data['articles']):
+                        data['articles'].append(article_defaults(draft))
+            data.setdefault('instagram_account',{'username':'zaragente031','login_verified_at':'2026-10-13','account_type':'BUSINESS_PROFESSIONAL','api_verified':False})
             candidate_file=Path(__file__).with_name('reposnews_candidates.json')
             if candidate_file.exists(): data.setdefault('next_editorial_candidates',json.loads(candidate_file.read_text(encoding='utf-8')))
             priorities={'astral-sh/ruff':(1,'Continuidad práctica de uv: calidad y formato de código Python.'),'jqlang/jq':(2,'Herramienta transversal para inspeccionar respuestas JSON de APIs.'),'vitejs/vite':(3,'Primeros pasos frontend que complementan la guía de FastAPI.')}
@@ -190,6 +197,9 @@ def initialize(scope):
         site_projects.patch(scope,row['id'],source_kind='REPOSNEWS',state='PREVIEW',languages=['es','en'],canonical=ORIGIN+'/',relative_url='/reposnews-preview/es/',analytics_status='NOT_CONNECTED',content_review_required=True)
         data.update(owner=scope,project_id=row['id'],articles=json.loads(Path(__file__).with_name('reposnews_content.json').read_text(encoding='utf-8')),initialized_at=holdings._now(),domain_status='VERIFYING',legal_reviewed=False,publisher='pub-4119869448727531',adsense_status='ACTION_REQUIRED',domain_note='www configurado en IONOS; verificar certificado y destino real. Raíz pendiente de redirección.')
         data['articles']=[article_defaults(a) for a in data['articles']]
+        priority_file=Path(__file__).with_name('reposnews_priority_drafts.json')
+        if priority_file.exists():
+            data['articles'].extend(article_defaults(a) for a in json.loads(priority_file.read_text(encoding='utf-8')) if not any(old['id']==a['id'] for old in data['articles']))
         data['consent']={'analytics':'DISABLED','ads':'DISABLED','cmp':'NOT_CONFIGURED','functional_cookie':'reposnews_lang · 365 days · SameSite=Lax; Secure'}
         write(data)
         return state(scope)
@@ -214,6 +224,15 @@ def metadata(row):
 def operate(scope, op, payload):
     if op=='init': return initialize(scope)
     if op=='legal_diagnostic': return legal_diagnostic(scope)
+    if op in {'inbox_retry','inbox_discard'}:
+        from . import reposnews_inbox
+        state(scope)
+        item_id=str(payload.get('id') or '')
+        if not re.fullmatch('[a-f0-9]{24}',item_id): raise ValueError('Item inválido.')
+        if op=='inbox_retry':
+            reposnews_inbox.process(item_id)
+        else: reposnews_inbox.update(item_id,status='DISCARDED',processing_state='DISCARDED')
+        return state(scope)
     with holdings.transaction('reposnews-editorial'):
         state(scope);data=read()
         if not data.get('owner'): raise ValueError('Crea primero el proyecto ReposNews.')
@@ -233,6 +252,9 @@ def operate(scope, op, payload):
                 a['published_snapshot']={k:v for k,v in a.items() if k not in {'published_snapshot','history'}}
                 a['history']=(a.get('history',[])+[{'at':holdings._now(),'fields':['published','state'],'reason':'Publicación conjunta ES/EN confirmada'}])[-60:]
             jev_decision.decision_state(scope,proposal['id'],'USER_CONFIRMED_EDITORIAL_CHANGE')
+
+            for item in data.get('instagram_inbox',[]):
+                if item.get('article_id') in plan['ids']: item.update(status='PUBLISHED',processing_state='PUBLISHED')
             write(data);return state(scope)
         if op=='verify':
             from . import browser_network
@@ -312,6 +334,8 @@ def operate(scope, op, payload):
                     if d['decision']=='REJECT': raise ValueError('JEV rechazó publicación.')
                     article['published']=True;article['published_at']=holdings._now();article['state']='PUBLISHED';article['status']='PUBLISHED'
                     article['published_snapshot']={k:v for k,v in article.items() if k not in {'published_snapshot','history'}}
+                    for item in data.get('instagram_inbox',[]):
+                        if item.get('article_id')==article['id']: item.update(status='PUBLISHED',processing_state='PUBLISHED')
                     jev_decision.decision_state(scope,d['id'],'USER_CONFIRMED_EDITORIAL_CHANGE')
                 else: article['published']=False;article['state']='ARCHIVED';article['status']='ARCHIVED'
                 article['history']=(article.get('history',[])+[{'at':holdings._now(),'fields':['published','state'],'reason':'Confirmación explícita: '+op+' ES + EN'}])[-60:]
@@ -352,7 +376,7 @@ def render(lang='es', slug='', preview=False):
     title=article['title_'+lang] if article else {'es':'ReposNews · Repositorios, herramientas y guías','en':'ReposNews · Repositories, tools and guides'}[lang]
     description=article['summary_'+lang] if article else ('Análisis y guías sobre proyectos tecnológicos con fuentes verificadas.' if lang=='es' else 'Project analysis and practical guides backed by official sources.')
     if slug in pages: title={'about':('Sobre ReposNews','About ReposNews'),'contact':('Contacto','Contact'),'privacy':('Privacidad','Privacy'),'cookies':('Cookies','Cookies'),'legal':('Aviso legal','Legal notice'),'repositories':('Repositorios','Repositories'),'guides':('Guías','Guides'),'trends':('Actividad','Activity')}[slug][0 if lang=='es' else 1]+' · ReposNews'
-    return render_template('reposnews.html',lang=lang,rows=rows,article=article,body=body_html(article['body_'+lang]) if article else None,slug=slug,preview=preview,base=base,title=title,description=description,origin=ORIGIN,path=path,official_covers={'uv':'uv-official.svg','fastapi':'fastapi-official.png','playwright':'playwright-official.svg'},public_legal=public_legal_profile(data),query=query,category=category,categories=categories,legal_status={'status':legal_status(data)['status']})
+    return render_template('reposnews.html',lang=lang,rows=rows,article=article,body=body_html(article['body_'+lang]) if article else None,slug=slug,preview=preview,base=base,title=title,description=description,origin=ORIGIN,path=path,official_covers={'uv':'uv-official.svg','fastapi':'fastapi-official.png','playwright':'playwright-official.svg','jev':'jev-editorial.svg','automaton':'automaton-editorial.svg','dramaclaw':'dramaclaw-official.png'},public_legal=public_legal_profile(data),query=query,category=category,categories=categories,legal_status={'status':legal_status(data)['status']})
 
 
 def public_legal_profile(data):
@@ -374,7 +398,7 @@ def public_legal_profile(data):
 
 
 def media(asset):
-    if asset not in {'editorial.css','favicon.svg','home.png','uv.png','playwright.png','fastapi.png','uv-official.svg','fastapi-official.png','playwright-official.svg'}: abort(404)
+    if asset not in {'editorial.css','favicon.svg','home.png','uv.png','playwright.png','fastapi.png','uv-official.svg','fastapi-official.png','playwright-official.svg','jev-editorial.svg','automaton-editorial.svg','dramaclaw-official.png'}: abort(404)
     response=send_file(Path(__file__).parent/'static'/'reposnews'/asset,max_age=86400)
     response.headers['X-Content-Type-Options']='nosniff'
     return response

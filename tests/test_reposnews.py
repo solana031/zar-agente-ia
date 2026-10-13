@@ -48,10 +48,12 @@ class ReposNewsTest(unittest.TestCase):
   rn._path().unlink();scope=rn.bootstrap();first=rn.state(scope);ids=[a['id'] for a in first['articles']]
   import importlib
   importlib.reload(rn);rn.bootstrap();again=rn.state(scope)
-  self.assertEqual(ids,[a['id'] for a in again['articles']]);self.assertEqual(len(ids),3)
+  self.assertEqual(ids,[a['id'] for a in again['articles']]);self.assertEqual(len(ids),6);self.assertTrue({"jev","automaton","dramaclaw"}.issubset(ids))
   self.assertTrue(all(not a['published'] and a['status']=='READY' for a in again['articles']))
   for a in again['articles']:
-   self.assertTrue(a['history']);self.assertTrue(a['seo']['en']['canonical']);self.assertTrue(a['latest_release']['url'])
+   self.assertTrue(a['history']);self.assertTrue(a['seo']['en']['canonical'])
+   if a['id'] in {'uv','playwright','fastapi'}:self.assertTrue(a['latest_release']['url'])
+   else:self.assertTrue(a['official_docs']);self.assertEqual(a['state'],'READY')
   self.assertFalse(again['readiness']['checks']['PUBLIC_CONTENT']);self.assertEqual(again['readiness']['status'],'ACTION_REQUIRED')
  def test_history(self):
   data=rn.read();data['articles']=[rn.article_defaults(a) for a in data['articles']];rn.write(data)

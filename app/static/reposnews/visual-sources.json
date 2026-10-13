@@ -13,5 +13,19 @@
     "source": "https://playwright.dev/img/playwright-logo.svg",
     "asset": "playwright-official.svg",
     "attribution": "Microsoft — Apache-2.0"
+  },
+  "dramaclaw": {
+    "source": "https://raw.githubusercontent.com/dramaclaw/dramaclaw/main/assets/hero.png",
+    "asset": "dramaclaw-official.png",
+    "attribution": "DramaClaw — source README asset",
+    "license": "Elastic-2.0; see upstream LICENSES and NOTICE"
+  },
+  "jev": {
+    "asset": "jev-editorial.svg",
+    "source": "ReposNews original editorial diagram; not software screenshot"
+  },
+  "automaton": {
+    "asset": "automaton-editorial.svg",
+    "source": "ReposNews original editorial diagram; not software screenshot"
   }
 }
