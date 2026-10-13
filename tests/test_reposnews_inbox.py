@@ -92,6 +92,19 @@ class InstagramInboxTest(unittest.TestCase):
   with patch.object(inbox,'credentials',return_value={'access_token':'fixture-token'}),patch.object(inbox.requests,'get',side_effect=[Mock(ok=True,json=lambda:{'data':[{'id':'conversation'}]}),Mock(ok=True,json=lambda:{'messages':{'data':[{'id':'message'}]}}),Mock(ok=True,json=lambda:{'from':{'username':'stranger','id':'98765'}})]):
    with self.assertRaises(ValueError):inbox.authorize_solana_sender()
   self.assertNotIn('98765',inbox.sender_ids());self.assertFalse(rn.read().get('instagram_authorized_senders'))
+
+ def test_signed_structure_records_presence_without_unapproved_content(self):
+  payload=self.event(text='fixture-private-text',sender='unknown');payload['entry'][0]['messaging'][0]['timestamp']=123
+  with patch.dict(os.environ,{'INSTAGRAM_REPOSNEWS_SENDERS':''}):
+   summary=inbox.record_event_structure(payload);self.assertEqual(inbox.receive(payload),[])
+  self.assertTrue(summary['sender_id_present']);self.assertTrue(summary['message_mid_present'])
+  self.assertFalse(summary['allowlist_configured']);self.assertNotIn('fixture-private-text',json.dumps(summary));self.assertNotIn('unknown',json.dumps(summary))
+
+ def test_subscription_readback_matches_exact_app_and_messages(self):
+  with patch.object(inbox,'credentials',return_value={'access_token':'fixture-token','user_id':'12345'}),patch.object(inbox.requests,'get',return_value=Mock(ok=True,json=lambda:{'data':[{'id':'1705003441255228','subscribed_fields':['messages']}]})):
+   self.assertEqual(inbox.inspect_subscription()['status'],'VERIFIED')
+  with patch.object(inbox,'credentials',return_value={'access_token':'fixture-token','user_id':'12345'}),patch.object(inbox.requests,'get',return_value=Mock(ok=True,json=lambda:{'data':[{'id':'unrelated','subscribed_fields':['messages']}]})):
+   self.assertEqual(inbox.inspect_subscription()['status'],'UNKNOWN')
  def test_discard_survives_late_worker_updates(self):
   item=inbox.receive(self.event())[0];inbox.update(item,status='DISCARDED');inbox.update(item,status='READY')
   self.assertEqual(rn.read()['instagram_inbox'][0]['status'],'DISCARDED')

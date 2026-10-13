@@ -10,6 +10,12 @@ class ReposNewsTest(unittest.TestCase):
   self.app=Flask(__name__,template_folder=str(Path('app/templates').resolve()));self.app.before_request(rn.public_dispatch);rn.register(self.app,lambda:'owner');self.c=self.app.test_client()
  def tearDown(self): self.env.stop();self.tmp.cleanup()
  def get(self,path):return self.c.get(path,base_url=rn.ORIGIN)
+ def test_instagram_privacy_and_deletion_instructions_are_public(self):
+  for lang in ('es','en'):
+   response=self.get('/'+lang+'/privacy/');self.assertEqual(response.status_code,200)
+   html=response.get_data(as_text=True)
+   for required in ('instagram_business_basic','instagram_business_manage_messages','id="instagram-deletion"','zaragente031@gmail.com'):
+    self.assertIn(required,html)
  def test_public_economic_profile_never_exposes_private_identity(self):
   data=rn.read();data['legal']={'controller':'Approved owner','address':'PRIVATE STREET 999','tax_id':'12345678Z','registration':'PRIVATE REGISTER','privacy_contact':'private@example.test','activity_mode':'ECONOMIC','entity_type':'PERSON','processing_basis':'Approved basis 12345678Z','retention':'Approved retention PRIVATE STREET 999','providers_reviewed':True};data['legal_reviewed']=True
   for a in data['articles']:a['published']=True

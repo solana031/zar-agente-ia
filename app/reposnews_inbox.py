@@ -100,6 +100,22 @@ def sender_ids():
     configured={x.strip() for x in os.environ.get('INSTAGRAM_REPOSNEWS_SENDERS','').split(',') if x.strip()}
     return configured|{x['id'] for x in rn.read().get('instagram_authorized_senders',[]) if x.get('verified_at') and x.get('username')=='solana031' and re.fullmatch(r'[0-9]+',str(x.get('id','')))}
 
+def inspect_subscription():
+    auth=credentials();account=str(auth.get('user_id',''))
+    if not auth.get('access_token') or not re.fullmatch(r'[0-9]+',account):raise ValueError('Conecta Instagram primero.')
+    response=requests.get('https://graph.instagram.com/v26.0/'+account+'/subscribed_apps',headers={'Authorization':'Bearer '+auth['access_token']},timeout=20)
+    result={'status':'UNKNOWN','method':'OFFICIAL_ACCOUNT_SUBSCRIPTION_READBACK','checked_at':holdings._now()}
+    if response.ok:
+        apps=response.json().get('data',[])
+        expected={os.environ.get('INSTAGRAM_APP_ID',''),os.environ.get('INSTAGRAM_META_APP_ID','1705003441255228')}
+        matched=[x for x in apps if str(x.get('id','')) in expected and 'messages' in x.get('subscribed_fields',[])]
+        if matched:result.update(status='VERIFIED',fields=['messages'],app_id=str(matched[0]['id']))
+        else:result.update(reason='MESSAGES_NOT_FOUND_FOR_EXPECTED_APP')
+    else:result['error']=safe_meta_error(response,auth['access_token'])
+    with holdings.transaction('reposnews-editorial'):
+        data=rn.read();data['instagram_subscription']=result;rn.write(data)
+    return result
+
 def authorize_solana_sender():
     """Resolve the explicitly approved username from message metadata, never bodies."""
     auth=credentials()
@@ -161,6 +177,7 @@ def integration():
         'last_event':{'timestamp':last.get('received_at'),'status':last.get('status')},
         'capabilities':permission_check,'subscription':data.get('instagram_subscription',{'status':'UNVERIFIED'}),'callback':data.get('instagram_callback',{}),
         'reel_access':last.get('access_level','UNVERIFIED'),
+        'signed_event_structure':data.get('instagram_last_signed_structure',{}),
         'account_type':data.get('instagram_account',{}).get('account_type','UNVERIFIED'),
         'messaging':'EVENT_RECEIVED' if data.get('instagram_last_event') else 'UNVERIFIED','webhook':'VERIFIED' if data.get('instagram_webhook_verified_at') else 'SIGNED_ENDPOINT_AVAILABLE','auto_ingest':'ENABLED_FOR_ALLOWLIST' if configured else 'NOT_CONFIGURED',
         'media_access':'ONLY_MEDIA_GRANTED_BY_META','full_reels':'NOT_GUARANTEED','docs':DOCS,
@@ -188,6 +205,25 @@ def verify_signature(raw,signature):
     if not secret or not signature.startswith('sha256='): return False
     expected='sha256='+hmac.new(secret.encode(),raw,hashlib.sha256).hexdigest()
     return hmac.compare_digest(signature,expected)
+
+def record_event_structure(payload):
+    """Signed-event diagnostics: presence flags only, never private content or IDs."""
+    entries=payload.get('entry',[])
+    entry=next((x for x in entries if isinstance(x,dict)),{}) if isinstance(entries,list) else {}
+    events=entry.get('messaging',[])
+    event=next((x for x in events if isinstance(x,dict)),{}) if isinstance(events,list) else {}
+    message=event.get('message',{})
+    if not isinstance(message,dict):message={}
+    sender=event.get('sender',{});recipient=event.get('recipient',{})
+    summary={'object':str(payload.get('object',''))[:30],'entry_present':bool(entry),'entry_id_present':bool(entry.get('id')),
+             'messaging_present':bool(events),'sender_present':isinstance(sender,dict),
+             'sender_id_present':bool(sender.get('id')) if isinstance(sender,dict) else False,
+             'recipient_id_present':bool(recipient.get('id')) if isinstance(recipient,dict) else False,
+             'message_mid_present':bool(message.get('mid')),'message_text_present':bool(message.get('text')),
+             'timestamp_present':bool(event.get('timestamp')),'received_at':holdings._now(),'allowlist_configured':bool(sender_ids())}
+    with holdings.transaction('reposnews-editorial'):
+        data=rn.read();data['instagram_last_signed_structure']=summary;rn.write(data)
+    return summary
 
 def receive(payload):
     """Ignore unrelated/private conversations before storing anything. One item per mid."""
@@ -542,6 +578,7 @@ def register(app,scope_fn=None):
         try:
             payload=json.loads(raw)
             if not isinstance(payload,dict):return '',400
+            record_event_structure(payload)
             received=receive(payload)
         except (ValueError,TypeError,KeyError):return '',400
         start_worker()

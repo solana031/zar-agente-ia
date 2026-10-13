@@ -230,6 +230,9 @@ def operate(scope, op, payload):
     if op=='instagram_sender_authorize':
         from . import reposnews_inbox
         state(scope);reposnews_inbox.authorize_solana_sender();return state(scope)
+    if op=='instagram_subscription_inspect':
+        from . import reposnews_inbox
+        state(scope);reposnews_inbox.inspect_subscription();return state(scope)
     if op in {'inbox_retry','inbox_discard','inbox_resolve'}:
         from . import reposnews_inbox
         state(scope)
