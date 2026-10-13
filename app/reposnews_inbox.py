@@ -179,7 +179,7 @@ def integration():
         'reel_access':last.get('access_level','UNVERIFIED'),
         'signed_event_structure':data.get('instagram_last_signed_structure',{}),
         'account_type':data.get('instagram_account',{}).get('account_type','UNVERIFIED'),
-        'messaging':'EVENT_RECEIVED' if data.get('instagram_last_event') else 'UNVERIFIED','webhook':'VERIFIED' if data.get('instagram_webhook_verified_at') else 'SIGNED_ENDPOINT_AVAILABLE','auto_ingest':'ENABLED_FOR_ALLOWLIST' if configured else 'NOT_CONFIGURED',
+        'messaging':'AUTHORIZED_MESSAGE_RECEIVED' if data.get('instagram_last_authorized_message') else 'EVENT_RECEIVED' if data.get('instagram_last_event') else 'UNVERIFIED','webhook':'VERIFIED' if data.get('instagram_webhook_verified_at') else 'SIGNED_ENDPOINT_AVAILABLE','auto_ingest':'ENABLED_FOR_ALLOWLIST' if configured else 'NOT_CONFIGURED',
         'media_access':'ONLY_MEDIA_GRANTED_BY_META','full_reels':'NOT_GUARANTEED','docs':DOCS,
         'oauth_available':bool(os.environ.get('INSTAGRAM_APP_ID') and os.environ.get('INSTAGRAM_APP_SECRET')),
         'missing':([k for k in ('INSTAGRAM_APP_SECRET','INSTAGRAM_WEBHOOK_VERIFY_TOKEN') if not os.environ.get(k)]+(['INSTAGRAM_REPOSNEWS_SENDERS'] if not sender_ids() else [])+(['INSTAGRAM_OAUTH'] if not auth.get('access_token') else [])),
@@ -206,17 +206,26 @@ def verify_signature(raw,signature):
     expected='sha256='+hmac.new(secret.encode(),raw,hashlib.sha256).hexdigest()
     return hmac.compare_digest(signature,expected)
 
+def message_events(entry):
+    """Normalize only Meta messages envelopes; all authorization stays in receive."""
+    direct=entry.get('messaging',[])
+    events=list(direct[:30]) if isinstance(direct,list) else []
+    changes=entry.get('changes',[])
+    if isinstance(changes,list):
+        events.extend(c['value'] for c in changes[:30] if isinstance(c,dict) and c.get('field')=='messages' and isinstance(c.get('value'),dict))
+    return events[:30]
+
 def record_event_structure(payload):
     """Signed-event diagnostics: presence flags only, never private content or IDs."""
     entries=payload.get('entry',[])
     entry=next((x for x in entries if isinstance(x,dict)),{}) if isinstance(entries,list) else {}
-    events=entry.get('messaging',[])
+    events=message_events(entry)
     event=next((x for x in events if isinstance(x,dict)),{}) if isinstance(events,list) else {}
     message=event.get('message',{})
     if not isinstance(message,dict):message={}
     sender=event.get('sender',{});recipient=event.get('recipient',{})
     summary={'object':str(payload.get('object',''))[:30],'entry_present':bool(entry),'entry_id_present':bool(entry.get('id')),
-             'messaging_present':bool(events),'sender_present':isinstance(sender,dict),
+             'messaging_present':bool(events),'sender_present':bool(sender) and isinstance(sender,dict),
              'sender_id_present':bool(sender.get('id')) if isinstance(sender,dict) else False,
              'recipient_id_present':bool(recipient.get('id')) if isinstance(recipient,dict) else False,
              'message_mid_present':bool(message.get('mid')),'message_text_present':bool(message.get('text')),
@@ -240,13 +249,14 @@ def receive(payload):
         for entry in entries[:20]:
             if not isinstance(entry,dict):continue
             if str(entry.get('id',''))!=account:continue
-            events=entry.get('messaging',[])
+            events=message_events(entry)
             if not isinstance(events,list):continue
             for event in events[:30]:
                 if not isinstance(event,dict) or not isinstance(event.get('message'),dict):continue
                 if not isinstance(event.get('sender'),dict) or not isinstance(event.get('recipient'),dict):continue
                 msg=event.get('message') or {};sender=str((event.get('sender') or {}).get('id',''))
                 if sender not in senders or str((event.get('recipient') or {}).get('id',''))!=account or msg.get('is_echo') or msg.get('is_deleted'):continue
+                data['instagram_last_authorized_message']=holdings._now()
                 mid=str(msg.get('mid') or '')[:200]
                 if not mid or len(rows)>=500 or any(x['external_id']==mid for x in rows):continue
                 text=safe_caption(msg.get('text'))

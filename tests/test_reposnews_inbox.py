@@ -11,6 +11,22 @@ class InstagramInboxTest(unittest.TestCase):
  def tearDown(self):self.env.stop();self.tmp.cleanup()
  def event(self,text='https://github.com/example/project',mid='one',sender='sender',attachments=None):
   return {'object':'instagram','entry':[{'id':'account','messaging':[{'sender':{'id':sender},'recipient':{'id':'account'},'message':{'mid':mid,'text':text,'attachments':attachments or []}}]}]}
+ def test_plain_greeting_confirms_authorized_delivery_without_editorial_draft(self):
+  self.assertEqual(inbox.receive(self.event(text='hola2')),[])
+  self.assertTrue(rn.read().get('instagram_last_authorized_message'))
+  self.assertFalse(rn.read().get('instagram_inbox'))
+ def test_changes_messages_envelope_keeps_authorization_checks(self):
+  payload=self.event();entry=payload['entry'][0];event=entry.pop('messaging')[0]
+  entry['changes']=[{'field':'messages','value':event}]
+  self.assertTrue(inbox.record_event_structure(payload)['message_mid_present'])
+  self.assertEqual(len(inbox.receive(payload)),1)
+  event['sender']['id']='unknown';event['message']['mid']='other'
+  self.assertEqual(inbox.receive(payload),[])
+ def test_other_changes_fields_never_ingested(self):
+  payload=self.event();entry=payload['entry'][0];event=entry.pop('messaging')[0]
+  entry['changes']=[{'field':'comments','value':event}]
+  self.assertEqual(inbox.receive(payload),[])
+  self.assertFalse(rn.read().get('instagram_last_authorized_message'))
  def test_oauth_not_configured_and_invalid_state(self):
   with patch.dict(os.environ,{'INSTAGRAM_APP_ID':'','INSTAGRAM_APP_SECRET':''}):
    self.assertEqual(self.client.get('/api/reposnews/instagram/connect').status_code,409)
