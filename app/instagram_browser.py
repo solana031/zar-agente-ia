@@ -63,7 +63,7 @@ def register(blueprint):
 <h1>Instagram ZAR · @zaragente031</h1><p>Inicia sesión personalmente en este navegador de servidor. Perfil exclusivo; sesión cifrada. No uses tu cuenta personal. La contraseña y los códigos solo se transmiten al acceso oficial; no se guardan.</p>
 <button id="open">Abrir acceso Instagram</button> <button id="read">Actualizar pantalla</button> <button id="verify">Verificar cuenta y continuar Reel conservado</button>
 <p id="status" role="status"></p><img id="preview" alt="Pantalla del navegador aislado" style="width:100%"><pre id="text" style="white-space:pre-wrap"></pre><div id="controls"></div>
-<script src="/static/instagram-browser.js?v=33.3.59"></script></body></html>''', headers={'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex,nofollow', 'Content-Security-Policy': "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; frame-ancestors 'none'"})
+<script src="/static/instagram-browser.js?v=33.3.60"></script></body></html>''', headers={'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex,nofollow', 'Content-Security-Policy': "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; frame-ancestors 'none'"})
 
     @blueprint.post('/api/browser/instagram')
     def login_action():

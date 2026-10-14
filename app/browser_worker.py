@@ -157,7 +157,7 @@ def run():
             elif action != 'read':
                 raise ValueError('Acción no disponible')
             # Values/passwords are deliberately excluded from the visible control list.
-            controls = page.evaluate('''() => [...document.querySelectorAll('a[href],button,input:not([type=hidden]),textarea,select')].filter(e=>e.getBoundingClientRect().width&&e.getBoundingClientRect().height).slice(0,150).map((e,i)=>{e.setAttribute('data-zar-control',i);return {index:i,tag:e.tagName,type:e.getAttribute('type')||'',label:(e.getAttribute('aria-label')||e.innerText||e.getAttribute('placeholder')||e.name||e.tagName).slice(0,180)}})''')
+            controls = page.evaluate('''profile => [...document.querySelectorAll('a[href],button,input:not([type=hidden]),textarea,select'+(profile?', [role=button]':''))].filter(e=>e.getBoundingClientRect().width&&e.getBoundingClientRect().height).slice(0,150).map((e,i)=>{e.setAttribute('data-zar-control',i);return {index:i,tag:e.tagName,role:e.getAttribute('role')||'',type:e.getAttribute('type')||'',label:(e.getAttribute('aria-label')||e.innerText||e.getAttribute('placeholder')||e.name||e.tagName).slice(0,180)}})''', instagram_profile)
             visible = page.locator('body').inner_text()[:18000]
             sensitive = bool(re.search(r'api\s*(?:key|secret)|access\s*token|refresh\s*token|private\s*key', visible, re.I))
             if sensitive:
