@@ -1,4 +1,5 @@
 """Official Instagram messages → persistent private editorial queue. Never publishes."""
+from pathlib import Path
 from html.parser import HTMLParser
 import base64
 import hashlib
@@ -588,6 +589,26 @@ def process(item_id):
         if retryable and current.get('recovery_authorized') and current.get('attempts',0)<current.get('attempt_limit',2):
             update(item_id,status='RECEIVED',retry_after=time.time()+20)
 
+
+def prepare_bland_draft(item_id):
+    """Attach a source-reviewed service guide to the existing clarified Reel only."""
+    draft=json.loads(Path(__file__).with_name('reposnews_bland_draft.json').read_text(encoding='utf-8'))
+    with holdings.transaction('reposnews-editorial'):
+        data=rn.read();row=next((x for x in data.get('instagram_inbox',[]) if x['id']==item_id),None)
+        if not row or row.get('status')!='NEEDS_DISAMBIGUATION':raise ValueError('CLARIFICATION_NOT_APPLICABLE')
+        if row.get('sender') not in sender_ids():raise ValueError('SENDER_NOT_AUTHORIZED')
+        if holdings.read(data['owner']).get('global_stop'):raise ValueError('GLOBAL_STOP')
+        existing=next((a for a in data['articles'] if a['id']==draft['id']),None)
+        if existing and existing.get('published'):raise ValueError('PUBLISHED_ARTICLE_REQUIRES_SEPARATE_REVIEW')
+        if not existing:
+            draft['discovery_source']=row.get('source_url','')
+            draft['inbox_item_id']=row['id']
+            data['articles'].append(rn.article_defaults(draft))
+        row.update(status='READY',processing_state='READY',clarified_project='Bland AI',article_id=draft['id'],
+                   entity_resolution={'status':'RESOLVED','name':'Bland AI','website':'https://www.bland.ai/',
+                                      'confidence':'USER_CLARIFICATION_AND_OFFICIAL_SOURCES','sources':draft['sources']},
+                   research_package=draft['research_package'],error='',error_diagnostic={},updated_at=holdings._now())
+        rn.write(data)
 
 def recover_metadata_once(item_id):
     with holdings.transaction('reposnews-editorial'):

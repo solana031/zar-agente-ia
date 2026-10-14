@@ -65,6 +65,19 @@ class InstagramInboxTest(unittest.TestCase):
   self.assertEqual(row['attempt_limit'],5)
   inbox.update(item,status='FAILED_SOURCE')
   with self.assertRaises(ValueError):inbox.recover_metadata_once(item)
+ def test_bland_clarification_creates_private_bilingual_ready_on_same_item(self):
+  item=inbox.receive(self.event())[0];inbox.update(item,status='NEEDS_DISAMBIGUATION',attempts=5)
+  before=rn.read()['instagram_inbox'][0].copy()
+  with patch.object(inbox.holdings,'read',return_value={'global_stop':False}):inbox.prepare_bland_draft(item)
+  data=rn.read();row=data['instagram_inbox'][0];article=data['articles'][0]
+  self.assertEqual(len(data['instagram_inbox']),1)
+  for key in ('id','external_id','sender','source_url','received_at','attempts'):self.assertEqual(row[key],before[key])
+  self.assertEqual(row['status'],'READY');self.assertFalse(article['published'])
+  self.assertEqual(article['repository_url'],'');self.assertEqual(article['state'],'READY')
+  for lang in ('es','en'):
+   self.assertGreater(len(article['body_'+lang].split()),250);self.assertTrue(article['seo'][lang]['canonical'])
+  self.assertEqual(article['research_package']['official_repo'],None)
+  self.assertTrue(all('bland.' in url for url in article['sources']))
  def test_oauth_not_configured_and_invalid_state(self):
   with patch.dict(os.environ,{'INSTAGRAM_APP_ID':'','INSTAGRAM_APP_SECRET':''}):
    self.assertEqual(self.client.get('/api/reposnews/instagram/connect').status_code,409)

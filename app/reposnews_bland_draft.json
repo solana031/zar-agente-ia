@@ -1,0 +1,56 @@
+{
+  "id": "bland-ai-claude-code-agent-phone-plan",
+  "repo": "Bland AI",
+  "repository_url": "",
+  "official_docs": "https://docs.bland.ai/integrations/mcp/overview",
+  "website": "https://www.bland.ai/",
+  "category": "AI Tools",
+  "language": "API / MCP",
+  "license": "Servicio comercial; consultar condiciones oficiales",
+  "title_es": "Bland AI y Claude Code: MCP, API y un número para tu agente",
+  "title_en": "Bland AI and Claude Code: MCP, API and a phone number for your agent",
+  "summary_es": "Qué confirma Bland sobre Claude Code y su Agent Phone Plan, cómo empezar y qué límites conviene revisar.",
+  "summary_en": "What Bland confirms about Claude Code and Agent Phone Plan, how to get started and which limits need checking.",
+  "body_es": "## Qué es y para qué sirve\nBland AI proporciona infraestructura para agentes telefónicos. Su integración oficial conecta clientes compatibles con herramientas de llamadas, mensajes y gestión de conversaciones. El Reel fue una pista de descubrimiento; las afirmaciones de esta guía proceden de documentación y páginas de Bland. No hemos ejecutado llamadas ni contratado un plan.\n\n## Claude Code, MCP y API\nBland documenta un servidor MCP remoto en https://api.bland.ai/v1/mcp. Claude Code puede usar la integración para trabajar con una organización autorizada. Conectarlo no convierte por sí solo una instrucción en una llamada: hacen falta autenticación, herramientas disponibles y aprobación de acciones con efectos externos. Los tokens OAuth de MCP no sirven para la API REST. Para REST, consulta la autenticación específica de Bland.\n\n## Instalación y primeros pasos\nLa CLI oficial requiere Node.js 18 o posterior. Sus instrucciones incluyen estos comandos, que aquí se documentan sin ejecutarlos:\n\n```sh\nnpm install -g bland-cli\nbland auth login --device\nbland mcp\n```\n\nLa segunda orden inicia un flujo de autorización en el navegador. El tercero ejecuta el servidor MCP local de la CLI. Es una alternativa al servidor remoto; no hay que instalar ambos para describir la integración. Revisa los permisos y guarda credenciales fuera del código.\n\n## Agent Phone Plan\nBland ofrece un número estadounidense dedicado para el agente, con voz y SMS dirigidos a Estados Unidos y Canadá, sujeto a uso razonable y una llamada concurrente. No debe presentarse como un plan para llamar a España. El titular elige y aprueba la suscripción; esta guía no inicia ese proceso.\n\n## Costes y discrepancias\nLa página comercial anuncia una promoción inicial y después una cuota mensual. La página para agentes muestra otra presentación del precio y límites diferentes de frecuencia. Ambas fuentes están enlazadas: confirma las condiciones vigentes en el panel antes de comprar. No trasladamos esas diferencias a una cifra universal ni prometemos llamadas sin restricciones.\n\n## Casos de uso y límites\nConsultar disponibilidad o tramitar una solicitud son ejemplos de tareas posibles; su éxito depende del diseño y de los permisos. Frente a programar directamente REST, MCP ofrece herramientas desde el cliente del agente, mientras REST permite integración propia. Ninguna vía elimina costes, controles o responsabilidad. Bland no presenta esta compatibilidad como una asociación o respaldo de Anthropic. Para ampliar la guía, usa la documentación oficial; no atribuimos a Bland un repositorio público ni una licencia de código abierto no corroborados.\n",
+  "body_en": "## What Bland adds\nBland AI provides infrastructure for phone agents. Its official integration connects compatible clients to calling, messaging and conversation-management tools. The Instagram Reel was a discovery lead; the technical statements below come from Bland's own documentation and product pages. We have not placed calls or purchased a subscription.\n\n## Claude Code, MCP and REST\nBland documents a hosted MCP endpoint at https://api.bland.ai/v1/mcp. Claude Code can use the integration with an authorized organization. A connection alone does not complete a phone call: authentication, available tools and approval of external actions still matter. MCP OAuth tokens are not REST API credentials. Check Bland's separate authentication instructions when building a REST integration.\n\n## Installation and setup\nThe official CLI requires Node.js 18 or later. Its documented commands include the following; they are shown as instructions, not executed tests:\n\n```sh\nnpm install -g bland-cli\nbland auth login --device\nbland mcp\n```\n\nDevice login starts a browser approval flow. The last command runs the CLI's local MCP server. This is an alternative to the hosted server, rather than a requirement to install both. Review access before connecting and keep credentials out of source control.\n\n## The dedicated agent line\nAgent Phone Plan provides a US local number for an agent, with calls and SMS to US and Canada destinations, fair-use constraints and one concurrent call. It should not be described as a plan for calling Spain. The account owner chooses and approves the subscription; this article does not start onboarding or approve a purchase.\n\n## Prices and conflicting limits\nThe commercial page advertises an introductory offer followed by a monthly fee. The agent-instructions page presents pricing differently and lists different call-frequency limits. Both official sources are linked. Check the account dashboard and applicable terms before subscribing; we do not turn conflicting documentation into a universal price or promise unrestricted calling.\n\n## Practical uses and limitations\nAvailability enquiries and request handling illustrate potential tasks, not guaranteed outcomes. Results depend on the conversation design and permissions. Compared with calling REST directly, MCP exposes tools inside the coding-agent client, while REST supports a custom integration. Neither removes costs, approval controls or responsibility. Bland states that compatibility is not a partnership or endorsement by Anthropic. Use the official documentation for implementation details; no unverified public repository or open-source license is attributed to the service.\n",
+  "sources": [
+    "https://www.bland.ai/integrations",
+    "https://docs.bland.ai/integrations/mcp/overview",
+    "https://docs.bland.ai/sdks/cli",
+    "https://app.bland.com/agent-phone-plan",
+    "https://app.bland.com/agent-phone-plan/agents"
+  ],
+  "state": "READY",
+  "published": false,
+  "checked_at": "2026-10-14",
+  "review_kind": "CODEX_OFFICIAL_SOURCE_EDITORIAL_REVIEW",
+  "review": {
+    "supported": true,
+    "commands_supported": true,
+    "privacy_safe": true,
+    "issues": [
+      "Official pricing and call-limit pages differ; article explicitly discloses this."
+    ]
+  },
+  "image_kind": "EDITORIAL_FALLBACK",
+  "translation_status": "REVIEWED",
+  "research_package": {
+    "project": "Bland AI",
+    "official_repo": null,
+    "repository_status": "NOT_CORROBORATED_NOT_REQUIRED_FOR_SERVICE",
+    "sources": [
+      "https://www.bland.ai/integrations",
+      "https://docs.bland.ai/integrations/mcp/overview",
+      "https://docs.bland.ai/sdks/cli",
+      "https://app.bland.com/agent-phone-plan",
+      "https://app.bland.com/agent-phone-plan/agents"
+    ],
+    "verified_at": "2026-10-14",
+    "verification": "OFFICIAL_PAGES_READ_BY_CODEX",
+    "commands": [
+      "npm install -g bland-cli",
+      "bland auth login --device",
+      "bland mcp"
+    ]
+  }
+}
