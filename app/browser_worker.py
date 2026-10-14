@@ -52,6 +52,18 @@ def instagram_login_post(url, body=''):
     return bool(re.search(r'^/(accounts/login|accounts/onetap|challenge|api/v1/(web/accounts/login|accounts/(login|two_factor_login)|challenge))(/|$)', parsed.path))
 
 
+def instagram_control(page, spec):
+    """Resolve current login controls by identity, never a stale array offset."""
+    if not isinstance(spec, dict): raise ValueError('LOGIN_CONTROL_REQUIRED')
+    name = spec.get('name', '')
+    if spec.get('tag') == 'INPUT' and name in ('email','username','pass','password','verificationCode','security_code','verification_code','otp'):
+        return page.locator('input[name="'+name+'"]')
+    label = spec.get('label', '')
+    if isinstance(label,str) and re.fullmatch(r'log in|iniciar sesi[oó]n|entrar|confirm|confirmar|verify|verificar',label.strip(),re.I):
+        return page.get_by_role('button',name=label,exact=True)
+    raise ValueError('LOGIN_CONTROL_NOT_ALLOWED')
+
+
 def run():
     from playwright.sync_api import sync_playwright
     p = sync_playwright().start()
@@ -129,15 +141,21 @@ def run():
                     'storage': context.storage_state()}), flush=True)
                 continue
             elif action in ('click', 'fill', 'upload'):
-                index = int(data['index'])
-                control = controls[index]
+                if human_login:
+                    locator=instagram_control(page,data.get('control'))
+                    if locator.count()!=1:raise ValueError('LOGIN_CONTROL_CHANGED_REFRESH_REQUIRED')
+                    control=locator.evaluate("e=>({tag:e.tagName,type:e.getAttribute('type')||'',label:(e.getAttribute('aria-label')||e.innerText||e.getAttribute('placeholder')||e.name||e.tagName).slice(0,180)})")
+                else:
+                    index = int(data['index'])
+                    if not 0<=index<len(controls):raise ValueError('CONTROL_CHANGED_REFRESH_REQUIRED')
+                    control = controls[index]
+                    locator = page.locator('[data-zar-control="%s"]' % index)
                 decision = policy(control['label'] + ' ' + control.get('type', ''), action)
                 if human_login and action == 'fill' and control.get('tag') == 'INPUT' and not re.search(r'captcha|bank|banc|tax|fiscal|card|tarjeta|phone|tel[eé]fono', control['label'], re.I): decision = 'ALLOW'
                 if human_login and action == 'click' and re.fullmatch(r'log in|iniciar sesi[oó]n|entrar|confirm|confirmar|verify|verificar', control['label'].strip(), re.I): decision = 'ALLOW'
                 if decision in ('HUMAN_ACTION', 'DENY') or decision == 'CONFIRM' and data.get('confirmed') is not True:
                     print(json.dumps({'ok': False, 'status': 'ACTION_REQUIRED', 'reason': 'Intervención humana: ' + decision, 'decision': decision}), flush=True)
                     continue
-                locator = page.locator('[data-zar-control="%s"]' % index)
                 if locator.count() != 1:
                     raise ValueError('Control cambiado; vuelve a leer la página')
                 current = locator.evaluate("e=>({type:e.getAttribute('type')||'',label:(e.getAttribute('aria-label')||e.innerText||e.getAttribute('placeholder')||e.name||e.tagName).slice(0,180),form:e.form?.innerText||''})")
@@ -182,7 +200,7 @@ def run():
             elif action != 'read':
                 raise ValueError('Acción no disponible')
             # Values/passwords are deliberately excluded from the visible control list.
-            controls = page.evaluate('''profile => [...document.querySelectorAll('a[href],button,input:not([type=hidden]),textarea,select'+(profile?', [role=button]':''))].filter(e=>e.getBoundingClientRect().width&&e.getBoundingClientRect().height).slice(0,150).map((e,i)=>{e.setAttribute('data-zar-control',i);return {index:i,tag:e.tagName,role:e.getAttribute('role')||'',type:e.getAttribute('type')||'',label:(e.getAttribute('aria-label')||e.innerText||e.getAttribute('placeholder')||e.name||e.tagName).slice(0,180)}})''', instagram_profile)
+            controls = page.evaluate('''profile => [...document.querySelectorAll('a[href],button,input:not([type=hidden]),textarea,select'+(profile?', [role=button]':''))].filter(e=>e.getBoundingClientRect().width&&e.getBoundingClientRect().height).slice(0,150).map((e,i)=>{e.setAttribute('data-zar-control',i);return {index:i,tag:e.tagName,name:e.name||'',role:e.getAttribute('role')||'',type:e.getAttribute('type')||'',label:(e.getAttribute('aria-label')||e.innerText||e.getAttribute('placeholder')||e.name||e.tagName).slice(0,180)}})''', instagram_profile)
             visible = page.locator('body').inner_text()[:18000]
             sensitive = bool(re.search(r'api\s*(?:key|secret)|access\s*token|refresh\s*token|private\s*key', visible, re.I))
             if sensitive:

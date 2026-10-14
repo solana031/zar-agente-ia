@@ -35,6 +35,15 @@ class InstagramProfileTests(unittest.TestCase):
             self.assertEqual(ig.discovery('https://www.instagram.com/reel/Dec6NIauAZB/')['status'],'LOGIN_REQUIRED')
         actor.assert_not_called()
 
+    def test_login_resolves_live_controls_without_cached_indices(self):
+        from app.browser_worker import instagram_control
+        page=Mock()
+        instagram_control(page,{'tag':'INPUT','name':'pass','index':999})
+        page.locator.assert_called_once_with('input[name="pass"]')
+        instagram_control(page,{'label':'Log In','index':999})
+        page.get_by_role.assert_called_once_with('button',name='Log In',exact=True)
+        with self.assertRaises(ValueError):instagram_control(page,{'label':'Publish'})
+
     def test_owner_and_csrf_required(self):
         from flask import Flask
         from app.zar_browser import blueprint
