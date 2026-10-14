@@ -37,6 +37,8 @@ def instagram_host(url):
 
 
 def instagram_login_post(url, body=''):
+    if isinstance(body,bytes): body=body.decode('utf-8','replace')
+    if not isinstance(body,str): return False
     parsed = urlsplit(url)
     if parsed.hostname not in ('instagram.com', 'www.instagram.com'): return False
     if parsed.path.rstrip('/') in ('/api/graphql', '/graphql/query'):
@@ -44,7 +46,7 @@ def instagram_login_post(url, body=''):
         try:
             payload=json.loads(body) if body.lstrip().startswith('{') else {k:v[0] for k,v in parse_qs(body).items()}
             operation=str(payload.get('fb_api_req_friendly_name') or payload.get('operationName') or '')
-        except (ValueError,TypeError): return False
+        except (ValueError,TypeError,AttributeError): return False
         return bool(re.fullmatch(r'(?:use)?Polaris(?:Login|AccountsLogin|LoginAccount)[A-Za-z]{0,50}Mutation',operation))
     if re.fullmatch(r'/api/v1/bloks/apps/com\.bloks\.www\.(?:bloks\.)?caa\.login\.async\.send_login_request/?',parsed.path): return True
     return bool(re.search(r'^/(accounts/login|accounts/onetap|challenge|api/v1/(web/accounts/login|accounts/(login|two_factor_login)|challenge))(/|$)', parsed.path))
@@ -162,7 +164,9 @@ def run():
                         step = 'CLICK'
                         login_http[0] = None
                         blocked_posts.clear()
+                        step = 'CLICK_DISPATCH'
                         locator.click()
+                        step = 'LOGIN_RESPONSE_WAIT'
                         page.wait_for_timeout(3000 if human_login else 350)
                     finally:
                         permit[0] = False
@@ -211,8 +215,10 @@ def run():
                 'screenshot': '' if sensitive else base64.b64encode(page.screenshot(type='jpeg', quality=60, mask=[page.locator('input,textarea')])).decode(),
                 'storage': context.storage_state()}), flush=True)
         except Exception as exc:
+            import traceback
+            frames=[{'function':f.name,'line':f.lineno,'module':os.path.basename(f.filename)} for f in traceback.extract_tb(exc.__traceback__)[-5:]]
             # Provider/browser errors can embed credential-bearing URLs. Never echo them.
-            print(json.dumps({'ok': False, 'status': 'ERROR', 'reason': 'La navegación no terminó. No se ha repetido la acción.', 'failed_step': step, 'exception_type': type(exc).__name__, 'login_http': login_http[0] if instagram_profile else None}), flush=True)
+            print(json.dumps({'ok': False, 'status': 'ERROR', 'reason': 'La navegación no terminó. No se ha repetido la acción.', 'failed_step': step, 'exception_type': type(exc).__name__, 'trace_location': frames, 'login_http': login_http[0] if instagram_profile else None}), flush=True)
     context.close()
     browser.close()
     p.stop()
