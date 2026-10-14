@@ -36,9 +36,18 @@ def instagram_host(url):
     return host in ('instagram.com', 'www.instagram.com') or host.endswith(('.cdninstagram.com', '.fbcdn.net'))
 
 
-def instagram_login_post(url):
+def instagram_login_post(url, body=''):
     parsed = urlsplit(url)
-    return parsed.hostname in ('instagram.com', 'www.instagram.com') and bool(re.search(r'^/(accounts/login|accounts/onetap|challenge|api/v1/(web/accounts/login|accounts/(login|two_factor_login)|challenge))(/|$)', parsed.path))
+    if parsed.hostname not in ('instagram.com', 'www.instagram.com'): return False
+    if parsed.path.rstrip('/') in ('/api/graphql', '/graphql/query'):
+        from urllib.parse import parse_qs
+        try:
+            payload=json.loads(body) if body.lstrip().startswith('{') else {k:v[0] for k,v in parse_qs(body).items()}
+            operation=str(payload.get('fb_api_req_friendly_name') or payload.get('operationName') or '')
+        except (ValueError,TypeError): return False
+        return bool(re.fullmatch(r'(?:use)?Polaris(?:Login|AccountsLogin|LoginAccount)[A-Za-z]{0,50}Mutation',operation))
+    if re.fullmatch(r'/api/v1/bloks/apps/com\.bloks\.www\.(?:bloks\.)?caa\.login\.async\.send_login_request/?',parsed.path): return True
+    return bool(re.search(r'^/(accounts/login|accounts/onetap|challenge|api/v1/(web/accounts/login|accounts/(login|two_factor_login)|challenge))(/|$)', parsed.path))
 
 
 def run():
@@ -56,7 +65,7 @@ def run():
     # Reject alternative protocols and unsafe HTTP methods from page scripts.
     def route(request_route):
         request = request_route.request
-        if not request.url.startswith('https://') or instagram_profile and not instagram_host(request.url) or request.method not in ('GET', 'HEAD', 'OPTIONS') and not (permit[0] and (not instagram_profile or instagram_login_post(request.url))):
+        if not request.url.startswith('https://') or instagram_profile and not instagram_host(request.url) or request.method not in ('GET', 'HEAD', 'OPTIONS') and not (permit[0] and (not instagram_profile or instagram_login_post(request.url, request.post_data or ''))):
             if instagram_profile and request.method == 'POST' and len(blocked_posts)<6:
                 blocked_posts.append('LOGIN' if instagram_login_post(request.url) else 'GRAPHQL' if '/graphql' in urlsplit(request.url).path else 'OTHER')
             request_route.abort()
@@ -76,7 +85,7 @@ def run():
     blocked_posts = []
     public_media = []
     def observed_media(response):
-        if instagram_profile and instagram_login_post(response.url): login_http[0] = response.status
+        if instagram_profile and response.request.method=='POST' and instagram_login_post(response.url,response.request.post_data or ''): login_http[0] = response.status
         mime = response.headers.get('content-type', '').split(';')[0]
         if response.request.method == 'GET' and response.url.startswith('https://') and mime.startswith(('video/', 'audio/')) and len(public_media) < 10:
             public_media.append({'type': mime.split('/')[0], 'url': response.url})

@@ -17,6 +17,9 @@ class InstagramProfileTests(unittest.TestCase):
         self.assertTrue(instagram_login_post('https://www.instagram.com/api/v1/web/accounts/login/ajax/'))
         for url in ('https://facebook.com/login', 'https://instagram.com.attacker.org/accounts/login/', 'https://www.instagram.com/api/v1/media/configure/', 'https://www.instagram.com/api/v1/direct_v2/threads/broadcast/text/'):
             self.assertFalse(instagram_login_post(url))
+        self.assertTrue(instagram_login_post('https://www.instagram.com/api/graphql','fb_api_req_friendly_name=usePolarisLoginMutation'))
+        self.assertFalse(instagram_login_post('https://www.instagram.com/api/graphql','fb_api_req_friendly_name=PolarisPublishMutation'))
+        self.assertFalse(instagram_login_post('https://www.instagram.com/api/graphql','fb_api_req_friendly_name=PolarisSendMessageMutation'))
         self.assertFalse(instagram_host('https://facebook.com/'))
         self.assertEqual(policy('password', 'fill'), 'HUMAN_ACTION')
 
