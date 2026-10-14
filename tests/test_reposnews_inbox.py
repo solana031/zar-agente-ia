@@ -180,7 +180,7 @@ class InstagramInboxTest(unittest.TestCase):
  def test_media_cleanup_without_fetching_instagram_page(self):
   item=inbox.receive(self.event(text='',attachments=[{'type':'share','payload':{'url':'https://www.instagram.com/reel/fixture?secret=fixture'}}]))[0]
   with patch('app.browser_network.start_proxy') as proxy:
-   self.assertEqual(inbox.analyze_media(item),{});proxy.return_value.shutdown.assert_called_once()
+   self.assertEqual(inbox.analyze_media(item),{});proxy.assert_not_called()
   self.assertFalse((rn._path().parent/'inbound'/item).exists())
  def test_signature_and_challenge(self):
   raw=json.dumps(self.event()).encode();signature='sha256='+hmac.new(b'fixture-secret',raw,hashlib.sha256).hexdigest()
@@ -210,8 +210,8 @@ class InstagramInboxTest(unittest.TestCase):
    self.assertEqual(inbox.clean_url(url),'')
  def test_shared_permalink_only_is_honest(self):
   item=inbox.receive(self.event(text='https://www.instagram.com/reel/fixture',attachments=[{'type':'share','payload':{'url':'https://www.instagram.com/reel/fixture'}}]))[0]
-  with patch('app.jev_decision.proposal',return_value={'decision':'ALLOW'}),patch.object(inbox,'analyze_media',return_value={}),patch.object(inbox,'public_discovery',return_value={'status':'LOGIN_REQUIRED'}):inbox.process(item)
-  row=rn.read()['instagram_inbox'][0];self.assertEqual(row['status'],'FAILED_SOURCE');self.assertEqual(row['error'],'NO_ACCESSIBLE_DISCOVERY_TEXT');self.assertEqual(rn.read()['articles'],[])
+  with patch('app.jev_decision.proposal',return_value={'decision':'ALLOW'}),patch.object(inbox,'analyze_media',return_value={}),patch.object(inbox,'public_discovery',return_value={'status':'LOGIN_REQUIRED'}),patch.object(inbox,'public_metadata',return_value={}):inbox.process(item)
+  row=rn.read()['instagram_inbox'][0];self.assertEqual(row['status'],'NEEDS_DISAMBIGUATION');self.assertEqual(row['error'],'NO_ACCESSIBLE_DISCOVERY_TEXT');self.assertEqual(rn.read()['articles'],[])
 
  def test_entity_resolves_name_only_with_official_backlink(self):
   candidate={'name':'open-webui','full_name':'open-webui/open-webui','homepage':'https://openwebui.com/','fork':False}

@@ -58,6 +58,12 @@ def run():
         downloads.append(item)
     context.on('page', lambda new: new.on('download', download))
     page.on('download', download)
+    public_media = []
+    def observed_media(response):
+        mime = response.headers.get('content-type', '').split(';')[0]
+        if response.request.method == 'GET' and response.url.startswith('https://') and mime.startswith(('video/', 'audio/')) and len(public_media) < 10:
+            public_media.append({'type': mime.split('/')[0], 'url': response.url})
+    page.on('response', observed_media)
     for line in sys.stdin:
         try:
             data = json.loads(line)
@@ -65,7 +71,9 @@ def run():
             if action == 'close':
                 break
             if action == 'open':
+                public_media.clear()
                 page.goto(data['url'], wait_until='domcontentloaded', timeout=30000)
+                if data.get('discovery'): page.wait_for_timeout(1200)
             elif action == 'new_page':
                 if len(context.pages)>=8:raise ValueError('Maximum browser pages reached')
                 page=context.new_page()
@@ -135,11 +143,23 @@ def run():
                 visible = re.sub(r'\b(?:eyJ[A-Za-z0-9_.-]{30,}|sk-[A-Za-z0-9_-]{15,}|AIza[A-Za-z0-9_-]{20,})\b', '[REDACTED]', visible)
             challenge = human_gate(page.title(), visible)
             url = urlsplit(page.url)
+            discovery = {}
+            if data.get('discovery') and not challenge and not sensitive:
+                if not re.search(r'log in to see|inicia sesi[oó]n para|sign in to continue', visible, re.I):
+                    page.evaluate('''() => {const v=document.querySelector('main video,article video');if(v){v.muted=true;v.play().catch(()=>{});}}''')
+                    page.wait_for_timeout(1000)
+                discovery = page.evaluate('''() => ({
+                  metadata:Object.fromEntries([...document.querySelectorAll('meta[property],meta[name]')].filter(e=>/^(og:(title|description|image|video|video:url)|description|author)$/.test(e.getAttribute('property')||e.getAttribute('name'))).map(e=>[e.getAttribute('property')||e.getAttribute('name'),(e.content||'').slice(0,6000)])),
+                  media:[...document.querySelectorAll('main video,main audio,article video,article audio,main video source,article video source')].slice(0,10).map(e=>({type:e.tagName==='AUDIO'?'audio':'video',url:e.currentSrc||e.src||''})).filter(e=>e.url.startsWith('https://')),
+                  links:[...document.querySelectorAll('main a[href],article a[href]')].slice(0,20).map(e=>e.href).filter(u=>u.startsWith('https://')),
+                  caption:(document.querySelector('main,article')?.innerText||'').slice(0,12000)
+                })''')
+                if not discovery['media'] and len(public_media)==1: discovery['media'] += public_media
             print(json.dumps({'ok': True, 'status': 'ACTION_REQUIRED' if challenge else 'READY',
                 'reason': security_state(page.title(),visible)+' · intervención personal requerida' if challenge else '',
                 'security_state':security_state(page.title(),visible),
                 'url': url.scheme + '://' + url.netloc + url.path, 'title': page.title(),
-                'text': visible, 'controls': controls,
+                'text': visible, 'controls': controls, 'discovery': discovery,
                 'pages': [{'index': i, 'title': x.title()} for i, x in enumerate(context.pages)],
                 'downloads': [{'index': i, 'name': x.suggested_filename} for i, x in enumerate(downloads)],
                 'screenshot': '' if sensitive else base64.b64encode(page.screenshot(type='jpeg', quality=60, mask=[page.locator('input,textarea')])).decode(),

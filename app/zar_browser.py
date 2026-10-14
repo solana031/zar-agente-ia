@@ -21,10 +21,11 @@ PROXY = None
 
 
 class Actor:
-    def __init__(self, scope):
+    def __init__(self, scope, persist_session=True):
         global PROXY
         self.lock = threading.Lock()
         self.scope = scope
+        self.persist_session = persist_session
         self.last = time.monotonic()
         self.state_path = file_store.DATA_DIR / 'users' / safe_slug(scope) / 'browser_session.enc'
         file_store.persistent_storage()
@@ -49,7 +50,7 @@ class Actor:
             account = pwd.getpwnam('zarbrowser')
             options.update(user=account.pw_uid, group=account.pw_gid, extra_groups=[])
             os.chown(self.directory.name, account.pw_uid, account.pw_gid)
-        stored = oauth_vault.decode(self.state_path.read_text(encoding='utf-8'), file_store.DATA_DIR) if self.state_path.exists() else None
+        stored = oauth_vault.decode(self.state_path.read_text(encoding='utf-8'), file_store.DATA_DIR) if persist_session and self.state_path.exists() else None
         self.process = subprocess.Popen([sys.executable, str(Path(__file__).with_name('browser_worker.py'))],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
             text=True, encoding='utf-8', cwd=self.directory.name, env=env, **options)
@@ -73,7 +74,7 @@ class Actor:
             self.process.stdin.flush()
             result = self.responses.get(timeout=50)
             storage = result.pop('storage', None)
-            if storage is not None:
+            if storage is not None and self.persist_session:
                 oauth_vault.persist(self.state_path, json.dumps(storage), file_store.DATA_DIR)
             return result
 
@@ -110,6 +111,8 @@ def actor(scope):
 def operate(data):
     if not isinstance(data, dict):
         raise ValueError('Acción inválida')
+    if data.get('discovery'):
+        raise ValueError('Descubrimiento multimedia reservado al pipeline privado.')
     if data.get('action', 'read') not in {'prepare_account', 'open', 'new_page', 'close_page', 'read', 'back', 'forward', 'reload', 'page', 'click', 'fill', 'upload', 'download', 'close'}:
         raise ValueError('Acción inválida')
     if len(json.dumps(data)) > 12000:

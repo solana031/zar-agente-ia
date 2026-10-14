@@ -420,6 +420,12 @@ def public_legal_profile(data):
 
 
 def media(asset):
+    if re.fullmatch(r'source-[a-f0-9]{24}\.png',asset):
+        path=_path().parent/'media'/asset
+        if not path.is_file():abort(404)
+        response=send_file(path,mimetype='image/png',max_age=86400)
+        response.headers['X-Content-Type-Options']='nosniff'
+        return response
     if asset not in {'editorial.css','favicon.svg','home.png','uv.png','playwright.png','fastapi.png','uv-official.svg','fastapi-official.png','playwright-official.svg','jev-editorial.svg','automaton-editorial.svg','dramaclaw-official.png'}: abort(404)
     response=send_file(Path(__file__).parent/'static'/'reposnews'/asset,max_age=86400)
     response.headers['X-Content-Type-Options']='nosniff'
