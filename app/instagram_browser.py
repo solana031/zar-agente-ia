@@ -59,11 +59,11 @@ def register(blueprint):
     def login_page():
         if not allowed_owner(): return Response('Acceso reservado al titular conectado de ZAR.', status=403)
         return Response('''<!doctype html><html lang="es"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Instagram ZAR · sesión aislada</title><link rel="stylesheet" href="/static/zar-browser.css?v=33.3.64"><body class="zarBrowser igBrowser" style="background:#17130f;color:#ead9c3;font-family:system-ui;padding:20px;max-width:1000px;margin:auto">
+<title>Instagram ZAR · sesión aislada</title><link rel="stylesheet" href="/static/zar-browser.css?v=33.3.65"><body class="zarBrowser igBrowser" style="background:#17130f;color:#ead9c3;font-family:system-ui;padding:20px;max-width:1000px;margin:auto">
 <h1>Instagram ZAR · @zaragente031</h1><p>Inicia sesión personalmente en este navegador de servidor. Perfil exclusivo; sesión cifrada. No uses tu cuenta personal. La contraseña y los códigos solo se transmiten al acceso oficial; no se guardan.</p>
 <button id="open">Abrir acceso Instagram</button> <button id="read">Actualizar pantalla</button> <button id="verify">Verificar cuenta y continuar Reel conservado</button>
-<p id="status" class="zbStatus" role="status"></p><img id="preview" alt="Pantalla del navegador aislado" style="width:100%"><section class="igControlPanel"><h2>Acceso y controles</h2><p>Completa cada campo y pulsa su botón. Después inicia sesión. Verifica la cuenta solo cuando Instagram haya terminado.</p><div id="controls" class="zbControls"></div></section><details><summary>Texto y diagnóstico de la página</summary><pre id="text" class="zbText"></pre></details>
-<script src="/static/instagram-browser.js?v=33.3.64"></script></body></html>''', headers={'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex,nofollow', 'Content-Security-Policy': "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; frame-ancestors 'none'"})
+<p id="status" class="zbStatus" role="status"></p><img id="preview" alt="Pantalla del navegador aislado" style="width:100%"><section class="igControlPanel"><h2>Acceso y controles</h2><p>Completa cada campo y pulsa su botón. Después inicia sesión. Verifica la cuenta solo cuando Instagram haya terminado.</p><form id="loginForm" class="igFieldCard"><label>Cuenta ZAR<input value="zaragente031@gmail.com" readonly autocomplete="username"></label><label>Contraseña<input id="loginPassword" type="password" autocomplete="current-password" required></label><button>Iniciar sesión</button></form><div id="controls" class="zbControls"></div></section><details><summary>Texto y diagnóstico de la página</summary><pre id="text" class="zbText"></pre></details>
+<script src="/static/instagram-browser.js?v=33.3.65"></script></body></html>''', headers={'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex,nofollow', 'Content-Security-Policy': "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; frame-ancestors 'none'"})
 
     @blueprint.post('/api/browser/instagram')
     def login_action():
@@ -73,7 +73,7 @@ def register(blueprint):
             return jsonify(ok=False, reason='CSRF inválido'), 403
         data = request.get_json(silent=True) or {}
         action = data.get('action')
-        if action not in ('open', 'read', 'fill', 'click', 'verify') or len(json.dumps(data)) > 8000:
+        if action not in ('open', 'read', 'fill', 'click', 'verify', 'login') or len(json.dumps(data)) > 8000:
             return jsonify(ok=False, reason='Acción inválida'), 400
         try:
             if action == 'verify':
@@ -93,6 +93,8 @@ def register(blueprint):
                             result['reprocessing_item'] = row['id']
                 return jsonify(result)
             payload = {'action': action}
+            if action == 'login':
+                payload={'action':'instagram_login','password':str(data.pop('password',''))[:5000]}
             if action == 'open': payload['url'] = 'https://www.instagram.com/accounts/login/'
             if action in ('fill', 'click'):
                 payload.update(control=data.get('control'), human_login=True)

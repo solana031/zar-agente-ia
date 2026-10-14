@@ -112,7 +112,19 @@ def run():
             human_login = instagram_profile and data.get('human_login') is True
             if action == 'close':
                 break
-            if action == 'open':
+            if action == 'instagram_login':
+                if not instagram_profile:raise ValueError('Dedicated profile required')
+                step='LOGIN_FIELDS'
+                page.locator('input[name="email"],input[name="username"]').fill('zaragente031@gmail.com')
+                page.locator('input[name="pass"],input[name="password"]').fill(str(data.pop('password','')))
+                permit[0]=True
+                try:
+                    step='LOGIN_DISPATCH'
+                    page.get_by_role('button',name=re.compile(r'^log in$',re.I)).click()
+                    step='LOGIN_WAIT'
+                    page.wait_for_timeout(3000)
+                finally:permit[0]=False
+            elif action == 'open':
                 if instagram_profile and not instagram_host(data['url']): raise ValueError('Instagram profile only')
                 public_media.clear()
                 page.goto(data['url'], wait_until='domcontentloaded', timeout=30000)
@@ -200,7 +212,17 @@ def run():
             elif action != 'read':
                 raise ValueError('Acción no disponible')
             # Values/passwords are deliberately excluded from the visible control list.
-            controls = page.evaluate('''profile => [...document.querySelectorAll('a[href],button,input:not([type=hidden]),textarea,select'+(profile?', [role=button]':''))].filter(e=>e.getBoundingClientRect().width&&e.getBoundingClientRect().height).slice(0,150).map((e,i)=>{e.setAttribute('data-zar-control',i);return {index:i,tag:e.tagName,name:e.name||'',role:e.getAttribute('role')||'',type:e.getAttribute('type')||'',label:(e.getAttribute('aria-label')||e.innerText||e.getAttribute('placeholder')||e.name||e.tagName).slice(0,180)}})''', instagram_profile)
+            step='READ_CONTROLS'
+            if instagram_profile:
+                controls=[]
+                for selector,tag in [('input:not([type=hidden])','INPUT'),('button,[role=button]','BUTTON')]:
+                    for element in page.locator(selector).all()[:100]:
+                        if not element.is_visible():continue
+                        name=element.get_attribute('name') or ''
+                        label=element.get_attribute('aria-label') or element.inner_text() or element.get_attribute('placeholder') or name or tag
+                        controls.append({'index':len(controls),'tag':tag,'name':name,'type':element.get_attribute('type') or '', 'role':element.get_attribute('role') or '', 'label':label[:180]})
+            else:
+                controls = page.evaluate('''profile => [...document.querySelectorAll('a[href],button,input:not([type=hidden]),textarea,select'+(profile?', [role=button]':''))].filter(e=>e.getBoundingClientRect().width&&e.getBoundingClientRect().height).slice(0,150).map((e,i)=>{e.setAttribute('data-zar-control',i);return {index:i,tag:e.tagName,name:e.name||'',role:e.getAttribute('role')||'',type:e.getAttribute('type')||'',label:(e.getAttribute('aria-label')||e.innerText||e.getAttribute('placeholder')||e.name||e.tagName).slice(0,180)}})''', arg=instagram_profile)
             visible = page.locator('body').inner_text()[:18000]
             sensitive = bool(re.search(r'api\s*(?:key|secret)|access\s*token|refresh\s*token|private\s*key', visible, re.I))
             if sensitive:
@@ -234,7 +256,9 @@ def run():
                 'storage': context.storage_state()}), flush=True)
         except Exception as exc:
             import traceback
-            frames=[{'function':f.name,'line':f.lineno,'module':os.path.basename(f.filename)} for f in traceback.extract_tb(exc.__traceback__)[-5:]]
+            trace=traceback.extract_tb(exc.__traceback__)
+            frames=[{'function':f.name,'line':f.lineno,'module':os.path.basename(f.filename)} for f in trace if os.path.basename(f.filename)=='browser_worker.py']
+            frames += [{'function':f.name,'line':f.lineno,'module':os.path.basename(f.filename)} for f in trace[-8:] if os.path.basename(f.filename)!='browser_worker.py']
             # Provider/browser errors can embed credential-bearing URLs. Never echo them.
             print(json.dumps({'ok': False, 'status': 'ERROR', 'reason': 'La navegación no terminó. No se ha repetido la acción.', 'failed_step': step, 'exception_type': type(exc).__name__, 'trace_location': frames, 'login_http': login_http[0] if instagram_profile else None}), flush=True)
     context.close()
