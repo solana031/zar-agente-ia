@@ -64,6 +64,15 @@ def instagram_control(page, spec):
     raise ValueError('LOGIN_CONTROL_NOT_ALLOWED')
 
 
+def request_body(request):
+    """Network payload metadata is optional; decoding errors must fail closed."""
+    try:
+        body=request.post_data
+        return body if isinstance(body,(str,bytes)) else ''
+    except (TypeError,ValueError,UnicodeError):
+        return ''
+
+
 def run():
     from playwright.sync_api import sync_playwright
     p = sync_playwright().start()
@@ -77,14 +86,21 @@ def run():
         viewport={'width': 1280, 'height': 800}, accept_downloads=True, service_workers='block')
     context.set_default_timeout(10000)
     # Reject alternative protocols and unsafe HTTP methods from page scripts.
+    callback_errors=[]
     def route(request_route):
-        request = request_route.request
-        if not request.url.startswith('https://') or instagram_profile and not instagram_host(request.url) or request.method not in ('GET', 'HEAD', 'OPTIONS') and not (permit[0] and (not instagram_profile or instagram_login_post(request.url, request.post_data or ''))):
-            if instagram_profile and request.method == 'POST' and len(blocked_posts)<6:
-                blocked_posts.append('LOGIN' if instagram_login_post(request.url) else 'GRAPHQL' if '/graphql' in urlsplit(request.url).path else 'OTHER')
-            request_route.abort()
-        else:
-            request_route.continue_()
+        try:
+            request = request_route.request
+            if not request.url.startswith('https://') or instagram_profile and not instagram_host(request.url) or request.method not in ('GET', 'HEAD', 'OPTIONS') and not (permit[0] and (not instagram_profile or instagram_login_post(request.url, request_body(request)))):
+                if instagram_profile and request.method == 'POST' and len(blocked_posts)<6:
+                    blocked_posts.append('LOGIN' if instagram_login_post(request.url) else 'GRAPHQL' if '/graphql' in urlsplit(request.url).path else 'OTHER')
+                request_route.abort()
+            else:
+                request_route.continue_()
+        except Exception as exc:
+            callback_errors.append({'callback':'REQUEST_ROUTE','exception_type':type(exc).__name__})
+            del callback_errors[:-6]
+            try:request_route.abort()
+            except Exception:pass
     permit = [False]
     blocked_posts = []
     context.route('**/*', route)
@@ -99,10 +115,14 @@ def run():
     blocked_posts = []
     public_media = []
     def observed_media(response):
-        if instagram_profile and response.request.method=='POST' and instagram_login_post(response.url,response.request.post_data or ''): login_http[0] = response.status
-        mime = response.headers.get('content-type', '').split(';')[0]
-        if response.request.method == 'GET' and response.url.startswith('https://') and mime.startswith(('video/', 'audio/')) and len(public_media) < 10:
-            public_media.append({'type': mime.split('/')[0], 'url': response.url})
+        try:
+            if instagram_profile and response.request.method=='POST' and instagram_login_post(response.url,request_body(response.request)): login_http[0] = response.status
+            mime = response.headers.get('content-type', '').split(';')[0]
+            if response.request.method == 'GET' and response.url.startswith('https://') and mime.startswith(('video/', 'audio/')) and len(public_media) < 10:
+                public_media.append({'type': mime.split('/')[0], 'url': response.url})
+        except Exception as exc:
+            callback_errors.append({'callback':'RESPONSE_METADATA','exception_type':type(exc).__name__})
+            del callback_errors[:-6]
     page.on('response', observed_media)
     for line in sys.stdin:
         try:
@@ -249,7 +269,7 @@ def run():
                 'security_state':security_state(page.title(),visible),
                 'url': url.scheme + '://' + url.netloc + url.path, 'title': page.title(),
                 'text': visible, 'controls': controls, 'discovery': discovery,
-                'login_http': login_http[0] if instagram_profile else None, 'blocked_post_classes': blocked_posts[:] if instagram_profile else [],
+                'login_http': login_http[0] if instagram_profile else None, 'blocked_post_classes': blocked_posts[:] if instagram_profile else [], 'network_callbacks':callback_errors[:],
                 'pages': [{'index': i, 'title': x.title()} for i, x in enumerate(context.pages)],
                 'downloads': [{'index': i, 'name': x.suggested_filename} for i, x in enumerate(downloads)],
                 'screenshot': '' if sensitive else base64.b64encode(page.screenshot(type='jpeg', quality=60, mask=[page.locator('input,textarea')])).decode(),

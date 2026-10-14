@@ -44,6 +44,14 @@ class InstagramProfileTests(unittest.TestCase):
         page.get_by_role.assert_called_once_with('button',name='Log In',exact=True)
         with self.assertRaises(ValueError):instagram_control(page,{'label':'Publish'})
 
+    def test_request_payload_decoder_failure_cannot_escape_to_page_actions(self):
+        from app.browser_worker import request_body
+        class BrokenRequest:
+            @property
+            def post_data(self):raise TypeError('fixture decoder failure')
+        self.assertEqual(request_body(BrokenRequest()),'')
+        self.assertFalse(instagram_login_post('https://www.instagram.com/api/graphql',request_body(BrokenRequest())))
+
     def test_owner_and_csrf_required(self):
         from flask import Flask
         from app.zar_browser import blueprint
