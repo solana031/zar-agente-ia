@@ -57,10 +57,13 @@ def run():
     def route(request_route):
         request = request_route.request
         if not request.url.startswith('https://') or instagram_profile and not instagram_host(request.url) or request.method not in ('GET', 'HEAD', 'OPTIONS') and not (permit[0] and (not instagram_profile or instagram_login_post(request.url))):
+            if instagram_profile and request.method == 'POST' and len(blocked_posts)<6:
+                blocked_posts.append('LOGIN' if instagram_login_post(request.url) else 'GRAPHQL' if '/graphql' in urlsplit(request.url).path else 'OTHER')
             request_route.abort()
         else:
             request_route.continue_()
     permit = [False]
+    blocked_posts = []
     context.route('**/*', route)
     page = context.new_page()
     controls = []
@@ -69,8 +72,11 @@ def run():
         downloads.append(item)
     context.on('page', lambda new: new.on('download', download))
     page.on('download', download)
+    login_http = [None]
+    blocked_posts = []
     public_media = []
     def observed_media(response):
+        if instagram_profile and instagram_login_post(response.url): login_http[0] = response.status
         mime = response.headers.get('content-type', '').split(';')[0]
         if response.request.method == 'GET' and response.url.startswith('https://') and mime.startswith(('video/', 'audio/')) and len(public_media) < 10:
             public_media.append({'type': mime.split('/')[0], 'url': response.url})
@@ -79,6 +85,7 @@ def run():
         try:
             data = json.loads(line)
             action = data.get('action', 'read')
+            step = 'CONTROL_VALIDATION' if action in ('fill','click') else 'NAVIGATION'
             human_login = instagram_profile and data.get('human_login') is True
             if action == 'close':
                 break
@@ -86,7 +93,8 @@ def run():
                 if instagram_profile and not instagram_host(data['url']): raise ValueError('Instagram profile only')
                 public_media.clear()
                 page.goto(data['url'], wait_until='domcontentloaded', timeout=30000)
-                if data.get('discovery'): page.wait_for_timeout(1200)
+                if instagram_profile: page.wait_for_timeout(2500)
+                elif data.get('discovery'): page.wait_for_timeout(1200)
             elif action == 'new_page':
                 if len(context.pages)>=8:raise ValueError('Maximum browser pages reached')
                 page=context.new_page()
@@ -128,6 +136,7 @@ def run():
                     print(json.dumps({'ok':False,'status':'ACTION_REQUIRED','reason':'Formulario legal/financiero: intervención humana requerida.'}),flush=True)
                     continue
                 if action == 'fill':
+                    step = 'FILL'
                     locator.fill(str(data.get('value', ''))[:5000])
                 elif action == 'upload':
                     if control.get('type') != 'file':
@@ -141,8 +150,11 @@ def run():
                 else:
                     permit[0] = bool(data.get('confirmed')) or human_login
                     try:
+                        step = 'CLICK'
+                        login_http[0] = None
+                        blocked_posts.clear()
                         locator.click()
-                        page.wait_for_timeout(350)
+                        page.wait_for_timeout(3000 if human_login else 350)
                     finally:
                         permit[0] = False
             elif action == 'download':
@@ -184,13 +196,14 @@ def run():
                 'security_state':security_state(page.title(),visible),
                 'url': url.scheme + '://' + url.netloc + url.path, 'title': page.title(),
                 'text': visible, 'controls': controls, 'discovery': discovery,
+                'login_http': login_http[0] if instagram_profile else None, 'blocked_post_classes': blocked_posts[:] if instagram_profile else [],
                 'pages': [{'index': i, 'title': x.title()} for i, x in enumerate(context.pages)],
                 'downloads': [{'index': i, 'name': x.suggested_filename} for i, x in enumerate(downloads)],
                 'screenshot': '' if sensitive else base64.b64encode(page.screenshot(type='jpeg', quality=60, mask=[page.locator('input,textarea')])).decode(),
                 'storage': context.storage_state()}), flush=True)
-        except Exception:
+        except Exception as exc:
             # Provider/browser errors can embed credential-bearing URLs. Never echo them.
-            print(json.dumps({'ok': False, 'status': 'ERROR', 'reason': 'La navegación no terminó. Comprueba URL, red y control; no se reintenta automáticamente.'}), flush=True)
+            print(json.dumps({'ok': False, 'status': 'ERROR', 'reason': 'La navegación no terminó. No se ha repetido la acción.', 'failed_step': step, 'exception_type': type(exc).__name__, 'login_http': login_http[0] if instagram_profile else None}), flush=True)
     context.close()
     browser.close()
     p.stop()
