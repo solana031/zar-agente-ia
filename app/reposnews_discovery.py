@@ -155,7 +155,7 @@ def evidence(row, analysis, discovery, metadata):
             'outbound_links': [u for u in urls if urlsplit(u).hostname not in ('instagram.com', 'www.instagram.com', 'github.com')],
             'metadata': sanitize(metadata.get('metadata', {})), 'confidence': 'DISCOVERY_ONLY',
             'media_coverage': (analysis or {}).get('input_media', []),
-            'path': 'DIRECT_MEDIA' if analysis else 'PUBLIC_BROWSER' if discovery.get('text') else 'PERMALINK_METADATA' if metadata.get('text') else 'TEXT_ONLY'}
+            'path': 'DIRECT_MEDIA' if analysis else 'ZAR_INSTAGRAM_BROWSER_SESSION' if discovery.get('status')=='AUTHENTICATED_DISCOVERY' else 'PUBLIC_BROWSER' if discovery.get('text') else 'PERMALINK_METADATA' if metadata.get('text') else 'TEXT_ONLY'}
 
 
 def bland_hint(text):

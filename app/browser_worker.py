@@ -31,6 +31,16 @@ def security_state(title,text):
     return 'READY'
 
 
+def instagram_host(url):
+    host = urlsplit(url).hostname or ''
+    return host in ('instagram.com', 'www.instagram.com') or host.endswith(('.cdninstagram.com', '.fbcdn.net'))
+
+
+def instagram_login_post(url):
+    parsed = urlsplit(url)
+    return parsed.hostname in ('instagram.com', 'www.instagram.com') and bool(re.search(r'^/(accounts/login|accounts/onetap|challenge|api/v1/(web/accounts/login|accounts/(login|two_factor_login)|challenge))(/|$)', parsed.path))
+
+
 def run():
     from playwright.sync_api import sync_playwright
     p = sync_playwright().start()
@@ -39,13 +49,14 @@ def run():
         proxy={'server': os.environ['ZAR_BROWSER_PROXY'], 'bypass': '<-loopback>'},
         args=['--disable-dev-shm-usage', '--disable-quic', '--force-webrtc-ip-handling-policy=disable_non_proxied_udp'])
     first = json.loads(sys.stdin.readline())
+    instagram_profile = first.get('instagram_profile') is True
     context = browser.new_context(storage_state=first.get('storage') or None,
         viewport={'width': 1280, 'height': 800}, accept_downloads=True, service_workers='block')
     context.set_default_timeout(10000)
     # Reject alternative protocols and unsafe HTTP methods from page scripts.
     def route(request_route):
         request = request_route.request
-        if not request.url.startswith('https://') or request.method not in ('GET', 'HEAD', 'OPTIONS') and not permit[0]:
+        if not request.url.startswith('https://') or instagram_profile and not instagram_host(request.url) or request.method not in ('GET', 'HEAD', 'OPTIONS') and not (permit[0] and (not instagram_profile or instagram_login_post(request.url))):
             request_route.abort()
         else:
             request_route.continue_()
@@ -68,9 +79,11 @@ def run():
         try:
             data = json.loads(line)
             action = data.get('action', 'read')
+            human_login = instagram_profile and data.get('human_login') is True
             if action == 'close':
                 break
             if action == 'open':
+                if instagram_profile and not instagram_host(data['url']): raise ValueError('Instagram profile only')
                 public_media.clear()
                 page.goto(data['url'], wait_until='domcontentloaded', timeout=30000)
                 if data.get('discovery'): page.wait_for_timeout(1200)
@@ -87,10 +100,21 @@ def run():
                 getattr(page, {'back': 'go_back', 'forward': 'go_forward', 'reload': 'reload'}[action])(wait_until='domcontentloaded', timeout=30000)
             elif action == 'page':
                 page = context.pages[int(data['index'])]
+            elif action == 'instagram_verify':
+                if not instagram_profile: raise ValueError('Dedicated profile required')
+                page.goto('https://www.instagram.com/zaragente031/', wait_until='domcontentloaded', timeout=30000)
+                page.wait_for_timeout(1200)
+                own = page.locator('a[href="/accounts/edit/"],a[href="https://www.instagram.com/accounts/edit/"]').count() > 0
+                identity = own and bool(re.search(r'\bzaragente031\b', page.locator('body').inner_text()))
+                print(json.dumps({'ok': True, 'status': 'VERIFIED' if identity else 'ACTION_REQUIRED', 'account': 'zaragente031' if identity else '', 'authenticated': identity,
+                    'storage': context.storage_state()}), flush=True)
+                continue
             elif action in ('click', 'fill', 'upload'):
                 index = int(data['index'])
                 control = controls[index]
                 decision = policy(control['label'] + ' ' + control.get('type', ''), action)
+                if human_login and action == 'fill' and control.get('tag') == 'INPUT' and not re.search(r'captcha|bank|banc|tax|fiscal|card|tarjeta|phone|tel[eé]fono', control['label'], re.I): decision = 'ALLOW'
+                if human_login and action == 'click' and re.fullmatch(r'log in|iniciar sesi[oó]n|entrar|confirm|confirmar|verify|verificar', control['label'].strip(), re.I): decision = 'ALLOW'
                 if decision in ('HUMAN_ACTION', 'DENY') or decision == 'CONFIRM' and data.get('confirmed') is not True:
                     print(json.dumps({'ok': False, 'status': 'ACTION_REQUIRED', 'reason': 'Intervención humana: ' + decision, 'decision': decision}), flush=True)
                     continue
@@ -100,7 +124,7 @@ def run():
                 current = locator.evaluate("e=>({type:e.getAttribute('type')||'',label:(e.getAttribute('aria-label')||e.innerText||e.getAttribute('placeholder')||e.name||e.tagName).slice(0,180),form:e.form?.innerText||''})")
                 if current['label'] != control['label'] or current['type'] != control['type']:
                     raise ValueError('Control cambiado; vuelve a leer la página')
-                if action != 'fill' and policy(current['label'] + ' ' + current['form'], action) in ('HUMAN_ACTION', 'DENY'):
+                if action != 'fill' and not human_login and policy(current['label'] + ' ' + current['form'], action) in ('HUMAN_ACTION', 'DENY'):
                     print(json.dumps({'ok':False,'status':'ACTION_REQUIRED','reason':'Formulario legal/financiero: intervención humana requerida.'}),flush=True)
                     continue
                 if action == 'fill':
@@ -115,7 +139,7 @@ def run():
                     finally:
                         permit[0] = False
                 else:
-                    permit[0] = bool(data.get('confirmed'))
+                    permit[0] = bool(data.get('confirmed')) or human_login
                     try:
                         locator.click()
                         page.wait_for_timeout(350)

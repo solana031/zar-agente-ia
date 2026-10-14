@@ -301,14 +301,19 @@ def generate_json(prompt,parts=None):
     if not key:raise ValueError('AI_AUTH_REQUIRED')
     primary=model_router.model_for('reasoning');secondary=web_search._model()
     models=list(dict.fromkeys([primary]+([secondary] if 'flash' in secondary.lower() else [])))[:2]
+    if len(models)==1:models.append(primary)
     response=None
-    for model in models:
+    for attempt,model in enumerate(models):
+        if attempt:time.sleep(1)
         response=requests.post('https://generativelanguage.googleapis.com/v1beta/models/'+model+':generateContent',
             headers={'x-goog-api-key':key},json={'contents':[{'parts':[{'text':prompt}]+(parts or [])}],
             'generationConfig':{'temperature':.15,'responseMimeType':'application/json','maxOutputTokens':6000}},timeout=(10,100))
         if response.ok:break
         if response.status_code not in (429,500,502,503,504):break
-    if not response.ok:raise ValueError('AI_PROVIDER_'+str(response.status_code))
+    if not response.ok:
+        error=ValueError('AI_PROVIDER_'+str(response.status_code))
+        error.provider_status={'provider':'Google Gemini','model':model,'http':response.status_code,'attempts':attempt+1}
+        raise error
     result=response.json();text=''.join(x.get('text','') for x in result.get('candidates',[{}])[0].get('content',{}).get('parts',[]))
     result=json.loads(text)
     if not isinstance(result,dict):raise ValueError('AI_RESPONSE_INVALID')
@@ -612,14 +617,17 @@ def process(item_id):
         analysis={}
         if (rn._path().parent/'inbound'/item_id).exists():
             try:analysis=analyze_media(item_id)
-            except (ValueError,OSError,requests.RequestException):update(item_id,media_analysis='OPTIONAL_UNAVAILABLE')
+            except (ValueError,OSError,requests.RequestException) as exc:update(item_id,media_analysis='OPTIONAL_UNAVAILABLE',media_provider=getattr(exc,'provider_status',{'status':'MEDIA_UNAVAILABLE'}))
         if analysis:update(item_id,analysis=analysis,media_analysis='ACCESSIBLE_MEDIA_ANALYZED',access_level=analysis.get('coverage','DIRECT_MEDIA'))
         text=row.get('caption','')+' '+row.get('source_url','')+' '+json.dumps(analysis,ensure_ascii=False)
         matches=re.findall(r'https://github\.com/([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)',text)
         discovery={};metadata={};resolution=None
         if not matches and not row.get('clarified_project'):
             update(item_id,status='BROWSING',processing_state='BROWSING')
-            discovery=public_discovery(row.get('source_url',''))
+            from .instagram_browser import discovery as instagram_discovery
+            authenticated=instagram_discovery(row.get('source_url',''))
+            update(item_id,instagram_browser_status={k:v for k,v in authenticated.items() if k in ('status','account')})
+            discovery=authenticated if authenticated.get('status')=='AUTHENTICATED_DISCOVERY' else public_discovery(row.get('source_url',''))
             metadata=public_metadata(row.get('source_url',''))
             browser=discovery.get('browser_evidence',{})
             raw_meta=metadata.get('metadata',{})
@@ -632,7 +640,7 @@ def process(item_id):
                 from . import oauth_vault
                 oauth_vault.persist(rn._path().parent/'inbound'/item_id,json.dumps(assets[:10]),rn._path().parent)
                 try:analysis=analyze_media(item_id)
-                except (ValueError,OSError,requests.RequestException):update(item_id,media_analysis='OPTIONAL_UNAVAILABLE')
+                except (ValueError,OSError,requests.RequestException) as exc:update(item_id,media_analysis='OPTIONAL_UNAVAILABLE',media_provider=getattr(exc,'provider_status',{'status':'MEDIA_UNAVAILABLE'}))
                 if analysis:update(item_id,analysis=analysis,media_analysis='ACCESSIBLE_MEDIA_ANALYZED',access_level=analysis.get('coverage','DIRECT_MEDIA'))
             visible_meta=' '.join(str(browser.get('metadata',{}).get(k,'')) for k in ('og:title','og:description','description','title','author'))
             outbound=' '.join(clean_url(u) for u in browser.get('links',[])[:20] if isinstance(u,str))

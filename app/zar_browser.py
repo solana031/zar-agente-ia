@@ -15,17 +15,21 @@ from . import browser_network, file_store, oauth_vault
 from .user_scope import get_current_user, safe_slug
 
 blueprint = Blueprint('zar_browser', __name__)
+from .instagram_browser import register as register_instagram_browser
+register_instagram_browser(blueprint)
 LOCK = threading.RLock()
 ACTORS = {}
 PROXY = None
 
 
 class Actor:
-    def __init__(self, scope, persist_session=True):
+    def __init__(self, scope, persist_session=True, instagram_profile=False):
         global PROXY
         self.lock = threading.Lock()
         self.scope = scope
         self.persist_session = persist_session
+        self.instagram_profile = instagram_profile
+        self.instagram_verified = False
         self.last = time.monotonic()
         self.state_path = file_store.DATA_DIR / 'users' / safe_slug(scope) / 'browser_session.enc'
         file_store.persistent_storage()
@@ -56,7 +60,7 @@ class Actor:
             text=True, encoding='utf-8', cwd=self.directory.name, env=env, **options)
         self.responses = queue.Queue()
         threading.Thread(target=self._read, daemon=True).start()
-        self.process.stdin.write(json.dumps({'storage': stored}) + '\n')
+        self.process.stdin.write(json.dumps({'storage': stored, 'instagram_profile': instagram_profile}) + '\n')
         self.process.stdin.flush()
 
     def _read(self):
@@ -74,7 +78,10 @@ class Actor:
             self.process.stdin.flush()
             result = self.responses.get(timeout=50)
             storage = result.pop('storage', None)
-            if storage is not None and self.persist_session:
+            if self.instagram_profile and 'authenticated' in result:
+                self.instagram_verified = result['authenticated'] is True and result.get('account') == 'zaragente031'
+                if not self.instagram_verified: self.state_path.unlink(missing_ok=True)
+            if storage is not None and self.persist_session and (not self.instagram_profile or self.instagram_verified):
                 oauth_vault.persist(self.state_path, json.dumps(storage), file_store.DATA_DIR)
             return result
 
@@ -95,7 +102,7 @@ class Actor:
         self.directory.cleanup()
 
 
-def actor(scope):
+def actor(scope, instagram_profile=False):
     with LOCK:
         for key, value in list(ACTORS.items()):
             if value.process.poll() is not None or time.monotonic() - value.last > 900:
@@ -104,7 +111,7 @@ def actor(scope):
         if scope not in ACTORS:
             if len(ACTORS) >= 3:
                 raise ValueError('Capacidad Browser ocupada')
-            ACTORS[scope] = Actor(scope)
+            ACTORS[scope] = Actor(scope, instagram_profile=instagram_profile)
         return ACTORS[scope]
 
 
