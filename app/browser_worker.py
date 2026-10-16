@@ -75,6 +75,7 @@ def request_body(request):
 
 def run():
     from playwright.sync_api import sync_playwright
+    from browser_diagnostics import event as network_event
     p = sync_playwright().start()
     browser = p.chromium.launch(headless=True, chromium_sandbox=True,
         executable_path=os.environ.get('ZAR_BROWSER_EXECUTABLE') or None,
@@ -87,12 +88,23 @@ def run():
     context.set_default_timeout(10000)
     # Reject alternative protocols and unsafe HTTP methods from page scripts.
     callback_errors=[]
+    network_events=[]
+    request_events={}
     def route(request_route):
+        nonlocal request_events
         try:
             request = request_route.request
-            if not request.url.startswith('https://') or instagram_profile and not instagram_host(request.url) or request.method not in ('GET', 'HEAD', 'OPTIONS') and not (permit[0] and (not instagram_profile or instagram_login_post(request.url, request_body(request)))):
+            denied=not request.url.startswith('https://') or instagram_profile and not instagram_host(request.url) or request.method not in ('GET', 'HEAD', 'OPTIONS') and not (permit[0] and (not instagram_profile or instagram_login_post(request.url, request_body(request))))
+            if instagram_profile:
+                rule='BLOCK_NON_HTTPS' if not request.url.startswith('https://') else 'BLOCK_PROFILE_HOST' if not instagram_host(request.url) else 'BLOCK_METHOD_OR_OPERATION' if denied else 'ALLOW_PROFILE_REQUEST'
+                entry=network_event(request.url,request.method,request.resource_type,rule)
+                request_events[request]=entry;network_events.append(entry)
+                if len(network_events)>60:
+                    network_events.pop(0)
+                    request_events={k:v for k,v in request_events.items() if any(v is e for e in network_events)}
+            if denied:
                 if instagram_profile and request.method == 'POST' and len(blocked_posts)<6:
-                    blocked_posts.append('LOGIN' if instagram_login_post(request.url) else 'GRAPHQL' if '/graphql' in urlsplit(request.url).path else 'OTHER')
+                    blocked_posts.append(network_event(request.url,request.method,request.resource_type,'BLOCK_METHOD_OR_OPERATION')['classification'])
                 request_route.abort()
             else:
                 request_route.continue_()
@@ -116,6 +128,10 @@ def run():
     public_media = []
     def observed_media(response):
         try:
+            if instagram_profile and response.request in request_events:
+                entry=request_events[response.request];entry['http_status']=response.status
+                if response.request.redirected_from:
+                    entry['classification']='REDIRECT';entry['redirect_hostname']=urlsplit(response.url).hostname or ''
             if instagram_profile and response.request.method=='POST' and instagram_login_post(response.url,request_body(response.request)): login_http[0] = response.status
             mime = response.headers.get('content-type', '').split(';')[0]
             if response.request.method == 'GET' and response.url.startswith('https://') and mime.startswith(('video/', 'audio/')) and len(public_media) < 10:
@@ -269,7 +285,7 @@ def run():
                 'security_state':security_state(page.title(),visible),
                 'url': url.scheme + '://' + url.netloc + url.path, 'title': page.title(),
                 'text': visible, 'controls': controls, 'discovery': discovery,
-                'login_http': login_http[0] if instagram_profile else None, 'blocked_post_classes': blocked_posts[:] if instagram_profile else [], 'network_callbacks':callback_errors[:],
+                'login_http': login_http[0] if instagram_profile else None, 'blocked_post_classes': blocked_posts[:] if instagram_profile else [], 'network_callbacks':callback_errors[:], 'network_diagnostics':network_events[:] if instagram_profile else [],
                 'pages': [{'index': i, 'title': x.title()} for i, x in enumerate(context.pages)],
                 'downloads': [{'index': i, 'name': x.suggested_filename} for i, x in enumerate(downloads)],
                 'screenshot': '' if sensitive else base64.b64encode(page.screenshot(type='jpeg', quality=60, mask=[page.locator('input,textarea')])).decode(),

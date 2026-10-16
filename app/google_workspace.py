@@ -648,7 +648,9 @@ def sheets_build_workbook(title, sheets):
     return {'ok':True,'spreadsheetId':sid,'url':sh.get('spreadsheetUrl') or f'https://docs.google.com/spreadsheets/d/{sid}/edit'}
 
 
-def docs_build_report(title, subtitle, sections):
+def docs_build_report(title, subtitle, sections, theme="ZAR"):
+    from .workspace_artifacts import THEMES,record
+    palette=THEMES.get(str(theme).upper(),THEMES["ZAR"])
     svc=docs_service(); doc=svc.documents().create(body={'title':title}).execute(); did=doc['documentId']
     text=title+'\n'+(subtitle+'\n' if subtitle else '')+'\n'
     spans=[]; pos=len(title)+2+(len(subtitle)+1 if subtitle else 0)
@@ -671,12 +673,16 @@ def docs_build_report(title, subtitle, sections):
             req.append({'updateParagraphStyle':{'range':{'startIndex':cursor,'endIndex':cursor+len(heading)},'paragraphStyle':{'namedStyleType':'HEADING_1'},'fields':'namedStyleType'}})
             cursor += len(heading)+1
         if body: cursor += len(body)+2
+    req.extend([{'updateTextStyle':{'range':{'startIndex':1,'endIndex':1+len(text)},'textStyle':{'weightedFontFamily':{'fontFamily':palette[2]}},'fields':'weightedFontFamily'}},{'updateParagraphStyle':{'range':{'startIndex':1,'endIndex':1+len(text)},'paragraphStyle':{'spaceAbove':{'magnitude':6,'unit':'PT'},'spaceBelow':{'magnitude':8,'unit':'PT'},'lineSpacing':120},'fields':'spaceAbove,spaceBelow,lineSpacing'}}])
     svc.documents().batchUpdate(documentId=did,body={'requests':req}).execute()
-    return {'ok':True,'documentId':did,'url':f'https://docs.google.com/document/d/{did}/edit'}
+    return record({'ok':True,'documentId':did,'url':f'https://docs.google.com/document/d/{did}/edit'},'DOC',title)
 
 
-def slides_build_deck(title, subtitle, slides):
+def slides_build_deck(title, subtitle, slides, theme="ZAR"):
     """Create a visually structured deck with optional sourced imagery."""
+    from .workspace_artifacts import THEMES,record
+    palette=THEMES.get(str(theme).upper(),THEMES["ZAR"])
+    accent={k:int(palette[1][i:i+2],16)/255 for k,i in (("red",1),("green",3),("blue",5))}
     svc = slides_service()
     pres = svc.presentations().create(body={"title": title}).execute()
     pid = pres["presentationId"]
@@ -701,7 +707,7 @@ def slides_build_deck(title, subtitle, slides):
             "size": {"width": {"magnitude": 9144000, "unit": "EMU"}, "height": {"magnitude": 420000, "unit": "EMU"}},
             "transform": {"scaleX": 1, "scaleY": 1, "translateX": 0, "translateY": 0, "unit": "EMU"}}}})
         req.append({"updateShapeProperties": {"objectId": accent_id, "shapeProperties": {
-            "shapeBackgroundFill": {"solidFill": {"color": {"rgbColor": {"red": 0.10, "green": 0.15, "blue": 0.22}}}},
+            "shapeBackgroundFill": {"solidFill": {"color": {"rgbColor": accent}}},
             "outline": {"propertyState": "NOT_RENDERED"}}, "fields": "shapeBackgroundFill,outline"}})
         req.append({"createShape": {"objectId": title_id, "shapeType": "TEXT_BOX", "elementProperties": {
             "pageObjectId": page,
@@ -709,8 +715,8 @@ def slides_build_deck(title, subtitle, slides):
             "transform": {"scaleX": 1, "scaleY": 1, "translateX": 650000, "translateY": 600000, "unit": "EMU"}}}})
         req.append({"insertText": {"objectId": title_id, "text": item_title}})
         title_style = {"bold": True, "fontSize": {"magnitude": 30 if i == 0 else 24, "unit": "PT"},
-                       "foregroundColor": {"opaqueColor": {"rgbColor": {"red": 0.10, "green": 0.15, "blue": 0.22}}},
-                       "fontFamily": "Arial"}
+                       "foregroundColor": {"opaqueColor": {"rgbColor": accent}},
+                       "fontFamily": palette[2]}
         req.append({"updateTextStyle": {"objectId": title_id, "textRange": {"type": "ALL"},
                                           "style": title_style, "fields": "bold,fontSize,foregroundColor,fontFamily"}})
         if body_text:
@@ -722,7 +728,7 @@ def slides_build_deck(title, subtitle, slides):
             req.append({"insertText": {"objectId": body_id, "text": body_text}})
             body_style = {"fontSize": {"magnitude": 18 if i == 0 else 15, "unit": "PT"},
                           "foregroundColor": {"opaqueColor": {"rgbColor": {"red": 0.22, "green": 0.25, "blue": 0.29}}},
-                          "fontFamily": "Arial"}
+                          "fontFamily": palette[2]}
             req.append({"updateTextStyle": {"objectId": body_id, "textRange": {"type": "ALL"},
                                               "style": body_style, "fields": "fontSize,foregroundColor,fontFamily"}})
         source_note = str(src.get("source_note") or "").strip()
@@ -735,7 +741,7 @@ def slides_build_deck(title, subtitle, slides):
             req.append({"insertText": {"objectId": source_id, "text": source_note[:500]}})
             source_style = {"fontSize": {"magnitude": 8, "unit": "PT"},
                             "foregroundColor": {"opaqueColor": {"rgbColor": {"red": 0.45, "green": 0.48, "blue": 0.52}}},
-                            "fontFamily": "Arial"}
+                            "fontFamily": palette[2]}
             req.append({"updateTextStyle": {"objectId": source_id, "textRange": {"type": "ALL"},
                                               "style": source_style, "fields": "fontSize,foregroundColor,fontFamily"}})
     svc.presentations().batchUpdate(presentationId=pid, body={"requests": req}).execute()
@@ -752,8 +758,8 @@ def slides_build_deck(title, subtitle, slides):
             svc.presentations().batchUpdate(presentationId=pid, body={"requests": [image_req]}).execute()
         except Exception as exc:
             image_errors.append({"slide": i + 1, "error": str(exc)[:240]})
-    return {"ok": True, "presentationId": pid, "url": f"https://docs.google.com/presentation/d/{pid}/edit",
-            "slides": len(raw), "image_errors": image_errors}
+    return record({"ok": True, "presentationId": pid, "url": f"https://docs.google.com/presentation/d/{pid}/edit",
+            "slides": len(raw), "image_errors": image_errors},"SLIDES",title)
 
 
 

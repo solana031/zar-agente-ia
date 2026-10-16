@@ -4433,7 +4433,7 @@ def _execute_workspace_action(pending):
         import google_workspace as gw
     if service == "Google Docs":
         if action == "crear documento": return gw.docs_create(args["title"], args.get("text", ""))
-        if action == "crear informe profesional": return gw.docs_build_report(args["title"], args.get("subtitle", ""), args.get("sections") or [])
+        if action == "crear informe profesional": return gw.docs_build_report(args["title"], args.get("subtitle", ""), args.get("sections") or [],args.get("theme","ZAR"))
         return gw.docs_append(args["document_id"], args["text"])
     if service == "Google Sheets":
         if action == "crear hoja de cálculo": return gw.sheets_create(args["title"])
@@ -4460,9 +4460,12 @@ def _execute_workspace_action(pending):
         if action == "añadir tabla profesional": return gw.sheets_add_professional_table(args["spreadsheet_id"], args["sheet_title"], args["table_title"], args.get("headers") or [], args.get("rows") or [], args.get("start_cell") or "A1", args.get("subtitle") or "", args.get("summary") or [])
         return gw.sheets_write(args["spreadsheet_id"], args["range_a1"], args["values"])
     if service == "Google Slides":
-        if action == "crear presentación profesional": return gw.slides_build_deck(args["title"], args.get("subtitle", ""), args.get("slides") or [])
+        if action == "crear presentación profesional": return gw.slides_build_deck(args["title"], args.get("subtitle", ""), args.get("slides") or [],args.get("theme","ZAR"))
         return gw.slides_create(args["title"])
     if service == "Google Forms":
+        if action == "crear formulario estructurado":
+            from .workspace_artifacts import build_form
+            return build_form(args["title"],args.get("description",""),args.get("items") or [])
         if action == "crear formulario":
             return gw.forms_create(args["title"], args.get("description", ""))
         if action == "añadir pregunta":
