@@ -79,7 +79,7 @@ class DiscoveryTest(unittest.TestCase):
 
     def test_service_provider_failure_never_promotes_a_limited_note_to_ready(self):
         item = inbox.receive(self.event())[0]
-        inbox.update(item,local_worker_done=True,analysis={'transcript':'Example Service'},research_package={'repo':'Example Service','entity_type':'SERVICE'})
+        inbox.update(item,local_worker_done=True,analysis={'transcript':'Example Service'},research_package={'repo':'Example Service','entity_type':'SERVICE','metadata':{},'readme':'Official facts','sources':['https://example.org'],'verified_at':'2026-10-18'})
         with patch('app.jev_decision.proposal',return_value={'decision':'ALLOW'}),patch.object(inbox,'build',side_effect=ValueError('AI_PROVIDER_503')):
             inbox.process(item)
         data=rn.read();self.assertEqual(data['articles'],[])

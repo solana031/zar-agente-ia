@@ -45,7 +45,12 @@ def summary(data):
         if decision in counts:counts[decision]+=1
         if entry.get('linked_article_ids'):counts['MATCHED_ARTICLES']+=1
         counts['DUPLICATES_AVOIDED']+=max(0,len(entry.get('item_ids',[]))-1)
-    return dict(counts,mode='BATCH_LIMITED',concurrency=1,enabled=data.get('historical_backfill',{}).get('enabled',False))
+    active=[]
+    for entry in entries:
+        if entry.get('state')!='PROCESSING':continue
+        row=next((r for r in data.get('instagram_inbox',[]) if r['id']==entry.get('active_item_id')),{})
+        active.append({'item_id':row.get('id'),'permalink':entry['permalink'],'stage':row.get('processing_state'),'status':row.get('status'),'error':row.get('error'),'attempts':row.get('attempts',0)})
+    return dict(counts,active=active,mode='BATCH_LIMITED',concurrency=1,enabled=data.get('historical_backfill',{}).get('enabled',False))
 
 
 def start(scope):
@@ -69,6 +74,9 @@ def tick():
             if entry.get('state')!='PROCESSING':continue
             row=next((r for r in rows if r['id']==entry.get('active_item_id')),None)
             if not row:entry.update(state='COMPLETED',decision='FAILED');continue
+            package=row.get('research_package') or {}
+            if row.get('error')=='SOURCE_OR_GENERATION_FAILED' and package and not {'repo','metadata','readme','sources','verified_at'}<=set(package) and not row.get('checkpoint_research_repaired'):
+                row.update(status='RECEIVED',retry_after=0,run_attempts=0,checkpoint_research_repaired=True)
             exhausted=row.get('attempts',0)>=row.get('attempt_limit',8) and row.get('status')=='FAILED_RETRYABLE'
             if row.get('status') in TERMINAL or exhausted:
                 status=row.get('status')
@@ -89,7 +97,7 @@ def tick():
         if row.get('status') in {'CANCELLED','DISCARDED'}:
             entry.update(state='COMPLETED',decision='NO_CHANGE');rn.write(data);return
         # Preserve prior evidence and manuscripts; reacquire visuals only if they are missing.
-        row.update(backfill=True,backfill_decision='UPDATE_EXISTING' if entry.get('linked_article_ids') else 'CREATE_NEW',attempt_limit=row.get('attempts',0)+4,retry_after=0)
+        row.update(backfill=True,backfill_decision='UPDATE_EXISTING' if entry.get('linked_article_ids') else 'CREATE_NEW',attempt_limit=row.get('attempts',0)+4,run_attempts=0,retry_after=0)
         if not row.get('visual_assets'):
             row.update(asset_refresh=True,local_worker_done=False,local_media_received=False,local_job=True,status='WAITING_LOCAL_WORKER',processing_state='WAITING_LOCAL_WORKER',local_lease=0)
         else:row.update(status='RECEIVED',processing_state='RECEIVED')

@@ -664,7 +664,7 @@ def process(item_id):
         if local_permalink and not row.get('local_worker_done'):
             row.update(status='WAITING_LOCAL_WORKER',processing_state='WAITING_LOCAL_WORKER',local_job=True)
             rn.write(data);return
-        row.update(status='ANALYZING',processing_state='ANALYZING',attempts=row.get('attempts',0)+1,lease=time.time()+300,media_analysis='OPTIONAL');rn.write(data)
+        row.update(status='ANALYZING',processing_state='ANALYZING',attempts=row.get('attempts',0)+1,run_attempts=row.get('run_attempts',0)+1,lease=time.time()+300,media_analysis='OPTIONAL');rn.write(data)
         row=dict(row);scope=data['owner']
     try:
         if holdings.read(scope).get('global_stop'):
@@ -673,7 +673,7 @@ def process(item_id):
         proposal=jev_decision.proposal(scope,{'source_agent':'ReposNewsArticleBuilder','task':'Investigar y preparar borrador privado','action':'research','resources':['github.com'],'expected_cost':None,'risk':.1,'urgency':.2})
         if proposal['decision']=='REJECT':raise ValueError('JEV_REJECTED')
         from . import reposnews_discovery as discover
-        if (row.get('local_worker_done') or row.get('modification_request')) and row.get('research_package'):
+        if (row.get('local_worker_done') or row.get('modification_request')) and {'repo','metadata','readme','sources','verified_at'}<=set(row.get('research_package') or {}):
             package=dict(row['research_package'])
             if row.get('modification_request'):package['modification_request']=row['modification_request']
             update(item_id,status='DRAFTING_ES',processing_state='DRAFTING_ES')
@@ -766,7 +766,7 @@ def process(item_id):
         history=(current.get('error_history',[])+[diagnostic])[-20:]
         update(item_id,status='FAILED_RETRYABLE' if retryable else 'FAILED_SOURCE',processing_state='FAILED',failed_stage=current.get('processing_state'),error=safe_code,error_diagnostic=diagnostic,error_history=history)
         if retryable and current.get('attempts',0)<current.get('attempt_limit',2):
-            update(item_id,status='FAILED_RETRYABLE',retry_after=time.time()+min(3600,30*2**min(current.get('attempts',1),6)))
+            update(item_id,status='FAILED_RETRYABLE',retry_after=time.time()+min(3600,30*2**min(current.get('run_attempts',1),6)))
         elif current.get('attempts',0)>=current.get('attempt_limit',2):
             (rn._path().parent/'inbound'/item_id).unlink(missing_ok=True)
             from .reposnews_automation import notify

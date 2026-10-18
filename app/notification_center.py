@@ -34,6 +34,7 @@ def view(scope):
             row.setdefault('entity_id',row.get('article_id') or row.get('inbox_item_id') or row['id'])
             row.setdefault('entity_type','ARTICLE' if editorial else 'SYSTEM')
             row.setdefault('message',row.get('reason',''));row.setdefault('deep_link',row.get('url') or '/?zar_workspace=human')
+            if not row.get('notification_key') and not editorial and row.get('status')=='DONE':row['read_at']=row.get('read_at') or row.get('completed_at') or row.get('created_at')
             if row.get('notification_key') in {'worker-offline','worker-session-expired'} and worker.get('state')=='ONLINE' and worker.get('session')=='CONNECTED':row['status']='DONE'
             item=dict(row,completed=row.get('status') in {'DONE','COMPLETED','PUBLISHED','CANCELLED','IGNORED'})
             if editorial.get('article_id') and rn.read().get('owner')==scope:

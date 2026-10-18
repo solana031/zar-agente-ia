@@ -69,3 +69,26 @@ def test_notification_endpoints_require_session_and_csrf(setup):
     result=client.get('/api/notifications');assert result.status_code==200
     assert client.post('/api/notifications/read',json={'all':True}).status_code==403
     assert client.post('/api/notifications/read',json={'all':True},headers={'X-ZAR-Business-CSRF':result.json['csrf']}).status_code==200
+
+
+def test_revoked_google_auth_preserves_job_until_reconnection(setup):
+    with patch.object(creator,'start_worker'):row=creator.enqueue('owner',{'type':'DOC','title':'Demo','request':'Create a report'})
+    with patch('app.cloud_auth.get_credentials',return_value=None),patch.object(native,'build') as build:
+        creator.run('owner',row)
+    build.assert_not_called();job=creator.jobs('owner')[0]
+    assert job['state']=='WAITING_GOOGLE_AUTH';assert job['error']=='GOOGLE_AUTH_REQUIRED';assert not job.get('file_id')
+
+
+def test_exact_text_replacement_edits_the_same_native_document():
+    svc=Mock();svc.documents.return_value.batchUpdate.return_value.execute.return_value={'replies':[{'replaceAllText':{'occurrencesChanged':1}}]}
+    with patch.object(native.gw,'docs_service',return_value=svc):native.apply_edits('DOC','same_file',[{'kind':'REPLACE_TEXT','old':'Original','new':'Updated'}])
+    call=svc.documents.return_value.batchUpdate.call_args.kwargs
+    assert call['documentId']=='same_file';assert call['body']['requests'][0]['replaceAllText']['replaceText']=='Updated'
+
+
+def test_update_existing_question_preserves_item_and_question_ids():
+    svc=Mock();question={'itemId':'existing-item','title':'Original','questionItem':{'question':{'questionId':'existing-question','textQuestion':{}}}}
+    with patch.object(native.gw,'forms_get',return_value={'items':[question]}),patch.object(native.gw,'forms_service',return_value=svc):
+        native.apply_edits('FORM','same_form',[{'kind':'UPDATE_QUESTION','index':0,'title':'Updated','required':True}])
+    update=svc.forms.return_value.batchUpdate.call_args.kwargs['body']['requests'][0]['updateItem']
+    assert update['item']['itemId']=='existing-item';assert update['item']['questionItem']['question']['questionId']=='existing-question'

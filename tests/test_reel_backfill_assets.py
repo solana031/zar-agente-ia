@@ -110,3 +110,21 @@ def test_ignoring_update_preserves_article_and_records_history(context):
         session['zar_auth']=True
         result=revisions.decide('owner',{'id':r['article_revision_id'],'decision':'IGNORAR','approval_request':revisions.token('owner',r)})
     assert result['state']=='IGNORED';assert rn.read()['articles']==[a]
+
+
+def test_exact_user_approval_updates_same_published_urls(context):
+    a,row=context;data=rn.read();old=data['articles'][0];old.update(published=True,state='PUBLISHED',published_snapshot=copy.deepcopy(old))
+    data.update(legal={'controller':'Fixture','privacy_contact':'fixture@example.test','activity_mode':'NONCOMMERCIAL','entity_type':'PERSON','processing_basis':'Fixture','retention':'Fixture','providers_reviewed':True},legal_reviewed=True)
+    row=dict(row,source_url='https://www.instagram.com/reel/NewOfficialRelease/')
+    candidate=article();candidate['body_es']+=' actualización verificada'
+    with patch('app.reposnews_generation.generate_json',return_value={'relevant':True,'change_summary':'Release oficial'}):revisions.consider(data,row,candidate)
+    rn.write(data);r=data['article_revisions'][0];app=Flask(__name__);app.secret_key='fixture'
+    with app.test_request_context():
+        from flask import session
+        session['zar_auth']=True
+        with patch('app.jev_decision.proposal',return_value={'decision':'ALLOW','id':'fixture'}),patch('app.jev_decision.decision_state'):
+            result=revisions.decide('owner',{'id':r['article_revision_id'],'decision':'ACTUALIZAR','approval_request':revisions.token('owner',r)})
+    after=rn.read();assert result['state']=='APPLIED';assert len(after['articles'])==1
+    assert after['articles'][0]['id']==a['id'];assert after['articles'][0]['seo']==a['seo']
+    assert after['articles'][0]['published_snapshot']['body_es']==candidate['body_es']
+    assert after['articles'][0]['approval_status']=='APPROVED_BY_USER'

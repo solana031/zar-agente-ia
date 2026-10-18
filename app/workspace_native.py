@@ -109,11 +109,14 @@ def build(payload,plan,fid,remember):
     if not fid:
         created={'DOC':gw.docs_create,'SLIDES':gw.slides_create,'SHEET':gw.sheets_create,'FORM':gw.forms_create}[kind](title)
         fid=next(created[k] for k in ('documentId','presentationId','spreadsheetId','formId') if created.get(k));remember(fid)
-    if kind=='DOC':docs_build(fid,payload,plan);key='documentId';url='https://docs.google.com/document/d/'+fid+'/edit'
+    apply_edits(kind,fid,plan.get('edits') or [])
+    if kind=='DOC':
+        if plan.get('sections'):docs_build(fid,payload,plan)
+        key='documentId';url='https://docs.google.com/document/d/'+fid+'/edit'
     elif kind=='SLIDES':
         svc=gw.slides_service();prefix='zar_'+secrets.token_hex(6)
         req=slide_requests(plan['slides'],plan['design'],prefix)
-        svc.presentations().batchUpdate(presentationId=fid,body={'requests':req}).execute()
+        if req:svc.presentations().batchUpdate(presentationId=fid,body={'requests':req}).execute()
         key='presentationId';url='https://docs.google.com/presentation/d/'+fid+'/edit'
     elif kind=='SHEET':
         result=gw.sheets_upgrade_workbook(fid,plan['sheets'],plan.get('charts'))
@@ -132,13 +135,34 @@ def build(payload,plan,fid,remember):
         if req:gw.sheets_service().spreadsheets().batchUpdate(spreadsheetId=fid,body={'requests':req}).execute()
         key='spreadsheetId';url='https://docs.google.com/spreadsheets/d/'+fid+'/edit'
     else:
-        svc=gw.forms_service();actual=gw.forms_get(fid);offset=len(actual.get('items',[]));req=wa.form_requests(plan['items'])
+        svc=gw.forms_service();actual=gw.forms_get(fid);offset=len(actual.get('items',[]));req=wa.form_requests(plan['items']) if plan.get('items') else []
         for command in req:command['createItem']['location']['index']+=offset
         if plan.get('mode')=='QUIZ':req.insert(0,{'updateSettings':{'settings':{'quizSettings':{'isQuiz':True}},'updateMask':'quizSettings.isQuiz'}})
         if plan.get('description'):req.insert(0,{'updateFormInfo':{'info':{'description':plan['description']},'updateMask':'description'}})
-        svc.forms().batchUpdate(formId=fid,body={'requests':req}).execute()
+        if req:svc.forms().batchUpdate(formId=fid,body={'requests':req}).execute()
         key='formId';url='https://docs.google.com/forms/d/'+fid+'/edit'
     return {'ok':True,'file_id':fid,key:fid,'url':url}
+
+
+def apply_edits(kind,fid,edits):
+    for edit in edits:
+        op=edit['kind']
+        if op=='UPDATE_QUESTION':
+            form=gw.forms_get(fid);index=edit['index']
+            if index>=len(form.get('items',[])):raise ValueError('QUESTION_INDEX_NOT_FOUND')
+            item=dict(form['items'][index]);item['title']=edit['title']
+            fields='title'
+            if 'required' in edit and 'questionItem' in item:
+                item['questionItem']['question']['required']=bool(edit['required']);fields+=',questionItem.question.required'
+            gw.forms_service().forms().batchUpdate(formId=fid,body={'requests':[{'updateItem':{'item':item,'location':{'index':index},'updateMask':fields}}]}).execute()
+        else:
+            if op=='REPLACE_TEXT':command={'replaceAllText':{'containsText':{'text':edit['old'],'matchCase':True},'replaceText':edit['new']}}
+            elif kind=='DOC':command={'replaceImage':{'imageObjectId':edit['object_id'],'uri':edit['image_url'],'imageReplaceMethod':'CENTER_CROP'}}
+            else:command={'replaceImage':{'imageObjectId':edit['object_id'],'url':edit['image_url'],'imageReplaceMethod':'CENTER_CROP'}}
+            svc=gw.docs_service().documents() if kind=='DOC' else gw.slides_service().presentations()
+            args={'documentId':fid} if kind=='DOC' else {'presentationId':fid}
+            result=svc.batchUpdate(**args,body={'requests':[command]}).execute()
+            if op=='REPLACE_TEXT' and not any(r.get('replaceAllText',{}).get('occurrencesChanged',0) for r in result.get('replies',[])):raise ValueError('EXACT_TEXT_NOT_FOUND')
 
 
 def validate_remote(kind,fid,plan):

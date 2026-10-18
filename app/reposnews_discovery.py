@@ -218,6 +218,10 @@ def service_resolution(discovery_evidence):
         normal=lambda s:re.sub(r'[^a-z0-9]','',s.casefold())
         links=[u for u in links if u and normal(names[0]) in normal(urlsplit(u).hostname or '')]
     def base_host(u): return re.sub(r'^(?:www|docs|app)\.', '', urlsplit(u).hostname or '')
+    if len({base_host(u) for u in links})>1 and len(set(names))==1:
+        normal=lambda s:re.sub(r'[^a-z0-9]','',s.casefold())
+        hosts={base_host(u) for u in links if normal(names[0]) in normal(base_host(u))}
+        if len(hosts)==1:links=[u for u in links if base_host(u) in hosts]
     if len({base_host(u) for u in links}) != 1:return None
     roots=[u for u in links if (urlsplit(u).hostname or '').removeprefix('www.')==base_host(u)]
     if not roots:return None

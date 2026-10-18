@@ -202,7 +202,7 @@ def register(app):
                 row.update(local_worker_done=True, local_job=False, local_lease=0, local_result=manifest['status'], analysis=analysis,
                     caption=safe_caption(row.get('caption', '')+' '+str(manifest.get('caption', ''))[:12000]),
                     local_media_received=bool(media), local_extractor=manifest.get('extractor') if manifest.get('extractor') in {'playwright','yt-dlp-public','yt-dlp','instaloader','gallery-dl'} else None,
-                    attempt_limit=row.get('attempts', 0)+8, metadata_recovery=False, retry_after=time.time()+5)
+                    attempt_limit=row.get('attempts', 0)+8, run_attempts=0, metadata_recovery=False, retry_after=time.time()+5)
                 if media:
                     row['visual_assets']=visual_assets
                 if manifest['status'] == 'LOGIN_REQUIRED':
