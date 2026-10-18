@@ -7,6 +7,7 @@ ROOT=Path(__file__).resolve().parents[1]
 SCRIPT=(ROOT/'app/static/notification-center.js').read_text(encoding='utf-8-sig')
 CSS=(ROOT/'app/static/notification-center.css').read_text(encoding='utf-8-sig')
 LEGACY=(ROOT/'app/static/reposnews-approval.js').read_text(encoding='utf-8-sig')
+EDITOR=(ROOT/'app/static/reposnews-editor.js').read_text(encoding='utf-8-sig')
 
 def check(width,height,standalone=False):
     items=[
@@ -72,15 +73,18 @@ def check(width,height,standalone=False):
         panel.locator('[data-action=restore][data-id=doc]').click();expect(panel.locator('[data-note=doc]')).to_have_count(0)
         panel.locator('[data-close]').click();expect(panel).not_to_be_visible()
         if not standalone:
+            errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
             page.add_script_tag(content=LEGACY)
-            page.evaluate("window.dispatchEvent(new CustomEvent('zar-workflow-state',{detail:{csrf:'fixture'}}))")
             # Reuse actual legacy rendering with an editorial status fixture.
             # The status endpoint gets its own exact response rather than a provider mock.
-            page.route('**/api/holdings/workflows/reposnews_status',lambda r:r.fulfill(content_type='application/json',body=json.dumps({'ok':True,'result':{'articles':[],'editorial_notifications':[],'domain_status':'ACTIVE'}})))
+            page.route('**/api/holdings/workflows/reposnews_status',lambda r:r.fulfill(content_type='application/json',body=json.dumps({'ok':True,'result':{'project_id':'fixture','articles':[{'id':'real-history-shape','title_es':'Artículo con revisión','state':'READY_PRIVATE','history':[{'at':'today','reason':'Approved revision without fields'}]}],'editorial_notifications':[],'domain_status':'ACTIVE'}})))
+            page.add_script_tag(content=EDITOR)
             page.evaluate("window.dispatchEvent(new CustomEvent('zar-workflow-state',{detail:{csrf:'fixture'}}))")
             expect(page.locator('#zarReposNewsSiteSummary')).to_be_visible()
             assert page.locator('#zarReposNewsSiteSummary').evaluate("(e)=>Boolean(e.compareDocumentPosition(document.querySelector('#reposnewsEditor')) & Node.DOCUMENT_POSITION_FOLLOWING)")
             expect(page.get_by_text('Notification Center · Reels → ReposNews',exact=True)).to_have_count(0)
+            expect(page.get_by_text('Artículo con revisión',exact=True)).to_be_visible()
+            assert errors==[]
             page.evaluate("document.body.insertAdjacentHTML('beforeend','<iframe src=\"/frame\"></iframe>')")
             frame=page.frames[-1] if len(page.frames)>1 else None
             page.locator('iframe').wait_for()
