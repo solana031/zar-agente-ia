@@ -151,6 +151,7 @@ def build(payload,plan,fid,remember):
     if not fid:
         created={'DOC':gw.docs_create,'SLIDES':gw.slides_create,'SHEET':gw.sheets_create,'FORM':gw.forms_create}[kind](title)
         fid=next(created[k] for k in ('documentId','presentationId','spreadsheetId','formId') if created.get(k));remember(fid)
+        if kind=='FORM':gw.drive_service().files().update(fileId=fid,body={'name':title}).execute()
     apply_edits(kind,fid,plan.get('edits') or [])
     if kind=='DOC':
         if plan.get('sections'):docs_build(fid,payload,plan)
@@ -166,8 +167,11 @@ def build(payload,plan,fid,remember):
         if req:svc.presentations().batchUpdate(presentationId=fid,body={'requests':req}).execute()
         key='presentationId';url='https://docs.google.com/presentation/d/'+fid+'/edit'
     elif kind=='SHEET':
-        locale=gw._sheet_metadata(fid).get('properties',{}).get('locale','en_US')
+        metadata=gw._sheet_metadata(fid);locale=metadata.get('properties',{}).get('locale','en_US')
         plan=sheet_layout(plan,locale)
+        prefixes={"'"+s['properties']['title'].replace("'","''")+"'!" for s in metadata.get('sheets',[])}
+        clear=[r for r in plan.get('_clear_managed_ranges',[]) if any(r.startswith(p) for p in prefixes)]
+        if clear:gw.sheets_service().spreadsheets().values().batchClear(spreadsheetId=fid,body={'ranges':clear}).execute()
         result=gw.sheets_upgrade_workbook(fid,plan['sheets'],plan.get('charts'))
         if any(not c.get('ok') for c in result.get('charts',[])):raise ValueError('SHEET_CHART_VALIDATION_FAILED')
         meta=gw._sheet_metadata(fid);props={x['properties']['title']:x['properties']['sheetId'] for x in meta['sheets']}

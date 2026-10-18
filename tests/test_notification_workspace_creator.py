@@ -87,6 +87,24 @@ def test_spanish_sheet_formulas_use_local_separators_without_changing_strings():
     assert actual['sheets'][0]['summary'][0]['value']=='=COUNTIF(A4:A4;"READY, OK")'
 
 
+def test_sheet_updates_clear_only_the_engines_known_requested_tables():
+    previous=[{'file_id':'same_file','plan':{'sheets':[{'name':'SUMMARY','subtitle':'KPIs','headers':['Metric','Value'],'rows':[[1,2]]*5,'summary':['Total']},
+        {'name':'UNRELATED','headers':['Keep'],'rows':[['Personal data']]}]}},
+        {'file_id':'other_file','plan':{'sheets':[{'name':'SUMMARY','headers':['Other'],'rows':[[1]]*100}]}}]
+    plan={'sheets':[{'name':'SUMMARY'}]}
+    assert creator.managed_sheet_ranges(previous,'same_file',plan)==["'SUMMARY'!A1:B10"]
+    assert creator.managed_sheet_ranges(previous,'unknown_file',plan)==[]
+
+
+def test_editorial_counts_reset_old_currency_formats_but_money_keeps_its_unit():
+    svc=Mock();meta={'sheets':[{'properties':{'title':'SUMMARY','sheetId':1}}]}
+    with patch.object(native.gw,'sheets_service',return_value=svc),patch.object(native.gw,'_sheet_metadata',return_value=meta):
+        native.gw.sheets_add_professional_table('same_file','SUMMARY','KPIs',['Total artículos','Valor','Horas Totales','Importe'],[[11,11,4,40]])
+    requests=svc.spreadsheets.return_value.batchUpdate.call_args.kwargs['body']['requests']
+    formats=[r['repeatCell']['cell']['userEnteredFormat']['numberFormat']['type'] for r in requests if r.get('repeatCell',{}).get('fields')=='userEnteredFormat.numberFormat']
+    assert formats==['NUMBER','NUMBER','NUMBER','CURRENCY']
+
+
 def test_notification_endpoints_require_session_and_csrf(setup):
     app=Flask(__name__);app.secret_key='fixture';center.register(app,lambda:'owner');client=app.test_client()
     assert client.get('/api/notifications').status_code==401
@@ -135,3 +153,12 @@ def test_update_existing_question_preserves_item_and_question_ids():
         native.apply_edits('FORM','same_form',[{'kind':'UPDATE_QUESTION','index':0,'title':'Updated','required':True}])
     update=svc.forms.return_value.batchUpdate.call_args.kwargs['body']['requests'][0]['updateItem']
     assert update['item']['itemId']=='existing-item';assert update['item']['questionItem']['question']['questionId']=='existing-question'
+
+
+def test_new_form_has_the_requested_drive_filename_and_keeps_its_id():
+    drive=Mock();remember=Mock()
+    with patch.object(native.gw,'forms_create',return_value={'formId':'new_form_id'}),patch.object(native.gw,'drive_service',return_value=drive),patch.object(native.gw,'forms_service',return_value=Mock()),patch.object(native.gw,'forms_get',return_value={'items':[]}):
+        result=native.build({'type':'FORM','title':'ZAR DEMO — Feedback'},{'items':[{'title':'Feedback','kind':'TEXT'}]},None,remember)
+    remember.assert_called_once_with('new_form_id')
+    assert result['file_id']=='new_form_id'
+    assert drive.files.return_value.update.call_args.kwargs=={'fileId':'new_form_id','body':{'name':'ZAR DEMO — Feedback'}}

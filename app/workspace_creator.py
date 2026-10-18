@@ -168,6 +168,20 @@ def image_url(scope,asset,origin):
     return origin.rstrip('/')+'/api/workspace/artifact-image/'+grant+'/'+asset
 
 
+def managed_sheet_ranges(previous,fid,plan):
+    """Clear only tables previously written by this engine in requested tabs."""
+    requested={tab['name'] for tab in plan.get('sheets',[])};bounds={}
+    for job in previous:
+        if job.get('file_id')!=fid or not fid:continue
+        for tab in (job.get('plan') or {}).get('sheets',[]):
+            name=tab['name']
+            if name not in requested or tab.get('start_cell','A1')!='A1':continue
+            height=2+bool(tab.get('subtitle'))+len(tab.get('rows',[]))+(1+len(tab['summary']) if tab.get('summary') else 0)
+            width=len(tab.get('headers',[]))
+            old=bounds.get(name,(0,0));bounds[name]=(max(height,old[0]),max(width,old[1]))
+    return ["'"+name.replace("'","''")+"'!A1:"+gw._col_letter(width)+str(height) for name,(height,width) in bounds.items() if width]
+
+
 def run(scope,row):
     token=set_current_user(scope)
     try:
@@ -183,6 +197,8 @@ def run(scope,row):
             plan=plan_request(scope,payload);update_job(scope,row['id'],plan=plan,stage='DESIGN')
         update_job(scope,row['id'],stage='ASSETS')
         from .workspace_native import build,validate_remote
+        if payload['type']=='SHEET':
+            plan['_clear_managed_ranges']=managed_sheet_ranges([j for j in jobs(scope) if j['id']!=row['id']],row.get('file_id'),plan)
         origin=payload.get('origin','https://web-production-a9565.up.railway.app')
         for part in plan.get('sections',[])+plan.get('slides',[]):
             if part.get('image_asset'):part['image_url']=image_url(scope,part['image_asset'],origin)
