@@ -62,6 +62,22 @@ def test_formula_errors_fail_validation():
     with patch.object(native.gw,'sheets_service',return_value=service),pytest.raises(ValueError,match='SHEET_FORMULA_ERROR'):native.validate_remote('SHEET','fixture',{})
 
 
+def test_sheet_cover_rows_shift_formulas_ranges_and_normalize_summary():
+    plan={'sheets':[{'name':'RAW_DATA','subtitle':'Source','headers':['ID','Value'],'rows':[['a',4]],'summary':['One article']},
+        {'name':'SUMMARY','headers':['Count'],'rows':[['=SUM(RAW_DATA!B2:B2)+A2']]}],
+        'charts':[{'sheet_title':'RAW_DATA','range_a1':'RAW_DATA!A1:B2','anchor_cell':'E2'}],
+        'named_ranges':[{'name':'DATA','range_a1':'RAW_DATA!A2:B2'}],
+        'conditional_formats':[{'sheet':'SUMMARY','range_a1':'A2:A9','formula':'=A2>RAW_DATA!B2'}]}
+    actual=native.sheet_layout(plan)
+    assert actual['sheets'][1]['rows']==[['=SUM(RAW_DATA!B4:B4)+A3']]
+    assert actual['sheets'][0]['summary']==[{'label':'One article','value':''}]
+    assert actual['charts'][0]['range_a1']=='RAW_DATA!A3:B4'
+    assert actual['named_ranges'][0]['range_a1']=='RAW_DATA!A4:B4'
+    assert actual['conditional_formats'][0]['formula']=='=A3>INDIRECT("RAW_DATA!B4")'
+    assert actual['conditional_formats'][0]['range_a1']=='A3:A10'
+    assert plan['sheets'][1]['rows']==[['=SUM(RAW_DATA!B2:B2)+A2']]
+
+
 def test_notification_endpoints_require_session_and_csrf(setup):
     app=Flask(__name__);app.secret_key='fixture';center.register(app,lambda:'owner');client=app.test_client()
     assert client.get('/api/notifications').status_code==401

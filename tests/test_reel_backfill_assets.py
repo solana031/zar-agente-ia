@@ -60,6 +60,20 @@ def test_historical_index_unifies_permalinks_not_titles(context):
     assert history.summary(data)['TOTAL_REELS']==2
 
 
+def test_post_and_reel_paths_for_same_shortcode_have_one_history_entry(context):
+    data=rn.read();data['instagram_inbox'].append(dict(data['instagram_inbox'][0],id='b'*24,source_url='https://www.instagram.com/p/Original/?igsh=tracking'))
+    entries=history.index(data)
+    assert len(entries)==1;assert len(entries[0]['item_ids'])==2
+    assert history.summary(data)['DUPLICATES_AVOIDED']==1
+
+
+def test_existing_project_clarification_is_reused_for_service_research():
+    from app.reposnews_discovery import evidence
+    row={'clarified_project':'Example Cloud','research_package':{'sources':['https://examplecloud.org/','https://docs.examplecloud.org/']}}
+    result=evidence(row,{'project_names':['Other tool']},{},{})
+    assert result['project_names']==['Example Cloud'];assert 'https://examplecloud.org/' in result['outbound_links']
+
+
 def test_backfill_queues_only_one_and_preserves_existing_article(context):
     before=copy.deepcopy(rn.read()['articles'])
     with patch('app.reposnews_inbox.start_worker'):history.start('owner')

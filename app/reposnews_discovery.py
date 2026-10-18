@@ -148,9 +148,13 @@ def evidence(row, analysis, discovery, metadata):
               clues(analysis or {}), discovery.get('text', ''), metadata.get('text', '')]
     text = safe_caption(' '.join(pieces))
     urls = list(dict.fromkeys(re.findall(r'https://[^\s<>"\'\\]+', text)))[:20]
+    if row.get('clarified_project'):
+        resolution=row.get('entity_resolution') or {}
+        historical_sources=(row.get('research_package') or {}).get('sources',[])
+        urls=list(dict.fromkeys(urls+[u for u in resolution.get('sources',[])+historical_sources if isinstance(u,str) and u.startswith('https://')]+[u for u in (resolution.get('website'),) if isinstance(u,str) and u.startswith('https://')]))[:20]
     return {'permalink': row.get('source_url', ''), 'caption': row.get('caption', ''),
             'transcript': (analysis or {}).get('transcript', ''), 'visual_text': (analysis or {}).get('visual_findings', ''),
-            'project_names': (analysis or {}).get('project_names', []), 'text': text,
+            'project_names': [row['clarified_project']] if row.get('clarified_project') else (analysis or {}).get('project_names', []), 'text': text,
             'github_urls': [u for u in urls if urlsplit(u).hostname == 'github.com'],
             'outbound_links': [u for u in urls if urlsplit(u).hostname not in ('instagram.com', 'www.instagram.com', 'github.com')],
             'metadata': sanitize(metadata.get('metadata', {})), 'confidence': 'DISCOVERY_ONLY',
@@ -170,7 +174,7 @@ def video_parts(content, remaining):
         duration = float(json.loads(probe.stdout).get('format', {}).get('duration', 0))
         if not 0 < duration <= 180: return [], {'frames': 0, 'audio': 'NATIVE_VIDEO_INPUT', 'duration_limit': True}
         frames = subprocess.run(['ffmpeg', '-v', 'error', '-protocol_whitelist', 'pipe', '-i', 'pipe:0', '-vf',
-                                 f'fps={8 / duration},scale=640:360:force_original_aspect_ratio=decrease',
+                                 f'fps={8 / duration},scale=960:1280:force_original_aspect_ratio=decrease',
                                  '-frames:v', '8', '-f', 'image2pipe', '-vcodec', 'mjpeg', 'pipe:1'],
                                 input=content, capture_output=True, timeout=20)
         parts = []; count = 0

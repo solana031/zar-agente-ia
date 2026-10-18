@@ -274,7 +274,8 @@ def receive(payload):
                 try:source=reel_url(source)
                 except ValueError:pass
                 key=hashlib.sha256(mid.encode()).hexdigest()[:24]
-                old=next((x for x in rows if source and x.get('source_url')==source),None)
+                from .instagram_local_queue import same_reel
+                old=next((x for x in rows if source and (x.get('source_url')==source or same_reel(x.get('source_url'),source))),None)
                 if old:
                     old['external_ids']=list(dict.fromkeys(old.get('external_ids',[old['external_id']])+[mid]))[-100:]
                     continue
@@ -738,6 +739,10 @@ def process(item_id):
                 resolution=resolve_entity(evid['text'],row.get('clarified_project') or automatic_name,deterministic_only=True)
             update(item_id,entity_resolution=resolution)
             if resolution['status']!='RESOLVED':
+                if row.get('clarified_project'):
+                    update(item_id,status='FAILED_SOURCE',processing_state='RESEARCHING',error='OFFICIAL_SOURCES_UNVERIFIED')
+                    from .reposnews_automation import notify
+                    notify(item_id,'FAILED_RETRYABLE');return
                 update(item_id,status='NEEDS_DISAMBIGUATION',processing_state='IDENTIFYING',error=resolution['reason'],error_diagnostic={'component':'IDENTIFYING','provider':'PUBLIC_SOURCE','endpoint_class':'discovery','http':None,'retryable':False,'timestamp':holdings._now()});return
             matches=[resolution['repo']]
         unique=list(dict.fromkeys(x.removesuffix('.git').lower() for x in matches))

@@ -14,7 +14,7 @@ def links(value):
         for item in value:yield from links(item)
     elif isinstance(value,str):
         for url in re.findall(r'https://(?:www\.)?instagram\.com/(?:reel|p)/[A-Za-z0-9_-]+/?',value):
-            try:yield reel_url(url)
+            try:yield 'https://www.instagram.com/reel/'+reel_url(url).rstrip('/').rsplit('/',1)[-1]+'/'
             except ValueError:pass
 
 
@@ -24,10 +24,14 @@ def index(data):
     for source in ('instagram_inbox','articles','editorial_notifications','instagram_event_history','instagram_local_worker_history','article_revisions'):
         for url in links(data.get(source,[])):
             found.setdefault(url,{'id':hashlib.sha256(url.encode()).hexdigest()[:24],'permalink':url,'origins':[]})['origins'].append(source)
-    old={r['permalink']:r for r in data.get('historical_reel_index',[])}
+    old={}
+    for r in data.get('historical_reel_index',[]):
+        key=next(links(r['permalink']),r['permalink'])
+        if key not in old or r.get('state')=='COMPLETED':old[key]=r
     for url,entry in found.items():
         previous=old.get(url,{})
         entry.update({k:v for k,v in previous.items() if k not in {'origins','item_ids'}})
+        entry['permalink']=url
         entry['origins']=sorted(set(entry['origins']))
         entry['item_ids']=[r['id'] for r in data.get('instagram_inbox',[]) if url in list(links(r.get('source_url','')))]
         related=[a for a in data.get('articles',[]) if url in list(links([a.get('discovery_source'),a.get('source_reels',[])]))]
@@ -71,6 +75,12 @@ def tick():
         if not data.get('historical_backfill',{}).get('enabled'):return
         entries=index(data);rows=data.setdefault('instagram_inbox',[])
         for entry in entries:
+            row=next((r for r in rows if r['id'] in entry.get('item_ids',[])),None)
+            if row and entry.get('decision')=='NEEDS_DISAMBIGUATION' and row.get('clarified_project') and not row.get('clarification_recovery_v2'):
+                entry.update(state='PENDING',decision=None);row['clarification_recovery_v2']=True
+            if row and entry.get('decision') in {'UPDATE_PROPOSED','ARTICLE_CREATED'} and row.get('asset_quality_version')!=2 and not row.get('asset_quality_recovery_v2'):
+                entry.update(state='PENDING',decision=None);row['asset_quality_recovery_v2']=True
+        for entry in entries:
             if entry.get('state')!='PROCESSING':continue
             row=next((r for r in rows if r['id']==entry.get('active_item_id')),None)
             if not row:entry.update(state='COMPLETED',decision='FAILED');continue
@@ -98,7 +108,7 @@ def tick():
             entry.update(state='COMPLETED',decision='NO_CHANGE');rn.write(data);return
         # Preserve prior evidence and manuscripts; reacquire visuals only if they are missing.
         row.update(backfill=True,backfill_decision='UPDATE_EXISTING' if entry.get('linked_article_ids') else 'CREATE_NEW',attempt_limit=row.get('attempts',0)+4,run_attempts=0,retry_after=0)
-        if not row.get('visual_assets'):
+        if not row.get('visual_assets') or row.get('asset_quality_version')!=2:
             row.update(asset_refresh=True,local_worker_done=False,local_media_received=False,local_job=True,status='WAITING_LOCAL_WORKER',processing_state='WAITING_LOCAL_WORKER',local_lease=0)
         else:row.update(status='RECEIVED',processing_state='RECEIVED')
         entry.update(state='PROCESSING',active_item_id=row['id']);rn.write(data)

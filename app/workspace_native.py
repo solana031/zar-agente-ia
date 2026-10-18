@@ -1,5 +1,7 @@
 """Native Docs/Slides/Sheets/Forms requests. Existing files are edited in place."""
 import secrets
+import copy
+import re
 from . import google_workspace as gw,workspace_artifacts as wa
 
 
@@ -54,6 +56,36 @@ def docs_build(fid,payload,plan):
 def element(page,x,y,w,h):
     return {'pageObjectId':page,'size':{'width':{'magnitude':w,'unit':'PT'},'height':{'magnitude':h,'unit':'PT'}},
             'transform':{'scaleX':1,'scaleY':1,'translateX':x,'translateY':y,'unit':'PT'}}
+
+
+def sheet_layout(plan):
+    """Planner coordinates use header row 1; professional tables add a cover."""
+    plan=copy.deepcopy(plan)
+    offsets={s['name']:1+bool(s.get('subtitle')) for s in plan['sheets']}
+    reference=re.compile(r"(?<![A-Za-z0-9_])(?:(?P<sheet>'[^']+'|[A-Za-z_][A-Za-z0-9_]*)!)?(?P<col>\$?[A-Z]{1,3})(?P<row>\$?\d+)(?![A-Za-z0-9_(])")
+    def shift(value,current,conditional=False):
+        if not isinstance(value,str):return value
+        active=current
+        def replace(match):
+            nonlocal active
+            sheet=match['sheet']
+            if sheet:active=sheet.strip("'")
+            elif match.start()==0 or value[match.start()-1]!=':':active=current
+            row=match['row'];cell=match['col']+('$' if row.startswith('$') else '')+str(int(row.lstrip('$'))+offsets.get(active,0))
+            if conditional and sheet and active!=current:return 'INDIRECT("'+sheet+'!'+cell+'")'
+            return (sheet+'!' if sheet else '')+cell
+        return reference.sub(replace,value)
+    for tab in plan['sheets']:
+        tab['summary']=[x if isinstance(x,dict) else {'label':str(x),'value':''} for x in tab.get('summary',[])]
+        tab['rows']=[[shift(v,tab['name']) if isinstance(v,str) and v.startswith('=') else v for v in row] for row in tab['rows']]
+    for chart in plan.get('charts',[]):
+        chart['range_a1']=shift(chart['range_a1'],chart['sheet_title'])
+        # Anchors are visual positions rather than data coordinates.
+    for named in plan.get('named_ranges',[]):named['range_a1']=shift(named['range_a1'],None)
+    for rule in plan.get('conditional_formats',[]):
+        rule['range_a1']=shift(rule['range_a1'],rule['sheet'])
+        rule['formula']=shift(rule['formula'],rule['sheet'],True)
+    return plan
 
 
 def text_box(req,page,key,text,x,y,w,h,size,style,bold=False):
@@ -119,6 +151,7 @@ def build(payload,plan,fid,remember):
         if req:svc.presentations().batchUpdate(presentationId=fid,body={'requests':req}).execute()
         key='presentationId';url='https://docs.google.com/presentation/d/'+fid+'/edit'
     elif kind=='SHEET':
+        plan=sheet_layout(plan)
         result=gw.sheets_upgrade_workbook(fid,plan['sheets'],plan.get('charts'))
         if any(not c.get('ok') for c in result.get('charts',[])):raise ValueError('SHEET_CHART_VALIDATION_FAILED')
         meta=gw._sheet_metadata(fid);props={x['properties']['title']:x['properties']['sheetId'] for x in meta['sheets']}

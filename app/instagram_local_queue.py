@@ -32,6 +32,11 @@ def reel_url(value):
     return 'https://www.instagram.com' + u.path.rstrip('/') + '/'
 
 
+def same_reel(left,right):
+    try:return reel_url(left).rstrip('/').rsplit('/',1)[-1]==reel_url(right).rstrip('/').rsplit('/',1)[-1]
+    except ValueError:return False
+
+
 def token_path():
     return rn._path().parent / 'local-worker-token'
 
@@ -205,6 +210,7 @@ def register(app):
                     attempt_limit=row.get('attempts', 0)+8, run_attempts=0, metadata_recovery=False, retry_after=time.time()+5)
                 if media:
                     row['visual_assets']=visual_assets
+                    row['asset_quality_version']=2
                 if manifest['status'] == 'LOGIN_REQUIRED':
                     row.update(status='WAITING_LOCAL_WORKER', processing_state='WAITING_LOCAL_WORKER', local_worker_done=False, error='SESSION_EXPIRED')
                     data['instagram_local_worker']['session'] = 'EXPIRED'

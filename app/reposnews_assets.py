@@ -10,10 +10,10 @@ def inspect_image(content):
     with Image.open(io.BytesIO(content)) as image:
         if image.width*image.height>8000000:raise ValueError('IMAGE_TOO_LARGE')
         image.load();gray=image.convert('L');small=gray.resize((8,8))
-        values=list(small.getdata());mean=sum(values)/64
+        values=list(small.tobytes());mean=sum(values)/64
         fingerprint=''.join('1' if x>mean else '0' for x in values)
         stats=ImageStat.Stat(gray);edges=ImageStat.Stat(gray.filter(ImageFilter.FIND_EDGES)).var[0]
-        valid=image.width>=160 and image.height>=160 and 15<stats.mean[0]<245 and stats.stddev[0]>12 and edges>25
+        valid=image.width>=240 and image.height>=240 and 15<stats.mean[0]<245 and stats.stddev[0]>12 and edges>25
         return {'width':image.width,'height':image.height,'fingerprint':fingerprint,
                 'quality_score':round(min(edges,3000)/100+stats.stddev[0],2),'valid':valid}
 
