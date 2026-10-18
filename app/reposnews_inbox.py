@@ -674,7 +674,8 @@ def process(item_id):
         proposal=jev_decision.proposal(scope,{'source_agent':'ReposNewsArticleBuilder','task':'Investigar y preparar borrador privado','action':'research','resources':['github.com'],'expected_cost':None,'risk':.1,'urgency':.2})
         if proposal['decision']=='REJECT':raise ValueError('JEV_REJECTED')
         from . import reposnews_discovery as discover
-        if (row.get('local_worker_done') or row.get('modification_request')) and {'repo','metadata','readme','sources','verified_at'}<=set(row.get('research_package') or {}):
+        fresh_round=not row.get('reprocess_round') or row.get('research_reprocess_round')==row.get('reprocess_round')
+        if (row.get('local_worker_done') or row.get('modification_request')) and (fresh_round or row.get('modification_request')) and {'repo','metadata','readme','sources','verified_at'}<=set(row.get('research_package') or {}):
             package=dict(row['research_package'])
             if row.get('modification_request'):package['modification_request']=row['modification_request']
             update(item_id,status='DRAFTING_ES',processing_state='DRAFTING_ES')
@@ -720,8 +721,10 @@ def process(item_id):
         from .reposnews_entity_evidence import hints
         accumulated=hints(rn.read(),row,evid)
         evid['cross_reel']=accumulated
-        if accumulated['status']=='UNIQUE_HINT' and not row.get('clarified_project'):
+        if accumulated['status']=='UNIQUE_HINT':
             known=accumulated['candidates'][0]
+            from .reposnews_entity_evidence import normalized
+            if row.get('clarified_project') and normalized(row['clarified_project']) not in {normalized(n) for n in known['aliases']}:known={}
             links=[u for u in (known.get('repository_url'),known.get('website'),known.get('official_docs')) if u and u.startswith('https://')]
             evid['text']+='\nCorroborating entity hint, official verification still required: '+' '.join(links)
             evid['outbound_links']=list(dict.fromkeys(evid.get('outbound_links',[])+links))
@@ -738,7 +741,7 @@ def process(item_id):
                 existing=next((a for a in rn.read()['articles'] if a.get('website','').rstrip('/')==resolution['website'].rstrip('/')),None)
                 if existing and existing.get('review_kind')=='DETERMINISTIC_LIMITED_SOURCE_NOTE' and not existing.get('published'):update(item_id,upgrade_article_id=existing['id'])
                 package=discover.research_service(resolution)
-                update(item_id,research_package=package,status='DRAFTING_ES',processing_state='DRAFTING_ES')
+                update(item_id,research_package=package,research_reprocess_round=row.get('reprocess_round'),status='DRAFTING_ES',processing_state='DRAFTING_ES')
                 article=build(package,row.get('source_url',''))
                 update(item_id,status='DRAFTING_EN',processing_state='DRAFTING_EN')
                 store_ready(item_id,article);return
@@ -752,7 +755,7 @@ def process(item_id):
             update(item_id,entity_resolution=resolution)
             if resolution['status']!='RESOLVED':
                 if row.get('clarified_project'):
-                    update(item_id,status='FAILED_SOURCE',processing_state='RESEARCHING',error='OFFICIAL_SOURCES_UNVERIFIED')
+                    update(item_id,status='FAILED_SOURCE',processing_state='RESEARCHING',error='OFFICIAL_SOURCES_UNVERIFIED',failed_stage='IDENTIFYING',error_diagnostic={'component':'IDENTIFYING','provider':'OFFICIAL_SOURCE','code':'OFFICIAL_SOURCES_UNVERIFIED','reason':resolution.get('reason'),'retryable':False,'timestamp':holdings._now()})
                     from .reposnews_automation import notify
                     notify(item_id,'FAILED_RETRYABLE');return
                 update(item_id,status='NEEDS_DISAMBIGUATION',processing_state='IDENTIFYING',error=resolution['reason'],error_diagnostic={'component':'IDENTIFYING','provider':'PUBLIC_SOURCE','endpoint_class':'discovery','http':None,'retryable':False,'timestamp':holdings._now()});return
@@ -767,7 +770,7 @@ def process(item_id):
         update(item_id,status='RESEARCHING',processing_state='RESEARCHING',repo=repo)
         package=research(repo)
         repo=package['repo']
-        update(item_id,status='DRAFTING_ES',processing_state='DRAFTING_ES',research_package=package,repo=repo,
+        update(item_id,status='DRAFTING_ES',processing_state='DRAFTING_ES',research_package=package,research_reprocess_round=row.get('reprocess_round'),repo=repo,
                entity_resolution=package.get('resolution') or {'status':'RESOLVED','repo':repo})
         article=build(package,row.get('source_url',''))
         update(item_id,status='DRAFTING_EN',processing_state='DRAFTING_EN')
@@ -831,6 +834,8 @@ def start_worker():
     def loop():
         from .reposnews_automation import migrate
         migrate()
+        from .reposnews_history import repair_known_source_failures
+        repair_known_source_failures()
         while True:
             try:
                 from .reposnews_history import tick

@@ -17,6 +17,7 @@ def check(width,height,standalone=False):
         {'id':'failed','type':'ARTICLE_FAILED','title':'No se pudo completar','inbox_item_id':'b'*24,'message':'PROVIDER_503 technical details '*30},
         {'id':'doc','type':'DOC_READY','title':'Documento listo','completed':True,'actions':[{'label':'ABRIR EN GOOGLE','url':'https://docs.google.com/document/d/demo/edit'}]}
     ]+[{'id':'info'+str(i),'type':'SYSTEM_ACTION_REQUIRED','title':'Información '+str(i)} for i in range(12)]
+    items[5].update(type='ARTICLE_NEEDS_DISAMBIGUATION',processing=True,editorial={'reel':'https://www.instagram.com/reel/reprocessing/'})
     payload={'ok':True,'csrf':'fixture','items':items,'unread':len(items),'historical':{}}
     posts=[]
     def api(route):
@@ -46,6 +47,8 @@ def check(width,height,standalone=False):
         expect(panel.locator('.znCard')).to_have_count(8)
         assert not panel.locator('details').first.is_visible() or not panel.locator('details').first.get_attribute('open')
         expect(panel.locator('[data-note=failed] .znMessage')).not_to_contain_text('PROVIDER_503')
+        expect(panel.locator('[data-note=info0]')).to_contain_text('Reanalizando el Reel')
+        expect(panel.locator('[data-note=info0] form')).to_have_count(0)
         page.screenshot(path=str(ROOT/'.local/instagram-worker'/('notification-redesign-'+str(width)+('-standalone' if standalone else '')+'.png')))
         field=panel.locator('[data-resolve=ambiguous] input');field.fill('Evidence preserved')
         page.clock.fast_forward(21000);expect(field).to_have_value('Evidence preserved')

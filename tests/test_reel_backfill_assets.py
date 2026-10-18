@@ -169,7 +169,7 @@ def test_exact_user_approval_updates_same_published_urls(context):
 
 def test_existing_entities_are_hints_and_creator_alone_is_not_identity(context):
     from app.reposnews_entity_evidence import hints
-    data=rn.read();row=data['instagram_inbox'][0];row['creator']='same-author'
+    data=rn.read();row=data['instagram_inbox'][0];row['creator']='same-author';row['source_url']='https://www.instagram.com/reel/Unknown/'
     data['instagram_inbox'].append(dict(row,id='other',analysis={'website':'https://example.org'}))
     assert hints(data,row,{'text':'An interesting product'})['status']=='NO_MATCH'
     row['visual_assets']=[{'asset':'same-frame.jpg'}];data['instagram_inbox'][1]['visual_assets']=row['visual_assets']
@@ -180,6 +180,38 @@ def test_existing_entities_are_hints_and_creator_alone_is_not_identity(context):
     assert result['status']=='UNIQUE_HINT'
     data['articles'].append(dict(data['articles'][0],id='ambiguous-tool'))
     assert hints(data,row,{'text':'https://example.org'})['status']=='AMBIGUOUS_HINTS'
+
+
+def test_same_reel_provenance_identifies_an_existing_entity_without_inventing_facts(context):
+    from app.reposnews_entity_evidence import hints
+    data=rn.read();row=data['instagram_inbox'][0];row['source_url']=row['source_url'].replace('/reel/','/p/')
+    result=hints(data,row,{'text':'Name unclear'})
+    assert result['status']=='UNIQUE_HINT';assert result['candidates'][0]['evidence']==['EXACT_REEL_PROVENANCE']
+    assert result['verified_facts'] is False
+
+
+def test_reprocess_fetches_current_sources_once_then_reuses_its_own_checkpoint(context):
+    from app import reposnews_inbox as inbox
+    data=rn.read();row=data['instagram_inbox'][0]
+    old={'repo':'Example/Tool','metadata':{},'readme':'Old material','sources':['https://example.org'],'verified_at':'old-date'}
+    fresh=dict(old,readme='Current material',verified_at='today')
+    row.update(status='RECEIVED',caption='https://github.com/Example/Tool',local_worker_done=True,reprocess_round='new-round',research_package=old)
+    rn.write(data)
+    with patch('app.jev_decision.proposal',return_value={'decision':'ALLOW'}),patch.object(inbox,'research',return_value=fresh) as research,patch.object(inbox,'build',side_effect=[ValueError('DRAFT_TOO_SHORT'),article()]) as build,patch.object(inbox,'store_ready') as store:
+        inbox.process(row['id']);inbox.process(row['id'])
+    research.assert_called_once();assert build.call_args_list[0].args[0]==fresh;assert build.call_args_list[1].args[0]==fresh
+    store.assert_called_once();assert rn.read()['instagram_inbox'][0]['research_reprocess_round']=='new-round'
+
+
+def test_known_source_failure_recovery_is_once_bounded_and_keeps_articles(context):
+    data=rn.read();original=copy.deepcopy(data['articles']);row=data['instagram_inbox'][0]
+    row.update(status='FAILED_SOURCE',error='OFFICIAL_SOURCES_UNVERIFIED',local_worker_done=True,visual_assets=[{'asset':'frame.jpg'}],asset_quality_version=2)
+    entry=history.index(data)[0];entry.update(state='COMPLETED',decision='FAILED',active_item_id=row['id']);rn.write(data)
+    history.repair_known_source_failures();history.tick();data=rn.read();row=data['instagram_inbox'][0]
+    assert row['provenance_recovery_v3'] is True;assert row['attempt_limit']==row['attempts']+2;assert row['status']=='RECEIVED'
+    assert data['articles']==original
+    data['historical_reel_index'][0].update(state='COMPLETED',decision='FAILED');rn.write(data)
+    history.repair_known_source_failures();assert rn.read()['historical_reel_index'][0]['state']=='COMPLETED'
 
 
 def test_explicit_reprocess_preserves_completed_work_and_queues_one(context):
@@ -218,6 +250,19 @@ def test_unavailable_visual_model_does_not_blindly_select_frames(context):
     assert a['contextual_asset_status']=='LIMITED';assert not any(x.get('kind')=='REEL_FRAME' for x in a['assets'])
 
 
+def test_official_hero_competes_with_contextual_reel_frame(context):
+    a,row=context;a.update(body_es='## Cómo funciona\nTexto.',body_en='## How it works\nText.')
+    private=rn._path().parent/'private-assets'/row['id'];private.mkdir(parents=True);(private/'ui.jpg').write_bytes(noise())
+    row['visual_assets']=[{'asset':'ui.jpg','frame_timestamp':12}]
+    media=rn._path().parent/'media';media.mkdir();(media/'official.png').write_bytes(noise(2))
+    result={'selected':[1,0],'placements':[{'index':0,'section_es':'Cómo funciona','section_en':'How it works','caption_es':'Panel del producto','caption_en':'Product dashboard'}]}
+    with patch('app.reposnews_discovery.official_image',return_value={'image_asset':'official.png','image_source':'https://example.org'}),patch('app.reposnews_generation.generate_json',return_value=result):assets.prepare(row,a,{})
+    assert a['image_kind']=='OFFICIAL_IMAGE';assert a['image_source']=='https://example.org'
+    assert a['contextual_asset_status']=='READY'
+    contextual=next(x for x in a['assets'] if x.get('role')=='ARTICLE_FRAME_1')
+    assert contextual['section_es']=='Cómo funciona';assert contextual['frame_timestamp']==12
+
+
 def test_history_diagnostics_are_owner_only_and_do_not_return_package_contents(context):
     data=rn.read();row=data['instagram_inbox'][0]
     row.update(backfill=True,error='SOURCE_OR_GENERATION_FAILED',research_package={'readme':'private source body','metadata':{}},error_diagnostic={'exception_type':'KeyError','operation':'module.py:build:12'})
@@ -240,3 +285,14 @@ def test_reprocessed_result_becomes_unread_in_the_same_human_action(context):
     approval.notify(row['id'],'NEEDS_DISAMBIGUATION')
     result=identity_center.ensure(holdings.read('owner'))['human_actions']
     assert len(result)==1;assert result[0]['id']==old['id'];assert result[0]['read_at'] is None;assert result[0]['dismissed_at'] is None
+
+
+def test_old_human_question_is_processing_then_completed_when_reel_resolves(context):
+    from app import notification_center as center
+    a,row=context;approval.notify(row['id'],'NEEDS_DISAMBIGUATION')
+    data=rn.read();data['instagram_inbox'][0].update(status='TRANSCRIBING',reprocess_round='round');rn.write(data)
+    note=next(n for n in center.view('owner')['items'] if n.get('editorial'))
+    assert note['processing'] is True;assert note['completed'] is False
+    data=rn.read();data['instagram_inbox'][0]['status']='ARTICLE_UPDATE_DRAFT';rn.write(data)
+    note=next(n for n in center.view('owner')['items'] if n.get('editorial'))
+    assert note['processing'] is False;assert note['completed'] is True

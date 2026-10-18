@@ -41,6 +41,12 @@ def view(scope):
                 revision=next((r for r in rn.read().get('article_revisions',[]) if r['article_revision_id']==row.get('entity_id')),None)
                 if revision and revision['state']!='ARTICLE_UPDATE_DRAFT':row['status']='DONE'
             item=dict(row,completed=row.get('status') in {'DONE','COMPLETED','PUBLISHED','CANCELLED','IGNORED'})
+            if editorial and rn.read().get('owner')==scope:
+                inbox=next((r for r in rn.read().get('instagram_inbox',[]) if r['id']==row.get('inbox_item_id')),None)
+                if inbox:
+                    item['processing']=bool(inbox.get('reprocess_round') and inbox.get('status') in {'WAITING_LOCAL_WORKER','OPENING_INSTAGRAM','FETCHING_VIDEO','VIDEO_DOWNLOADED','TRANSCRIBING','ANALYZING','FETCHING_MEDIA','BROWSING','IDENTIFYING','RESEARCHING','DRAFTING_ES','DRAFTING_EN','ASSETS','SEO','RECEIVED'})
+                    if editorial.get('status') in {'NEEDS_DISAMBIGUATION','FAILED_RETRYABLE','FAILED_PERMANENT'} and inbox.get('status') in {'READY_PRIVATE','NO_CHANGE','ARTICLE_UPDATE_DRAFT','PUBLISHED','DISCARDED','CANCELLED'}:
+                        row['status']='DONE';item.update(status='DONE',completed=True)
             if editorial.get('article_id') and rn.read().get('owner')==scope:
                 article=next((a for a in rn.state(scope).get('articles',[]) if a['id']==editorial['article_id']),None)
                 if article:item['article']=article

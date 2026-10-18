@@ -79,6 +79,23 @@ def start(scope,reprocess_unresolved=False):
     return summary(rn.read())
 
 
+def repair_known_source_failures():
+    """One bounded recovery when the existing article proves the Reel's identity."""
+    from .reposnews_entity_evidence import hints
+    with holdings.transaction('reposnews-editorial'):
+        data=rn.read();changed=False
+        for entry in data.get('historical_reel_index',[]):
+            if entry.get('decision')!='FAILED':continue
+            row=next((r for r in data.get('instagram_inbox',[]) if r['id']==entry.get('active_item_id')),None)
+            if not row or row.get('error')!='OFFICIAL_SOURCES_UNVERIFIED' or row.get('provenance_recovery_v3'):continue
+            evidence=hints(data,row,{'text':''})
+            if evidence['status']!='UNIQUE_HINT' or 'EXACT_REEL_PROVENANCE' not in evidence['candidates'][0]['evidence']:continue
+            row.update(provenance_recovery_v3=True,provenance_recovery_budget=2)
+            entry.update(state='PENDING',decision=None);changed=True
+        if changed:
+            data.setdefault('historical_backfill',{})['enabled']=True;rn.write(data)
+
+
 def tick():
     """One active historical item; existing workers perform the actual analysis."""
     from .reposnews_inbox import sender_ids
@@ -120,6 +137,8 @@ def tick():
             entry.update(state='COMPLETED',decision='NO_CHANGE');rn.write(data);return
         # Preserve prior evidence and manuscripts; reacquire visuals only if they are missing.
         row.update(backfill=True,backfill_decision='UPDATE_EXISTING' if entry.get('linked_article_ids') else 'CREATE_NEW',attempt_limit=row.get('attempts',0)+4,run_attempts=0,retry_after=0)
+        if row.get('provenance_recovery_budget'):
+            row['attempt_limit']=row.get('attempts',0)+row.pop('provenance_recovery_budget')
         reprocess=entry.get('reprocess_round') and row.get('reprocess_round')!=entry['reprocess_round']
         if reprocess:
             row.update(reprocess_round=entry['reprocess_round'],reprocess_attempt_budget=3,metadata_refresh_v3=False)

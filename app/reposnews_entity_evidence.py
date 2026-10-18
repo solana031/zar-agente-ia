@@ -46,13 +46,15 @@ def hints(data,row,evidence):
     pooled_urls=urls(pooled)
     matches=[]
     for article in data.get('articles',[]):
+        from .instagram_local_queue import same_reel
+        same_source=any(same_reel(row.get('source_url'),source) for source in article.get('source_reels',[])+[article.get('discovery_source')] if source)
         aliases=names(article)
         mentioned=[name for name in aliases if primary=={normalized(name)} or re.search(r'(?:logo|project|proyecto|tool|herramienta)\s*[:=]?\s*'+re.escape(name)+r'(?!\w)',text,re.I)]
         official=urls([article.get('repository_url',''),article.get('website',''),article.get('official_docs','')])
         shared_urls=official & current_urls
         pooled_match=bool(official & pooled_urls)
-        if not mentioned and not shared_urls and not pooled_match:continue
+        if not mentioned and not shared_urls and not pooled_match and not same_source:continue
         matches.append({'article_id':article['id'],'repo':article.get('repo'),'repository_url':article.get('repository_url'),'website':article.get('website'),
-            'official_docs':article.get('official_docs'),'aliases':sorted(aliases),'evidence':['URL'] if shared_urls else ['NAME_OR_LOGO_TEXT'] if mentioned else ['CREATOR_AND_IDENTICAL_FRAME'],
+            'official_docs':article.get('official_docs'),'aliases':sorted(aliases),'evidence':['EXACT_REEL_PROVENANCE'] if same_source else ['URL'] if shared_urls else ['NAME_OR_LOGO_TEXT'] if mentioned else ['CREATOR_AND_IDENTICAL_FRAME'],
             'corroborating_reels':[p['item_id'] for p in pooled] if pooled_match else []})
     return {'status':'UNIQUE_HINT' if len(matches)==1 else 'AMBIGUOUS_HINTS' if matches else 'NO_MATCH','candidates':matches[:12],'verified_facts':False}

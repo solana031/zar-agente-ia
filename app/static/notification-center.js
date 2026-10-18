@@ -12,14 +12,15 @@
  const dialog=document.createElement('dialog');dialog.id='zarNotificationCenter';dialog.setAttribute('aria-label','Centro de notificaciones ZAR');document.body.append(dialog);
  const bell=document.createElement('button');bell.type='button';bell.id='zarNotificationBell';bell.className='topIconBtn';bell.setAttribute('aria-label','Notificaciones');bell.setAttribute('aria-haspopup','dialog');bell.setAttribute('aria-expanded','false');bell.innerHTML=icon+'<span data-unread hidden></span>';
  (new URLSearchParams(location.search).has('zar_workspace')?document.body:document.querySelector('.topActions')||document.body).prepend(bell);
- const category=n=>/FAILED|ERROR/.test(n.type+' '+n.status)?'ERROR':n.completed?'SUCCESS':/_READY$/.test(n.type)?'READY':/ACTION|DISAMBIGUATION|OFFLINE|EXPIRED/.test(n.type+' '+n.status)?'ACTION_REQUIRED':'INFO';
+ const category=n=>n.processing?'INFO':/FAILED|ERROR/.test(n.type+' '+n.status)?'ERROR':n.completed?'SUCCESS':/_READY$/.test(n.type)?'READY':/ACTION|DISAMBIGUATION|OFFLINE|EXPIRED/.test(n.type+' '+n.status)?'ACTION_REQUIRED':'INFO';
  const link=(href,text)=>'<a href="'+esc(safe(href))+'" target="_blank" rel="noopener">'+esc(text)+'</a>';
  const button=(action,id,text,extra='')=>'<button type="button" data-action="'+action+'" data-id="'+esc(id)+'" '+extra+'>'+esc(text)+'</button>';
  function short(n){if(n.type==='ARTICLE_READY')return 'Artículo ES/EN preparado desde tu Reel.';if(n.type==='ARTICLE_UPDATE_READY')return 'Hay cambios para revisar en el artículo existente.';if(n.type==='ARTICLE_NEEDS_DISAMBIGUATION')return 'No he podido identificar la herramienta de este Reel.';if(n.type==='ARTICLE_FAILED')return 'El trabajo se conserva. Puedes reintentarlo o consultar el detalle.';return String(n.message||n.reason||'').slice(0,160);}
  function card(n){
   const d=n.editorial||n.details||{},a=n.article,c=category(n),item=n.inbox_item_id||d.inbox_item_id||n.entity_id;
   let actions='',form='';
-  if(n.type==='ARTICLE_READY'&&a){
+  if(n.processing){if(d.reel)actions=link(d.reel,'Ver Reel');}
+  else if(n.type==='ARTICLE_READY'&&a){
    actions=link(d.preview_es||'/reposnews-preview/es/'+a.id,'Ver borrador');
    if(!n.completed&&a.approval_request)actions+=button('publish',n.id,'Publicar')+button('modify',n.id,'Modificar')+button('cancel',n.id,'Cancelar');
    if(editing===n.id)form='<form data-edit="'+esc(n.id)+'"><label>¿Qué quieres cambiar?<textarea name="instruction" required maxlength="3000">'+esc(drafts.get(n.id)||'')+'</textarea></label><button>Aplicar cambio</button></form>';
@@ -34,9 +35,9 @@
   const at=n.created_at?new Date(n.created_at):null,time=at&&!isNaN(at)?at.toLocaleString('es-ES',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}):'';
   const detail={diagnostico:n.message||n.reason,status:n.status,fuentes:d.sources,seo:d.seo,assets:a?.assets,error:d.diagnostic,etapa:d.failed_stage,intentos:d.attempts,detalle:n.details};
   return '<article class="znCard" data-note="'+esc(n.id)+'" data-priority="'+c+'">'+
-   '<div class="znMeta"><span class="znType">'+icon+esc(labels[n.type]||'Notificación')+'</span><time datetime="'+esc(n.created_at)+'">'+esc(time)+'</time></div>'+
-   '<h3>'+esc(n.title||labels[n.type]||'Notificación')+'</h3><p class="znMessage">'+esc(short(n))+'</p>'+
-   '<span class="znStatus">'+esc(n.dismissed_at?'Archivada':n.completed?'Completada':c==='ERROR'?'Requiere revisión':c==='READY'?'Lista para revisar':c==='ACTION_REQUIRED'?'Pendiente':'Información')+'</span>'+
+   '<div class="znMeta"><span class="znType">'+icon+esc(n.processing?'Reel en proceso':labels[n.type]||'Notificación')+'</span><time datetime="'+esc(n.created_at)+'">'+esc(time)+'</time></div>'+
+   '<h3>'+esc(n.processing?'Reanalizando el Reel':n.title||labels[n.type]||'Notificación')+'</h3><p class="znMessage">'+esc(n.processing?'ZAR está revisando de nuevo este Reel. Te avisará cuando termine.':short(n))+'</p>'+
+   '<span class="znStatus">'+esc(n.dismissed_at?'Archivada':n.processing?'En proceso':n.completed?'Completada':c==='ERROR'?'Requiere revisión':c==='READY'?'Lista para revisar':c==='ACTION_REQUIRED'?'Pendiente':'Información')+'</span>'+
    '<div class="znActions">'+actions+'</div>'+form+
    '<details data-details="'+esc(n.id)+'" '+(expanded.has(n.id)?'open':'')+'><summary>Ver detalles</summary>'+
    (d.hero||d.image?'<img src="'+esc(safe(d.hero||d.image))+'" alt="Visual de la propuesta" loading="lazy">':'')+
