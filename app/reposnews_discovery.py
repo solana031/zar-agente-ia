@@ -158,11 +158,6 @@ def evidence(row, analysis, discovery, metadata):
             'path': 'DIRECT_MEDIA' if analysis else 'ZAR_INSTAGRAM_BROWSER_SESSION' if discovery.get('status')=='AUTHENTICATED_DISCOVERY' else 'PUBLIC_BROWSER' if discovery.get('text') else 'PERMALINK_METADATA' if metadata.get('text') else 'TEXT_ONLY'}
 
 
-def bland_hint(text):
-    return bool(re.search(r'\bBland\s*AI\b|\bbland\.ai\b', text, re.I) or
-                re.search(r'\bAgent Phone Plan\b', text, re.I) and re.search(r'Claude|Codex|Bland', text, re.I))
-
-
 def video_parts(content, remaining):
     """At most six distributed frames and 180 seconds of mono audio, in memory."""
     import base64
@@ -213,18 +208,24 @@ def fetch_official(url):
 def service_resolution(discovery_evidence):
     """A named hint chooses a candidate; official cross-links must corroborate it."""
     from .reposnews_inbox import clean_url
-    names = {str(x).casefold() for x in discovery_evidence.get('project_names', [])}
-    if bland_hint(discovery_evidence['text']) or names in ({'bland'}, {'bland ai'}, {'bland.ai'}):
-        website = 'https://www.bland.ai/'; docs = 'https://docs.bland.ai/integrations/mcp/overview'; name = 'Bland AI'
-    else:
-        links = [clean_url(u) for u in discovery_evidence.get('outbound_links', [])]
-        links = [u for u in links if u and not re.search(r'fbcdn|cdninstagram|lookaside|youtube|tiktok|facebook|twitter|linkedin|(^|\.)x\.com$', urlsplit(u).hostname or '', re.I)]
-        def base_host(u): return re.sub(r'^(?:www|docs|app)\.', '', urlsplit(u).hostname or '')
-        if len({base_host(u) for u in links}) != 1: return None
-        roots = [u for u in links if (urlsplit(u).hostname or '').removeprefix('www.') == base_host(u)]
-        if not roots: return None
-        parsed = urlsplit(roots[0]); website = 'https://' + parsed.netloc + '/'; docs = ''; name = ''
+    names = [str(x).strip() for x in discovery_evidence.get('project_names', []) if isinstance(x,str)]
+    links = [clean_url(u) for u in discovery_evidence.get('outbound_links', [])]
+    links = [u for u in links if u and not re.search(r'github|fbcdn|cdninstagram|lookaside|youtube|tiktok|facebook|twitter|linkedin|(^|\.)x\.com$', urlsplit(u).hostname or '', re.I)]
+    if not links and len(set(names))==1:
+        from .web_search import public_search_results
+        result=public_search_results(names[0]+' official website documentation',limit=4)
+        links=[clean_url(r.get('url') or '') for r in result.get('results',[])][:4]
+        normal=lambda s:re.sub(r'[^a-z0-9]','',s.casefold())
+        links=[u for u in links if u and normal(names[0]) in normal(urlsplit(u).hostname or '')]
+    def base_host(u): return re.sub(r'^(?:www|docs|app)\.', '', urlsplit(u).hostname or '')
+    if len({base_host(u) for u in links}) != 1:return None
+    roots=[u for u in links if (urlsplit(u).hostname or '').removeprefix('www.')==base_host(u)]
+    if not roots:return None
+    parsed=urlsplit(roots[0]);website='https://'+parsed.netloc+'/'
+    docs=next((u for u in links if (urlsplit(u).hostname or '').startswith('docs.')), '')
+    name=names[0] if len(set(names))==1 else ''
     site = fetch_official(website)
+    if not name:name=(site.get('title') or '').split('|')[0].strip()[:100]
     if not docs:
         host = urlsplit(website).hostname.removeprefix('www.')
         match = re.search(r'https://docs\.' + re.escape(host) + r'[^\s<>"\'\\]*', site['text'])
@@ -248,12 +249,9 @@ def research_service(resolution):
     from . import holdings
     from .reposnews_inbox import safe_caption, clean_url
     pages = list(resolution['verified_pages'])
-    if resolution['website'] == 'https://www.bland.ai/':
-        extra = ['https://app.bland.com/agent-phone-plan', 'https://app.bland.com/agent-phone-plan/agents']
-    else:
-        host = urlsplit(resolution['website']).hostname.removeprefix('www.')
-        extra = [u for u in pages[0].get('metadata', {}).get('outbound_links', [])
-                 if urlsplit(u).hostname in (host, 'www.' + host) and re.search(r'/pricing|/terms', urlsplit(u).path)][:2]
+    host = urlsplit(resolution['website']).hostname.removeprefix('www.')
+    extra = [u for u in pages[0].get('metadata', {}).get('outbound_links', [])
+             if urlsplit(u).hostname in (host, 'www.' + host) and re.search(r'/pricing|/terms|/api', urlsplit(u).path)][:3]
     for url in extra[:2]:
         try: pages.append(fetch_official(url))
         except (OSError, ValueError): pass

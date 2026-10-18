@@ -45,7 +45,7 @@ class InstagramInboxTest(unittest.TestCase):
   with patch('app.jev_decision.proposal',return_value={'decision':'ALLOW'}),patch.object(inbox,'analyze_media') as media,patch.object(inbox,'public_discovery',return_value={'status':'PUBLIC_TEXT_AVAILABLE','text':'Example tool'}),patch.object(inbox,'resolve_entity',side_effect=ValueError('AI_PROVIDER_503')):
    inbox.process(item);media.assert_not_called()
   row=rn.read()['instagram_inbox'][0]
-  self.assertEqual(row['status'],'RECEIVED');self.assertEqual(row['attempts'],3)
+  self.assertEqual(row['status'],'FAILED_RETRYABLE');self.assertEqual(row['attempts'],3)
   self.assertEqual(row['error_diagnostic']['component'],'IDENTIFYING')
   self.assertEqual(row['error_diagnostic']['provider'],'Gemini')
   self.assertEqual(row['error_diagnostic']['http'],503)
@@ -66,19 +66,14 @@ class InstagramInboxTest(unittest.TestCase):
   self.assertEqual(row['attempt_limit'],5)
   inbox.update(item,status='FAILED_SOURCE')
   with self.assertRaises(ValueError):inbox.recover_metadata_once(item)
- def test_bland_clarification_creates_private_bilingual_ready_on_same_item(self):
+ def test_clarification_is_generic_and_continues_same_item_automatically(self):
   item=inbox.receive(self.event())[0];inbox.update(item,status='NEEDS_DISAMBIGUATION',attempts=5)
-  before=rn.read()['instagram_inbox'][0].copy()
-  with patch.object(inbox.holdings,'read',return_value={'global_stop':False}):inbox.prepare_bland_draft(item)
-  data=rn.read();row=data['instagram_inbox'][0];article=data['articles'][0]
-  self.assertEqual(len(data['instagram_inbox']),1)
-  for key in ('id','external_id','sender','source_url','received_at','attempts'):self.assertEqual(row[key],before[key])
-  self.assertEqual(row['status'],'READY');self.assertFalse(article['published'])
-  self.assertEqual(article['repository_url'],'');self.assertEqual(article['state'],'READY')
-  for lang in ('es','en'):
-   self.assertGreater(len(article['body_'+lang].split()),250);self.assertTrue(article['seo'][lang]['canonical'])
-  self.assertEqual(article['research_package']['official_repo'],None)
-  self.assertTrue(all('bland.' in url for url in article['sources']))
+  rn.operate('owner','inbox_resolve',{'id':item,'name':'Example Service'})
+  data=rn.read();row=data['instagram_inbox'][0]
+  self.assertEqual(row['id'],item);self.assertEqual(row['status'],'RECEIVED')
+  self.assertEqual(row['clarified_project'],'Example Service');self.assertEqual(row['attempt_limit'],13)
+  self.assertEqual(data['articles'],[])
+
  def test_oauth_not_configured_and_invalid_state(self):
   with patch.dict(os.environ,{'INSTAGRAM_APP_ID':'','INSTAGRAM_APP_SECRET':''}):
    self.assertEqual(self.client.get('/api/reposnews/instagram/connect').status_code,409)
@@ -197,7 +192,7 @@ class InstagramInboxTest(unittest.TestCase):
   self.assertEqual(self.client.post('/api/reposnews/instagram/webhook',data=raw).status_code,403)
  def test_dedup_id_url(self):
   self.assertEqual(len(inbox.receive(self.event())),1);self.assertEqual(inbox.receive(self.event()),[])
-  inbox.receive(self.event(mid='two'));self.assertEqual(rn.read()['instagram_inbox'][1]['status'],'UPDATE_PROPOSAL')
+  inbox.receive(self.event(mid='two'));self.assertEqual(len(rn.read()['instagram_inbox']),1);self.assertEqual(rn.read()['instagram_inbox'][0]['external_ids'],['one','two'])
  def test_private_unrelated_sender_and_text_ignored(self):
   self.assertEqual(inbox.receive(self.event(sender='stranger')),[])
   self.assertEqual(inbox.receive(self.event(text='Private unrelated message')),[])
@@ -245,16 +240,16 @@ class InstagramInboxTest(unittest.TestCase):
    self.assertEqual(inbox.public_discovery('https://www.instagram.com/p/fixture/'),{'status':'PUBLIC_CONTENT_BLOCKED'})
  def test_automatic_draft_never_publishes(self):
   item=inbox.receive(self.event())[0]
-  article={'id':'example-project','repo':'example/project','published':False,'state':'READY'}
+  article=rn.article_defaults({'id':'example-project','repo':'example/project','published':False,'state':'READY_PRIVATE','sources':['https://github.com/example/project','https://example.org'],'review_kind':'AUTOMATED_SOURCE_REVIEW',**{k:('verified word '*260 if k.startswith('body') else 'Fixture title') for k in ('title_es','title_en','summary_es','summary_en','body_es','body_en')}})
   with patch('app.jev_decision.proposal',return_value={'decision':'ALLOW'}),patch.object(inbox,'analyze_media',return_value={}),patch.object(inbox,'research',return_value={'repo':'example/project'}),patch.object(inbox,'build',return_value=article),patch.object(rn,'operate') as publish:
    inbox.process(item);publish.assert_not_called()
-  data=rn.read();self.assertEqual(data['instagram_inbox'][0]['status'],'READY');self.assertFalse(data['articles'][0]['published'])
+  data=rn.read();self.assertEqual(data['instagram_inbox'][0]['status'],'READY_PRIVATE');self.assertFalse(data['articles'][0]['published']);self.assertEqual(data['editorial_notifications'][0]['status'],'AWAITING_APPROVAL')
  def test_generation_failure_persists_and_retries_bounded(self):
   item=inbox.receive(self.event())[0]
   with patch('app.jev_decision.proposal',return_value={'decision':'ALLOW'}),patch.object(inbox,'analyze_media',return_value={}),patch.object(inbox,'research',side_effect=ValueError('fixture')) as research:
-   for _ in range(4):inbox.process(item)
-   self.assertEqual(research.call_count,2)
-  row=rn.read()['instagram_inbox'][0];self.assertEqual(row['status'],'FAILED_SOURCE');self.assertEqual(row['attempts'],2)
+   for _ in range(10):inbox.process(item)
+   self.assertEqual(research.call_count,8)
+  row=rn.read()['instagram_inbox'][0];self.assertEqual(row['status'],'FAILED_RETRYABLE');self.assertEqual(row['attempts'],8)
  def test_builder_rejects_invented_installation(self):
   generated={k:('word '*260 if k.startswith('body') else 'Fixture title') for k in ('title_es','title_en','summary_es','summary_en','body_es','body_en')};generated['commands']=['pip install invented']
   with patch.object(inbox,'generate_json',return_value=generated):

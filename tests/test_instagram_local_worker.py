@@ -93,7 +93,7 @@ def test_metadata_and_local_transcript_resume_article_on_same_item(client):
     r=client.post('/api/reposnews/local-worker/jobs/same-item/result',data={'manifest':json.dumps(manifest)},headers={'X-ZAR-Job-Lease':job['lease']})
     assert r.status_code==200
     row=rn.read()['instagram_inbox'][0]
-    assert row['status']=='RECEIVED';assert row['attempt_limit']==7;assert 'cookies' not in row['analysis']
+    assert row['status']=='RECEIVED';assert row['attempt_limit']==13;assert 'cookies' not in row['analysis']
     assert row['analysis']['transcript']=='https://github.com/org/tool'
     with patch('app.jev_decision.proposal',return_value={'decision':'ALLOW'}),patch.object(inbox,'research',return_value={'repo':'org/tool','name':'tool'}),patch.object(inbox,'build',return_value={'id':'draft','published':False}),patch.object(inbox,'store_ready') as store,patch('app.instagram_browser.discovery') as cloud:
         inbox.process('same-item')

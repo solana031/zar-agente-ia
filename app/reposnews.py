@@ -14,7 +14,7 @@ from . import holdings, site_projects
 
 ORIGIN = 'https://www.reposnews.com'
 HOSTS = {'reposnews.com','www.reposnews.com'}
-STAGES = {'IDEA','RESEARCH','DRAFT','SOURCE_VERIFY','DRAFT_ES','REVIEW','EN_TRANSLATION','SEO','PREVIEW','READY','SCHEDULED','PUBLISHED','ARCHIVED'}
+STAGES = {'IDEA','RESEARCH','DRAFT','SOURCE_VERIFY','DRAFT_ES','REVIEW','EN_TRANSLATION','SEO','PREVIEW','READY','READY_PRIVATE','AWAITING_APPROVAL','MODIFYING','CANCELLED','SCHEDULED','PUBLISHED','ARCHIVED'}
 
 
 def legal_status(data):
@@ -46,7 +46,7 @@ def publication_plan(data, ids):
     if not ids or len(ids)>10: raise ValueError('Selecciona de 1 a 10 guías.')
     articles=[next((a for a in data.get('articles',[]) if a['id']==id),None) for id in ids]
     if not all(articles): raise ValueError('Guía seleccionada no encontrada.')
-    seo=all(a.get('state')=='READY' and a.get('sources') and all(a.get(k) for k in ('title_es','title_en','summary_es','summary_en','body_es','body_en')) and all(a.get('seo',{}).get(l,{}).get('canonical') for l in ('es','en')) for a in articles)
+    seo=all(a.get('state') in {'READY','READY_PRIVATE','AWAITING_APPROVAL'} and a.get('sources') and all(a.get(k) for k in ('title_es','title_en','summary_es','summary_en','body_es','body_en')) and all(a.get('seo',{}).get(l,{}).get('canonical') for l in ('es','en')) for a in articles)
     legal=legal_status(data)['status']
     projection={'articles':[{k:a.get(k) for k in ('id','state','updated_at','title_es','title_en','summary_es','summary_en','body_es','body_en','sources','seo')} for a in articles], 'legal':data.get('legal'), 'legal_reviewed':data.get('legal_reviewed')}
     digest=hashlib.sha256(json.dumps(projection,sort_keys=True,ensure_ascii=False).encode()).hexdigest()
@@ -89,7 +89,7 @@ def readiness(data):
 
 def summary():
     data=read();articles=data.get('articles',[])
-    return {'stored':len(articles),'ready':sum(a.get('state')=='READY' for a in articles),
+    return {'stored':len(articles),'ready':sum(a.get('state') in {'READY','READY_PRIVATE'} for a in articles),
             'published':sum(bool(a.get('published')) for a in articles),
             'persistent':bool(data.get('initialized_at')),'initialized_at':data.get('initialized_at'),
             'domain':data.get('domain_status','VERIFYING')}
@@ -120,8 +120,9 @@ def write(data):
 def state(scope):
     data=read()
     if data.get('owner') and data['owner']!=scope: raise ValueError('Este proyecto pertenece a otra sesión autorizada.')
-    from . import reposnews_inbox, instagram_local_queue
-    return {k:v for k,v in data.items() if k!='owner'}|{'instagram_integration':reposnews_inbox.integration(),'local_instagram_worker':instagram_local_queue.status(),'readiness':readiness(data),'legal_status':legal_status(data)}
+    from . import reposnews_inbox, instagram_local_queue, reposnews_automation
+    result={k:v for k,v in data.items() if k!='owner'}|{'instagram_integration':reposnews_inbox.integration(),'local_instagram_worker':instagram_local_queue.status(),'readiness':readiness(data),'legal_status':legal_status(data)}
+    return reposnews_automation.decorate(scope,result)
 
 
 def legal_diagnostic(scope):
@@ -222,6 +223,15 @@ def metadata(row):
 
 
 def operate(scope, op, payload):
+    if op=='approve_batch':
+        from .reposnews_automation import approve_batch
+        return approve_batch(scope,payload)
+    if op=='editorial_decision':
+        from .reposnews_automation import decide
+        return decide(scope,payload)
+    if op=='modify_request':
+        from .reposnews_editorial import modify_request
+        return modify_request(scope,payload)
     if op=='instagram_worker_pair':
         from .instagram_local_queue import pair
         return pair(scope)
@@ -246,10 +256,7 @@ def operate(scope, op, payload):
             if not re.fullmatch(r'[\w .+-]{2,80}',name):raise ValueError('Indica un nombre de proyecto válido.')
             row=next((x for x in read().get('instagram_inbox',[]) if x['id']==item_id),None)
             if not row or row.get('status')!='NEEDS_DISAMBIGUATION':raise ValueError('Este item no requiere aclaración.')
-            if name.casefold() in {'bland ai','bland.ai','bland'}:
-                reposnews_inbox.prepare_bland_draft(item_id);return state(scope)
-            if row.get('attempts',0)>=2:raise ValueError('Límite de dos intentos alcanzado; no se consume más cuota automáticamente.')
-            reposnews_inbox.update(item_id,status='RECEIVED',caption=reposnews_inbox.safe_caption(row.get('caption','')+'\nProyecto aclarado: '+name),clarified_project=name)
+            reposnews_inbox.update(item_id,status='RECEIVED',caption=reposnews_inbox.safe_caption(row.get('caption','')+'\nProyecto aclarado: '+name),clarified_project=name,attempt_limit=row.get('attempts',0)+8,retry_after=0)
         elif op=='inbox_metadata_recover':
             reposnews_inbox.recover_metadata_once(item_id)
         elif op=='inbox_recover':
@@ -263,6 +270,9 @@ def operate(scope, op, payload):
         if not data.get('owner'): raise ValueError('Crea primero el proyecto ReposNews.')
         if op=='dry_run': return publication_plan(data,payload.get('ids'))
         if op=='publish_batch':
+            from .reposnews_automation import gate
+            for candidate in data['articles']:
+                if candidate['id'] in (payload.get('ids') or []):gate(candidate,scope)
             plan=publication_plan(data,payload.get('ids'))
             if payload.get('confirmed') is not True or payload.get('approved_digest')!=plan['digest']:
                 raise ValueError('Confirmación explícita del resumen vigente requerida.')
@@ -336,6 +346,8 @@ def operate(scope, op, payload):
             article=next((a for a in data['articles'] if a['id']==payload.get('id')),None)
             if not article: raise ValueError('Artículo no encontrado.')
             if op=='save':
+                from .reposnews_automation import revoke, complete
+                revoke(article)
                 before=dict(article)
                 for key,limit in [('title_es',180),('title_en',180),('summary_es',500),('summary_en',500),('body_es',24000),('body_en',24000)]:
                     value=str(payload.get(key,article[key])).strip()
@@ -344,14 +356,23 @@ def operate(scope, op, payload):
                 stage=payload.get('state','REVIEW')
                 if stage not in STAGES: raise ValueError('Etapa inválida.')
                 if stage in {'PUBLISHED','ARCHIVED'}: raise ValueError('Usa publicación o retirada con confirmación separada.')
+                if article.get('inbox_item_id'):
+                    stage='READY_PRIVATE' if complete(article) else 'MODIFYING'
                 article['state']=stage;article['status']=stage;article['updated_at']=holdings._now()
                 article['history']=(article.get('history',[])+[{'at':article['updated_at'],'fields':[k for k in ('title_es','title_en','summary_es','summary_en','body_es','body_en','state') if before.get(k)!=article.get(k)],'reason':str(payload.get('reason') or 'Edición de borrador privado')[:500]}])[-60:]
                 article['seo']={l:{'title':article['title_'+l],'description':article['summary_'+l],'canonical':article['seo'][l]['canonical']} for l in ('es','en')}
                 # Edits stay private until a fresh publication confirmation.
+                if article.get('inbox_item_id') and stage=='READY_PRIVATE':
+                    write(data)
+                    from .reposnews_automation import notify
+                    notify(article['inbox_item_id'])
+                    return state(scope)
             else:
                 if payload.get('confirmed') is not True: raise ValueError('Publicación exige confirmación separada.')
                 if holdings.read(scope).get('global_stop'): raise ValueError('STOP GLOBAL activo.')
                 if op=='publish':
+                    from .reposnews_automation import gate
+                    gate(article,scope)
                     if legal_status(data)['status']!='LEGAL_READY': raise ValueError('Revisión legal pendiente.')
                     if article['state']!='READY' or not article.get('sources') or not all(article.get(k) for k in ('title_es','title_en','body_es','body_en')): raise ValueError('Revisa fuentes y ambas versiones hasta READY.')
                     from . import jev_decision
@@ -362,7 +383,10 @@ def operate(scope, op, payload):
                     for item in data.get('instagram_inbox',[]):
                         if item.get('article_id')==article['id']: item.update(status='PUBLISHED',processing_state='PUBLISHED')
                     jev_decision.decision_state(scope,d['id'],'USER_CONFIRMED_EDITORIAL_CHANGE')
-                else: article['published']=False;article['state']='ARCHIVED';article['status']='ARCHIVED'
+                else:
+                    from .reposnews_automation import revoke
+                    revoke(article)
+                    article['published']=False;article['state']='ARCHIVED';article['status']='ARCHIVED'
                 article['history']=(article.get('history',[])+[{'at':holdings._now(),'fields':['published','state'],'reason':'Confirmación explícita: '+op+' ES + EN'}])[-60:]
         elif op=='status': return state(scope)
         else: raise ValueError('Operación ReposNews no admitida.')
@@ -424,6 +448,14 @@ def public_legal_profile(data):
 
 def media(asset):
     if re.fullmatch(r'source-[a-f0-9]{24}\.png',asset):
+        data=read()
+        public=any(a.get('published') and a.get('published_snapshot',a).get('image_asset')==asset for a in data.get('articles',[]))
+        if not public:
+            from .user_scope import get_current_user
+            try:
+                if request.host.split(':')[0] in HOSTS:abort(404)
+                state(get_current_user())
+            except ValueError:abort(404)
         path=_path().parent/'media'/asset
         if not path.is_file():abort(404)
         response=send_file(path,mimetype='image/png',max_age=86400)

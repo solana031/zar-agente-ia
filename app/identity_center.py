@@ -284,7 +284,7 @@ def human_action_groups(state):
     for row in state.get('human_actions',[]):
         if row.get('status')=='DONE':continue
         account=row.get('account') or ('solana031@gmail.com' if row.get('service')=='LOVABLE' else state.get('google',{}).get('email') or 'zaragente031@gmail.com')
-        key=(row.get('service'),account,row.get('url') if row.get('service')=='BROWSER' else None)
+        key=(row.get('service'),account,row.get('url') if row.get('service')=='BROWSER' else row.get('plan_id') if row.get('service')=='REPOSNEWS' else None)
         groups.setdefault(key,[]).append(row)
     result=[]
     for (_,account,_),rows in groups.items():

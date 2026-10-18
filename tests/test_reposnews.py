@@ -86,6 +86,9 @@ class ReposNewsTest(unittest.TestCase):
   with self.assertRaises(ValueError):rn.operate('owner','publish_batch',{'ids':plan['ids'],'approved_digest':plan['digest'],'confirmed':True})
  def test_fixture_batch_publish_and_unpublish(self):
   data=rn.read();data.update(legal={'controller':'Fixture owner','privacy_contact':'fixture@example.test','activity_mode':'NONCOMMERCIAL','entity_type':'PERSON','processing_basis':'Fixture basis','retention':'Fixture retention','providers_reviewed':True},legal_reviewed=True);rn.write(data)
+  from app.reposnews_automation import revision
+  for article in data['articles']:article.update(approval_status='APPROVED_BY_USER',approval={'owner':'owner','revision':revision(article),'at':'fixture-user-decision'})
+  rn.write(data)
   plan=rn.publication_plan(data,['uv','playwright','fastapi'])
   with patch('app.holdings.read',return_value={'global_stop':False}),patch('app.jev_decision.proposal',return_value={'id':'fixture','decision':'ALLOW'}),patch('app.jev_decision.decision_state'):
    rn.operate('owner','publish_batch',{'ids':plan['ids'],'approved_digest':plan['digest'],'confirmed':True})

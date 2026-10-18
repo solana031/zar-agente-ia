@@ -1849,6 +1849,8 @@ from . import reposnews_inbox
 reposnews_inbox.register(app, _user_scope_id)
 from . import instagram_local_queue
 instagram_local_queue.register(app)
+from . import reposnews_editorial
+reposnews_editorial.register(app, _user_scope_id)
 if os.environ.get('RAILWAY_PROJECT_ID') == '33af08fe-7e2e-4df3-afb5-c5a1ac41b2f5':
     reposnews_owner = reposnews.bootstrap()
     reposnews_inbox.human_action(reposnews_owner)

@@ -67,7 +67,7 @@ def enqueue_pending(data):
     for row in data.get('instagram_inbox', []):
         if row.get('sender') not in senders:
             continue
-        if row.get('local_media_received') or row.get('local_worker_done') or row.get('article_id') or row.get('status') in {'DISCARDED', 'PUBLISHED', 'READY', 'UPDATE_PROPOSAL'}:
+        if row.get('local_media_received') or row.get('local_worker_done') or row.get('article_id') or row.get('status') in {'CANCELLED','DISCARDED', 'PUBLISHED', 'READY', 'READY_PRIVATE', 'UPDATE_PROPOSAL'}:
             continue
         try:
             reel_url(row.get('source_url'))
@@ -181,6 +181,9 @@ def register(app):
                 from .reposnews_inbox import generate_json
                 import base64
                 parts, coverage = video_parts(content, MAX_BYTES)
+                from .reposnews_editorial import keep_frames
+                source=next(r['source_url'] for r in rn.read().get('instagram_inbox',[]) if r['id']==item_id)
+                visual_assets=keep_frames(item_id,parts,source)
                 if coverage.get('frames'):
                     analysis['frame_extraction'] = [coverage]
                 try:
@@ -199,7 +202,9 @@ def register(app):
                 row.update(local_worker_done=True, local_job=False, local_lease=0, local_result=manifest['status'], analysis=analysis,
                     caption=safe_caption(row.get('caption', '')+' '+str(manifest.get('caption', ''))[:12000]),
                     local_media_received=bool(media), local_extractor=manifest.get('extractor') if manifest.get('extractor') in {'playwright','yt-dlp-public','yt-dlp','instaloader','gallery-dl'} else None,
-                    attempt_limit=row.get('attempts', 0)+2, metadata_recovery=False, retry_after=time.time()+5)
+                    attempt_limit=row.get('attempts', 0)+8, metadata_recovery=False, retry_after=time.time()+5)
+                if media:
+                    row['visual_assets']=visual_assets
                 if manifest['status'] == 'LOGIN_REQUIRED':
                     row.update(status='WAITING_LOCAL_WORKER', processing_state='WAITING_LOCAL_WORKER', local_worker_done=False, error='SESSION_EXPIRED')
                     data['instagram_local_worker']['session'] = 'EXPIRED'

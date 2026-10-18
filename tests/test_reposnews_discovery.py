@@ -58,7 +58,7 @@ class DiscoveryTest(unittest.TestCase):
     def test_bland_resolves_from_spoken_or_visible_evidence_without_llm(self):
         for text in ('Bland AI', 'bland.ai', 'Agent Phone Plan with Claude Code'):
             with patch.object(discovery, 'fetch_official', side_effect=self.pages()), patch.object(inbox, 'generate_json') as ai:
-                result = discovery.service_resolution({'text': text, 'outbound_links': []})
+                result = discovery.service_resolution({'text': text,'project_names':['Bland AI'], 'outbound_links':['https://www.bland.ai/','https://docs.bland.ai/integrations/mcp/overview']})
             self.assertEqual(result['name'], 'Bland AI'); self.assertEqual(result['type'], 'SERVICE'); ai.assert_not_called()
 
     def test_named_hint_without_crosslinks_is_not_official(self):
@@ -77,31 +77,25 @@ class DiscoveryTest(unittest.TestCase):
         with patch.object(rn, 'github', return_value={'fork': True, 'private': False}):
             with self.assertRaisesRegex(ValueError, 'UPSTREAM_REPOSITORY_REQUIRED'): inbox.research('fork/tool')
 
-    def test_real_pipeline_shape_permalink_to_ready_service_with_503(self):
+    def test_service_provider_failure_never_promotes_a_limited_note_to_ready(self):
         item = inbox.receive(self.event())[0]
-        inbox.update(item, local_worker_done=True, analysis={'transcript':'Bland AI Agent Phone Plan'})
-        before = rn.read()['instagram_inbox'][0].copy()
-        with patch('app.jev_decision.proposal', return_value={'decision': 'ALLOW'}), patch.object(inbox.holdings, 'read', return_value={}), \
-             patch.object(inbox, 'analyze_media', return_value={}), patch.object(inbox, 'public_discovery', return_value={'status': 'PUBLIC_TEXT_AVAILABLE', 'text': 'Bland AI Agent Phone Plan'}), \
-             patch.object(inbox, 'public_metadata', return_value={'status': 'PUBLIC_METADATA_AVAILABLE', 'text': 'Bland AI'}), \
-             patch.object(discovery, 'fetch_official', side_effect=self.page_fetch), patch.object(inbox, 'build', side_effect=ValueError('AI_PROVIDER_503')):
+        inbox.update(item,local_worker_done=True,analysis={'transcript':'Example Service'},research_package={'repo':'Example Service','entity_type':'SERVICE'})
+        with patch('app.jev_decision.proposal',return_value={'decision':'ALLOW'}),patch.object(inbox,'build',side_effect=ValueError('AI_PROVIDER_503')):
             inbox.process(item)
-        data = rn.read(); row = data['instagram_inbox'][0]; article = data['articles'][0]
-        self.assertEqual(row['status'], 'READY'); self.assertFalse(article['published']); self.assertEqual(article['repository_url'], '')
-        self.assertEqual(article['review_kind'], 'DETERMINISTIC_LIMITED_SOURCE_NOTE')
-        self.assertEqual(row['external_id'], before['external_id']); self.assertEqual(row['source_url'], before['source_url'])
-        self.assertNotIn('VIDEO_ANALYZED', json.dumps(row)); self.assertEqual(row['discovery_evidence']['media_coverage'], [])
+        data=rn.read();self.assertEqual(data['articles'],[])
+        self.assertEqual(data['instagram_inbox'][0]['status'],'FAILED_RETRYABLE')
+        self.assertGreater(data['instagram_inbox'][0]['retry_after'],0)
 
     def test_existing_bland_article_is_never_modified(self):
         item = inbox.receive(self.event())[0]
-        inbox.update(item, local_worker_done=True, analysis={'transcript':'Bland AI'})
+        inbox.update(item, local_worker_done=True, analysis={'transcript':'Bland AI','links':['https://www.bland.ai/','https://docs.bland.ai/integrations/mcp/overview']})
         data = rn.read(); existing = {'id': 'existing-bland', 'website': 'https://www.bland.ai/', 'state': 'READY', 'published': False, 'body_es': 'Original preserved'}
         data['articles'].append(existing); rn.write(data)
         with patch('app.jev_decision.proposal', return_value={'decision': 'ALLOW'}), patch.object(inbox.holdings, 'read', return_value={}), \
              patch.object(inbox, 'analyze_media', return_value={}), patch.object(inbox, 'public_discovery', return_value={'text': 'Bland AI'}), \
              patch.object(inbox, 'public_metadata', return_value={}), patch.object(discovery, 'fetch_official', side_effect=self.pages()):
             inbox.process(item)
-        self.assertEqual(rn.read()['articles'], [existing]); self.assertEqual(rn.read()['instagram_inbox'][0]['status'], 'READY')
+        self.assertEqual(rn.read()['articles'], [existing]); self.assertEqual(rn.read()['instagram_inbox'][0]['status'], 'UPDATE_PROPOSAL')
 
     def test_inaccessible_content_requires_clarification_and_still_deduplicates(self):
         item = inbox.receive(self.event(text=''))[0]
@@ -147,15 +141,15 @@ class DiscoveryTest(unittest.TestCase):
             {'type': 'audio', 'payload': {'url': 'https://example.fbcdn.net/audio.wav'}}]
         item = inbox.receive(event)[0]
         candidate = {'name': 'Example', 'full_name': 'official/Example', 'homepage': 'https://example.org'}
-        article = {'id': 'official-example', 'repo': 'official/Example', 'state': 'READY', 'published': False}
+        article=rn.article_defaults({'id':'official-example','repo':'official/Example','state':'READY_PRIVATE','published':False,'sources':['https://example.org','https://github.com/official/Example'],'review_kind':'AUTOMATED_SOURCE_REVIEW',**{k:('verified word '*260 if k.startswith('body') else 'Fixture title') for k in ('title_es','title_en','summary_es','summary_en','body_es','body_en')}})
         with patch('app.jev_decision.proposal', return_value={'decision': 'ALLOW'}), \
              patch.object(inbox, 'analyze_media', return_value={'project_names': ['Example'], 'transcript': 'Example', 'coverage': 'DIRECT_AUDIO'}), \
-             patch.object(inbox, 'public_discovery', return_value={}), patch.object(inbox, 'public_metadata', return_value={}), \
+             patch.object(inbox, 'public_discovery', return_value={}), patch.object(inbox, 'public_metadata', return_value={}), patch('app.web_search.public_search_results',return_value={'results':[]}), \
              patch.object(rn, 'github', return_value={'items': [candidate], 'total_count': 1}), \
              patch.object(inbox, 'homepage_confirms_repository', return_value=True), patch.object(inbox, 'research', return_value={'repo':'official/Example'}), \
              patch.object(inbox, 'build', return_value=article), patch.object(inbox, 'generate_json') as ai:
             inbox.process(item)
-        ai.assert_not_called(); self.assertEqual(rn.read()['instagram_inbox'][0]['status'], 'READY')
+        ai.assert_not_called(); self.assertEqual(rn.read()['instagram_inbox'][0]['status'], 'READY_PRIVATE')
 
     def test_unknown_sender_metadata_is_not_ingested(self):
         event = self.event(); event['entry'][0]['messaging'][0]['sender']['id'] = 'unknown'
