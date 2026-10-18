@@ -87,6 +87,13 @@ def test_spanish_sheet_formulas_use_local_separators_without_changing_strings():
     assert actual['sheets'][0]['summary'][0]['value']=='=COUNTIF(A4:A4;"READY, OK")'
 
 
+def test_partial_sheet_edit_keeps_offsets_of_untouched_source_tables():
+    plan={'_existing_sheet_offsets':{'RAW_DATA':2},'sheets':[{'name':'CALCULATIONS','subtitle':'Counts','headers':['State','Articles'],
+        'rows':[['READY_PRIVATE','=COUNTIF(RAW_DATA!C2:C12,"READY_PRIVATE")']]}]}
+    actual=native.sheet_layout(plan,'es_ES')
+    assert actual['sheets'][0]['rows'][0][1]=='=COUNTIF(RAW_DATA!C4:C14;"READY_PRIVATE")'
+
+
 def test_sheet_updates_clear_only_the_engines_known_requested_tables():
     previous=[{'file_id':'same_file','plan':{'sheets':[{'name':'SUMMARY','subtitle':'KPIs','headers':['Metric','Value'],'rows':[[1,2]]*5,'summary':['Total']},
         {'name':'UNRELATED','headers':['Keep'],'rows':[['Personal data']]}]}},

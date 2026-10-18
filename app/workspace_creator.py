@@ -198,7 +198,9 @@ def run(scope,row):
         update_job(scope,row['id'],stage='ASSETS')
         from .workspace_native import build,validate_remote
         if payload['type']=='SHEET':
-            plan['_clear_managed_ranges']=managed_sheet_ranges([j for j in jobs(scope) if j['id']!=row['id']],row.get('file_id'),plan)
+            previous=[j for j in jobs(scope) if j['id']!=row['id'] and j.get('file_id')==row.get('file_id') and j.get('stage') in {'BUILD','VALIDATE','PREVIEW'}]
+            plan['_clear_managed_ranges']=managed_sheet_ranges(previous,row.get('file_id'),plan)
+            plan['_existing_sheet_offsets']={tab['name']:1+bool(tab.get('subtitle')) for j in previous for tab in (j.get('plan') or {}).get('sheets',[])}
         origin=payload.get('origin','https://web-production-a9565.up.railway.app')
         for part in plan.get('sections',[])+plan.get('slides',[]):
             if part.get('image_asset'):part['image_url']=image_url(scope,part['image_asset'],origin)

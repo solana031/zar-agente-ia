@@ -524,7 +524,7 @@ def sheets_add_professional_table(spreadsheet_id, sheet_title, table_title, head
         elif any(k in name for k in ('porcentaje','%','margen','ratio')):
             fmt={'type':'PERCENT','pattern':'0.00%'}
         elif any(k in name for k in ('artículos','articulos','articles','count','conteo','recuento','unidades','cantidad')) and not any(k in name for k in ('€','precio','coste','importe')):
-            fmt={'type':'NUMBER','pattern':'0.##'}
+            fmt={'type':'NUMBER','pattern':'0'}
         elif any(k in name for k in ('importe','total','efectivo','tarjeta','precio','ventas','saldo','base','iva','coste','costo','ingreso','pago €','pendiente €','propina','descuadre','tpv','datáfono','datafono')):
             fmt={'type':'CURRENCY','pattern':'#,##0.00 [$€-es-ES]'}
         if fmt and clean_rows:

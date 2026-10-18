@@ -62,7 +62,7 @@ def element(page,x,y,w,h):
 def sheet_layout(plan,locale='en_US'):
     """Planner coordinates use header row 1; professional tables add a cover."""
     plan=copy.deepcopy(plan)
-    offsets={s['name']:1+bool(s.get('subtitle')) for s in plan['sheets']}
+    offsets={**plan.get('_existing_sheet_offsets',{}),**{s['name']:1+bool(s.get('subtitle')) for s in plan['sheets']}}
     reference=re.compile(r"(?<![A-Za-z0-9_])(?:(?P<sheet>'[^']+'|[A-Za-z_][A-Za-z0-9_]*)!)?(?P<col>\$?[A-Z]{1,3})(?P<row>\$?\d+)(?![A-Za-z0-9_(])")
     comma_decimal=locale.split('_')[0].lower() in {'es','fr','de','it','pt','nl','ru','pl','da','fi','sv','no','nb','cs','sk','hu','ro','tr','uk','el','bg','hr','sl','lt','lv','et'} and not locale.endswith('_CH')
     def localized(value):
