@@ -9,8 +9,9 @@ from app.browser_worker import instagram_host, instagram_login_post, policy
 class InstagramProfileTests(unittest.TestCase):
     def test_dedicated_profile_and_no_shared_user_scope(self):
         with patch('app.zar_browser.actor') as actor:
-            ig.browser()
-        actor.assert_called_once_with('zar-instagram-operational', instagram_profile=True)
+            result=ig.verify()
+        actor.assert_not_called()
+        self.assertEqual(result['status'],'LOCAL_WORKER_REQUIRED')
 
     def test_network_does_not_allow_other_modules_or_mutations(self):
         self.assertTrue(instagram_host('https://www.instagram.com/reel/abc/'))
@@ -24,15 +25,13 @@ class InstagramProfileTests(unittest.TestCase):
         self.assertEqual(policy('password', 'fill'), 'HUMAN_ACTION')
 
     def test_wrong_identity_never_verifies(self):
-        with tempfile.TemporaryDirectory() as root:
-            marker=Path(root)/'identity';marker.write_text('fixture')
-            with patch.object(ig,'marker',return_value=marker), patch.object(ig,'browser',return_value=Mock(run=Mock(return_value={'authenticated':True,'account':'personal'}))), patch('app.oauth_vault.persist') as persist:
-                ig.verify()
-            persist.assert_not_called();self.assertFalse(marker.exists())
+        with patch('app.oauth_vault.persist') as persist:
+            self.assertFalse(ig.verify()['authenticated'])
+        persist.assert_not_called()
 
     def test_missing_session_never_opens_authenticated_reel(self):
-        with patch.object(ig,'marker',return_value=Mock(exists=Mock(return_value=False))),patch.object(ig,'browser') as actor:
-            self.assertEqual(ig.discovery('https://www.instagram.com/reel/Dec6NIauAZB/')['status'],'LOGIN_REQUIRED')
+        with patch('app.zar_browser.actor') as actor:
+            self.assertEqual(ig.discovery('https://www.instagram.com/reel/Dec6NIauAZB/')['status'],'LOCAL_WORKER_REQUIRED')
         actor.assert_not_called()
 
     def test_login_resolves_live_controls_without_cached_indices(self):
@@ -59,8 +58,8 @@ class InstagramProfileTests(unittest.TestCase):
         client=app.test_client()
         with patch.object(ig,'allowed_owner',return_value=False):
             self.assertEqual(client.get('/instagram-browser').status_code,403)
-        with patch.object(ig,'allowed_owner',return_value=True),patch.object(ig,'browser') as actor:
-            self.assertEqual(client.post('/api/browser/instagram',json={'action':'fill','value':'fixture'}).status_code,403)
+        with patch.object(ig,'allowed_owner',return_value=True),patch('app.zar_browser.actor') as actor:
+            self.assertEqual(client.post('/api/browser/instagram',json={'action':'fill','value':'fixture'}).status_code,410)
         actor.assert_not_called()
 
 if __name__=='__main__':unittest.main()

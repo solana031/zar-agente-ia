@@ -120,8 +120,8 @@ def write(data):
 def state(scope):
     data=read()
     if data.get('owner') and data['owner']!=scope: raise ValueError('Este proyecto pertenece a otra sesión autorizada.')
-    from . import reposnews_inbox
-    return {k:v for k,v in data.items() if k!='owner'}|{'instagram_integration':reposnews_inbox.integration(),'readiness':readiness(data),'legal_status':legal_status(data)}
+    from . import reposnews_inbox, instagram_local_queue
+    return {k:v for k,v in data.items() if k!='owner'}|{'instagram_integration':reposnews_inbox.integration(),'local_instagram_worker':instagram_local_queue.status(),'readiness':readiness(data),'legal_status':legal_status(data)}
 
 
 def legal_diagnostic(scope):
@@ -222,6 +222,9 @@ def metadata(row):
 
 
 def operate(scope, op, payload):
+    if op=='instagram_worker_pair':
+        from .instagram_local_queue import pair
+        return pair(scope)
     if op=='init': return initialize(scope)
     if op=='legal_diagnostic': return legal_diagnostic(scope)
     if op=='instagram_reverify':

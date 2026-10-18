@@ -41,6 +41,7 @@ class InstagramInboxTest(unittest.TestCase):
  def test_permalink_recovery_skips_optional_media_and_classifies_503(self):
   item=inbox.receive(self.event(text='',attachments=[{'type':'share','payload':{'url':'https://www.instagram.com/reel/fixture/'}}]))[0]
   inbox.update(item,status='FAILED',attempts=2);inbox.recover_existing(item)
+  inbox.update(item,local_worker_done=True,analysis={'transcript':'Example tool'})
   with patch('app.jev_decision.proposal',return_value={'decision':'ALLOW'}),patch.object(inbox,'analyze_media') as media,patch.object(inbox,'public_discovery',return_value={'status':'PUBLIC_TEXT_AVAILABLE','text':'Example tool'}),patch.object(inbox,'resolve_entity',side_effect=ValueError('AI_PROVIDER_503')):
    inbox.process(item);media.assert_not_called()
   row=rn.read()['instagram_inbox'][0]
@@ -211,7 +212,7 @@ class InstagramInboxTest(unittest.TestCase):
  def test_shared_permalink_only_is_honest(self):
   item=inbox.receive(self.event(text='https://www.instagram.com/reel/fixture',attachments=[{'type':'share','payload':{'url':'https://www.instagram.com/reel/fixture'}}]))[0]
   with patch('app.jev_decision.proposal',return_value={'decision':'ALLOW'}),patch.object(inbox,'analyze_media',return_value={}),patch.object(inbox,'public_discovery',return_value={'status':'LOGIN_REQUIRED'}),patch.object(inbox,'public_metadata',return_value={}):inbox.process(item)
-  row=rn.read()['instagram_inbox'][0];self.assertEqual(row['status'],'NEEDS_DISAMBIGUATION');self.assertEqual(row['error'],'NO_ACCESSIBLE_DISCOVERY_TEXT');self.assertEqual(rn.read()['articles'],[])
+  row=rn.read()['instagram_inbox'][0];self.assertEqual(row['status'],'WAITING_LOCAL_WORKER');self.assertEqual(row['attempts'],0);self.assertEqual(rn.read()['articles'],[])
 
  def test_entity_resolves_name_only_with_official_backlink(self):
   candidate={'name':'open-webui','full_name':'open-webui/open-webui','homepage':'https://openwebui.com/','fork':False}

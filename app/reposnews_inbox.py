@@ -604,6 +604,12 @@ def process(item_id):
     with holdings.transaction('reposnews-editorial'):
         data=rn.read();row=next(x for x in data.get('instagram_inbox',[]) if x['id']==item_id)
         if row['status'] not in {'RECEIVED','FAILED','FAILED_RETRYABLE','FAILED_SOURCE'} or row.get('attempts',0)>=row.get('attempt_limit',2):return
+        from .instagram_local_queue import reel_url
+        try: local_permalink=reel_url(row.get('source_url'))
+        except ValueError: local_permalink=None
+        if local_permalink and not row.get('local_worker_done'):
+            row.update(status='WAITING_LOCAL_WORKER',processing_state='WAITING_LOCAL_WORKER',local_job=True)
+            rn.write(data);return
         row.update(status='ANALYZING',processing_state='ANALYZING',attempts=row.get('attempts',0)+1,lease=time.time()+300,media_analysis='OPTIONAL');rn.write(data)
         row=dict(row);scope=data['owner']
     try:
@@ -614,20 +620,17 @@ def process(item_id):
         if proposal['decision']=='REJECT':raise ValueError('JEV_REJECTED')
         from . import reposnews_discovery as discover
         update(item_id,status='FETCHING_MEDIA',processing_state='FETCHING_MEDIA')
-        analysis={}
-        if (rn._path().parent/'inbound'/item_id).exists():
+        analysis=dict(row.get('analysis') or {}) if row.get('local_worker_done') else {}
+        if not row.get('local_worker_done') and (rn._path().parent/'inbound'/item_id).exists():
             try:analysis=analyze_media(item_id)
             except (ValueError,OSError,requests.RequestException) as exc:update(item_id,media_analysis='OPTIONAL_UNAVAILABLE',media_provider=getattr(exc,'provider_status',{'status':'MEDIA_UNAVAILABLE'}))
         if analysis:update(item_id,analysis=analysis,media_analysis='ACCESSIBLE_MEDIA_ANALYZED',access_level=analysis.get('coverage','DIRECT_MEDIA'))
         text=row.get('caption','')+' '+row.get('source_url','')+' '+json.dumps(analysis,ensure_ascii=False)
         matches=re.findall(r'https://github\.com/([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)',text)
         discovery={};metadata={};resolution=None
-        if not matches and not row.get('clarified_project'):
+        if not matches and not row.get('clarified_project') and not row.get('local_worker_done'):
             update(item_id,status='BROWSING',processing_state='BROWSING')
-            from .instagram_browser import discovery as instagram_discovery
-            authenticated=instagram_discovery(row.get('source_url',''))
-            update(item_id,instagram_browser_status={k:v for k,v in authenticated.items() if k in ('status','account')})
-            discovery=authenticated if authenticated.get('status')=='AUTHENTICATED_DISCOVERY' else public_discovery(row.get('source_url',''))
+            discovery=public_discovery(row.get('source_url',''))
             metadata=public_metadata(row.get('source_url',''))
             browser=discovery.get('browser_evidence',{})
             raw_meta=metadata.get('metadata',{})
@@ -765,7 +768,7 @@ def start_worker():
             try:
                 for item in rn.read().get('instagram_inbox',[]):
                     if item.get('status')=='RECEIVED' and item.get('retry_after',0)<=time.time():process(item['id'])
-                    elif item.get('status') in {'FETCHING','ANALYZING','FETCHING_MEDIA','BROWSING','TRANSCRIBING','VISION_ANALYSIS','IDENTIFYING','RESEARCHING','DRAFTING_ES','DRAFTING_EN','DRAFTING','IMAGES','SEO'} and item.get('lease',0)<time.time():
+                    elif not item.get('local_job') and item.get('status') in {'FETCHING','ANALYZING','FETCHING_MEDIA','BROWSING','TRANSCRIBING','VISION_ANALYSIS','IDENTIFYING','RESEARCHING','DRAFTING_ES','DRAFTING_EN','DRAFTING','IMAGES','SEO'} and item.get('lease',0)<time.time():
                         update(item['id'],status='FAILED',error='INTERRUPTED: retry available, no publication occurred.')
             except Exception:pass # No provider payload, tokens or private message enters logs.
             time.sleep(20)

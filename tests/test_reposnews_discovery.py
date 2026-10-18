@@ -79,6 +79,7 @@ class DiscoveryTest(unittest.TestCase):
 
     def test_real_pipeline_shape_permalink_to_ready_service_with_503(self):
         item = inbox.receive(self.event())[0]
+        inbox.update(item, local_worker_done=True, analysis={'transcript':'Bland AI Agent Phone Plan'})
         before = rn.read()['instagram_inbox'][0].copy()
         with patch('app.jev_decision.proposal', return_value={'decision': 'ALLOW'}), patch.object(inbox.holdings, 'read', return_value={}), \
              patch.object(inbox, 'analyze_media', return_value={}), patch.object(inbox, 'public_discovery', return_value={'status': 'PUBLIC_TEXT_AVAILABLE', 'text': 'Bland AI Agent Phone Plan'}), \
@@ -93,6 +94,7 @@ class DiscoveryTest(unittest.TestCase):
 
     def test_existing_bland_article_is_never_modified(self):
         item = inbox.receive(self.event())[0]
+        inbox.update(item, local_worker_done=True, analysis={'transcript':'Bland AI'})
         data = rn.read(); existing = {'id': 'existing-bland', 'website': 'https://www.bland.ai/', 'state': 'READY', 'published': False, 'body_es': 'Original preserved'}
         data['articles'].append(existing); rn.write(data)
         with patch('app.jev_decision.proposal', return_value={'decision': 'ALLOW'}), patch.object(inbox.holdings, 'read', return_value={}), \
@@ -106,7 +108,7 @@ class DiscoveryTest(unittest.TestCase):
         with patch('app.jev_decision.proposal', return_value={'decision': 'ALLOW'}), patch.object(inbox, 'analyze_media', return_value={}), \
              patch.object(inbox, 'public_discovery', return_value={'status': 'LOGIN_REQUIRED'}), patch.object(inbox, 'public_metadata', return_value={'status': 'PUBLIC_CONTENT_BLOCKED'}):
             inbox.process(item)
-        self.assertEqual(rn.read()['instagram_inbox'][0]['status'], 'NEEDS_DISAMBIGUATION')
+        self.assertEqual(rn.read()['instagram_inbox'][0]['status'], 'WAITING_LOCAL_WORKER')
         self.assertEqual(inbox.receive(self.event(text='')), []); self.assertEqual(len(rn.read()['instagram_inbox']), 1)
 
     def test_native_video_frame_fallback_is_honest_when_ffmpeg_missing(self):
