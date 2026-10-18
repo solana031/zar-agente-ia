@@ -152,7 +152,7 @@ class DiscoveryTest(unittest.TestCase):
              patch.object(inbox, 'analyze_media', return_value={'project_names': ['Example'], 'transcript': 'Example', 'coverage': 'DIRECT_AUDIO'}), \
              patch.object(inbox, 'public_discovery', return_value={}), patch.object(inbox, 'public_metadata', return_value={}), \
              patch.object(rn, 'github', return_value={'items': [candidate], 'total_count': 1}), \
-             patch.object(inbox, 'homepage_confirms_repository', return_value=True), patch.object(inbox, 'research', return_value={}), \
+             patch.object(inbox, 'homepage_confirms_repository', return_value=True), patch.object(inbox, 'research', return_value={'repo':'official/Example'}), \
              patch.object(inbox, 'build', return_value=article), patch.object(inbox, 'generate_json') as ai:
             inbox.process(item)
         ai.assert_not_called(); self.assertEqual(rn.read()['instagram_inbox'][0]['status'], 'READY')

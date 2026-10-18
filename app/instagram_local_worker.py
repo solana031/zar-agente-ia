@@ -12,7 +12,10 @@ import subprocess
 import sys
 import tempfile
 import time
-from urllib.parse import urlsplit
+import multiprocessing
+import queue
+import threading
+from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
 
 import requests
 from .scoped_http import BearerAuth
@@ -144,7 +147,8 @@ def verify_session(context):
         if not session:
             return False
         page.goto('https://www.instagram.com/'+ACCOUNT+'/', wait_until='domcontentloaded', timeout=30000)
-        return page.locator('a[href^="/accounts/edit"]').first.is_visible(timeout=10000)
+        page.locator('a[href^="/accounts/edit"],a[href="https://www.instagram.com/accounts/edit/"]').first.wait_for(state='visible', timeout=15000)
+        return urlsplit(page.url).path.rstrip('/') == '/'+ACCOUNT
     except Exception:
         return False
     finally:
@@ -154,16 +158,30 @@ def verify_session(context):
 def playwright_fetch(context, url, directory):
     page = context.new_page()
     candidates = []
+    def whole_media_url(value):
+        u = urlsplit(value)
+        return urlunsplit((u.scheme, u.netloc, u.path, urlencode([(k,v) for k,v in parse_qsl(u.query, keep_blank_values=True) if k not in {'bytestart','byteend'}]), ''))
     def capture(response):
         try:
-            # Only requests from this Reel page, after navigation, with a media MIME.
-            if response.request.frame != page.main_frame or reel_url(page.url) != url:
+            current_page = urlsplit(page.url)
+            canonical_page = urlunsplit((current_page.scheme,current_page.netloc,current_page.path.replace('/reels/','/reel/',1),'',''))
+            if response.request.frame != page.main_frame or reel_url(canonical_page) != url:
                 return
             mime = response.headers.get('content-type', '').split(';')[0]
-            if mime.startswith(('video/', 'audio/')):
+            if mime.startswith('video/'):
+                # Reels view preloads other posts. Accept only the displayed video's
+                # own direct source; blob/DASH sources use the permalink extractor.
+                source = page.evaluate('''() => {
+                    const videos=[...document.querySelectorAll('video')];
+                    const visible=videos.map(v=>{const r=v.getBoundingClientRect();return {v,area:Math.max(0,Math.min(r.right,innerWidth)-Math.max(r.left,0))*Math.max(0,Math.min(r.bottom,innerHeight)-Math.max(r.top,0))};}).sort((a,b)=>b.area-a.area);
+                    return visible[0]?.area>0 ? visible[0].v.currentSrc : '';
+                }''')
+                if not isinstance(source,str) or not source.startswith('https://') or whole_media_url(source) != whole_media_url(response.url):
+                    return
                 media_url(response.url)
-                if response.url not in candidates:
-                    candidates.append(response.url)
+                candidate = whole_media_url(response.url)
+                if candidate not in candidates:
+                    candidates.append(candidate)
         except Exception:
             pass
     page.on('response', capture)
@@ -173,7 +191,8 @@ def playwright_fetch(context, url, directory):
         page.locator('video').first.evaluate('(v) => {v.muted=true; v.play().catch(()=>{});} ')
         page.wait_for_timeout(4000)
         # Caption/creator evidence from the opened post only.
-        caption = page.locator('article').first.inner_text(timeout=5000)[:12000] if page.locator('article').count() else ''
+        caption = page.locator('meta[property="og:description"]').get_attribute('content') or '' if page.locator('meta[property="og:description"]').count() else ''
+        caption = caption[:12000]
         for candidate in candidates[:4]:
             try:
                 return download(candidate, directory/'reel.mp4'), caption
@@ -249,8 +268,14 @@ def analyze(path, directory):
             except Exception:
                 pass
     text = '\n'.join(texts)[:16000]
-    links = re.findall(r'https://[A-Za-z0-9./_?=&%-]+', transcript+' '+text)
+    evidence = transcript+' '+text
+    links = re.findall(r'https://[A-Za-z0-9./_?=&%-]+', evidence)
+    # Accept exact visible URLs without scheme; never repair guessed OCR domains.
+    repos = list(dict.fromkeys('https://github.com/'+m for m in re.findall(r'\bgithub\.com/([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)', evidence, re.I)))[:10]
+    named = re.findall(r'\b(?:se llama|llamado|called|named|nombre es)\s+["\u201c\u201d\']?([A-Za-z][A-Za-z0-9_.+-]{1,60})', transcript, re.I)
+    names = list(dict.fromkeys(n.casefold() for n in named))[:3]
     return {'transcript': transcript, 'visual_findings': text, 'links': links[:20],
+        'repositories': repos, 'project_names': names,
         'coverage': 'FULL_VIDEO_BYTES_PROVIDED', 'frame_extraction': [{'frames': len(images), 'audio': 'EXTRACTED' if audio.exists() else 'NO_AUDIO', 'duration': meta['duration']}]}
 
 
@@ -321,7 +346,68 @@ def transport(config):
     return client, base+'/api/reposnews/local-worker'
 
 
-def main():
+def _fetch_child(job, directory, events):
+    try:
+        manifest, video = fetch(job, Path(directory), lambda stage: events.put(('progress', stage)))
+        events.put(('result', (manifest, str(video) if video else None)))
+    except Exception:
+        events.put(('error', 'EXTRACTOR_FAILED'))
+
+
+def fetch_bounded(job, directory, progress):
+    """Kill a stuck browser/extractor/transcriber after five minutes."""
+    context = multiprocessing.get_context('spawn')
+    events = context.Queue()
+    process = context.Process(target=_fetch_child, args=(job, str(directory), events))
+    process.start(); deadline = time.monotonic()+300
+    try:
+        while time.monotonic() < deadline:
+            try:
+                kind, value = events.get(timeout=1)
+            except queue.Empty:
+                if not process.is_alive():
+                    break
+                continue
+            if kind == 'progress':
+                progress(value)
+            elif kind == 'result':
+                manifest, filename = value
+                video = Path(filename).resolve() if filename else None
+                if video and not video.is_relative_to(directory.resolve()):
+                    raise ValueError('INVALID_OUTPUT_PATH')
+                return manifest, video
+            else:
+                break
+        return {'status':'EXTRACTOR_FAILED'}, None
+    finally:
+        process.join(timeout=1)
+        if process.is_alive():
+            if os.name == 'nt':
+                # Only the process tree created for this job, never another browser.
+                run(['taskkill', '/PID', str(process.pid), '/T', '/F'], 10)
+            else:
+                process.terminate()
+        process.join(timeout=5); events.close()
+
+
+@contextmanager
+def single_worker():
+    LOCAL.mkdir(parents=True, exist_ok=True, mode=0o700)
+    with (LOCAL/'worker.lock').open('a+b') as handle:
+        handle.seek(0,2)
+        if not handle.tell():
+            handle.write(b'0'); handle.flush()
+        handle.seek(0)
+        if os.name == 'nt':
+            import msvcrt
+            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        yield
+
+
+def _main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--login', action='store_true')
     parser.add_argument('--once', action='store_true')
@@ -350,6 +436,15 @@ def main():
     with browser() as context:
         if verify_session(context):
             session_state = 'CONNECTED'
+    def heartbeat_loop():
+        heart, endpoint = transport(config)
+        while True:
+            time.sleep(20)
+            try:
+                heart.post(endpoint+'/heartbeat',json={'session':session_state},timeout=(5,10),allow_redirects=False)
+            except requests.RequestException:
+                pass
+    threading.Thread(target=heartbeat_loop, name='instagram-heartbeat', daemon=True).start()
     while True:
         try:
             response = client.post(base+'/poll', json={'session': session_state}, timeout=(5, 20), allow_redirects=False)
@@ -363,7 +458,7 @@ def main():
                     r = client.post(endpoint+'/progress', json={'stage':stage}, headers=headers, timeout=(5,15), allow_redirects=False)
                     r.raise_for_status()
                 with tempfile.TemporaryDirectory(prefix='job-', dir=LOCAL) as tmp:
-                    manifest, video = fetch(job, Path(tmp), progress)
+                    manifest, video = fetch_bounded(job, Path(tmp), progress)
                     session_state = 'EXPIRED' if manifest['status']=='LOGIN_REQUIRED' else 'CONNECTED' if manifest.get('extractor') != 'yt-dlp-public' else session_state
                     if video:
                         with video.open('rb') as f:
@@ -380,6 +475,11 @@ def main():
         if args.once:
             return
         time.sleep(10)
+
+
+def main():
+    with single_worker():
+        _main()
 
 
 if __name__ == '__main__':

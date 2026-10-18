@@ -371,7 +371,12 @@ def analyze_media(item_id):
 
 def research(repo):
     if not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+',repo):raise ValueError('OFFICIAL_REPOSITORY_REQUIRED')
-    meta=rn.github('repos/'+repo)
+    original_repo=repo
+    try:meta=rn.github('repos/'+repo)
+    except ValueError as exc:
+        if 'HTTP 404' not in str(exc):raise
+        meta=repair_visual_repository(repo)
+        repo=meta['full_name']
     if meta.get('private') or meta.get('archived'):raise ValueError('REPOSITORY_UNAVAILABLE')
     if meta.get('fork'):raise ValueError('UPSTREAM_REPOSITORY_REQUIRED')
     readme=rn.github('repos/'+repo+'/readme')
@@ -380,7 +385,32 @@ def research(repo):
     releases=rn.github('repos/'+repo+'/releases',{'per_page':1})
     return {'repo':repo,'metadata':rn.metadata(meta),'readme':text,'readme_url':readme['html_url'],
             'release':releases[0] if releases else None,'sources':[meta['html_url'],readme['html_url'],'https://github.com/'+repo+'/releases'],
-            'verified_at':holdings._now(),'images':[{'url':u,'source':readme['html_url']} for u in re.findall(r'!\[[^\]]*\]\((https://[^\s)]+)\)',text)[:1]]}
+            'verified_at':holdings._now(),'resolution':{'status':'RESOLVED','repo':repo,'observed_repo':original_repo,
+                'confidence':'OFFICIAL_SEARCH_AND_WEBSITE' if repo!=original_repo else 'EXACT_OFFICIAL_REPOSITORY'},
+            'images':[{'url':u,'source':readme['html_url']} for u in re.findall(r'!\[[^\]]*\]\((https://[^\s)]+)\)',text)[:1]]}
+
+
+def repair_visual_repository(observed):
+    """Recover a single OCR owner error, only with an official website backlink."""
+    owner,name=observed.split('/')
+    def one_edit(a,b):
+        a=a.casefold();b=b.casefold()
+        if abs(len(a)-len(b))>1:return False
+        if len(a)==len(b):return sum(x!=y for x,y in zip(a,b))==1
+        if len(a)>len(b):a,b=b,a
+        return any(b[:i]+b[i+1:]==a for i in range(len(b)))
+    found=rn.github('search/repositories',{'q':'"'+name+'" in:name fork:false','per_page':8})
+    if found.get('incomplete_results'):raise ValueError('OFFICIAL_REPOSITORY_UNRESOLVED')
+    candidates=[]
+    for candidate in found.get('items',[])[:8]:
+        full=candidate.get('full_name','')
+        if not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+',full):continue
+        actual_owner,actual_name=full.split('/')
+        if actual_name.casefold()!=name.casefold() or not one_edit(owner,actual_owner):continue
+        if candidate.get('fork') or candidate.get('private') or candidate.get('archived'):continue
+        if homepage_confirms_repository(candidate.get('homepage',''),full):candidates.append(candidate)
+    if len(candidates)!=1:raise ValueError('OFFICIAL_REPOSITORY_UNRESOLVED')
+    return rn.github('repos/'+candidates[0]['full_name'])
 
 def extract_public_metadata(html):
     from .reposnews_discovery import parse_chunks
@@ -692,7 +722,10 @@ def process(item_id):
         if existing:
             update(item_id,status='UPDATE_PROPOSAL',processing_state='RESEARCHING',repo=repo,article_id=existing['id']);return
         update(item_id,status='RESEARCHING',processing_state='RESEARCHING',repo=repo)
-        package=research(repo);update(item_id,status='DRAFTING',processing_state='DRAFTING',research_package=package)
+        package=research(repo)
+        repo=package['repo']
+        update(item_id,status='DRAFTING',processing_state='DRAFTING',research_package=package,repo=repo,
+               entity_resolution=package.get('resolution') or {'status':'RESOLVED','repo':repo})
         try:article=build(package,row.get('source_url',''))
         except ValueError as exc:
             if not re.fullmatch(r'AI_PROVIDER_(429|500|502|503|504)',str(exc)):raise

@@ -521,7 +521,7 @@ def _authorized():
 @app.before_request
 def _guard():
     allowed = {"login","health","oauth2callback","connect_google","connect_gmail","holdings_media_public_video_api","distributed_nodes.poll","distributed_nodes.claim","distributed_nodes.health","distributed_nodes.inference","agency_stripe_webhook","reposnews_instagram_webhook",
-               "instagram_local_worker_poll", "instagram_local_worker_progress", "instagram_local_worker_result"}
+               "instagram_local_worker_poll", "instagram_local_worker_progress", "instagram_local_worker_result", "instagram_local_worker_heartbeat"}
     if request.endpoint in allowed or request.path.startswith("/static/"):
         return None
     if request.endpoint in {'holdings_site_page','holdings_site_asset'}:

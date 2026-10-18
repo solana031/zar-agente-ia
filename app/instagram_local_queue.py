@@ -80,12 +80,30 @@ def enqueue_pending(data):
 
 
 def register(app):
+    @app.post('/api/reposnews/local-worker/heartbeat', endpoint='instagram_local_worker_heartbeat')
+    def heartbeat():
+        authorized()
+        if request.content_length is None or request.content_length > 4096:
+            abort(413)
+        payload = request.get_json(silent=True) or {}
+        if not isinstance(payload, dict):
+            abort(400)
+        with holdings.transaction('reposnews-editorial'):
+            data = rn.read()
+            if not data.get('owner'):
+                abort(409)
+            data.setdefault('instagram_local_worker', {}).update(seen=time.time(), session='CONNECTED' if payload.get('session') == 'CONNECTED' else 'EXPIRED')
+            rn.write(data)
+        return jsonify(ok=True)
+
     @app.post('/api/reposnews/local-worker/poll', endpoint='instagram_local_worker_poll')
     def poll():
         authorized()
         if request.content_length is None or request.content_length > 4096:
             abort(413)
         payload = request.get_json(silent=True) or {}
+        if not isinstance(payload, dict):
+            abort(400)
         with holdings.transaction('reposnews-editorial'):
             data = rn.read()
             if not data.get('owner') or holdings.read(data['owner']).get('global_stop'):
@@ -98,7 +116,7 @@ def register(app):
             job = None
             if row:
                 lease = secrets.token_urlsafe(24)
-                row.update(local_lease=time.time()+600, lease=time.time()+600, local_claim=hashlib.sha256(lease.encode()).hexdigest(), status='OPENING_INSTAGRAM', processing_state='OPENING_INSTAGRAM')
+                row.update(local_lease=time.time()+600, lease=time.time()+600, local_claim=hashlib.sha256(lease.encode()).hexdigest(), status='OPENING_INSTAGRAM', processing_state='OPENING_INSTAGRAM', error='', error_diagnostic={})
                 job = {'kind': 'FETCH_INSTAGRAM_REEL', 'url': reel_url(row['source_url']), 'inbox_item_id': row['id'], 'lease': lease, 'timeout': 540}
                 data['instagram_local_worker']['last_job'] = row['id']
             rn.write(data)
@@ -181,7 +199,7 @@ def register(app):
                 row.update(local_worker_done=True, local_job=False, local_lease=0, local_result=manifest['status'], analysis=analysis,
                     caption=safe_caption(row.get('caption', '')+' '+str(manifest.get('caption', ''))[:12000]),
                     local_media_received=bool(media), local_extractor=manifest.get('extractor') if manifest.get('extractor') in {'playwright','yt-dlp-public','yt-dlp','instaloader','gallery-dl'} else None,
-                    attempt_limit=row.get('attempts', 0)+2, retry_after=time.time()+60)
+                    attempt_limit=row.get('attempts', 0)+2, metadata_recovery=False, retry_after=time.time()+5)
                 if manifest['status'] == 'LOGIN_REQUIRED':
                     row.update(status='WAITING_LOCAL_WORKER', processing_state='WAITING_LOCAL_WORKER', local_worker_done=False, error='SESSION_EXPIRED')
                     data['instagram_local_worker']['session'] = 'EXPIRED'

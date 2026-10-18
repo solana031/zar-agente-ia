@@ -36,8 +36,10 @@ temporal exclusivo, Instaloader y gallery-dl, en ese orden. No automatiza passwo
 CAPTCHA, fingerprint, evasión de límites ni llamadas privadas implementadas a mano.
 
 Acepta MP4 de hasta 25 MiB y 180 segundos, validado con FFmpeg. Los fallbacks
-tienen timeouts. Las descargas directas exigen HTTPS/CDN de Instagram o Facebook,
-direcciones públicas y ausencia de redirecciones. La subida lleva un token
+tienen timeouts. El trabajo local completo tiene un límite de cinco minutos y un
+lock impide arrancar dos workers simultáneos en el mismo perfil. Las descargas
+directas exigen HTTPS/CDN de Instagram o Facebook, direcciones públicas y ausencia
+de redirecciones. La subida lleva un token
 de worker más una reserva temporal del trabajo; se comprueba tamaño, tipo y
 duración en servidor. El contenido se procesa como evidencia no fiable.
 
