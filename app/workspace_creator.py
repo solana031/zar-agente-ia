@@ -57,6 +57,7 @@ def validate_plan(kind,plan):
             if kind!='FORM' or not isinstance(edit.get('index'),int) or edit['index']<0 or not edit.get('title'):raise ValueError('INVALID_QUESTION_EDIT')
         else:raise ValueError('UNSUPPORTED_EDIT_OPERATION')
     if edits and kind!='SHEET' and not plan.get({'DOC':'sections','SLIDES':'slides','FORM':'items'}[kind]):return plan
+    if kind=='SLIDES' and plan.get('remove_empty_starter') is True and plan.get('slides')==[]:return plan
     if kind=='DOC':
         sections=plan.get('sections') or []
         if not 1<=len(sections)<=40 or any(not s.get('heading') or not s.get('body') for s in sections):raise ValueError('EMPTY_DOC_SECTION')
@@ -112,6 +113,7 @@ def plan_request(scope,payload):
     prompt+='For Sheets plans, all cell references assume headers in row 1 and data starting row 2; the native builder shifts references for title/subtitle rows. Use conditional formulas on the current sheet only. '
     prompt+='For existing files, optional edits:[{kind:REPLACE_TEXT,old,new}|{kind:REPLACE_IMAGE,object_id,image_asset}|{kind:UPDATE_QUESTION,index,title,required}]. Use only existing object IDs and exact old text. No edits for new files. Never delete unrelated content. '
     prompt+='For append requests, append the requested sections/slides/questions only. For replacement-only requests return an empty sections/slides/items array plus edits. '+json.dumps({'request':payload.get('request'),'title':payload['title'],'design':design(payload),'context':context},ensure_ascii=False)
+    if kind=='SLIDES':prompt+=' If explicitly asked to remove an empty initial Google template slide, set remove_empty_starter:true. It only removes the empty starter with ID p, never populated content.'
     for attempt in range(2):
         try:
             plan=generate_json(prompt)

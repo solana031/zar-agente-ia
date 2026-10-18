@@ -102,6 +102,24 @@ def test_exact_text_replacement_edits_the_same_native_document():
     assert call['documentId']=='same_file';assert call['body']['requests'][0]['replaceAllText']['replaceText']=='Updated'
 
 
+def test_doc_append_preserves_cover_without_inserting_a_second_one():
+    svc=Mock();svc.documents.return_value.get.return_value.execute.return_value={'body':{'content':[{'endIndex':90}]},'headers':{'header':{}}}
+    with patch.object(native.gw,'docs_service',return_value=svc):
+        native.docs_build('same_file',{'title':'Original','file_id':'same_file'},{'design':creator.design({'theme':'ZAR'}),'sections':[{'heading':'Appendix','body':'Requested addition'}]})
+    requests=svc.documents.return_value.batchUpdate.call_args.kwargs['body']['requests']
+    assert requests[0]['insertText']['text']=='\nAppendix\nRequested addition\n\n'
+    assert not any('insertPageBreak' in r for r in requests)
+
+
+@pytest.mark.parametrize('content,removed',[('',True),('Existing user content',False)])
+def test_only_empty_google_starter_can_be_removed(content,removed):
+    svc=Mock();svc.presentations.return_value.get.return_value.execute.return_value={'slides':[{'objectId':'p','pageElements':[{'shape':{'placeholder':{'type':'TITLE'},'text':{'textElements':[{'textRun':{'content':content}}]}}}]}]}
+    with patch.object(native.gw,'slides_service',return_value=svc):
+        native.build({'type':'SLIDES','title':'Existing','file_id':'same_file'},{'slides':[{'title':'New','body':'Requested'}],'design':creator.design({'theme':'ZAR'}),'remove_empty_starter':True},'same_file',Mock())
+    requests=svc.presentations.return_value.batchUpdate.call_args.kwargs['body']['requests']
+    assert any('deleteObject' in r for r in requests)==removed
+
+
 def test_update_existing_question_preserves_item_and_question_ids():
     svc=Mock();question={'itemId':'existing-item','title':'Original','questionItem':{'question':{'questionId':'existing-question','textQuestion':{}}}}
     with patch.object(native.gw,'forms_get',return_value={'items':[question]}),patch.object(native.gw,'forms_service',return_value=svc):

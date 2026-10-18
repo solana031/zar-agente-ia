@@ -14,7 +14,8 @@ def end_index(doc):return max([1]+[int(x.get('endIndex',1))-1 for x in doc.get('
 def docs_build(fid,payload,plan):
     service=gw.docs_service();doc=service.documents().get(documentId=fid).execute();start=end_index(doc)
     title=payload['title'];subtitle=str(plan.get('subtitle') or '')
-    text=title+'\n'+subtitle+'\n\n';spans=[];images=[];tables=[]
+    cover=not payload.get('file_id') and start<=1
+    text=title+'\n'+subtitle+'\n\n' if cover else '\n';spans=[];images=[];tables=[]
     for section in plan['sections']:
         heading=section['heading'];body=section['body'];offset=start+utf16(text)
         spans.append((offset,offset+utf16(heading),'HEADING_1'));text+=heading+'\n'+body+'\n\n'
@@ -24,12 +25,12 @@ def docs_build(fid,payload,plan):
     for source in plan.get('references',[]):text+=str(source.get('title',''))+' · '+str(source.get('url',''))+'\n'
     style=plan['design'];requests=[{'insertText':{'location':{'index':start},'text':text}},
         {'updateTextStyle':{'range':{'startIndex':start,'endIndex':start+utf16(text)},'textStyle':{'weightedFontFamily':{'fontFamily':style['font']},'fontSize':{'magnitude':11,'unit':'PT'}},'fields':'weightedFontFamily,fontSize'}},
-        {'updateParagraphStyle':{'range':{'startIndex':start,'endIndex':start+utf16(text)},'paragraphStyle':{'spaceAbove':{'magnitude':6,'unit':'PT'},'spaceBelow':{'magnitude':9,'unit':'PT'},'lineSpacing':120},'fields':'spaceAbove,spaceBelow,lineSpacing'}},
-        {'updateParagraphStyle':{'range':{'startIndex':start,'endIndex':start+utf16(title)},'paragraphStyle':{'namedStyleType':'TITLE'},'fields':'namedStyleType'}}]
-    if subtitle:requests.append({'updateParagraphStyle':{'range':{'startIndex':start+utf16(title)+1,'endIndex':start+utf16(title)+1+utf16(subtitle)},'paragraphStyle':{'namedStyleType':'SUBTITLE'},'fields':'namedStyleType'}})
+        {'updateParagraphStyle':{'range':{'startIndex':start,'endIndex':start+utf16(text)},'paragraphStyle':{'spaceAbove':{'magnitude':6,'unit':'PT'},'spaceBelow':{'magnitude':9,'unit':'PT'},'lineSpacing':120},'fields':'spaceAbove,spaceBelow,lineSpacing'}}]
+    if cover:requests.append({'updateParagraphStyle':{'range':{'startIndex':start,'endIndex':start+utf16(title)},'paragraphStyle':{'namedStyleType':'TITLE'},'fields':'namedStyleType'}})
+    if cover and subtitle:requests.append({'updateParagraphStyle':{'range':{'startIndex':start+utf16(title)+1,'endIndex':start+utf16(title)+1+utf16(subtitle)},'paragraphStyle':{'namedStyleType':'SUBTITLE'},'fields':'namedStyleType'}})
     for a,b,style_name in spans:requests.append({'updateParagraphStyle':{'range':{'startIndex':a,'endIndex':b},'paragraphStyle':{'namedStyleType':style_name},'fields':'namedStyleType'}})
     # Add a genuine cover break, not a simulated blank wall of text.
-    requests.append({'insertPageBreak':{'location':{'index':start+utf16(title+'\n'+subtitle+'\n')}}})
+    if cover:requests.append({'insertPageBreak':{'location':{'index':start+utf16(title+'\n'+subtitle+'\n')}}})
     service.documents().batchUpdate(documentId=fid,body={'requests':requests}).execute()
     for index,url in reversed(images):
         service.documents().batchUpdate(documentId=fid,body={'requests':[{'insertInlineImage':{'location':{'index':index+1},'uri':url,'objectSize':{'width':{'magnitude':420,'unit':'PT'}}}}]}).execute()
@@ -137,7 +138,7 @@ def slide_requests(slides,style,prefix):
 
 
 def build(payload,plan,fid,remember):
-    kind=payload['type'];title=payload['title']
+    kind=payload['type'];title=payload['title'];created_here=not fid
     if not fid:
         created={'DOC':gw.docs_create,'SLIDES':gw.slides_create,'SHEET':gw.sheets_create,'FORM':gw.forms_create}[kind](title)
         fid=next(created[k] for k in ('documentId','presentationId','spreadsheetId','formId') if created.get(k));remember(fid)
@@ -148,6 +149,11 @@ def build(payload,plan,fid,remember):
     elif kind=='SLIDES':
         svc=gw.slides_service();prefix='zar_'+secrets.token_hex(6)
         req=slide_requests(plan['slides'],plan['design'],prefix)
+        if created_here or plan.get('remove_empty_starter'):
+            deck=svc.presentations().get(presentationId=fid).execute()
+            starter=next((s for s in deck.get('slides',[]) if s.get('objectId')=='p'),None)
+            if starter and all('shape' in x and x['shape'].get('placeholder') and not any(t.get('textRun',{}).get('content','').strip() for t in x['shape'].get('text',{}).get('textElements',[])) for x in starter.get('pageElements',[])):
+                req.insert(0,{'deleteObject':{'objectId':'p'}})
         if req:svc.presentations().batchUpdate(presentationId=fid,body={'requests':req}).execute()
         key='presentationId';url='https://docs.google.com/presentation/d/'+fid+'/edit'
     elif kind=='SHEET':
