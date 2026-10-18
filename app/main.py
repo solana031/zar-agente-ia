@@ -521,7 +521,7 @@ def _authorized():
 @app.before_request
 def _guard():
     allowed = {"login","health","oauth2callback","connect_google","connect_gmail","holdings_media_public_video_api","distributed_nodes.poll","distributed_nodes.claim","distributed_nodes.health","distributed_nodes.inference","agency_stripe_webhook","reposnews_instagram_webhook",
-               "instagram_local_worker_poll", "instagram_local_worker_progress", "instagram_local_worker_result", "instagram_local_worker_heartbeat"}
+               "instagram_local_worker_poll", "instagram_local_worker_progress", "instagram_local_worker_result", "instagram_local_worker_heartbeat", "workspace_artifact_image"}
     if request.endpoint in allowed or request.path.startswith("/static/"):
         return None
     if request.endpoint in {'holdings_site_page','holdings_site_asset'}:
@@ -1851,10 +1851,16 @@ from . import instagram_local_queue
 instagram_local_queue.register(app)
 from . import reposnews_editorial
 reposnews_editorial.register(app, _user_scope_id)
+from . import notification_center,reposnews_revisions,reposnews_history,workspace_creator
+notification_center.register(app,_user_scope_id)
+reposnews_revisions.register(app,_user_scope_id)
+reposnews_history.register(app,_user_scope_id)
+workspace_creator.register(app,_user_scope_id)
 if os.environ.get('RAILWAY_PROJECT_ID') == '33af08fe-7e2e-4df3-afb5-c5a1ac41b2f5':
     reposnews_owner = reposnews.bootstrap()
     reposnews_inbox.human_action(reposnews_owner)
     reposnews_inbox.start_worker()
+    workspace_creator.start_worker(reposnews_owner)
     def _verify_reposnews_after_start():
         try:
             reposnews.operate(reposnews_owner, 'verify', {})
@@ -4432,6 +4438,9 @@ def _execute_workspace_action(pending):
     service = pending.get("service")
     action = pending.get("action")
     args = pending.get("args") or {}
+    if service=='WorkspaceArtifactEngine':
+        from .workspace_creator import enqueue
+        return enqueue(_user_scope_id(),args)
     try:
         from . import google_workspace as gw
     except ImportError:

@@ -449,7 +449,7 @@ def public_legal_profile(data):
 def media(asset):
     if re.fullmatch(r'source-[a-f0-9]{24}\.png',asset):
         data=read()
-        public=any(a.get('published') and a.get('published_snapshot',a).get('image_asset')==asset for a in data.get('articles',[]))
+        public=any(a.get('published') and (a.get('published_snapshot',a).get('image_asset')==asset or any(x.get('asset')==asset for x in a.get('published_snapshot',a).get('assets',[]))) for a in data.get('articles',[]))
         if not public:
             from .user_scope import get_current_user
             try:

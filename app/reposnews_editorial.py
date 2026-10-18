@@ -8,7 +8,7 @@ import secrets
 from . import holdings, reposnews as rn
 
 
-def keep_frames(item_id,parts,permalink):
+def keep_frames(item_id,parts,permalink,duration=0):
     if not re.fullmatch(r'[a-f0-9]{24}',item_id):return []
     folder=rn._path().parent/'private-assets'/item_id
     rows=[]
@@ -19,8 +19,10 @@ def keep_frames(item_id,parts,permalink):
         if len(content)>1500000:continue
         asset=hashlib.sha256(content).hexdigest()[:24]+'.jpg'
         folder.mkdir(parents=True,exist_ok=True);(folder/asset).write_bytes(content)
+        from .reposnews_assets import provenance
         rows.append({'kind':'REEL_FRAME','asset':asset,'url':'/reposnews-preview/assets/'+item_id+'/'+asset,
-            'source':permalink,'permission':'REVIEW_REQUIRED','created_at':holdings._now()})
+            'source':permalink,'permission':'REVIEW_REQUIRED','created_at':holdings._now(),
+            **provenance('REEL_FRAME',permalink,frame_timestamp=round((len(rows)+.5)*duration/8,2) if duration else None)})
     return rows
 
 

@@ -7,7 +7,7 @@ from itsdangerous import URLSafeTimedSerializer, BadSignature
 from . import holdings, reposnews as rn, identity_center, oauth_vault
 
 READY = 'READY_PRIVATE'
-CONTENT_FIELDS = ('title_es','title_en','summary_es','summary_en','body_es','body_en','sources','seo','image_asset','assets','cover_url')
+CONTENT_FIELDS = ('title_es','title_en','summary_es','summary_en','body_es','body_en','sources','seo','image_asset','assets','cover_url','source_reels','reel_content','asset_status')
 
 
 def revision(article):
@@ -144,6 +144,11 @@ def decide(scope,payload):
         article['history']=(article.get('history',[])+[{'at':holdings._now(),'fields':['state','approval_status'],'reason':'Decisión del titular: '+decision}])[-60:]
         rn.write(data)
     if decision!='MODIFICAR':close_notification(scope,article['id'],article['state'])
+    if decision=='PUBLICAR':
+        from .notification_center import emit
+        emit(scope,'PUBLISH_SUCCESS','published:'+article['id']+':'+revision(article),'Artículo publicado: '+article['title_es'],
+             'Publicación ES/EN aprobada por el titular.',article['seo']['es']['canonical'],article['id'],'ARTICLE',
+             [{'label':'VER ES','url':article['seo']['es']['canonical']},{'label':'VER EN','url':article['seo']['en']['canonical']}],status='COMPLETED')
     return rn.state(scope)
 
 

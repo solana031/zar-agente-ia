@@ -159,7 +159,7 @@ def evidence(row, analysis, discovery, metadata):
 
 
 def video_parts(content, remaining):
-    """At most six distributed frames and 180 seconds of mono audio, in memory."""
+    """At most eight distributed frames and 180 seconds of mono audio, in memory."""
     import base64
     import shutil
     import subprocess
@@ -170,11 +170,11 @@ def video_parts(content, remaining):
         duration = float(json.loads(probe.stdout).get('format', {}).get('duration', 0))
         if not 0 < duration <= 180: return [], {'frames': 0, 'audio': 'NATIVE_VIDEO_INPUT', 'duration_limit': True}
         frames = subprocess.run(['ffmpeg', '-v', 'error', '-protocol_whitelist', 'pipe', '-i', 'pipe:0', '-vf',
-                                 f'fps={6 / duration},scale=640:360:force_original_aspect_ratio=decrease',
-                                 '-frames:v', '6', '-f', 'image2pipe', '-vcodec', 'mjpeg', 'pipe:1'],
+                                 f'fps={8 / duration},scale=640:360:force_original_aspect_ratio=decrease',
+                                 '-frames:v', '8', '-f', 'image2pipe', '-vcodec', 'mjpeg', 'pipe:1'],
                                 input=content, capture_output=True, timeout=20)
         parts = []; count = 0
-        for frame in re.findall(b'\xff\xd8.*?\xff\xd9', frames.stdout, re.S)[:6]:
+        for frame in re.findall(b'\xff\xd8.*?\xff\xd9', frames.stdout, re.S)[:8]:
             if len(frame) > remaining: break
             remaining -= len(frame); count += 1
             parts.append({'inlineData': {'mimeType': 'image/jpeg', 'data': base64.b64encode(frame).decode()}})

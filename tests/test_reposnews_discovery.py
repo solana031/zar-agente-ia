@@ -93,9 +93,9 @@ class DiscoveryTest(unittest.TestCase):
         data['articles'].append(existing); rn.write(data)
         with patch('app.jev_decision.proposal', return_value={'decision': 'ALLOW'}), patch.object(inbox.holdings, 'read', return_value={}), \
              patch.object(inbox, 'analyze_media', return_value={}), patch.object(inbox, 'public_discovery', return_value={'text': 'Bland AI'}), \
-             patch.object(inbox, 'public_metadata', return_value={}), patch.object(discovery, 'fetch_official', side_effect=self.pages()):
+             patch.object(inbox, 'public_metadata', return_value={}), patch.object(discovery, 'fetch_official', side_effect=self.pages()), patch.object(inbox,'build',side_effect=ValueError('AI_PROVIDER_503')):
             inbox.process(item)
-        self.assertEqual(rn.read()['articles'], [existing]); self.assertEqual(rn.read()['instagram_inbox'][0]['status'], 'UPDATE_PROPOSAL')
+        self.assertEqual(rn.read()['articles'], [existing]); self.assertEqual(rn.read()['instagram_inbox'][0]['status'], 'FAILED_RETRYABLE')
 
     def test_inaccessible_content_requires_clarification_and_still_deduplicates(self):
         item = inbox.receive(self.event(text=''))[0]
@@ -116,8 +116,8 @@ class DiscoveryTest(unittest.TestCase):
                      Mock(stdout=b'RIFF' + b'x' * 80, returncode=0)]
         with patch('shutil.which', return_value='/fixture/ffmpeg'), patch('subprocess.run', side_effect=responses) as run:
             parts, state = discovery.video_parts(b'fixture-video', 2000)
-        self.assertEqual(state['frames'], 6); self.assertEqual(state['audio'], 'EXTRACTED_FULL_BOUNDED_AUDIO')
-        self.assertEqual(len(parts), 7)
+        self.assertEqual(state['frames'], 8); self.assertEqual(state['audio'], 'EXTRACTED_FULL_BOUNDED_AUDIO')
+        self.assertEqual(len(parts), 9)
         self.assertIn('pipe:0', run.call_args.args[0]); self.assertEqual(run.call_args.kwargs['input'], b'fixture-video')
 
     def test_transient_llm_failure_uses_only_existing_flash_fallback(self):

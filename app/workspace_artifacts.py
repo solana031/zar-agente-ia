@@ -28,6 +28,10 @@ def form_requests(items):
                 q['scaleQuestion']={'low':low,'high':high}
             elif kind=='DATE':q['dateQuestion']={'includeTime':False,'includeYear':True}
             else:raise ValueError('Tipo de pregunta no admitido.')
+            if src.get('correct_answer') is not None:
+                answer=str(src['correct_answer'])
+                if kind in ('RADIO','CHECKBOX','DROP_DOWN') and answer not in src.get('options',[]):raise ValueError('Respuesta correcta fuera de las opciones.')
+                q['grading']={'pointValue':max(1,min(100,int(src.get('points',1)))),'correctAnswers':{'answers':[{'value':answer}]}}
             item['questionItem']={'question':q}
         requests.append({'createItem':{'item':item,'location':{'index':index}}})
     return requests
@@ -46,7 +50,7 @@ def record(result,kind,title,context=''):
         path.parent.mkdir(parents=True,exist_ok=True)
         data=json.loads(path.read_text(encoding='utf-8')) if path.exists() else {}
         old=data.get(identifier,{})
-        data[identifier]={'id':identifier,'url':result.get('url'),'type':kind,'title':title,
+        data[identifier]={'id':identifier,'file_id':identifier,'artifact_id':result.get('artifact_id',old.get('artifact_id',identifier)),'url':result.get('url'),'Drive URL':result.get('url'),'type':kind,'title':title,
                           'owner':scope,'context':context,'created_at':old.get('created_at',now),'updated_at':now}
         tmp=path.with_suffix('.tmp');tmp.write_text(json.dumps(data,ensure_ascii=False),encoding='utf-8');tmp.replace(path)
     return result

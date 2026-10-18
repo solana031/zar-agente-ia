@@ -558,7 +558,9 @@ def store_ready(item_id,article):
     from .reposnews_discovery import official_image
     update(item_id,status='ASSETS',processing_state='ASSETS')
     package=next((x.get('research_package',{}) for x in rn.read().get('instagram_inbox',[]) if x['id']==item_id),{})
-    article.update(official_image(package))
+    from .reposnews_assets import prepare
+    asset_row=next(r for r in rn.read().get('instagram_inbox',[]) if r['id']==item_id)
+    prepare(asset_row,article,package)
     current=next((r for r in rn.read().get('instagram_inbox',[]) if r['id']==item_id),{})
     if current.get('requested_image'):
         requested=current['requested_image']
@@ -568,7 +570,7 @@ def store_ready(item_id,article):
         if cover.get('kind')=='REEL_FRAME':
             import io
             from PIL import Image
-            frame=rn._path().parent/'private-assets'/item_id/cover['asset']
+            frame=(rn._path().parent/'media'/cover['asset']) if cover['asset'].endswith('.png') else rn._path().parent/'private-assets'/item_id/cover['asset']
             content=frame.read_bytes();asset='source-'+hashlib.sha256(content).hexdigest()[:24]+'.png'
             folder=rn._path().parent/'media';folder.mkdir(parents=True,exist_ok=True)
             with Image.open(io.BytesIO(content)) as image:image.convert('RGB').save(folder/asset,format='PNG')
@@ -579,10 +581,14 @@ def store_ready(item_id,article):
         if row.get('status') in {'DISCARDED','CANCELLED'}:return
         existing=next((x for x in data['articles'] if x['id']==article['id']),None)
         article.update(inbox_item_id=item_id,state='READY_PRIVATE',status='READY_PRIVATE',approval_status='PENDING')
-        article['assets']=[{'kind':'REEL_LINK','url':row.get('source_url'),'source':row.get('source_url'),'permission':'LINK_ONLY'}]+row.get('visual_assets',[])
-        if row.get('requested_cover'):article['assets'].append(row['requested_cover'])
-        if article.get('image_asset'):article['assets'].append({'kind':'OFFICIAL_IMAGE','asset':article['image_asset'],'source':article.get('image_source'),'permission':article.get('image_license','NOT_CONFIRMED')})
-        else:article['assets'].append({'kind':'EDITORIAL_COVER','asset':'home.png','source':'ReposNews','permission':'OWNED'})
+        if row.get('requested_cover'):
+            selected=dict(row['requested_cover'],asset=article.get('image_asset'),url='/media/reposnews/'+article.get('image_asset','home.png'),role='HERO_FRAME')
+            article['assets']=[a for a in article['assets'] if a.get('asset')!=selected.get('asset')]+[selected]
+        from .reposnews_revisions import consider
+        if consider(data,row,article):
+            rn.write(data)
+            return
+        row['backfill_decision']='CREATE_NEW' if not existing else 'UPDATE_EXISTING'
         if not existing:data['articles'].append(article)
         elif not existing.get('published') and (row.get('upgrade_article_id')==existing['id'] or row.get('modification_request')):
             history=list(existing.get('history',[]));existing.update(article);existing['history']=history+[{'at':holdings._now(),'fields':['body_es','body_en'],'reason':'Artículo completo generado automáticamente desde fuentes oficiales'}]
@@ -717,15 +723,7 @@ def process(item_id):
             if resolution and resolution.get('type')=='SERVICE':
                 update(item_id,entity_resolution={k:v for k,v in resolution.items() if k!='verified_pages'},status='RESEARCHING',processing_state='RESEARCHING')
                 existing=next((a for a in rn.read()['articles'] if a.get('website','').rstrip('/')==resolution['website'].rstrip('/')),None)
-                if existing and existing.get('published'):
-                    update(item_id,status='UPDATE_PROPOSAL',article_id=existing['id']);return
-                if existing and existing.get('review_kind')!='DETERMINISTIC_LIMITED_SOURCE_NOTE' and not row.get('modification_request'):
-                    from .reposnews_automation import complete, notify
-                    if complete(existing):
-                        update(item_id,status='READY_PRIVATE',processing_state='READY_PRIVATE',article_id=existing['id']);notify(item_id)
-                    else:update(item_id,status='UPDATE_PROPOSAL',article_id=existing['id'])
-                    return
-                if existing:update(item_id,upgrade_article_id=existing['id'])
+                if existing and existing.get('review_kind')=='DETERMINISTIC_LIMITED_SOURCE_NOTE' and not existing.get('published'):update(item_id,upgrade_article_id=existing['id'])
                 package=discover.research_service(resolution)
                 update(item_id,research_package=package,status='DRAFTING_ES',processing_state='DRAFTING_ES')
                 article=build(package,row.get('source_url',''))
@@ -748,15 +746,7 @@ def process(item_id):
         repo=unique[0]
         with holdings.transaction('reposnews-editorial'):
             data=rn.read();existing=next((a for a in data['articles'] if a['repo'].lower()==repo.lower()),None)
-        if existing and existing.get('published'):
-            update(item_id,status='UPDATE_PROPOSAL',processing_state='RESEARCHING',repo=repo,article_id=existing['id']);return
-        if existing:
-            from .reposnews_automation import complete, notify
-            if complete(existing):
-                update(item_id,status='READY_PRIVATE',processing_state='READY_PRIVATE',repo=repo,article_id=existing['id']);notify(item_id);return
-            if existing.get('review_kind')!='DETERMINISTIC_LIMITED_SOURCE_NOTE' and not row.get('modification_request'):
-                update(item_id,status='UPDATE_PROPOSAL',repo=repo,article_id=existing['id']);return
-            update(item_id,upgrade_article_id=existing['id'])
+        if existing and existing.get('review_kind')=='DETERMINISTIC_LIMITED_SOURCE_NOTE' and not existing.get('published'):update(item_id,upgrade_article_id=existing['id'])
         update(item_id,status='RESEARCHING',processing_state='RESEARCHING',repo=repo)
         package=research(repo)
         repo=package['repo']
@@ -816,6 +806,9 @@ def start_worker():
         migrate()
         while True:
             try:
+                from .reposnews_history import tick
+                from .reposnews_revisions import notify_pending
+                tick();notify_pending()
                 for item in rn.read().get('instagram_inbox',[]):
                     if item.get('status') in {'RECEIVED','FAILED_RETRYABLE'} and item.get('retry_after',0)<=time.time():process(item['id'])
                     elif not item.get('local_job') and item.get('status') in {'FETCHING','ANALYZING','FETCHING_MEDIA','BROWSING','TRANSCRIBING','VISION_ANALYSIS','IDENTIFYING','RESEARCHING','DRAFTING_ES','DRAFTING_EN','DRAFTING','IMAGES','ASSETS','SEO'} and item.get('lease',0)<time.time():
