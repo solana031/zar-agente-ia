@@ -180,3 +180,12 @@ def test_visual_owner_typo_never_selects_fork_or_multiple_candidates():
     with patch.object(rn,'github',return_value={'items':[dict(candidates[0],fork=True)]}),patch.object(inbox,'homepage_confirms_repository') as backlink:
         with pytest.raises(ValueError):inbox.repair_visual_repository('examp1e/tool')
     backlink.assert_not_called()
+
+
+def test_local_media_recovery_never_sets_limit_below_preserved_attempt_count(client):
+    inbox.update('same-item',status='FAILED_SOURCE',local_worker_done=True,attempts=6)
+    inbox.recover_existing('same-item')
+    row=rn.read()['instagram_inbox'][0]
+    assert row['attempts']==6;assert row['attempt_limit']==8;assert row['status']=='RECEIVED'
+    inbox.update('same-item',status='FAILED_SOURCE')
+    with pytest.raises(ValueError):inbox.recover_existing('same-item')

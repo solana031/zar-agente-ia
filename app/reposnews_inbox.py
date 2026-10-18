@@ -788,7 +788,7 @@ def recover_existing(item_id):
             history=[{'code':'AI_PROVIDER_503' if str(row['error']).startswith('AI_HTTP_503') else 'LEGACY_FAILURE',
                       'component':row.get('failed_stage','UNKNOWN'),'timestamp':row.get('updated_at'),'legacy':True}]
         row.update(status='RECEIVED',processing_state='RECOVERING',recovery_authorized=True,
-                   attempt_limit=min(4,row.get('attempts',0)+2),error_history=history,retry_after=0)
+                   attempt_limit=row.get('attempts',0)+2 if row.get('local_worker_done') else min(4,row.get('attempts',0)+2),error_history=history,retry_after=0)
         rn.write(data)
 
 def start_worker():
