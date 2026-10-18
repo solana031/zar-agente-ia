@@ -689,7 +689,10 @@ def process(item_id):
         if analysis:update(item_id,analysis=analysis,media_analysis='ACCESSIBLE_MEDIA_ANALYZED',access_level=analysis.get('coverage','DIRECT_MEDIA'))
         text=row.get('caption','')+' '+row.get('source_url','')+' '+json.dumps(analysis,ensure_ascii=False)
         matches=re.findall(r'https://github\.com/([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)',text)
-        discovery={};metadata={};resolution=None
+        discovery=dict(row.get('public_discovery') or {});metadata=dict(row.get('public_metadata') or {});resolution=None
+        if not matches and not row.get('clarified_project') and row.get('local_worker_done') and not metadata and not row.get('metadata_refresh_v3'):
+            metadata=public_metadata(row.get('source_url',''))
+            update(item_id,public_metadata=discover.sanitize(metadata),metadata_refresh_v3=True)
         if not matches and not row.get('clarified_project') and not row.get('local_worker_done'):
             update(item_id,status='BROWSING',processing_state='BROWSING')
             discovery=public_discovery(row.get('source_url',''))
@@ -714,6 +717,15 @@ def process(item_id):
             discovery.pop('browser_evidence',None)
             update(item_id,public_discovery=discover.sanitize(discovery),public_metadata=discover.sanitize(metadata))
         evid=discover.evidence(row,analysis,discovery,metadata)
+        from .reposnews_entity_evidence import hints
+        accumulated=hints(rn.read(),row,evid)
+        evid['cross_reel']=accumulated
+        if accumulated['status']=='UNIQUE_HINT' and not row.get('clarified_project'):
+            known=accumulated['candidates'][0]
+            links=[u for u in (known.get('repository_url'),known.get('website'),known.get('official_docs')) if u and u.startswith('https://')]
+            evid['text']+='\nCorroborating entity hint, official verification still required: '+' '.join(links)
+            evid['outbound_links']=list(dict.fromkeys(evid.get('outbound_links',[])+links))
+            if known.get('repo'):evid['project_names']=[known['repo'].rsplit('/',1)[-1]]
         update(item_id,discovery_evidence=discover.sanitize(evid))
         matches+=re.findall(r'https://github\.com/([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)',evid['text'])
         if row.get('clarified_project'):matches=[]
@@ -761,15 +773,20 @@ def process(item_id):
         update(item_id,status='DRAFTING_EN',processing_state='DRAFTING_EN')
         store_ready(item_id,article)
     except (ValueError,KeyError,TypeError,OSError,requests.RequestException) as exc:
-        safe_code=str(exc) if isinstance(exc,ValueError) and re.fullmatch('[A-Z0-9_]{1,70}',str(exc)) else 'SOURCE_OR_GENERATION_FAILED'
+        source_http=getattr(getattr(exc,'response',None),'status_code',None)
+        permanent=source_http in {404,410}
+        safe_code='SOURCE_HTTP_'+str(source_http) if permanent else str(exc) if isinstance(exc,ValueError) and re.fullmatch('[A-Z0-9_]{1,70}',str(exc)) else 'SOURCE_OR_GENERATION_FAILED'
         current=next((x for x in rn.read().get('instagram_inbox',[]) if x['id']==item_id),{})
         retryable=bool(re.fullmatch(r'AI_PROVIDER_(429|500|502|503|504)',safe_code)) or safe_code in {'AI_AUTH_REQUIRED','AI_RESPONSE_INVALID','DRAFT_INCOMPLETE','DRAFT_TOO_SHORT','UNVERIFIED_COMMAND','UNVERIFIED_CODE_EXAMPLE','EDITORIAL_REVIEW_REQUIRED','SOURCE_OR_GENERATION_FAILED','COMPLETE_BILINGUAL_DRAFT_REQUIRED'}
         diagnostic={'component':current.get('processing_state','UNKNOWN'),'provider':'Gemini' if safe_code.startswith('AI_PROVIDER_') else 'SOURCE',
                     'endpoint_class':'generateContent' if safe_code.startswith('AI_PROVIDER_') else 'source_read',
-                    'http':int(safe_code.rsplit('_',1)[1]) if safe_code.startswith('AI_PROVIDER_') else None,
+                    'http':int(safe_code.rsplit('_',1)[1]) if safe_code.startswith('AI_PROVIDER_') else source_http,
                     'retryable':retryable,'timestamp':holdings._now(),'code':safe_code}
         history=(current.get('error_history',[])+[diagnostic])[-20:]
-        update(item_id,status='FAILED_RETRYABLE' if retryable else 'FAILED_SOURCE',processing_state='FAILED',failed_stage=current.get('processing_state'),error=safe_code,error_diagnostic=diagnostic,error_history=history)
+        update(item_id,status='FAILED_PERMANENT' if permanent else 'FAILED_RETRYABLE' if retryable else 'FAILED_SOURCE',processing_state='FAILED',failed_stage=current.get('processing_state'),error=safe_code,error_diagnostic=diagnostic,error_history=history)
+        if permanent:
+            from .reposnews_automation import notify
+            notify(item_id,'FAILED_PERMANENT');return
         if retryable and current.get('attempts',0)<current.get('attempt_limit',2):
             update(item_id,status='FAILED_RETRYABLE',retry_after=time.time()+min(3600,30*2**min(current.get('run_attempts',1),6)))
         elif current.get('attempts',0)>=current.get('attempt_limit',2):

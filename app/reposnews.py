@@ -408,6 +408,34 @@ def body_html(body):
     return Markup(''.join(out))
 
 
+def article_body_html(article,lang):
+    """Place source visuals at the end of their verified section, without trusting HTML."""
+    rendered=str(body_html(article.get('body_'+lang,'')))
+    sections=list(re.finditer(r'<h2 id="[^"]*">(.*?)</h2>',rendered))
+    inserts={};unplaced=[]
+    for asset in article.get('assets',[]):
+        if not str(asset.get('role','')).startswith('ARTICLE_'):continue
+        url=str(asset.get('url',''))
+        if not re.fullmatch(r'/media/reposnews/source-[a-f0-9]{24}\.png',url):continue
+        caption=str(asset.get('caption_'+lang) or ('Visual del Reel' if lang=='es' else 'Reel visual'))
+        origin='Reel original' if asset.get('source_type')=='REEL_FRAME' else ('Fuente oficial' if lang=='es' else 'Official source')
+        source=str(asset.get('source_url',''))
+        label=html.escape(origin)
+        if source.startswith('https://'):label='<a href="'+html.escape(source,quote=True)+'" target="_blank" rel="noopener noreferrer">'+label+'</a>'
+        stamp=asset.get('frame_timestamp')
+        if isinstance(stamp,(float,int)) and stamp>=0:label+=' · '+str(round(stamp,2))+' s'
+        figure='<figure class="source-visual"><img src="'+url+'" alt="'+html.escape(caption,quote=True)+'" loading="lazy" style="max-width:100%;max-height:620px;object-fit:contain"><figcaption>'+html.escape(caption)+' · '+label+'</figcaption></figure>'
+        target=str(asset.get('section_'+lang,''))
+        match=next((i for i,s in enumerate(sections) if html.unescape(s.group(1))==target),None)
+        if match is None:unplaced.append(figure)
+        else:
+            end=sections[match+1].start() if match+1<len(sections) else len(rendered)
+            inserts.setdefault(end,[]).append(figure)
+    for pos,figures in sorted(inserts.items(),reverse=True):rendered=rendered[:pos]+''.join(figures)+rendered[pos:]
+    if unplaced:rendered+='<section><h2>'+('Evidencia visual' if lang=='es' else 'Visual evidence')+'</h2>'+''.join(unplaced)+'</section>'
+    return Markup(rendered)
+
+
 def render(lang='es', slug='', preview=False):
     data=read();all_rows=data.get('articles',[])
     rows=all_rows if preview else [a.get('published_snapshot',a) for a in all_rows if a.get('published')]
@@ -425,7 +453,7 @@ def render(lang='es', slug='', preview=False):
     title=article['title_'+lang] if article else {'es':'ReposNews · Repositorios, herramientas y guías','en':'ReposNews · Repositories, tools and guides'}[lang]
     description=article['summary_'+lang] if article else ('Análisis y guías sobre proyectos tecnológicos con fuentes verificadas.' if lang=='es' else 'Project analysis and practical guides backed by official sources.')
     if slug in pages: title={'about':('Sobre ReposNews','About ReposNews'),'contact':('Contacto','Contact'),'privacy':('Privacidad','Privacy'),'cookies':('Cookies','Cookies'),'legal':('Aviso legal','Legal notice'),'repositories':('Repositorios','Repositories'),'guides':('Guías','Guides'),'trends':('Actividad','Activity')}[slug][0 if lang=='es' else 1]+' · ReposNews'
-    return render_template('reposnews.html',lang=lang,rows=rows,article=article,body=body_html(article['body_'+lang]) if article else None,slug=slug,preview=preview,base=base,title=title,description=description,origin=ORIGIN,path=path,official_covers={'uv':'uv-official.svg','fastapi':'fastapi-official.png','playwright':'playwright-official.svg','jev':'jev-editorial.svg','automaton':'automaton-editorial.svg','dramaclaw':'dramaclaw-official.png'},public_legal=public_legal_profile(data),query=query,category=category,categories=categories,legal_status={'status':legal_status(data)['status']})
+    return render_template('reposnews.html',lang=lang,rows=rows,article=article,body=article_body_html(article,lang) if article else None,slug=slug,preview=preview,base=base,title=title,description=description,origin=ORIGIN,path=path,official_covers={'uv':'uv-official.svg','fastapi':'fastapi-official.png','playwright':'playwright-official.svg','jev':'jev-editorial.svg','automaton':'automaton-editorial.svg','dramaclaw':'dramaclaw-official.png'},public_legal=public_legal_profile(data),query=query,category=category,categories=categories,legal_status={'status':legal_status(data)['status']})
 
 
 def public_legal_profile(data):

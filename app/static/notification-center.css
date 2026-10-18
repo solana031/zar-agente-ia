@@ -1,0 +1,52 @@
+#zarEditorialBadge{display:none!important}
+#zarNotificationBell{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:5px;min-width:44px;min-height:44px;color:#e4c58f}
+#zarNotificationBell svg,.znType svg{width:20px;height:20px;flex:none}
+#zarNotificationBell [data-unread]{font:600 10px system-ui;border:1px solid #8a7047;border-radius:12px;padding:2px 5px;background:#44331e;color:#f6dfb8}
+body.zarEmbedded>#zarNotificationBell{position:fixed;top:12px;right:18px;z-index:100001}
+#zarNotificationCenter{position:fixed;inset:70px 16px auto auto;margin:0;width:440px;max-width:calc(100vw - 32px);height:min(800px,calc(100dvh - 88px));max-height:calc(100dvh - 88px);padding:0;background:#171512;color:#e8ddc9;border:1px solid #746044;border-radius:16px;box-shadow:0 24px 80px #0009;overflow:hidden;box-sizing:border-box;font:13px/1.5 system-ui}
+#zarNotificationCenter[open]{display:flex;flex-direction:column}
+#zarNotificationCenter::backdrop{background:#0003}
+#zarNotificationCenter *{box-sizing:border-box}
+#zarNotificationCenter button,#zarNotificationCenter a{font:inherit;min-height:36px;display:inline-flex;align-items:center;justify-content:center;gap:6px;border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
+#zarNotificationCenter button{color:#e8d9bb;border:1px solid #66543a;background:#27221b}
+#zarNotificationCenter button:hover,#zarNotificationCenter a:hover{background:#3a3022}
+#zarNotificationCenter button:focus-visible,#zarNotificationCenter a:focus-visible,#zarNotificationCenter input:focus-visible,#zarNotificationCenter textarea:focus-visible,#zarNotificationCenter summary:focus-visible{outline:2px solid #d5b77b;outline-offset:2px}
+#zarNotificationCenter button:disabled{opacity:.4;cursor:default}
+#zarNotificationCenter a{color:#e3c38c;border:1px solid #66543a}
+#zarNotificationCenter .znHeader{display:flex;align-items:center;justify-content:space-between;padding:18px 18px 12px;flex:none}
+#zarNotificationCenter .znHeader h2{font-size:20px;line-height:1.3;margin:3px 0}
+#zarNotificationCenter .znEyebrow{font-size:9px;letter-spacing:.15em;color:#ae9a77}
+#zarNotificationCenter [data-close]{min-width:44px;min-height:44px;padding:8px;font-size:0;border-color:transparent;background:transparent}
+#zarNotificationCenter [data-close]::after{content:'\00d7';font-size:28px}
+#zarNotificationCenter .znTabs{display:grid;grid-template-columns:repeat(4,1fr);gap:5px;padding:0 14px 10px;flex:none}
+#zarNotificationCenter .znTabs button{font-size:10px;letter-spacing:.03em;padding:7px 4px;background:transparent}
+#zarNotificationCenter [aria-pressed=true]{background:#413523!important;border-color:#b39765!important;color:#f6dfb8}
+#zarNotificationCenter .znToolbar{display:flex;justify-content:space-between;gap:6px;padding:0 14px 6px}
+#zarNotificationCenter .znToolbar button,#zarNotificationCenter .znUtility button{font-size:11px;background:transparent;border-color:transparent;color:#bfae91}
+#zarNotificationCenter .znFeedback{margin:0;padding:0 18px;color:#e1cda7;font-size:12px}
+#zarNotificationCenter .znFeedback:not(:empty){padding-bottom:10px}
+#zarNotificationCenter .znList{min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:0 14px 10px;scrollbar-color:#706043 transparent}
+#zarNotificationCenter .znCard{border:1px solid #4e4435;border-left:3px solid #8f7851;border-radius:10px;padding:13px;margin:0 0 10px;background:#201c16;overflow-wrap:anywhere}
+#zarNotificationCenter .znCard[data-priority=ERROR]{border-left-color:#ad806e}
+#zarNotificationCenter .znCard[data-priority=SUCCESS]{border-left-color:#8c9a76}
+#zarNotificationCenter .znCard[data-priority=READY]{border-left-color:#cfb17a}
+#zarNotificationCenter .znMeta{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;color:#b8a27d;font-size:10px}
+#zarNotificationCenter .znType{display:flex;gap:6px;align-items:center}
+#zarNotificationCenter .znType svg{width:14px;height:14px}
+#zarNotificationCenter time{white-space:nowrap;color:#9f927c;font-size:10px}
+#zarNotificationCenter h3{font-size:14px;line-height:1.4;margin:9px 0 5px;font-weight:600;color:#f1e3c9}
+#zarNotificationCenter .znMessage{margin:0 0 7px;color:#c9bea9;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+#zarNotificationCenter .znStatus{font-size:10px;color:#b9a88a}
+#zarNotificationCenter .znActions{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+#zarNotificationCenter .znActions button:first-of-type{border-color:#a08859}
+#zarNotificationCenter details{margin-top:10px;font-size:11px}
+#zarNotificationCenter summary{cursor:pointer;padding:6px 0;color:#bba47e}
+#zarNotificationCenter pre{white-space:pre-wrap;overflow-wrap:anywhere;font:11px/1.5 ui-monospace,monospace;background:#151310;border-radius:6px;padding:10px}
+#zarNotificationCenter img{display:block;max-width:100%;max-height:200px;object-fit:contain;margin:8px auto;border-radius:7px}
+#zarNotificationCenter label{display:block;font-size:12px;margin:10px 0}
+#zarNotificationCenter input,#zarNotificationCenter textarea{display:block;width:100%;padding:10px;margin-top:6px;background:#151310;border:1px solid #77603d;border-radius:7px;color:#f1e3c9;font:inherit}
+#zarNotificationCenter textarea{min-height:90px;resize:vertical}
+#zarNotificationCenter .znUtility{display:flex;gap:4px;justify-content:space-between;margin-top:7px}
+#zarNotificationCenter .znFooter{display:flex;align-items:center;justify-content:space-between;flex:none;padding:9px 14px;border-top:1px solid #4e4435;font-size:11px;color:#bba98b}
+#zarNotificationCenter .znEmpty{padding:30px 12px;text-align:center;color:#bdad91}
+@media(max-width:600px){#zarNotificationCenter{inset:0;margin:0;width:100vw;max-width:100vw;height:100dvh;max-height:100dvh;border-radius:0;border:0;padding-bottom:env(safe-area-inset-bottom)}#zarNotificationCenter button,#zarNotificationCenter a{min-height:44px}.znCard{scroll-margin:15px}}

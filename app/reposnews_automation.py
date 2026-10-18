@@ -68,6 +68,8 @@ def notify(item_id,kind='READY_PRIVATE'):
             'sources':article.get('sources',[]) if article else [],'seo':article.get('seo',{}) if article else {},
             'status':'AWAITING_APPROVAL' if article else 'NEEDS_DISAMBIGUATION','created_at':holdings._now()}
         if kind=='FAILED_RETRYABLE':notification.update(title='No se ha podido completar el artículo del Reel',message='El proveedor no ha permitido terminar un artículo completo. ZAR conserva el Reel, el análisis y el trabajo; no se ha publicado nada.',status='FAILED_RETRYABLE')
+        if kind=='FAILED_PERMANENT':notification.update(title='La fuente ya no está disponible',message='La fuente devuelve 404/410. El trabajo se conserva y no se repetirá el mismo intento automáticamente.',status='FAILED_PERMANENT')
+        if kind.startswith('FAILED_'):notification['diagnostic']=row.get('error_diagnostic',{});notification['failed_stage']=row.get('failed_stage');notification['attempts']=row.get('attempts',0)
         if article:notification['revision']=revision(article)
         if article:
             for note in data.get('editorial_notifications',[]):

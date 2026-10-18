@@ -42,8 +42,8 @@ class InstagramInboxTest(unittest.TestCase):
   item=inbox.receive(self.event(text='',attachments=[{'type':'share','payload':{'url':'https://www.instagram.com/reel/fixture/'}}]))[0]
   inbox.update(item,status='FAILED',attempts=2);inbox.recover_existing(item)
   inbox.update(item,local_worker_done=True,analysis={'transcript':'Example tool'})
-  with patch('app.jev_decision.proposal',return_value={'decision':'ALLOW'}),patch.object(inbox,'analyze_media') as media,patch.object(inbox,'public_discovery',return_value={'status':'PUBLIC_TEXT_AVAILABLE','text':'Example tool'}),patch.object(inbox,'resolve_entity',side_effect=ValueError('AI_PROVIDER_503')):
-   inbox.process(item);media.assert_not_called()
+  with patch('app.jev_decision.proposal',return_value={'decision':'ALLOW'}),patch.object(inbox,'analyze_media') as media,patch.object(inbox,'public_metadata',return_value={}) as metadata,patch.object(inbox,'public_discovery',return_value={'status':'PUBLIC_TEXT_AVAILABLE','text':'Example tool'}),patch.object(inbox,'resolve_entity',side_effect=ValueError('AI_PROVIDER_503')):
+   inbox.process(item);media.assert_not_called();metadata.assert_called_once()
   row=rn.read()['instagram_inbox'][0]
   self.assertEqual(row['status'],'FAILED_RETRYABLE');self.assertEqual(row['attempts'],3)
   self.assertEqual(row['error_diagnostic']['component'],'IDENTIFYING')
@@ -51,6 +51,16 @@ class InstagramInboxTest(unittest.TestCase):
   self.assertEqual(row['error_diagnostic']['http'],503)
  def test_no_accessible_permalink_text_does_not_invent_a_project(self):
   self.assertEqual(inbox.resolve_entity('')['reason'],'NO_ACCESSIBLE_DISCOVERY_TEXT')
+ def test_missing_official_source_is_permanent_and_keeps_http_diagnostic(self):
+  import requests
+  item=inbox.receive(self.event())[0];inbox.update(item,local_worker_done=True)
+  response=requests.Response();response.status_code=410
+  failure=requests.HTTPError('gone',response=response)
+  with patch('app.jev_decision.proposal',return_value={'decision':'ALLOW'}),patch.object(inbox,'research',side_effect=failure):inbox.process(item)
+  row=rn.read()['instagram_inbox'][0]
+  self.assertEqual(row['status'],'FAILED_PERMANENT');self.assertEqual(row['error_diagnostic']['http'],410)
+  self.assertFalse(row['error_diagnostic']['retryable'])
+  self.assertEqual(rn.read()['editorial_notifications'][0]['status'],'FAILED_PERMANENT')
  def test_public_metadata_extracts_head_clues(self):
   meta=inbox.extract_public_metadata('<title>Project: Example</title><meta property="og:description" content="Tool: Example"><meta property="og:image" content="https://example.com/a.png"><script>private junk</script>')
   self.assertIn('Example',meta['text']);self.assertNotIn('private junk',meta['text']);self.assertTrue(meta['og:image'])

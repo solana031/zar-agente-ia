@@ -4,7 +4,7 @@ import re
 from . import holdings,reposnews as rn
 from .instagram_local_queue import reel_url
 
-TERMINAL={'READY_PRIVATE','NO_CHANGE','ARTICLE_UPDATE_DRAFT','NEEDS_DISAMBIGUATION','FAILED_SOURCE','CANCELLED','DISCARDED','PUBLISHED'}
+TERMINAL={'READY_PRIVATE','NO_CHANGE','ARTICLE_UPDATE_DRAFT','NEEDS_DISAMBIGUATION','FAILED_SOURCE','FAILED_PERMANENT','CANCELLED','DISCARDED','PUBLISHED'}
 
 
 def links(value):
@@ -64,9 +64,14 @@ def summary(data):
     return dict(counts,active=active,mode='BATCH_LIMITED',concurrency=1,enabled=data.get('historical_backfill',{}).get('enabled',False))
 
 
-def start(scope):
+def start(scope,reprocess_unresolved=False):
     with holdings.transaction('reposnews-editorial'):
-        rn.state(scope);data=rn.read();index(data)
+        rn.state(scope);data=rn.read();entries=index(data)
+        round_id=holdings._now()
+        if reprocess_unresolved:
+            for entry in entries:
+                if entry.get('decision') not in {'NEEDS_DISAMBIGUATION','FAILED'}:continue
+                entry.update(state='PENDING',previous_decision=entry.get('decision'),decision=None,reprocess_round=round_id)
         data['historical_backfill']={'enabled':True,'mode':'BATCH_LIMITED','concurrency':1,'started_at':holdings._now()}
         rn.write(data)
     from .reposnews_inbox import start_worker
@@ -115,7 +120,11 @@ def tick():
             entry.update(state='COMPLETED',decision='NO_CHANGE');rn.write(data);return
         # Preserve prior evidence and manuscripts; reacquire visuals only if they are missing.
         row.update(backfill=True,backfill_decision='UPDATE_EXISTING' if entry.get('linked_article_ids') else 'CREATE_NEW',attempt_limit=row.get('attempts',0)+4,run_attempts=0,retry_after=0)
-        if not row.get('visual_assets') or row.get('asset_quality_version')!=2:
+        reprocess=entry.get('reprocess_round') and row.get('reprocess_round')!=entry['reprocess_round']
+        if reprocess:
+            row.update(reprocess_round=entry['reprocess_round'],reprocess_attempt_budget=3,metadata_refresh_v3=False)
+            # Keep old evidence and IDs; the next local acquisition replaces analysis.
+        if reprocess or not row.get('visual_assets') or row.get('asset_quality_version')!=2:
             row.update(asset_refresh=True,local_worker_done=False,local_media_received=False,local_job=True,status='WAITING_LOCAL_WORKER',processing_state='WAITING_LOCAL_WORKER',local_lease=0)
         else:row.update(status='RECEIVED',processing_state='RECEIVED')
         entry.update(state='PROCESSING',active_item_id=row['id']);rn.write(data)
@@ -129,5 +138,5 @@ def register(app,scope_fn):
         if session.get('zar_auth') is not True:return jsonify(ok=False,error='AUTH_REQUIRED'),401
         csrf=session.get('business_csrf','')
         if not csrf or not secrets.compare_digest(csrf,request.headers.get('X-ZAR-Business-CSRF','')):return jsonify(ok=False,error='CSRF_REQUIRED'),403
-        try:return jsonify(ok=True,result=start(scope_fn()))
+        try:return jsonify(ok=True,result=start(scope_fn(),reprocess_unresolved=(request.get_json(silent=True) or {}).get('reprocess_unresolved') is True))
         except ValueError as e:return jsonify(ok=False,error=str(e)),403

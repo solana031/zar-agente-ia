@@ -29,13 +29,17 @@ def view(scope):
         result=[]
         for row in rows:
             editorial=row.get('editorial') or {}
-            kind=row.get('type') or ('ARTICLE_READY' if editorial.get('article_id') else 'ARTICLE_FAILED' if editorial.get('status')=='FAILED_RETRYABLE' else 'ARTICLE_NEEDS_DISAMBIGUATION' if editorial else 'SYSTEM_ACTION_REQUIRED')
+            kind=('ARTICLE_FAILED' if editorial.get('status') in {'FAILED_RETRYABLE','FAILED_PERMANENT'} else 'ARTICLE_NEEDS_DISAMBIGUATION' if editorial.get('status')=='NEEDS_DISAMBIGUATION' else 'ARTICLE_READY') if editorial else row.get('type') or 'SYSTEM_ACTION_REQUIRED'
+            if editorial:row['type']=kind
             row.setdefault('type',kind);row.setdefault('read_at',None);row.setdefault('priority','P1')
             row.setdefault('entity_id',row.get('article_id') or row.get('inbox_item_id') or row['id'])
             row.setdefault('entity_type','ARTICLE' if editorial else 'SYSTEM')
             row.setdefault('message',row.get('reason',''));row.setdefault('deep_link',row.get('url') or '/?zar_workspace=human')
             if not row.get('notification_key') and not editorial and row.get('status')=='DONE':row['read_at']=row.get('read_at') or row.get('completed_at') or row.get('created_at')
             if row.get('notification_key') in {'worker-offline','worker-session-expired'} and worker.get('state')=='ONLINE' and worker.get('session')=='CONNECTED':row['status']='DONE'
+            if row.get('type')=='ARTICLE_UPDATE_READY' and rn.read().get('owner')==scope:
+                revision=next((r for r in rn.read().get('article_revisions',[]) if r['article_revision_id']==row.get('entity_id')),None)
+                if revision and revision['state']!='ARTICLE_UPDATE_DRAFT':row['status']='DONE'
             item=dict(row,completed=row.get('status') in {'DONE','COMPLETED','PUBLISHED','CANCELLED','IGNORED'})
             if editorial.get('article_id') and rn.read().get('owner')==scope:
                 article=next((a for a in rn.state(scope).get('articles',[]) if a['id']==editorial['article_id']),None)
@@ -48,14 +52,18 @@ def view(scope):
         holdings.write(scope,data)
     result.sort(key=lambda x:x.get('created_at',''),reverse=True)
     from .reposnews_history import summary
-    return {'items':result,'unread':sum(not x.get('read_at') for x in result),'worker':worker,'historical':summary(rn.read()) if rn.read().get('owner')==scope else {}}
+    return {'items':result,'unread':sum(not x.get('read_at') and not x.get('dismissed_at') for x in result),'worker':worker,'historical':summary(rn.read()) if rn.read().get('owner')==scope else {}}
 
 
 def mark(scope,payload):
     with holdings.transaction(scope):
         data=holdings.read(scope)
         for row in identity_center.ensure(data)['human_actions']:
-            if payload.get('all') or row['id']==payload.get('id'):row['read_at']=None if payload.get('unread') else holdings._now()
+            if payload.get('all') or row['id']==payload.get('id'):
+                if 'dismissed' in payload:
+                    row['dismissed_at']=holdings._now() if payload['dismissed'] else None
+                    if payload['dismissed']:row['read_at']=row.get('read_at') or holdings._now()
+                else:row['read_at']=None if payload.get('unread') else holdings._now()
         holdings.write(scope,data)
     return view(scope)
 

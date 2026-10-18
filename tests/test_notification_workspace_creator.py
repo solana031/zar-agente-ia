@@ -19,6 +19,18 @@ def test_notifications_share_human_action_store_and_read_state_survives(setup):
     assert center.view('different')['items']==[]
 
 
+def test_notification_dismiss_restore_uses_the_same_persistent_human_action(setup):
+    row=center.emit('owner','DOC_READY','archive-file','Documento','Listo','https://docs.google.com/document/d/demo/edit')
+    center.mark('owner',{'id':row['id'],'dismissed':True})
+    stored=holdings.read('owner')['identity_center']['human_actions']
+    assert len(stored)==1 and stored[0]['dismissed_at'] and stored[0]['read_at']
+    assert center.view('owner')['unread']==0
+    center.mark('owner',{'id':row['id'],'dismissed':False})
+    assert not center.view('owner')['items'][0]['dismissed_at']
+    center.mark('owner',{'id':row['id'],'unread':True})
+    assert center.view('owner')['unread']==1
+
+
 def test_workspace_request_dedup_and_edit_previous_keeps_file_id(setup):
     with patch.object(creator,'start_worker'):
         data={'type':'DOC','title':'Report','request':'Create report','request_id':'fixture-request-123'}

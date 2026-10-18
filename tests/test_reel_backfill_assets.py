@@ -165,3 +165,54 @@ def test_exact_user_approval_updates_same_published_urls(context):
     assert after['articles'][0]['id']==a['id'];assert after['articles'][0]['seo']==a['seo']
     assert after['articles'][0]['published_snapshot']['body_es']==candidate['body_es']
     assert after['articles'][0]['approval_status']=='APPROVED_BY_USER'
+
+
+def test_existing_entities_are_hints_and_creator_alone_is_not_identity(context):
+    from app.reposnews_entity_evidence import hints
+    data=rn.read();row=data['instagram_inbox'][0];row['creator']='same-author'
+    data['instagram_inbox'].append(dict(row,id='other',analysis={'website':'https://example.org'}))
+    assert hints(data,row,{'text':'An interesting product'})['status']=='NO_MATCH'
+    row['visual_assets']=[{'asset':'same-frame.jpg'}];data['instagram_inbox'][1]['visual_assets']=row['visual_assets']
+    result=hints(data,row,{'text':'Unclear video'})
+    assert result['status']=='UNIQUE_HINT';assert result['verified_facts'] is False
+    assert result['candidates'][0]['corroborating_reels']==['other']
+    result=hints(data,row,{'text':'https://example.org','project_names':['Tool']})
+    assert result['status']=='UNIQUE_HINT'
+    data['articles'].append(dict(data['articles'][0],id='ambiguous-tool'))
+    assert hints(data,row,{'text':'https://example.org'})['status']=='AMBIGUOUS_HINTS'
+
+
+def test_explicit_reprocess_preserves_completed_work_and_queues_one(context):
+    data=rn.read();original=copy.deepcopy(data['articles'])
+    data['instagram_inbox'][0]['asset_quality_version']=2
+    for i,status in enumerate(['NEEDS_DISAMBIGUATION','FAILED_SOURCE']):
+        data['instagram_inbox'].append(dict(data['instagram_inbox'][0],id=str(i)*24,source_url='https://www.instagram.com/reel/Pending'+str(i)+'/',status=status,article_id=None))
+    entries=history.index(data)
+    for entry in entries:entry.update(state='COMPLETED',decision='ARTICLE_CREATED' if 'Original' in entry['permalink'] else 'NEEDS_DISAMBIGUATION' if 'Pending0' in entry['permalink'] else 'FAILED')
+    rn.write(data)
+    with patch('app.reposnews_inbox.start_worker'):history.start('owner',reprocess_unresolved=True)
+    data=rn.read();assert len([e for e in data['historical_reel_index'] if e['state']=='PENDING'])==2
+    history.tick();history.tick();data=rn.read()
+    assert len([e for e in data['historical_reel_index'] if e['state']=='PROCESSING'])==1
+    queued=[r for r in data['instagram_inbox'] if r.get('reprocess_round')]
+    assert len(queued)==1;assert queued[0]['reprocess_attempt_budget']==3
+    assert data['articles']==original
+
+
+def test_context_visuals_belong_to_the_selected_section_and_escape_caption():
+    a={'body_es':'## Cómo funciona\nDashboard.\n## Integración\nCódigo.','assets':[
+        {'role':'HERO_FRAME','url':'/media/reposnews/source-'+'0'*24+'.png'},
+        {'role':'ARTICLE_FRAME_1','section_es':'Cómo funciona','url':'/media/reposnews/source-'+'1'*24+'.png','caption_es':'<script>bad</script>'},
+        {'role':'ARTICLE_FRAME_2','section_es':'Integración','url':'/media/reposnews/source-'+'2'*24+'.png'},
+        {'role':'ARTICLE_FRAME_3','url':'javascript:alert(1)'}]}
+    rendered=str(rn.article_body_html(a,'es'))
+    assert rendered.index('1'*24)<rendered.index('Integración')<rendered.index('2'*24)
+    assert '0'*24 not in rendered;assert '<script>' not in rendered;assert 'javascript:' not in rendered
+    assert rendered.count('<figure')==2
+
+
+def test_unavailable_visual_model_does_not_blindly_select_frames(context):
+    a,row=context;folder=rn._path().parent/'private-assets'/row['id'];folder.mkdir(parents=True)
+    (folder/'one.jpg').write_bytes(noise());row['visual_assets']=[{'asset':'one.jpg'}]
+    with patch('app.reposnews_generation.generate_json',side_effect=ValueError('AI_PROVIDER_503')),patch('app.reposnews_discovery.official_image',return_value={}):assets.prepare(row,a,{})
+    assert a['contextual_asset_status']=='LIMITED';assert not any(x.get('kind')=='REEL_FRAME' for x in a['assets'])
