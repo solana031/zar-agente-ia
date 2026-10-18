@@ -67,6 +67,17 @@ def test_post_and_reel_paths_for_same_shortcode_have_one_history_entry(context):
     assert history.summary(data)['DUPLICATES_AVOIDED']==1
 
 
+def test_duplicate_unresolved_record_cannot_erase_a_completed_article(context):
+    data=rn.read();url=data['instagram_inbox'][0]['source_url'];created=data['instagram_inbox'][0]
+    created['backfill_decision']='CREATE_NEW'
+    data['historical_reel_index']=[{'permalink':url,'state':'COMPLETED','decision':'ARTICLE_CREATED','active_item_id':created['id']},
+        {'permalink':url.replace('/reel/','/p/'),'state':'COMPLETED','decision':'NEEDS_DISAMBIGUATION','active_item_id':'b'*24}]
+    entry=history.index(data)[0]
+    assert entry['decision']=='ARTICLE_CREATED';assert entry['active_item_id']==created['id']
+    entry['decision']='NEEDS_DISAMBIGUATION'
+    assert history.index(data)[0]['decision']=='ARTICLE_CREATED'
+
+
 def test_existing_project_clarification_is_reused_for_service_research():
     from app.reposnews_discovery import evidence
     row={'clarified_project':'Example Cloud','research_package':{'sources':['https://examplecloud.org/','https://docs.examplecloud.org/']}}

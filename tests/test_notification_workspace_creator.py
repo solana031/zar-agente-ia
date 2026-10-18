@@ -78,6 +78,15 @@ def test_sheet_cover_rows_shift_formulas_ranges_and_normalize_summary():
     assert plan['sheets'][1]['rows']==[['=SUM(RAW_DATA!B2:B2)+A2']]
 
 
+def test_spanish_sheet_formulas_use_local_separators_without_changing_strings():
+    plan={'sheets':[{'name':'RAW_DATA','subtitle':'Real data','headers':['Status'],'rows':[['READY']],
+        'summary':[{'label':'Count','value':'=COUNTIF(A2:A2,"READY, OK")'}]},
+        {'name':'SUMMARY','headers':['Count'],'rows':[['=COUNTIF(RAW_DATA!A2:A2,"READY")*1.5']]}]}
+    actual=native.sheet_layout(plan,'es_ES')
+    assert actual['sheets'][1]['rows']==[['=COUNTIF(RAW_DATA!A4:A4;"READY")*1,5']]
+    assert actual['sheets'][0]['summary'][0]['value']=='=COUNTIF(A4:A4;"READY, OK")'
+
+
 def test_notification_endpoints_require_session_and_csrf(setup):
     app=Flask(__name__);app.secret_key='fixture';center.register(app,lambda:'owner');client=app.test_client()
     assert client.get('/api/notifications').status_code==401

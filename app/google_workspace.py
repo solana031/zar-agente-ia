@@ -143,7 +143,7 @@ def _sheet_metadata(spreadsheet_id):
     svc = sheets_service()
     return svc.spreadsheets().get(
         spreadsheetId=spreadsheet_id,
-        fields='spreadsheetId,spreadsheetUrl,sheets(properties(sheetId,title,index),bandedRanges(bandedRangeId,range))'
+        fields='spreadsheetId,spreadsheetUrl,properties(locale),sheets(properties(sheetId,title,index),bandedRanges(bandedRangeId,range))'
     ).execute()
 
 

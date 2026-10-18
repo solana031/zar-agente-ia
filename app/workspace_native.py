@@ -59,11 +59,18 @@ def element(page,x,y,w,h):
             'transform':{'scaleX':1,'scaleY':1,'translateX':x,'translateY':y,'unit':'PT'}}
 
 
-def sheet_layout(plan):
+def sheet_layout(plan,locale='en_US'):
     """Planner coordinates use header row 1; professional tables add a cover."""
     plan=copy.deepcopy(plan)
     offsets={s['name']:1+bool(s.get('subtitle')) for s in plan['sheets']}
     reference=re.compile(r"(?<![A-Za-z0-9_])(?:(?P<sheet>'[^']+'|[A-Za-z_][A-Za-z0-9_]*)!)?(?P<col>\$?[A-Z]{1,3})(?P<row>\$?\d+)(?![A-Za-z0-9_(])")
+    comma_decimal=locale.split('_')[0].lower() in {'es','fr','de','it','pt','nl','ru','pl','da','fi','sv','no','nb','cs','sk','hu','ro','tr','uk','el','bg','hr','sl','lt','lv','et'} and not locale.endswith('_CH')
+    def localized(value):
+        if not comma_decimal or not value.startswith('='):return value
+        parts=re.split(r'("(?:[^"]|"")*")',value)
+        for i in range(0,len(parts),2):
+            parts[i]=re.sub(r'(?<=\d)\.(?=\d)',',',parts[i].replace(',',';'))
+        return ''.join(parts)
     def shift(value,current,conditional=False):
         if not isinstance(value,str):return value
         active=current
@@ -75,9 +82,11 @@ def sheet_layout(plan):
             row=match['row'];cell=match['col']+('$' if row.startswith('$') else '')+str(int(row.lstrip('$'))+offsets.get(active,0))
             if conditional and sheet and active!=current:return 'INDIRECT("'+sheet+'!'+cell+'")'
             return (sheet+'!' if sheet else '')+cell
-        return reference.sub(replace,value)
+        return localized(reference.sub(replace,value))
     for tab in plan['sheets']:
         tab['summary']=[x if isinstance(x,dict) else {'label':str(x),'value':''} for x in tab.get('summary',[])]
+        for item in tab['summary']:
+            if isinstance(item.get('value'),str) and item['value'].startswith('='):item['value']=shift(item['value'],tab['name'])
         tab['rows']=[[shift(v,tab['name']) if isinstance(v,str) and v.startswith('=') else v for v in row] for row in tab['rows']]
     for chart in plan.get('charts',[]):
         chart['range_a1']=shift(chart['range_a1'],chart['sheet_title'])
@@ -157,7 +166,8 @@ def build(payload,plan,fid,remember):
         if req:svc.presentations().batchUpdate(presentationId=fid,body={'requests':req}).execute()
         key='presentationId';url='https://docs.google.com/presentation/d/'+fid+'/edit'
     elif kind=='SHEET':
-        plan=sheet_layout(plan)
+        locale=gw._sheet_metadata(fid).get('properties',{}).get('locale','en_US')
+        plan=sheet_layout(plan,locale)
         result=gw.sheets_upgrade_workbook(fid,plan['sheets'],plan.get('charts'))
         if any(not c.get('ok') for c in result.get('charts',[])):raise ValueError('SHEET_CHART_VALIDATION_FAILED')
         meta=gw._sheet_metadata(fid);props={x['properties']['title']:x['properties']['sheetId'] for x in meta['sheets']}

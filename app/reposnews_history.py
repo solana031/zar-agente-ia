@@ -25,15 +25,22 @@ def index(data):
         for url in links(data.get(source,[])):
             found.setdefault(url,{'id':hashlib.sha256(url.encode()).hexdigest()[:24],'permalink':url,'origins':[]})['origins'].append(source)
     old={}
+    rank={'ARTICLE_CREATED':5,'UPDATE_PROPOSED':4,'NO_CHANGE':3,'NEEDS_DISAMBIGUATION':2,'FAILED':1}
     for r in data.get('historical_reel_index',[]):
         key=next(links(r['permalink']),r['permalink'])
-        if key not in old or r.get('state')=='COMPLETED':old[key]=r
+        score=lambda x:(x.get('state')=='COMPLETED',rank.get(x.get('decision'),0))
+        if key not in old or score(r)>score(old[key]):old[key]=r
     for url,entry in found.items():
         previous=old.get(url,{})
         entry.update({k:v for k,v in previous.items() if k not in {'origins','item_ids'}})
         entry['permalink']=url
         entry['origins']=sorted(set(entry['origins']))
         entry['item_ids']=[r['id'] for r in data.get('instagram_inbox',[]) if url in list(links(r.get('source_url','')))]
+        # A duplicate with unresolved metadata must not erase completed real work.
+        for row in data.get('instagram_inbox',[]):
+            decision='UPDATE_PROPOSED' if row.get('status')=='ARTICLE_UPDATE_DRAFT' else 'ARTICLE_CREATED' if row.get('status')=='READY_PRIVATE' and row.get('backfill_decision')=='CREATE_NEW' else None
+            if row['id'] in entry['item_ids'] and decision and entry.get('state')=='COMPLETED' and rank.get(decision,0)>rank.get(entry.get('decision'),0):
+                entry.update(decision=decision,active_item_id=row['id'])
         related=[a for a in data.get('articles',[]) if url in list(links([a.get('discovery_source'),a.get('source_reels',[])]))]
         entry['linked_article_ids']=[a['id'] for a in related]
         entry['indexed_at']=previous.get('indexed_at') or holdings._now()
@@ -75,7 +82,7 @@ def tick():
         if not data.get('historical_backfill',{}).get('enabled'):return
         entries=index(data);rows=data.setdefault('instagram_inbox',[])
         for entry in entries:
-            row=next((r for r in rows if r['id'] in entry.get('item_ids',[])),None)
+            row=next((r for r in rows if r['id']==entry.get('active_item_id')),None) or next((r for r in rows if r['id'] in entry.get('item_ids',[])),None)
             if row and entry.get('decision')=='NEEDS_DISAMBIGUATION' and row.get('clarified_project') and not row.get('clarification_recovery_v2'):
                 entry.update(state='PENDING',decision=None);row['clarification_recovery_v2']=True
             if row and entry.get('decision') in {'UPDATE_PROPOSED','ARTICLE_CREATED'} and row.get('asset_quality_version')!=2 and not row.get('asset_quality_recovery_v2'):
@@ -97,7 +104,7 @@ def tick():
         entry=next((e for e in entries if e.get('state') not in {'COMPLETED','PROCESSING'}),None)
         if not entry:
             data['historical_backfill']['enabled']=False;rn.write(data);return
-        row=next((r for r in rows if r['id'] in entry['item_ids']),None)
+        row=next((r for r in rows if r['id']==entry.get('active_item_id')),None) or next((r for r in rows if r['id'] in entry['item_ids']),None)
         if not row:
             senders=sender_ids()
             if not senders:rn.write(data);return
