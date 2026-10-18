@@ -133,6 +133,21 @@ def tick():
 def register(app,scope_fn):
     from flask import request,session,jsonify
     import secrets
+    @app.get('/api/reposnews/history/status')
+    def history_status():
+        if session.get('zar_auth') is not True:return jsonify(ok=False,error='AUTH_REQUIRED'),401
+        data=rn.read()
+        if data.get('owner')!=scope_fn():return jsonify(ok=False,error='OWNER_REQUIRED'),403
+        diagnostics=[]
+        for row in data.get('instagram_inbox',[]):
+            if not row.get('backfill') or not row.get('error'):continue
+            package=row.get('research_package') or {}
+            diagnostics.append({'id':row['id'],'status':row.get('status'),'source_url':row.get('source_url'),'error':row.get('error'),
+                'diagnostic':row.get('error_diagnostic'),'error_history':row.get('error_history',[])[-3:],
+                'package_fields':sorted(package) if isinstance(package,dict) else [],'attempts':row.get('attempts'),
+                'attempt_limit':row.get('attempt_limit'),'reprocess_round':row.get('reprocess_round')})
+        return jsonify(ok=True,historical=summary(data),diagnostics=diagnostics)
+
     @app.post('/api/reposnews/history/start')
     def history_start():
         if session.get('zar_auth') is not True:return jsonify(ok=False,error='AUTH_REQUIRED'),401

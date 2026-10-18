@@ -66,7 +66,7 @@ def notify(item_id,kind='READY_PRIVATE'):
             'reel':row.get('source_url'),'image':'/media/reposnews/'+(article.get('image_asset') or 'home.png') if article else None,
             'preview_es':'/reposnews-preview/es/'+article['id'] if article else None,'preview_en':'/reposnews-preview/en/'+article['id'] if article else None,
             'sources':article.get('sources',[]) if article else [],'seo':article.get('seo',{}) if article else {},
-            'status':'AWAITING_APPROVAL' if article else 'NEEDS_DISAMBIGUATION','created_at':holdings._now()}
+            'status':'AWAITING_APPROVAL' if article else 'NEEDS_DISAMBIGUATION','created_at':holdings._now(),'reprocess_round':row.get('reprocess_round')}
         if kind=='FAILED_RETRYABLE':notification.update(title='No se ha podido completar el artículo del Reel',message='El proveedor no ha permitido terminar un artículo completo. ZAR conserva el Reel, el análisis y el trabajo; no se ha publicado nada.',status='FAILED_RETRYABLE')
         if kind=='FAILED_PERMANENT':notification.update(title='La fuente ya no está disponible',message='La fuente devuelve 404/410. El trabajo se conserva y no se repetirá el mismo intento automáticamente.',status='FAILED_PERMANENT')
         if kind.startswith('FAILED_'):notification['diagnostic']=row.get('error_diagnostic',{});notification['failed_stage']=row.get('failed_stage');notification['attempts']=row.get('attempts',0)
@@ -75,7 +75,8 @@ def notify(item_id,kind='READY_PRIVATE'):
             for note in data.get('editorial_notifications',[]):
                 if note.get('inbox_item_id')==item_id and note.get('kind')!=READY:note['status']='DONE'
         old=next((n for n in data.setdefault('editorial_notifications',[]) if n['key']==key and n.get('status') not in {'CANCELLED','PUBLISHED'}),None)
-        if old and old.get('revision')==notification.get('revision') and old.get('kind')==kind:return
+        new_delivery=not old or old.get('revision')!=notification.get('revision') or old.get('kind')!=kind or old.get('reprocess_round')!=notification.get('reprocess_round')
+        if old and not new_delivery and old.get('diagnostic')==notification.get('diagnostic'):return
         if old:old.update(notification)
         else:data['editorial_notifications'].append(notification)
         if article:row.update(status=READY,processing_state=READY,approval_status='PENDING')
@@ -89,6 +90,7 @@ def notify(item_id,kind='READY_PRIVATE'):
             '/?zar_workspace=sites#reposnewsEditor',[],plan_id=key)
         action.update(title=notification['title'],editorial=notification,article_id=notification['article_id'],inbox_item_id=item_id,
             status=notification['status'],account='Pablo')
+        if new_delivery:action.update(read_at=None,dismissed_at=None)
         holdings.write(scope,state)
 
 

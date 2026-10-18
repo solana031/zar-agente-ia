@@ -216,3 +216,27 @@ def test_unavailable_visual_model_does_not_blindly_select_frames(context):
     (folder/'one.jpg').write_bytes(noise());row['visual_assets']=[{'asset':'one.jpg'}]
     with patch('app.reposnews_generation.generate_json',side_effect=ValueError('AI_PROVIDER_503')),patch('app.reposnews_discovery.official_image',return_value={}):assets.prepare(row,a,{})
     assert a['contextual_asset_status']=='LIMITED';assert not any(x.get('kind')=='REEL_FRAME' for x in a['assets'])
+
+
+def test_history_diagnostics_are_owner_only_and_do_not_return_package_contents(context):
+    data=rn.read();row=data['instagram_inbox'][0]
+    row.update(backfill=True,error='SOURCE_OR_GENERATION_FAILED',research_package={'readme':'private source body','metadata':{}},error_diagnostic={'exception_type':'KeyError','operation':'module.py:build:12'})
+    rn.write(data);app=Flask(__name__);app.secret_key='test';history.register(app,lambda:'owner');client=app.test_client()
+    assert client.get('/api/reposnews/history/status').status_code==401
+    with client.session_transaction() as session:session['zar_auth']=True
+    response=client.get('/api/reposnews/history/status');assert response.status_code==200
+    assert response.json['diagnostics'][0]['package_fields']==['metadata','readme']
+    assert 'private source body' not in response.text
+    data['owner']='another-owner';rn.write(data)
+    assert client.get('/api/reposnews/history/status').status_code==403
+
+
+def test_reprocessed_result_becomes_unread_in_the_same_human_action(context):
+    a,row=context;approval.notify(row['id'],'NEEDS_DISAMBIGUATION')
+    from app import identity_center
+    state=holdings.read('owner');actions=identity_center.ensure(state)['human_actions']
+    old=actions[0];old.update(read_at='yesterday',dismissed_at='yesterday');holdings.write('owner',state)
+    data=rn.read();data['instagram_inbox'][0]['reprocess_round']='new-round';rn.write(data)
+    approval.notify(row['id'],'NEEDS_DISAMBIGUATION')
+    result=identity_center.ensure(holdings.read('owner'))['human_actions']
+    assert len(result)==1;assert result[0]['id']==old['id'];assert result[0]['read_at'] is None;assert result[0]['dismissed_at'] is None

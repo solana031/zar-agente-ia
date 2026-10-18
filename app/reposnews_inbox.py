@@ -782,6 +782,11 @@ def process(item_id):
                     'endpoint_class':'generateContent' if safe_code.startswith('AI_PROVIDER_') else 'source_read',
                     'http':int(safe_code.rsplit('_',1)[1]) if safe_code.startswith('AI_PROVIDER_') else source_http,
                     'retryable':retryable,'timestamp':holdings._now(),'code':safe_code}
+        import traceback
+        frames=traceback.extract_tb(exc.__traceback__)
+        if frames:
+            frame=frames[-1]
+            diagnostic.update(exception_type=type(exc).__name__,operation=Path(frame.filename).name+':'+frame.name+':'+str(frame.lineno))
         history=(current.get('error_history',[])+[diagnostic])[-20:]
         update(item_id,status='FAILED_PERMANENT' if permanent else 'FAILED_RETRYABLE' if retryable else 'FAILED_SOURCE',processing_state='FAILED',failed_stage=current.get('processing_state'),error=safe_code,error_diagnostic=diagnostic,error_history=history)
         if permanent:
