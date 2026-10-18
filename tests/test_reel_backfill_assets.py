@@ -94,6 +94,18 @@ def test_backfill_queues_only_one_and_preserves_existing_article(context):
     assert history.summary(data)['concurrency']==1
 
 
+def test_interrupted_asset_refresh_reclaims_expired_worker_lease(context):
+    from app.instagram_local_queue import enqueue_pending
+    data=rn.read();row=data['instagram_inbox'][0]
+    row.update(status='TRANSCRIBING',processing_state='TRANSCRIBING',asset_refresh=True,local_job=True,local_lease=0,local_worker_done=False,local_media_received=False)
+    before=copy.deepcopy(data['articles'])
+    enqueue_pending(data)
+    assert row['status']=='WAITING_LOCAL_WORKER';assert data['articles']==before
+    row.update(asset_refresh=False,status='TRANSCRIBING')
+    enqueue_pending(data)
+    assert row['status']=='TRANSCRIBING'
+
+
 def test_match_identity_ignores_title_and_normalizes_repo(context):
     data=rn.read();candidate=article();candidate['title_es']='Otro título';candidate['repository_url']='https://github.com/example/tool/'
     assert revisions.match(data,candidate)['id']=='example-tool'

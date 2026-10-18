@@ -72,7 +72,7 @@ def enqueue_pending(data):
     for row in data.get('instagram_inbox', []):
         if row.get('sender') not in senders:
             continue
-        if row.get('local_media_received') or row.get('local_worker_done') or row.get('article_id') or row.get('status') in {'CANCELLED','DISCARDED', 'PUBLISHED', 'READY', 'READY_PRIVATE', 'UPDATE_PROPOSAL'}:
+        if row.get('local_media_received') or row.get('local_worker_done') or row.get('article_id') and not row.get('asset_refresh') or row.get('status') in {'CANCELLED','DISCARDED', 'PUBLISHED', 'READY', 'READY_PRIVATE', 'UPDATE_PROPOSAL'}:
             continue
         try:
             reel_url(row.get('source_url'))
