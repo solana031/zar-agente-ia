@@ -24,3 +24,4 @@ video_creator/
 .env.local.*
 !.env.local.example
 .browser-test-runtime/
+/dist/reposnews/
