@@ -190,6 +190,24 @@ def test_same_reel_provenance_identifies_an_existing_entity_without_inventing_fa
     assert result['verified_facts'] is False
 
 
+def test_compound_existing_name_survives_a_truncated_local_hint(context):
+    from app.reposnews_entity_evidence import hints
+    data=rn.read();data['articles'][0].update(repo='official/openmontage',repository_url='https://github.com/official/openmontage')
+    row={'id':'new-reel','source_url':'https://www.instagram.com/reel/New/'}
+    result=hints(data,row,{'project_names':['open'],'text':"It's called Open Montage. The other video model is incidental."})
+    self_match=result['candidates'][0]
+    assert result['status']=='UNIQUE_HINT';assert self_match['repo']=='official/openmontage';assert result['verified_facts'] is False
+
+
+def test_explicit_reprocess_can_reuse_complete_media_without_redownloading(context):
+    data=rn.read();row=data['instagram_inbox'][0]
+    row.update(status='NEEDS_DISAMBIGUATION',local_worker_done=True,visual_assets=[{'asset':'frame.jpg'}],asset_quality_version=2)
+    entry=history.index(data)[0];entry.update(state='COMPLETED',decision='NEEDS_DISAMBIGUATION',active_item_id=row['id']);rn.write(data)
+    with patch('app.reposnews_inbox.start_worker'):history.start('owner',reprocess_unresolved=True,reuse_media=True)
+    history.tick();row=rn.read()['instagram_inbox'][0]
+    assert row['status']=='RECEIVED';assert row['local_worker_done'] is True;assert row['visual_assets']==[{'asset':'frame.jpg'}]
+
+
 def test_reprocess_fetches_current_sources_once_then_reuses_its_own_checkpoint(context):
     from app import reposnews_inbox as inbox
     data=rn.read();row=data['instagram_inbox'][0]

@@ -49,7 +49,7 @@ def hints(data,row,evidence):
         from .instagram_local_queue import same_reel
         same_source=any(same_reel(row.get('source_url'),source) for source in article.get('source_reels',[])+[article.get('discovery_source')] if source)
         aliases=names(article)
-        mentioned=[name for name in aliases if primary=={normalized(name)} or re.search(r'(?:logo|project|proyecto|tool|herramienta)\s*[:=]?\s*'+re.escape(name)+r'(?!\w)',text,re.I)]
+        mentioned=[name for name in aliases if primary=={normalized(name)} or re.search(r'(?:called|named|se llama|llamado|logo|project|proyecto|tool|herramienta)\s*[:=]?\s*'+r'[\s_.-]*'.join(re.escape(c) for c in normalized(name))+r'(?!\w)',text,re.I)]
         official=urls([article.get('repository_url',''),article.get('website',''),article.get('official_docs','')])
         shared_urls=official & current_urls
         pooled_match=bool(official & pooled_urls)

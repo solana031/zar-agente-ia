@@ -64,14 +64,14 @@ def summary(data):
     return dict(counts,active=active,mode='BATCH_LIMITED',concurrency=1,enabled=data.get('historical_backfill',{}).get('enabled',False))
 
 
-def start(scope,reprocess_unresolved=False):
+def start(scope,reprocess_unresolved=False,reuse_media=False):
     with holdings.transaction('reposnews-editorial'):
         rn.state(scope);data=rn.read();entries=index(data)
         round_id=holdings._now()
         if reprocess_unresolved:
             for entry in entries:
                 if entry.get('decision') not in {'NEEDS_DISAMBIGUATION','FAILED'}:continue
-                entry.update(state='PENDING',previous_decision=entry.get('decision'),decision=None,reprocess_round=round_id)
+                entry.update(state='PENDING',previous_decision=entry.get('decision'),decision=None,reprocess_round=round_id,reprocess_reuse_media=reuse_media)
         data['historical_backfill']={'enabled':True,'mode':'BATCH_LIMITED','concurrency':1,'started_at':holdings._now()}
         rn.write(data)
     from .reposnews_inbox import start_worker
@@ -143,7 +143,8 @@ def tick():
         if reprocess:
             row.update(reprocess_round=entry['reprocess_round'],reprocess_attempt_budget=3,metadata_refresh_v3=False)
             # Keep old evidence and IDs; the next local acquisition replaces analysis.
-        if reprocess or not row.get('visual_assets') or row.get('asset_quality_version')!=2:
+        cached_media=entry.get('reprocess_reuse_media') and row.get('local_worker_done') and row.get('visual_assets') and row.get('asset_quality_version')==2
+        if reprocess and not cached_media or not row.get('visual_assets') or row.get('asset_quality_version')!=2:
             row.update(asset_refresh=True,local_worker_done=False,local_media_received=False,local_job=True,status='WAITING_LOCAL_WORKER',processing_state='WAITING_LOCAL_WORKER',local_lease=0)
         else:row.update(status='RECEIVED',processing_state='RECEIVED')
         entry.update(state='PROCESSING',active_item_id=row['id']);rn.write(data)
@@ -179,5 +180,7 @@ def register(app,scope_fn):
         if session.get('zar_auth') is not True:return jsonify(ok=False,error='AUTH_REQUIRED'),401
         csrf=session.get('business_csrf','')
         if not csrf or not secrets.compare_digest(csrf,request.headers.get('X-ZAR-Business-CSRF','')):return jsonify(ok=False,error='CSRF_REQUIRED'),403
-        try:return jsonify(ok=True,result=start(scope_fn(),reprocess_unresolved=(request.get_json(silent=True) or {}).get('reprocess_unresolved') is True))
+        try:
+            payload=request.get_json(silent=True) or {}
+            return jsonify(ok=True,result=start(scope_fn(),reprocess_unresolved=payload.get('reprocess_unresolved') is True,reuse_media=payload.get('reuse_media') is True))
         except ValueError as e:return jsonify(ok=False,error=str(e)),403

@@ -2,7 +2,7 @@ import json
 import os
 import tempfile
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, MagicMock, patch
 from app import reposnews as rn, reposnews_inbox as inbox, reposnews_discovery as discovery
 
 
@@ -29,6 +29,45 @@ class DiscoveryTest(unittest.TestCase):
         page=next((p for p in self.pages() if p['url']==url),None)
         if page is None:raise ValueError('OFFICIAL_SOURCE_UNAVAILABLE')
         return page
+
+    def test_official_relative_links_are_unique_and_not_lost_to_repeated_ctas(self):
+        result=discovery.parse_chunks([('<html>'+('<a href="https://example.org/login">Login</a>'*50)+'<a href="/docs">Docs</a></html>').encode()],stop_at_head=False)
+        self.assertEqual(result['outbound_links'],['https://example.org/login','/docs'])
+
+    def test_official_document_redirect_is_bounded_and_keeps_canonical_url(self):
+        redirect=MagicMock(status_code=308,headers={'Location':'/welcome'});redirect.__enter__.return_value=redirect
+        page=MagicMock(status_code=200,headers={'Content-Type':'text/html'});page.__enter__.return_value=page
+        page.iter_content.return_value=[b'<title>Docs</title><a href="/guide">Guide</a>']
+        with patch('app.browser_network.public_url'),patch('app.browser_network.start_proxy') as proxy,patch('requests.Session') as session:
+            proxy.return_value.server_address=('127.0.0.1',1234)
+            client=session.return_value.__enter__.return_value;client.get.side_effect=[redirect,page]
+            result=discovery.fetch_official('https://docs.example.org/')
+        self.assertEqual(result['url'],'https://docs.example.org/welcome')
+        self.assertEqual(result['metadata']['outbound_links'],['https://docs.example.org/guide'])
+        self.assertEqual(client.get.call_count,2)
+
+    def test_official_redirect_rejects_other_domain_and_https_downgrade(self):
+        for target in ['https://another.example/','http://docs.example.org/','https://127.0.0.1/']:
+            response=MagicMock(status_code=307,headers={'Location':target});response.__enter__.return_value=response
+            with patch('app.browser_network.public_url'),patch('app.browser_network.start_proxy') as proxy,patch('requests.Session') as session:
+                proxy.return_value.server_address=('127.0.0.1',1234)
+                client=session.return_value.__enter__.return_value;client.get.return_value=response
+                with self.assertRaisesRegex(ValueError,'REDIRECT_REJECTED'):discovery.fetch_official('https://docs.example.org/')
+                self.assertEqual(client.get.call_count,1)
+
+    def test_site_own_docs_redirect_proves_the_forward_link(self):
+        site={'url':'https://www.bland.ai/','title':'Bland AI','text':'Bland AI','metadata':{'outbound_links':['https://www.bland.ai/docs']}}
+        doc={'url':'https://docs.bland.ai/welcome','title':'Bland Docs','text':'https://www.bland.ai/','metadata':{}}
+        with patch.object(discovery,'fetch_official',side_effect=[site,doc]) as fetch:
+            result=discovery.service_resolution({'project_names':['Bland AI'],'outbound_links':['https://www.bland.ai/','https://docs.bland.ai/']})
+        self.assertEqual(result['status'],'RESOLVED');self.assertEqual(result['docs'],doc['url'])
+        self.assertEqual(fetch.call_args_list[1].args[0],'https://www.bland.ai/docs')
+
+    def test_official_site_can_identify_a_repository_before_github_name_search(self):
+        page={'url':'https://example.org/','title':'Example','text':'Example','metadata':{'outbound_links':['https://github.com/official/Example']}}
+        with patch.object(discovery,'fetch_official',return_value=page):
+            result=discovery.service_resolution({'project_names':['Example'],'outbound_links':['https://example.org/']})
+        self.assertEqual(result['type'],'REPOSITORY');self.assertEqual(result['repo'],'official/Example')
 
     def test_large_html_keeps_metadata_without_accumulating_body(self):
         chunks = [b'<head><title>Bland AI</title><meta property="og:description" content="Agent Phone Plan">',

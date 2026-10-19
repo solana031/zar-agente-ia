@@ -3,7 +3,7 @@ import codecs
 import json
 import re
 from html.parser import HTMLParser
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, urljoin
 
 MAX_HTML = 2 * 1024 * 1024
 SECRET = re.compile(r'token|cookie|password|secret|auth|credential|session|api.?key', re.I)
@@ -35,8 +35,9 @@ class MetadataParser(HTMLParser):
             if key in ('description', 'og:title', 'og:description', 'og:image', 'og:video', 'og:video:url', 'twitter:description', 'author'):
                 self.meta[key] = attrs.get('content', '')[:6000]
         if tag == 'link' and attrs.get('rel') == 'canonical': self.meta['canonical'] = attrs.get('href', '')[:2000]
-        if tag == 'a' and attrs.get('href', '').startswith('https://') and len(self.links) < 40:
-            self.links.append(attrs['href'][:2000])
+        if tag == 'a' and attrs.get('href', '').startswith(('https://','/')) and not attrs.get('href','').startswith('//') and len(self.links) < 40:
+            link=attrs['href'][:2000]
+            if link not in self.links:self.links.append(link)
 
     def handle_endtag(self, tag):
         if tag == 'title': self.capture = False
@@ -148,6 +149,13 @@ def evidence(row, analysis, discovery, metadata):
               clues(analysis or {}), discovery.get('text', ''), metadata.get('text', '')]
     text = safe_caption(' '.join(pieces))
     urls = list(dict.fromkeys(re.findall(r'https://[^\s<>"\'\\]+', text)))[:20]
+    visual=str((analysis or {}).get('visual_findings') or '')
+    # Exact visible addresses/headers are hints, not verified ownership or research.
+    observed=['https://github.com/'+r for r in re.findall(r'\bgithub\.com/([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)',visual,re.I)]
+    observed+=['https://github.com/'+r for r in re.findall(r'(?<![\w./-])([A-Za-z0-9_-]+/[A-Za-z0-9_.-]+)\s+Public\b',visual,re.I)]
+    observed+=['https://'+u for u in re.findall(r'(?<![\w/@.-])((?:[a-z0-9-]+\.)+(?:com|org|ai|app|dev|io|net|co)(?:/[A-Za-z0-9_~./%-]*)?)(?![\w.-])',visual,re.I)]
+    urls=list(dict.fromkeys(urls+observed))[:20]
+    text+='\nVisible address hints: '+' '.join(observed[:10]) if observed else ''
     if row.get('clarified_project'):
         resolution=row.get('entity_resolution') or {}
         historical_sources=(row.get('research_package') or {}).get('sources',[])
@@ -197,13 +205,23 @@ def fetch_official(url):
     from . import browser_network
     import requests
     browser_network.public_url(url); proxy = browser_network.start_proxy()
+    original_host=re.sub(r'^(?:www|docs|app)\.', '', urlsplit(url).hostname or '')
+    allowed_hosts={original_host,'www.'+original_host,'docs.'+original_host,'app.'+original_host}
     try:
         with requests.Session() as client:
             client.trust_env = False; client.proxies = {'https': 'http://127.0.0.1:' + str(proxy.server_address[1])}
-            with client.get(url, timeout=(5, 15), allow_redirects=False, stream=True) as response:
-                if response.status_code != 200: raise ValueError('OFFICIAL_SOURCE_UNAVAILABLE')
-                if 'text/html' not in response.headers.get('Content-Type', ''): raise ValueError('OFFICIAL_SOURCE_UNSUPPORTED')
-                result = parse_chunks(response.iter_content(32768), stop_at_head=False)
+            for hop in range(3):
+                with client.get(url, timeout=(5, 15), allow_redirects=False, stream=True) as response:
+                    if response.status_code in {301,302,303,307,308}:
+                        target=urljoin(url,response.headers.get('Location',''))
+                        parsed=urlsplit(target)
+                        if hop==2 or parsed.scheme!='https' or parsed.hostname not in allowed_hosts:
+                            raise ValueError('OFFICIAL_SOURCE_REDIRECT_REJECTED')
+                        browser_network.public_url(target);url=target;continue
+                    if response.status_code != 200: raise ValueError('OFFICIAL_SOURCE_UNAVAILABLE')
+                    if 'text/html' not in response.headers.get('Content-Type', ''): raise ValueError('OFFICIAL_SOURCE_UNSUPPORTED')
+                    result = parse_chunks(response.iter_content(32768), stop_at_head=False);break
+        result['outbound_links']=list(dict.fromkeys(urljoin(url,u) for u in result.get('outbound_links',[]) if urljoin(url,u).startswith('https://')))
         return {'url': url, 'title': result.get('title'), 'description': result.get('description') or result.get('og:description'),
                 'text': result['text'], 'metadata': result, 'verified': True}
     finally: proxy.shutdown(); proxy.server_close()
@@ -234,6 +252,15 @@ def service_resolution(discovery_evidence):
     name=names[0] if len(set(names))==1 else ''
     site = fetch_official(website)
     if not name:name=(site.get('title') or '').split('|')[0].strip()[:100]
+    normalize=lambda s:re.sub(r'[^a-z0-9]','',s.casefold())
+    repository_links=site.get('metadata',{}).get('outbound_links',[])+re.findall(r'https://github\.com/[^\s<>"\'\\]+',site['text'])
+    repositories=set()
+    for link in repository_links:
+        parsed=urlsplit(link);parts=parsed.path.strip('/').split('/')
+        if parsed.hostname=='github.com' and len(parts)==2 and re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+','/'.join(parts)) and normalize(parts[-1])==normalize(name):repositories.add('/'.join(parts))
+    if len(repositories)==1:
+        repo=next(iter(repositories))
+        return {'status':'RESOLVED','type':'REPOSITORY','repo':repo,'name':name,'website':site['url'],'confidence':'OFFICIAL_WEBSITE_REPOSITORY_LINK','sources':[site['url'],'https://github.com/'+repo]}
     if not docs:
         host = urlsplit(website).hostname.removeprefix('www.')
         match = re.search(r'https://docs\.' + re.escape(host) + r'[^\s<>"\'\\]*', site['text'])
@@ -243,14 +270,20 @@ def service_resolution(discovery_evidence):
                          if urlsplit(u).hostname in (host, 'www.' + host) and re.search(r'^/(docs|documentation|developers)(/|$)', urlsplit(u).path)), '')
         if not docs: return None
         name = (site.get('title') or '').split('|')[0].strip()[:100]
-    doc = fetch_official(docs)
     host = urlsplit(website).hostname.removeprefix('www.')
     def linked_hosts(page):
         links = page.get('metadata', {}).get('outbound_links', []) + re.findall(r'https://[^\s<>"\'\\]+', page['text'])
         return {urlsplit(u).hostname for u in links}
+    if urlsplit(docs).hostname not in linked_hosts(site):
+        bridge=next((u for u in site.get('metadata',{}).get('outbound_links',[]) if urlsplit(u).hostname in {host,'www.'+host} and re.match(r'^/(docs|documentation|developers)(/|$)',urlsplit(u).path)),None)
+        if not bridge:return None
+        doc=fetch_official(bridge)
+        if urlsplit(doc['url']).hostname!=urlsplit(docs).hostname:return None
+        docs=bridge  # The site's own link and its checked HTTP chain prove the forward link.
+    else:doc=fetch_official(docs)
     if not name or not linked_hosts(doc).intersection({host, 'www.' + host}) or urlsplit(docs).hostname not in linked_hosts(site): return None
-    return {'status': 'RESOLVED', 'type': 'SERVICE', 'name': name, 'website': website, 'docs': docs,
-            'confidence': 'OFFICIAL_SITE_DOCS_CROSSLINK', 'sources': [website, docs], 'verified_pages': [site, doc]}
+    return {'status': 'RESOLVED', 'type': 'SERVICE', 'name': name, 'website': site['url'], 'docs': doc['url'],
+            'confidence': 'OFFICIAL_SITE_DOCS_CROSSLINK', 'sources': [site['url'], doc['url']], 'verified_pages': [site, doc]}
 
 
 def research_service(resolution):

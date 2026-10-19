@@ -51,6 +51,19 @@ class InstagramInboxTest(unittest.TestCase):
   self.assertEqual(row['error_diagnostic']['http'],503)
  def test_no_accessible_permalink_text_does_not_invent_a_project(self):
   self.assertEqual(inbox.resolve_entity('')['reason'],'NO_ACCESSIBLE_DISCOVERY_TEXT')
+ def test_local_single_word_cannot_truncate_a_compound_name(self):
+  self.assertIsNone(inbox.complete_media_name({'project_names':['open'],'transcript':"It's called Open Montage."}))
+  self.assertIsNone(inbox.complete_media_name({'project_names':['real'],'transcript':"It's called Real Mimic."}))
+  self.assertEqual(inbox.complete_media_name({'project_names':['OpenCode'],'transcript':'Se llama OpenCode y sirve para programar.'}),'OpenCode')
+ def test_repository_found_on_a_site_must_corroborate_that_domain(self):
+  item=inbox.receive(self.event(text='https://www.instagram.com/reel/fixture/'))[0]
+  inbox.update(item,local_worker_done=True,analysis={'project_names':['Example'],'transcript':'Example'})
+  resolution={'status':'RESOLVED','type':'REPOSITORY','repo':'official/Example','website':'https://example.org/'}
+  package={'repo':'official/Example','metadata':{'homepage':'https://unrelated.test/'},'readme':'No official backlink','sources':['https://github.com/official/Example'],'verified_at':'today'}
+  with patch('app.jev_decision.proposal',return_value={'decision':'ALLOW'}),patch.object(inbox,'public_metadata',return_value={}),patch('app.reposnews_discovery.service_resolution',return_value=resolution),patch.object(inbox,'research',return_value=package),patch.object(inbox,'build') as build:
+   inbox.process(item)
+  build.assert_not_called();row=rn.read()['instagram_inbox'][0]
+  self.assertEqual(row['error'],'OFFICIAL_REPOSITORY_UNRESOLVED');self.assertEqual(row['status'],'FAILED_SOURCE')
  def test_github_limit_preserves_http_and_waits_without_losing_item(self):
   import time
   item=inbox.receive(self.event())[0];inbox.update(item,local_worker_done=True)
