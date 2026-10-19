@@ -117,7 +117,7 @@ def assemble(job,folder,binary,workflow_path=None,progress=lambda:None):
         progress();duration=float(scene['duration']);audio=folder/('voice-'+str(index)+'.wav')
         if not audio.is_file():
             voice=system_voice(scene['voiceover'],audio,job.get('language','es-ES'));voices.append(voice)
-        else:voices.append({'provider':job.get('voice_provider','ZAR_EXISTING_TTS')})
+        else:voices.append({'provider':'WINDOWS_INSTALLED_TTS_CACHED' if job.get('voice_provider')=='WINDOWS_INSTALLED_TTS_PENDING' else job.get('voice_provider','ZAR_EXISTING_TTS')})
         audio_info=inspect(audio,binary)
         if not audio_info['audio']:raise ValueError('NARRATION_MISSING')
         ratio=audio_info['duration']/duration

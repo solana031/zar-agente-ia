@@ -88,11 +88,21 @@ def test_unavailable_dramaclaw_advances_to_existing_voice_stack(context):
     assert record['video_stage']=='VOICE';assert record['providers'][0]['status']=='UNAVAILABLE';assert not record.get('artifact')
 
 
-def test_uncertain_provider_submission_never_starts_fallback(context):
+def test_uncertain_provider_is_preserved_and_only_free_local_work_continues(context):
     record=tv.view('owner',context);record.update(video_stage='DRAMACLAW',checkpoint={'pending_intent':{'kind':'visual'}})
     with patch.object(media,'_client',side_effect=ValueError('No conectado')):tv.advance('owner',media._task('owner',context),record)
-    assert record['status']=='ERROR';assert record['error']=='DRAMACLAW_SUBMISSION_REQUIRES_RECONCILIATION'
-    assert record['video_stage']=='DRAMACLAW';assert record['providers']==[]
+    assert record['status']=='PRODUCING' and record['video_stage']=='LOCAL';assert record['local_only'] and record['use_local_voice']
+    assert record['dramaclaw_checkpoint']['pending_intent']=={'kind':'visual'} and record['remote_reconciliation_required']
+    assert record['providers'][0]['status']=='SUBMISSION_UNKNOWN_NO_RESUBMISSION'
+    with patch.object(media,'_client') as paid,patch.object(media,'_narrator') as tts:tv.advance('owner',media._task('owner',context),record)
+    paid.assert_not_called();tts.assert_not_called()
+
+
+def test_new_plan_stays_local_after_preserved_provider_uncertainty(context):
+    record=tv.view('owner',context);record.update(local_only=True,dramaclaw_checkpoint={'pending':{'stage':'identities'}})
+    with patch('app.reposnews_generation.generate_json',return_value=scene_plan()):tv.plan('owner',context,record)
+    assert record['video_stage']=='LOCAL' and record['video_state']=='WAITING_LOCAL_WORKER'
+    assert record['dramaclaw_checkpoint']=={'pending':{'stage':'identities'}}
 
 
 def test_tts_failure_requests_real_local_voice_instead_of_silent_audio(context):
@@ -143,11 +153,12 @@ def test_cancel_preserves_artifact_and_rejects_stale_worker_completion(context):
 def test_only_verified_mp4_becomes_ready_and_notifies_without_social_calls(context):
     record=tv.view('owner',context);record.update(video_stage='LOCAL',local_video_claim=hashlib.sha256(b'lease').hexdigest(),local_video_lease=10**12)
     media._save('owner',context,record);image=io.BytesIO();Image.new('RGB',(540,960),'gold').save(image,format='PNG');image.seek(0)
-    data={'manifest':json.dumps({'assembly':'ZAR_FFMPEG_SCENE_VOICE_CAPTIONS_MOTION'}),'video':(io.BytesIO(b'0000ftyp'+b'0'*20),'video.mp4'),'subtitles':(io.BytesIO(b'1\n00:00:00,000 --> 00:00:03,000\nOriginal narration\n'),'video.srt'),'thumbnail':(image,'thumbnail.png')}
+    data={'manifest':json.dumps({'assembly':'ZAR_FFMPEG_SCENE_VOICE_CAPTIONS_MOTION','voices':[{'provider':'WINDOWS_INSTALLED_TTS'}]}),'video':(io.BytesIO(b'0000ftyp'+b'0'*20),'video.mp4'),'subtitles':(io.BytesIO(b'1\n00:00:00,000 --> 00:00:03,000\nOriginal narration\n'),'video.srt'),'thumbnail':(image,'thumbnail.png')}
     with patch('app.instagram_local_queue.authorized'),patch.object(tv,'validate_render',return_value={'duration':45.1,'width':1080,'height':1920,'codec':'h264'}),patch('app.notification_center.emit') as notify,patch('app.social_publish.instagram_reel') as publish:
         result=app_client().post('/api/video-projects/local-worker/'+context+'/result',data=data,headers={'X-ZAR-Video-Lease':'lease'})
     assert result.status_code==200;ready=tv.view('owner',context);assert ready['video_state']=='READY_PRIVATE';assert ready['status']=='PRODUCED';assert not ready['review_approved']
     assert notify.call_args.args[1]=='VIDEO_READY';publish.assert_not_called()
+    assert ready['voice']['provider']=='WINDOWS_INSTALLED_TTS'
 
 
 def test_render_validation_requires_aac_audio(context):

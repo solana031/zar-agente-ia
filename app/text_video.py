@@ -115,7 +115,16 @@ def plan(scope,identifier,record):
         if available:
             asset=available[index%len(available)];scene.update(asset_file=asset['local_file'],visual_source=asset.get('source_url'),rights=asset.get('permission','REVIEW_REQUIRED'))
         else:scene.update(visual_source='ZAR_OWNED_TEXT_CARD',rights='OWNED')
-    record.update(script={'hook':scenes[0]['voiceover'],'body':' '.join(s['voiceover'] for s in scenes[1:-1]),'cta':scenes[-1]['voiceover']},storyboard=scenes,scenes=scenes,assets=available,title=str(result.get('title') or record['project']['title'])[:150],video_stage='DRAMACLAW',video_state='GENERATING_VISUALS')
+    record.update(script={'hook':scenes[0]['voiceover'],'body':' '.join(s['voiceover'] for s in scenes[1:-1]),'cta':scenes[-1]['voiceover']},storyboard=scenes,scenes=scenes,assets=available,title=str(result.get('title') or record['project']['title'])[:150],video_stage='LOCAL' if record.get('local_only') else 'DRAMACLAW',video_state='WAITING_LOCAL_WORKER' if record.get('local_only') else 'GENERATING_VISUALS')
+
+
+def preserve_uncertain_provider(record):
+    """A free render can finish independently; never repeat the uncertain request."""
+    cp=record.get('checkpoint') or {}
+    record['dramaclaw_checkpoint']=cp
+    record['providers'].append({'provider':'DRAMACLAW','status':'SUBMISSION_UNKNOWN_NO_RESUBMISSION','code':cp.get('error_code') or 'SUBMISSION_UNKNOWN','project_id':cp.get('project_id'),'task_ids':[t.get('task_id') for t in cp.get('tasks',[])],'requires_reconciliation':True})
+    record.update(checkpoint={},local_only=True,remote_reconciliation_required=True,use_local_voice=True,
+                  voice={'provider':'WINDOWS_INSTALLED_TTS_PENDING','language':record['project']['language']},status='PRODUCING',video_stage='LOCAL',video_state='WAITING_LOCAL_WORKER',error=None)
 
 
 def ready(scope,task,record,metadata):
@@ -158,12 +167,12 @@ def advance(scope,task,record):
                     record['providers'].append({'provider':'DRAMACLAW','status':'MASTER_VISUALS_PRESERVED_FOR_FINAL_ASSEMBLY'});record['video_stage']='VOICE'
                 elif cp.get('status') in {'blocked','error'}:
                     if cp.get('pending') or cp.get('pending_intent') or cp.get('error_code') in {'submission_unknown','task_missing','task_status'}:
-                        record.update(video_state='ACTION_REQUIRED',video_stage='DRAMACLAW',status='ERROR',error='DRAMACLAW_SUBMISSION_REQUIRES_RECONCILIATION')
+                        preserve_uncertain_provider(record)
                     else:record['providers'].append({'provider':'DRAMACLAW','status':'UNAVAILABLE','code':cp.get('error_code')});record['video_stage']='VOICE'
             except (ValueError,DramaClawError) as exc:
                 cp=record.get('checkpoint') or {}
-                if cp.get('pending') or cp.get('pending_intent'):raise ValueError('DRAMACLAW_SUBMISSION_REQUIRES_RECONCILIATION')
-                record['providers'].append({'provider':'DRAMACLAW','status':'UNAVAILABLE','code':getattr(exc,'code',None) or 'NOT_READY'});record['video_stage']='VOICE'
+                if cp.get('pending') or cp.get('pending_intent'):preserve_uncertain_provider(record)
+                else:record['providers'].append({'provider':'DRAMACLAW','status':'UNAVAILABLE','code':getattr(exc,'code',None) or 'NOT_READY'});record['video_stage']='VOICE'
         elif stage=='VOICE':
             index=record.get('voice_index',0)
             if index<len(record['scenes']):
@@ -214,6 +223,8 @@ def start_worker(scope):
                     with media._job_lock(scope,task['id']) as locked:
                         if locked:
                             record=media._read(scope,task['id'])
+                            if record.get('status')=='ERROR' and record.get('error')=='DRAMACLAW_SUBMISSION_REQUIRES_RECONCILIATION' and record.get('scenes'):
+                                preserve_uncertain_provider(record);media._save(scope,task['id'],record)
                             if any(p.get('status') in {'QUEUED','REQUESTED','PENDING'} for p in record.get('publication',{}).values()):
                                 from .text_video_social import advance as advance_publication
                                 advance_publication(scope,task,record)
@@ -301,6 +312,8 @@ def register(app,scope_fn):
                 image.convert('RGB').save(thumb)
                 target=media._path(scope,identifier).with_suffix('.mp4');output.replace(target)
                 subtitle=media._path(scope,identifier).with_suffix('.srt');subtitle.write_text(caption,encoding='utf-8')
+                voices=manifest.get('voices') or []
+                record['voice']={'provider':' / '.join(sorted({str(v.get('provider','UNVERIFIED'))[:100] for v in voices if isinstance(v,dict)})) or record['voice']['provider'],'language':record['project']['language']}
                 record.update(artifact=target.name,thumbnail=thumb.name,assembly={k:manifest.get(k) for k in ('visuals','voices','caption_timing','music','assembly','karaoke_word_alignment')},subtitles={'file':subtitle.name,'text':caption,'enabled':True,'burned_into_video':True,'source':'NARRATION_SCENE_TIMING'},local_video_lease=0)
                 ready(scope,media._task(scope,identifier),record,metadata)
         except (ValueError,OSError,KeyError):abort(400)
@@ -347,7 +360,7 @@ def register(app,scope_fn):
                         if not all(isinstance(revised.get(k),str) and revised[k].strip() for k in ('title','voiceover','visual_prompt')) or len(revised['voiceover'].split())>40:raise ValueError('INVALID_VIDEO_SCENE')
                         scene.update({k:revised[k][:1200] for k in ('title','voiceover','visual_prompt')});scene['caption']=scene['voiceover']
                         rows=record['scenes'];record['script']={'hook':rows[0]['voiceover'],'body':' '.join(s['voiceover'] for s in rows[1:-1]),'cta':rows[-1]['voiceover']}
-                        (_folder(scope,identifier)/('voice-'+str(index)+'.wav')).unlink(missing_ok=True);record.update(video_stage='VOICE',voice_index=index,use_local_voice=False)
+                        (_folder(scope,identifier)/('voice-'+str(index)+'.wav')).unlink(missing_ok=True);record.update(video_stage='LOCAL' if record.get('local_only') else 'VOICE',voice_index=index,use_local_voice=bool(record.get('local_only')))
                     elif action=='retry':
                         if cp.get('error_code') in {'submission_unknown','task_missing','task_status'}:raise ValueError('RECONCILE_PROVIDER_BEFORE_RETRY')
                     media.archive_render(scope,identifier,record);record.pop('artifact',None)
