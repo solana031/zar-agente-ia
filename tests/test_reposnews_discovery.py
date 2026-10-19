@@ -69,6 +69,21 @@ class DiscoveryTest(unittest.TestCase):
             result=discovery.service_resolution({'project_names':['Example'],'outbound_links':['https://example.org/']})
         self.assertEqual(result['type'],'REPOSITORY');self.assertEqual(result['repo'],'official/Example')
 
+    def test_search_mirror_is_rejected_by_the_repository_canonical_homepage(self):
+        def page(url):return {'url':url,'title':'Example','text':'Example','metadata':{'outbound_links':['https://github.com/official/Example']}}
+        with patch.object(discovery,'fetch_official',side_effect=page),patch.object(rn,'github',return_value={'homepage':'https://example.org/','fork':False,'archived':False}):
+            result=discovery.service_resolution({'project_names':['Example'],'outbound_links':['https://example.org/docs/','https://example-mirror.org/']})
+        self.assertEqual(result['repo'],'official/Example');self.assertEqual(result['website'],'https://example.org/')
+
+    def test_two_distinct_corroborated_projects_with_the_same_name_remain_ambiguous(self):
+        def page(url):
+            owner='official' if url=='https://example.org/' else 'other'
+            return {'url':url,'title':'Example','text':'Example','metadata':{'outbound_links':['https://github.com/'+owner+'/Example']}}
+        def metadata(path):return {'homepage':'https://example.org/' if '/official/' in path else 'https://example-mirror.org/'}
+        with patch.object(discovery,'fetch_official',side_effect=page),patch.object(rn,'github',side_effect=metadata):
+            result=discovery.service_resolution({'project_names':['Example'],'outbound_links':['https://example.org/','https://example-mirror.org/']})
+        self.assertIsNone(result)
+
     def test_large_html_keeps_metadata_without_accumulating_body(self):
         chunks = [b'<head><title>Bland AI</title><meta property="og:description" content="Agent Phone Plan">',
                   b'<!--' + b'x' * 600000 + b'-->', b'<meta property="og:video" content="https://example.fbcdn.net/v.mp4"></head>']

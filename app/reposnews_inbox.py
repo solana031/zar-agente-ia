@@ -504,7 +504,7 @@ def complete_media_name(analysis):
     return None
 
 
-def resolve_entity(discovery_text, clarified_name=None, deterministic_only=False):
+def resolve_entity(discovery_text, clarified_name=None, deterministic_only=False, visual_evidence=''):
     """One bounded search; model supplies a name, never certifies an official repo."""
     discovery_text=re.sub(r'https?://\S+','',discovery_text).strip()
     if not discovery_text.strip() and not clarified_name:return {'status':'NEEDS_DISAMBIGUATION','reason':'NO_ACCESSIBLE_DISCOVERY_TEXT'}
@@ -518,17 +518,28 @@ def resolve_entity(discovery_text, clarified_name=None, deterministic_only=False
         return {'status':'NEEDS_DISAMBIGUATION','reason':'AMBIGUOUS_DISCOVERY'}
     normalized=lambda s:re.sub(r'[^a-z0-9]','',s.lower())
     result=rn.github('search/repositories',{'q':'"'+name+'" in:name fork:false','per_page':8})
-    if result.get('incomplete_results') or result.get('total_count',len(result.get('items',[])))>8:
-        return {'status':'NEEDS_DISAMBIGUATION','name':name,'reason':'SEARCH_NOT_EXHAUSTIVE'}
+    broad=result.get('incomplete_results') or result.get('total_count',len(result.get('items',[])))>8
+    name_key=lambda s:normalized(re.sub(r'^the[ -]+','',str(s),flags=re.I))
     candidates=[]
     for row in result.get('items',[])[:8]:
         repo=row.get('full_name','')
         if row.get('fork') or row.get('archived') or row.get('private'):continue
-        if normalized(row.get('name',''))!=normalized(name):continue
+        if name_key(row.get('name',''))!=name_key(name):continue
         if not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+',repo):continue
         candidates.append(row)
+    def visible_owner(candidate):
+        owner=candidate.get('full_name','').split('/')[0]
+        if len(owner)<4 or owner.casefold() in {'official','example','github','project','tools','source'}:return False
+        token=r'(?<![\w-])'+re.escape(owner)+r'(?![\w-])'
+        return bool(re.search(r'(?:github\.com[^\n]{0,100}'+token+'|'+token+r'[^\n]{0,100}github\.com)',str(visual_evidence),re.I))
+    visible=[c for c in candidates if visible_owner(c)]
+    if broad:
+        if len(visible)==1:candidates=visible
+        else:return {'status':'NEEDS_DISAMBIGUATION','name':name,'reason':'SEARCH_NOT_EXHAUSTIVE'}
     if len(candidates)!=1:return {'status':'NEEDS_DISAMBIGUATION','name':name,'reason':'NO_UNIQUE_EXACT_MATCH','candidates':[x['full_name'] for x in candidates]}
     candidate=candidates[0];repo=candidate['full_name']
+    if visible_owner(candidate):
+        return {'status':'RESOLVED','name':name,'repo':repo,'confidence':'VISIBLE_GITHUB_OWNER_AND_EXACT_NAME','sources':['https://github.com/'+repo]}
     if not homepage_confirms_repository(candidate.get('homepage',''),repo):
         return {'status':'NEEDS_DISAMBIGUATION','name':name,'reason':'OFFICIAL_WEBSITE_NOT_CORROBORATED','candidates':[repo]}
     return {'status':'RESOLVED','name':name,'repo':repo,'confidence':'CORROBORATED',
@@ -757,7 +768,9 @@ def process(item_id):
         if not matches:
             update(item_id,status='IDENTIFYING',processing_state='IDENTIFYING')
             try:resolution=discover.service_resolution(evid)
-            except (ValueError,OSError,requests.RequestException):resolution=None
+            except (ValueError,OSError,requests.RequestException) as exc:
+                if getattr(exc,'http_status',None) in {403,429}:raise
+                resolution=None
             if resolution and resolution.get('type')=='REPOSITORY':
                 update(item_id,entity_resolution=resolution,status='RESEARCHING',processing_state='RESEARCHING')
                 package=research(resolution['repo'])
@@ -778,10 +791,10 @@ def process(item_id):
                 update(item_id,status='DRAFTING_EN',processing_state='DRAFTING_EN')
                 store_ready(item_id,article);return
             automatic_name=primary_name
-            try:resolution=resolve_entity(evid['text'],row.get('clarified_project') or automatic_name,deterministic_only=bool(row.get('metadata_recovery')))
+            try:resolution=resolve_entity(evid['text'],row.get('clarified_project') or automatic_name,deterministic_only=bool(row.get('metadata_recovery')),visual_evidence=analysis.get('visual_findings',''))
             except ValueError as exc:
                 if not re.fullmatch(r'AI_PROVIDER_(429|500|502|503|504)',str(exc)):raise
-                resolution=resolve_entity(evid['text'],row.get('clarified_project') or automatic_name,deterministic_only=True)
+                resolution=resolve_entity(evid['text'],row.get('clarified_project') or automatic_name,deterministic_only=True,visual_evidence=analysis.get('visual_findings',''))
             update(item_id,entity_resolution=resolution)
             if resolution['status']!='RESOLVED':
                 if row.get('clarified_project'):

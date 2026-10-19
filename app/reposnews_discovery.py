@@ -244,6 +244,24 @@ def service_resolution(discovery_evidence):
         normal=lambda s:re.sub(r'[^a-z0-9]','',s.casefold())
         hosts={base_host(u) for u in links if normal(names[0]) in normal(base_host(u))}
         if len(hosts)==1:links=[u for u in links if base_host(u) in hosts]
+    if len({base_host(u) for u in links})>1 and len(set(names))==1:
+        # Search mirrors do not make the real project unknowable: require the
+        # website -> repository -> canonical homepage chain, never a popularity rank.
+        from . import reposnews
+        import requests
+        confirmed={}
+        for candidate_host in list(dict.fromkeys(base_host(u) for u in links))[:3]:
+            group=[u for u in links if base_host(u)==candidate_host]
+            try:
+                candidate=service_resolution(dict(discovery_evidence,outbound_links=group))
+                if not candidate or candidate.get('type')!='REPOSITORY':continue
+                metadata=reposnews.github('repos/'+candidate['repo'])
+                if metadata.get('fork') or metadata.get('archived') or metadata.get('private'):continue
+                if base_host(metadata.get('homepage') or '')!=base_host(candidate['website']):continue
+                confirmed[candidate['repo'].casefold()]=candidate
+            except (ValueError,OSError,requests.RequestException) as exc:
+                if getattr(exc,'http_status',None) in {403,429}:raise
+        return next(iter(confirmed.values())) if len(confirmed)==1 else None
     if len({base_host(u) for u in links}) != 1:return None
     roots=[u for u in links if (urlsplit(u).hostname or '').removeprefix('www.')==base_host(u)]
     if not roots:return None

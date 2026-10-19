@@ -42,6 +42,7 @@ def consider(data,row,candidate):
     old=match(data,candidate)
     if not old:return False
     if row.get('modification_request') or row.get('upgrade_article_id')==old['id'] and old.get('review_kind')=='DETERMINISTIC_LIMITED_SOURCE_NOTE' and not old.get('published'):return False
+    row.update(error='',error_diagnostic={})
     row['linked_article_id']=old['id'];row['article_id']=old['id']
     from .instagram_local_queue import same_reel
     pending=next((r for r in data.get('article_revisions',[]) if r['article_id']==old['id'] and r['state']=='ARTICLE_UPDATE_DRAFT' and any(same_reel(source,row['source_url']) for source in r.get('source_reels',[]))),None)

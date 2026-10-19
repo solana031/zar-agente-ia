@@ -64,6 +64,18 @@ class InstagramInboxTest(unittest.TestCase):
    inbox.process(item)
   build.assert_not_called();row=rn.read()['instagram_inbox'][0]
   self.assertEqual(row['error'],'OFFICIAL_REPOSITORY_UNRESOLVED');self.assertEqual(row['status'],'FAILED_SOURCE')
+ def test_visible_github_owner_can_identify_a_repo_without_a_separate_homepage(self):
+  result={'total_count':200,'items':[{'name':'ReelMimic','full_name':'creator123/ReelMimic','homepage':''},{'name':'ReelMimic','full_name':'another123/ReelMimic','homepage':''}]}
+  with patch.object(rn,'github',return_value=result),patch.object(inbox,'homepage_confirms_repository') as homepage:
+   unresolved=inbox.resolve_entity('Tool: ReelMimic',deterministic_only=True)
+   resolved=inbox.resolve_entity('Tool: ReelMimic',deterministic_only=True,visual_evidence='creator123 Ask Gemini github.com/creator123... README ReelMimic')
+  self.assertEqual(unresolved['reason'],'SEARCH_NOT_EXHAUSTIVE');self.assertEqual(resolved['repo'],'creator123/ReelMimic')
+  self.assertEqual(resolved['confidence'],'VISIBLE_GITHUB_OWNER_AND_EXACT_NAME');homepage.assert_not_called()
+ def test_two_visible_owners_are_not_resolved_by_popularity(self):
+  result={'total_count':200,'items':[{'name':'Tool','full_name':'creator123/Tool'},{'name':'Tool','full_name':'another123/Tool'}]}
+  with patch.object(rn,'github',return_value=result):
+   resolution=inbox.resolve_entity('Tool: Tool',deterministic_only=True,visual_evidence='creator123 github.com\nanother123 github.com')
+  self.assertEqual(resolution['status'],'NEEDS_DISAMBIGUATION')
  def test_github_limit_preserves_http_and_waits_without_losing_item(self):
   import time
   item=inbox.receive(self.event())[0];inbox.update(item,local_worker_done=True)

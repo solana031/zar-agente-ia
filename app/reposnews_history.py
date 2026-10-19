@@ -42,7 +42,9 @@ def index(data):
             if row['id'] in entry['item_ids'] and decision and entry.get('state')=='COMPLETED' and rank.get(decision,0)>rank.get(entry.get('decision'),0):
                 entry.update(decision=decision,active_item_id=row['id'])
         related=[a for a in data.get('articles',[]) if url in list(links([a.get('discovery_source'),a.get('source_reels',[])]))]
-        entry['linked_article_ids']=[a['id'] for a in related]
+        article_ids={a['id'] for a in data.get('articles',[])}
+        matched=[r.get('linked_article_id') or r.get('article_id') for r in data.get('instagram_inbox',[]) if r['id'] in entry['item_ids'] and r.get('status') in {'READY_PRIVATE','ARTICLE_UPDATE_DRAFT','NO_CHANGE','PUBLISHED','UPDATE_PROPOSAL'}]
+        entry['linked_article_ids']=list(dict.fromkeys([a['id'] for a in related]+[i for i in matched if i in article_ids]))
         entry['indexed_at']=previous.get('indexed_at') or holdings._now()
     data['historical_reel_index']=list(found.values())
     return data['historical_reel_index']

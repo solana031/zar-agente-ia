@@ -60,6 +60,15 @@ def test_historical_index_unifies_permalinks_not_titles(context):
     assert history.summary(data)['TOTAL_REELS']==2
 
 
+def test_pending_update_keeps_its_verified_match_before_public_approval(context):
+    data=rn.read();row=data['instagram_inbox'][0]
+    row.update(source_url='https://www.instagram.com/reel/NewSource/',status='ARTICLE_UPDATE_DRAFT',linked_article_id=data['articles'][0]['id'])
+    before=copy.deepcopy(data['articles'])
+    entry=next(e for e in history.index(data) if 'NewSource' in e['permalink'])
+    assert entry['linked_article_ids']==[data['articles'][0]['id']]
+    assert data['articles']==before
+
+
 def test_post_and_reel_paths_for_same_shortcode_have_one_history_entry(context):
     data=rn.read();data['instagram_inbox'].append(dict(data['instagram_inbox'][0],id='b'*24,source_url='https://www.instagram.com/p/Original/?igsh=tracking'))
     entries=history.index(data)
@@ -115,9 +124,10 @@ def test_match_identity_ignores_title_and_normalizes_repo(context):
 
 
 def test_same_evidence_records_no_change_without_model_or_duplicate(context):
-    a,row=context;data=rn.read()
+    a,row=context;data=rn.read();row.update(error='OLD_FAILURE',error_diagnostic={'code':'OLD_FAILURE'},error_history=[{'code':'OLD_FAILURE'}])
     with patch('app.reposnews_generation.generate_json') as model:assert revisions.consider(data,row,article())
     model.assert_not_called();assert row['status']=='NO_CHANGE';assert len(data['articles'])==1
+    assert row['error']=='';assert row['error_diagnostic']=={};assert row['error_history']==[{'code':'OLD_FAILURE'}]
 
 
 def test_update_draft_preserves_live_snapshot_and_requires_exact_approval(context):
