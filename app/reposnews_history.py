@@ -62,7 +62,7 @@ def summary(data):
     for entry in entries:
         if entry.get('state')!='PROCESSING':continue
         row=next((r for r in data.get('instagram_inbox',[]) if r['id']==entry.get('active_item_id')),{})
-        active.append({'item_id':row.get('id'),'permalink':entry['permalink'],'stage':row.get('processing_state'),'status':row.get('status'),'error':row.get('error'),'attempts':row.get('attempts',0)})
+        active.append({'item_id':row.get('id'),'permalink':entry['permalink'],'stage':row.get('processing_state'),'status':row.get('status'),'error':row.get('error'),'attempts':row.get('attempts',0),'retry_after':row.get('retry_after') if row.get('status')=='FAILED_RETRYABLE' else None})
     return dict(counts,active=active,mode='BATCH_LIMITED',concurrency=1,enabled=data.get('historical_backfill',{}).get('enabled',False))
 
 

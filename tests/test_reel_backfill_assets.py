@@ -278,6 +278,15 @@ def test_unavailable_visual_model_does_not_blindly_select_frames(context):
     assert a['contextual_asset_status']=='LIMITED';assert not any(x.get('kind')=='REEL_FRAME' for x in a['assets'])
 
 
+def test_reel_cover_is_not_labelled_as_an_official_project_image(context):
+    from pathlib import Path
+    a,_=context;a.update(image_kind='REEL_FRAME',image_asset='source-'+'0'*24+'.png')
+    app=Flask(__name__,template_folder=str(Path(__file__).resolve().parents[1]/'app/templates'))
+    with app.test_request_context(),patch.object(rn,'read',return_value={'articles':[a]}),patch.object(rn,'public_legal_profile',return_value={}),patch.object(rn,'legal_status',return_value={'status':'DRAFT'}):
+        assert 'Fotograma del Reel original' in rn.render('es',a['id'],True)
+        assert 'Original Reel frame' in rn.render('en',a['id'],True)
+
+
 def test_official_hero_competes_with_contextual_reel_frame(context):
     a,row=context;a.update(body_es='## Cómo funciona\nTexto.',body_en='## How it works\nText.')
     private=rn._path().parent/'private-assets'/row['id'];private.mkdir(parents=True);(private/'ui.jpg').write_bytes(noise())
