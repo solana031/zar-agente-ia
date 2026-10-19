@@ -6,6 +6,10 @@ from playwright.sync_api import sync_playwright,expect
 
 ROOT=Path(__file__).resolve().parents[1]
 ID='0123456789abcdef'
+CLIPPER_HTML="""<meta name="viewport" content="width=device-width,initial-scale=1">
+<body class="zarBusinessPane" data-workspace-type="clipper"><main id="orchestrationWorkspaceInner">
+<header class="zwtSubappHeader"><button onclick="document.getElementById('zarBusinessWorkflows').insertAdjacentHTML('beforeend','<div id=zarMediaWorkflowMount></div>');this.remove()">Abrir Clipper</button></header>
+<details id="zoDebug" open><section id="zarBusinessWorkflows"></section></details></main></body>"""
 
 
 def check(width):
@@ -27,11 +31,11 @@ def check(width):
         route.fulfill(content_type='application/json',body=json.dumps(data))
     with sync_playwright() as p:
         browser=p.chromium.launch();page=browser.new_page(viewport={'width':width,'height':900});errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
-        page.route('**/*',lambda r:r.abort());page.route('https://zar.test/clipper',lambda r:r.fulfill(content_type='text/html',body='<meta name="viewport" content="width=device-width,initial-scale=1"><button onclick="this.insertAdjacentHTML(\'afterend\',\'<div id=zarMediaWorkflowMount></div>\');this.remove()">Abrir Clipper</button>'))
+        page.route('**/*',lambda r:r.abort());page.route('https://zar.test/clipper',lambda r:r.fulfill(content_type='text/html',body=CLIPPER_HTML))
         page.route('**/api/**',api)
         page.route('**/static/*',lambda r:r.fulfill(path=str(ROOT/'app/static'/r.request.url.split('/')[-1].split('?')[0])))
         page.route('https://zar.test/video-project/'+ID,lambda r:r.fulfill(content_type='text/html',body=html))
-        page.goto('https://zar.test/clipper');page.add_style_tag(path=str(ROOT/'app/static/text-video.css'));page.add_script_tag(path=str(ROOT/'app/static/text-video.js'))
+        page.goto('https://zar.test/clipper');page.add_style_tag(path=str(ROOT/'app/static/workspace-tabs.css'));page.add_style_tag(path=str(ROOT/'app/static/text-video.css'));page.add_script_tag(path=str(ROOT/'app/static/text-video.js'))
         page.get_by_role('button',name='Abrir Clipper',exact=True).click()
         expect(page.get_by_role('heading',name='De texto a vídeo terminado')).to_be_visible();expect(page.locator('[data-tv-projects] .tvCard')).to_have_count(6)
         page.get_by_role('button',name='Siguiente',exact=True).click();expect(page.locator('[data-tv-projects] .tvCard')).to_have_count(2)
@@ -39,6 +43,8 @@ def check(width):
         page.get_by_role('button',name='Crear vídeo privado',exact=True).click();expect(page.locator('[data-tv-feedback]')).to_contain_text('Proyecto guardado')
         assert len(posts)==1 and posts[0][1]['duration']==45 and len(posts[0][1]['request_id'])>=12
         assert page.evaluate('document.documentElement.scrollWidth')<=width
+        page.evaluate("document.body.dataset.workspaceType='sites'")
+        expect(page.locator('#zarTextVideoCreator')).to_be_hidden()
         page.goto('https://zar.test/video-project/'+ID)
         expect(page.locator('[data-social-form] [name=title]')).to_have_value('Guía original')
         expect(page.locator('[data-social-confirm]')).to_be_disabled()
