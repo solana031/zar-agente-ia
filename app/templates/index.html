@@ -2929,7 +2929,7 @@ async function zsRunValidationSuite(){
 }
 
 function zsInitChart(){const canvas=document.getElementById('zsCanvas');if(!canvas)return;if(canvas.dataset.initialized){StonksRealtimeBus.draw();return;}canvas.dataset.initialized='1';StonksRealtimeBus.chart('1Min');}
-function showWorkspace(){zarPanelEnhanced();openPanel();window.openCompanyWorkspace(body);}
+function showWorkspace(){zarPanelEnhanced();openPanel();window.openZarWorkspace(body);}
 async function verifyWorkspaceWrites(button){if(!await ZarUI.confirm('Crear o completar ZAR Workspace Test - Docs, Sheets y Slides en la cuenta ZAR, escribir contenido de prueba, verificarlo y preparar ZAR con ocho subcarpetas en Drive sin duplicar. Conserva los archivos para revisión.'))return;button.disabled=true;const out=document.getElementById('zarWorkspaceEvidence');out.textContent='Verificando escrituras reales…';try{const state=await fetch('/api/semantic/tasks').then(r=>r.json()),r=await fetch('/api/workspace/verify-writes',{method:'POST',headers:{'Content-Type':'application/json','X-ZAR-Business-CSRF':state.csrf},body:JSON.stringify({confirmed:true})}),j=await r.json();if(!r.ok)throw Error(j.error);out.replaceChildren();for(const [name,row] of Object.entries(j.results)){const p=document.createElement('p');p.textContent=name+' · '+row.status+' · '+(row.evidence||row.error||'');if(row.url){const a=document.createElement('a');a.href=row.url;a.target='_blank';a.rel='noopener';a.textContent=' Abrir prueba';p.append(a);}out.append(p);}}catch(e){out.textContent=e.message;}finally{button.disabled=false;}}
 function zarFavContacts(){try{return new Set(JSON.parse(localStorage.getItem('zar_contact_favs')||'[]'))}catch(e){return new Set()}}
 function toggleContactFav(id){const s=zarFavContacts();s.has(id)?s.delete(id):s.add(id);localStorage.setItem('zar_contact_favs',JSON.stringify([...s]));searchContactsPanel()}
@@ -6396,13 +6396,15 @@ window.zoRender=function(j){
 <link rel="stylesheet" href="/static/subapp-consolidation.css?v=33.3.45">
 <link rel="stylesheet" href="/static/mobile-consolidation.css?v=33.3.45">
 <script src="/static/company-workspace.js?v=33.3.45"></script>
+<link rel="stylesheet" href="/static/workspace-creator.css?v=33.3.90">
+<script src="/static/workspace-creator.js?v=33.3.90"></script>
 <script src="/static/subapp-consolidation.js?v=33.3.45"></script>
 <script src="/static/mobile-consolidation.js?v=33.3.45"></script>
 <link rel="stylesheet" href="/static/workspace-tabs.css?v=33.3.45">
 <link rel="stylesheet" href="/static/zar-browser.css?v=33.3.61"><script src="/static/zar-browser.js"></script>
 <link rel="stylesheet" href="/static/music-studio.css"><script src="/static/music-engine.js"></script><script src="/static/music-midi.js"></script><script src="/static/music-studio.js"></script>
 <script src="/static/treasury-account.js?v=33.3.45"></script>
-<script src="/static/workspace-tabs.js?v=33.3.45"></script>
+<script src="/static/workspace-tabs.js?v=33.3.90"></script>
 <script src="/static/sites-native.js?v=33.3.45"></script>
 <script src="/static/sites-editorial.js?v=33.3.45"></script>
 <script src="/static/reposnews-editor.js?v=33.3.88"></script>
