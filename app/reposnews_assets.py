@@ -70,7 +70,10 @@ def prepare(row,article,package):
             if isinstance(picks,list):selected=list(dict.fromkeys(i for i in picks if isinstance(i,int) and 0<=i<len(candidates)))[:3]
             visual={k:str(result.get(k,''))[:1800] for k in ('shows_es','shows_en','claims_es','claims_en')}
             placements={p['index']:p for p in result.get('placements',[]) if isinstance(p,dict) and isinstance(p.get('index'),int)}
-        except (ValueError,TypeError,OSError):pass
+            attempts.append({'source_type':'SEMANTIC_SELECTION','valid':bool(selected),'candidate_count':len(candidates),'reason':'SELECTED' if selected else 'NO_RELEVANT_SELECTION'})
+        except (ValueError,TypeError,OSError) as exc:
+            code=str(exc) if re.fullmatch(r'AI_PROVIDER_\d{3}',str(exc)) else type(exc).__name__
+            attempts.append({'source_type':'SEMANTIC_SELECTION','valid':False,'candidate_count':len(candidates),'reason':code})
     assets=[{'kind':'REEL_LINK','url':row.get('source_url'),'source':row.get('source_url'),'permission':'LINK_ONLY',**provenance('REEL_LINK',row.get('source_url'))}]
     chosen=[]
     for index in selected:

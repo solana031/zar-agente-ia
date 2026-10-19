@@ -81,6 +81,10 @@ def check(width,height,standalone=False):
             # Reuse actual legacy rendering with an editorial status fixture.
             # The status endpoint gets its own exact response rather than a provider mock.
             page.route('**/api/holdings/workflows/reposnews_status',lambda r:r.fulfill(content_type='application/json',body=json.dumps({'ok':True,'result':{'project_id':'fixture','articles':[{'id':'real-history-shape','title_es':'Artículo con revisión','state':'READY_PRIVATE','history':[{'at':'today','reason':'Approved revision without fields'}]}],'editorial_notifications':[],'domain_status':'ACTIVE'}})))
+            # The summary may arrive before the editor's independent status call.
+            page.evaluate("window.dispatchEvent(new CustomEvent('zar-workflow-state',{detail:{csrf:'fixture'}}))")
+            expect(page.locator('#zarReposNewsSiteSummary')).to_be_visible()
+            page.locator('#reposnewsEditor').evaluate('(e)=>e.remove()')
             page.add_script_tag(content=EDITOR)
             page.evaluate("window.dispatchEvent(new CustomEvent('zar-workflow-state',{detail:{csrf:'fixture'}}))")
             expect(page.locator('#zarReposNewsSiteSummary')).to_be_visible()
