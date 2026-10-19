@@ -56,7 +56,7 @@ def public_manifest(data=None):
     articles.sort(key=lambda a: a['id'])
     projection = {'articles': articles, 'legal': rn.public_legal_profile(data)}
     digest = hashlib.sha256(json.dumps(projection, sort_keys=True).encode()).hexdigest()
-    return {'schema': 1, 'source_revision': digest, 'source_commit': os.getenv('RAILWAY_GIT_COMMIT_SHA', ''),
+    return {'schema': 1, 'source_revision': digest, 'source_hash': digest, 'source_commit': os.getenv('RAILWAY_GIT_COMMIT_SHA', ''),
             'primary_status': 'PRIMARY_PUBLISHED', 'articles': articles,
             'published_articles_count': len(articles), 'request_nonce': _read().get('request_nonce', '')}
 
@@ -65,7 +65,7 @@ def parity(source, mirror):
     expected = {a['id']: a['revision'] for a in source['articles']}
     actual = {a['id']: a['revision'] for a in mirror.get('articles', [])}
     if (expected == actual and source['source_revision'] == mirror.get('source_revision')
-            and source.get('source_commit', '') == mirror.get('source_commit', '')
+            and source.get('source_hash', source['source_revision']) == mirror.get('source_hash', mirror.get('source_revision'))
             and mirror.get('mirror_policy') == 'noindex,follow'):
         return 'MIRROR_IN_SYNC'
     if actual and set(actual) != set(expected):
@@ -75,7 +75,12 @@ def parity(source, mirror):
 
 def wake():
     # No network or mirror failure can interrupt a primary editorial write.
-    _wake.set()
+    # Private revisions and connector bookkeeping do not initiate any network work.
+    try:
+        if public_manifest()['source_revision'] != _read().get('source_revision'):
+            _wake.set()
+    except Exception:
+        pass  # Derived failures must never roll back a primary write.
 
 
 def request_sync(scope):
@@ -85,7 +90,7 @@ def request_sync(scope):
         state = _read()
         state.update(request_nonce=secrets.token_hex(12), requested_at=holdings._now(), status='OUTDATED')
         _write(state)
-    wake()
+    _wake.set()
     return view(scope)
 
 
@@ -135,16 +140,16 @@ def refresh():
     with holdings.transaction('reposnews-mirror'):
         state = _read()
     before = state.get('source_revision')
+    previous_success = state.get('last_successful_revision', state.get('verified_revision'))
     state.update(primary_status='PRIMARY_PUBLISHED', source_revision=source['source_revision'],
-                 source_commit=source['source_commit'], published_articles_count=len(source['articles']), checked_at=holdings._now())
+                 source_hash=source['source_hash'], source_commit=source['source_commit'], published_articles_count=len(source['articles']), checked_at=holdings._now())
     state['primary_online'] = False
     try:
         _get(rn.ORIGIN+'/es/')
         state['primary_online'] = True
         remote = _get(MIRROR+'/build-manifest.json?mirror-check='+str(int(time.time()/120))).json()
         match = parity(source, remote)
-        acknowledged = source['request_nonce'] == remote.get('request_nonce', '')
-        state.update(parity=match, status='SYNCED' if match == 'MIRROR_IN_SYNC' and acknowledged else 'OUTDATED',
+        state.update(parity=match, status='SYNCED' if match == 'MIRROR_IN_SYNC' else 'OUTDATED',
                      last_static_build=remote.get('last_static_build'), last_static_deploy=remote.get('last_static_deploy'),
                      mirror_revision=remote.get('source_revision'), deploy_status=remote.get('deploy_status', 'UNKNOWN'))
         if state['status'] == 'SYNCED':
@@ -164,11 +169,16 @@ def refresh():
                 for asset in remote.get('asset_paths', []):
                     _head_asset(asset)
                 state.update(verified_at=holdings._now(), verified_revision=source['source_revision'], verified_deploy=remote.get('last_static_deploy'))
-            state.update(recovery_status='REPOSNEWS_RECOVERY_READY', error=None)
-            _notify(scope, 'MIRROR_SYNC_SUCCESS', 'mirror-synced:'+source['source_revision']+':'+remote.get('last_static_deploy', ''),
-                    'ReposNews mirror actualizado', str(len(source['articles']))+' artículos sincronizados con GitHub Pages.')
+            changed = previous_success != source['source_revision']
+            state.update(recovery_status='REPOSNEWS_RECOVERY_READY', error=None,
+                         last_successful_sync=(state.get('last_successful_sync') or state.get('verified_at')) if not changed else holdings._now(),
+                         last_successful_revision=source['source_revision'], sync_result='SYNCED' if changed else 'NOOP')
+            if changed:
+                _notify(scope, 'MIRROR_SYNC_SUCCESS', 'mirror-synced:'+source['source_revision'],
+                        'ReposNews mirror actualizado', str(len(source['articles']))+' artículos sincronizados con GitHub Pages.')
         else:
             state['recovery_status'] = 'NOT_READY'
+            dispatch(source, state)
             if before != source['source_revision']:
                 state['pending_since'] = holdings._now()
                 _notify(scope, 'MIRROR_OUTDATED', 'mirror-outdated:'+source['source_revision'],
@@ -210,7 +220,33 @@ def view(scope):
         state.update(status='OUTDATED', parity='MIRROR_OUTDATED')
     return state | {'primary_url': rn.ORIGIN, 'mirror_url': MIRROR, 'primary_provider': 'Railway',
                     'mirror_provider': 'GitHub Pages', 'published_articles_count': source['published_articles_count'],
-                    'primary_status': 'PRIMARY_PUBLISHED', 'automatic': True, 'interval_minutes': 5}
+                    'primary_status': 'PRIMARY_PUBLISHED', 'automatic': True, 'event_driven': bool(os.environ.get('REPOSNEWS_MIRROR_DISPATCH_TOKEN')),
+                    'dispatch_status': state.get('dispatch_status', 'AUTH_REQUIRED'), 'interval_minutes': 1440}
+
+
+def dispatch(source, state):
+    """After successful primary publication, wake the existing Pages workflow only on drift.
+
+    Credential must be provisioned by the owner in Railway secrets; never borrow a
+    developer's local gh session or expose it through the manifest/frontend.
+    """
+    token = os.environ.get('REPOSNEWS_MIRROR_DISPATCH_TOKEN', '').strip()
+    if not token:
+        state.update(dispatch_status='AUTH_REQUIRED', sync_result='DISPATCH_AUTH_REQUIRED')
+        return
+    if state.get('dispatched_revision') == source['source_revision'] and state.get('dispatched_nonce') == source['request_nonce']:
+        return
+    published = _get(rn.ORIGIN+'/mirror-manifest.json').json()
+    if published.get('primary_status') != 'PRIMARY_PUBLISHED' or published.get('source_revision') != source['source_revision']:
+        state['dispatch_status'] = 'WAITING_FOR_PRIMARY'
+        return
+    response = requests.post(WORKFLOW.split('/runs?')[0]+'/dispatches',
+        headers={'Authorization': 'Bearer '+token, 'Accept': 'application/vnd.github+json'},
+        json={'ref': 'main'}, timeout=20, allow_redirects=False)
+    if response.status_code not in {200,204}:
+        raise ValueError('MIRROR_DISPATCH_HTTP_'+str(response.status_code))
+    state.update(dispatch_status='DISPATCHED', dispatched_revision=source['source_revision'],
+                 dispatched_nonce=source['request_nonce'], dispatched_at=holdings._now(),dispatch_poll_deadline=time.time()+900)
 
 
 def start_worker():
@@ -228,7 +264,10 @@ def start_worker():
             except Exception:
                 pass  # Primary publication is never failed by derived mirror monitoring.
             last_run = time.monotonic()
-            _wake.wait(120)
+            # Daily cheap reconciliation; editorial changes and manual requests wake immediately.
+            # Poll only during an actual dispatched deployment to verify its completion.
+            pending=_read()
+            _wake.wait(120 if pending.get('dispatch_status') == 'DISPATCHED' and pending.get('status') == 'OUTDATED' and pending.get('dispatch_poll_deadline',0)>time.time() else 86400)
             _wake.clear()
     threading.Thread(target=work, daemon=True, name='reposnews-mirror-monitor').start()
 

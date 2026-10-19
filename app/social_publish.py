@@ -21,9 +21,11 @@ def tiktok_direct_post(video_url, caption, privacy="SELF_ONLY", confirmed=False)
     headers={"Authorization":"Bearer "+token,"Content-Type":"application/json; charset=UTF-8"}
     info=requests.post("https://open.tiktokapis.com/v2/post/publish/creator_info/query/",headers=headers,json={},timeout=25)
     if not info.ok: raise RuntimeError(f"TikTok creator info {info.status_code}: {info.text[:700]}")
-    options=((info.json().get("data") or {}).get("privacy_level_options") or [])
+    creator=info.json().get('data') or {}
+    if (info.json().get('error') or {}).get('code')!='ok':raise ValueError('TIKTOK_CREATOR_STATUS_NOT_READY')
+    options=(creator.get("privacy_level_options") or [])
     if privacy not in options: raise ValueError("Privacidad TikTok no autorizada por la cuenta; revisa las opciones actuales.")
-    payload={"post_info":{"title":str(caption or "")[:2200],"privacy_level":privacy,"disable_duet":False,"disable_comment":False,"disable_stitch":False,"is_aigc":True},"source_info":{"source":"PULL_FROM_URL","video_url":video_url}}
+    payload={"post_info":{"title":str(caption or "")[:2200],"privacy_level":privacy,"disable_duet":bool(creator.get('duet_disabled')),"disable_comment":bool(creator.get('comment_disabled')),"disable_stitch":bool(creator.get('stitch_disabled')),"is_aigc":True},"source_info":{"source":"PULL_FROM_URL","video_url":video_url}}
     r=requests.post("https://open.tiktokapis.com/v2/post/publish/video/init/",headers=headers,json=payload,timeout=30)
     if not r.ok: raise RuntimeError(f"TikTok publish {r.status_code}: {r.text[:900]}")
     return {"ok":True,"platform":"tiktok","data":r.json().get("data") or {}}
@@ -46,14 +48,21 @@ def scoped_instagram_readiness(scope_id):
     if not token or not user:return {'connected':False,'publish_capability':'BLOCKED','blocker':'INSTAGRAM_NOT_CONNECTED'}
     headers={'Authorization':'Bearer '+token};business='graph.instagram.com' in base
     response=requests.get(base+'/me' if business else base+'/'+user,params={'fields':'user_id,username' if business else 'id,username'},headers=headers,timeout=20,allow_redirects=False)
-    if not response.ok:return {'connected':False,'publish_capability':'BLOCKED','blocker':'INSTAGRAM_IDENTITY_HTTP_'+str(response.status_code)}
+    if not response.ok:
+        from .reposnews_inbox import safe_meta_error
+        diagnostic=safe_meta_error(response,token)
+        # HTTP 401 alone cannot distinguish expiry from revocation/invalid token.
+        cause={463:'EXPIRED_TOKEN',467:'INVALID_TOKEN',458:'AUTHORIZATION_REMOVED',460:'PASSWORD_CHANGED'}.get(diagnostic.get('subcode'),'PROVIDER_AUTH_ERROR_UNCLASSIFIED')
+        return {'connected':False,'status':'REAUTH_REQUIRED' if response.status_code==401 or diagnostic.get('code')==190 else 'ERROR',
+                'publish_capability':'BLOCKED','blocker':'INSTAGRAM_IDENTITY_HTTP_'+str(response.status_code),'diagnostic':diagnostic,'verified_cause':cause}
     data=response.json()
-    if str(data.get('user_id') or data.get('id'))!=user:return {'connected':False,'publish_capability':'BLOCKED','blocker':'INSTAGRAM_IDENTITY_MISMATCH'}
+    if str(data.get('user_id') or data.get('id'))!=user or data.get('username')!='zaragente031':return {'connected':False,'status':'ERROR','publish_capability':'BLOCKED','blocker':'INSTAGRAM_IDENTITY_MISMATCH'}
     permission='instagram_business_content_publish' if business else 'instagram_content_publish'
     permissions=requests.get(base+'/me/permissions',headers=headers,timeout=20,allow_redirects=False)
     granted={r.get('permission') for r in permissions.json().get('data',[]) if r.get('status')=='granted'} if permissions.ok else set()
     ready=permission in granted
     return {'connected':True,'account':data.get('username'),'account_id':user,'publish_capability':'AUTHORIZED_NOT_TESTED' if ready else 'BLOCKED',
+            'status':'CONNECTED' if ready else 'PERMISSION_REQUIRED', 'permissions':sorted(granted),
             'blocker':None if ready else 'MISSING_OR_UNVERIFIED_'+permission.upper(),'required_permission':permission,'permission_check_http':permissions.status_code}
 
 
@@ -101,9 +110,15 @@ def publishing_readiness(platform):
         result.update(account=data.get('username'),account_id=data['id'],capabilities=['IDENTITY_VERIFIED'],publish_capability='UNVERIFIED')
         return result
     response=requests.post('https://open.tiktokapis.com/v2/post/publish/creator_info/query/',headers={'Authorization':'Bearer '+os.environ['TIKTOK_ACCESS_TOKEN']},json={},timeout=25,allow_redirects=False)
-    if not response.ok:raise ValueError('TikTok no confirmó cuenta/opciones (HTTP '+str(response.status_code)+').')
     payload=response.json()
-    if (payload.get('error') or {}).get('code') not in {None,'ok'}:raise ValueError('TikTok requiere revisar la conexión de la cuenta.')
+    code=(payload.get('error') or {}).get('code')
+    if not response.ok or code!='ok':
+        import re
+        safe=re.sub(r'[^a-zA-Z0-9_]','',str(code or 'UNVERIFIED_RESPONSE'))[:80]
+        result.update(connected=False,status='PERMISSION_REQUIRED' if code in {'scope_not_authorized','unaudited_client'} else 'REAUTH_REQUIRED' if code=='access_token_invalid' else 'ERROR',blocker='TIKTOK_'+safe,provider_http=response.status_code)
+        return result
     data=payload.get('data') or {}
+    if not data.get('creator_username'):
+        return result | {'connected':False,'status':'ERROR','blocker':'TIKTOK_IDENTITY_UNVERIFIED'}
     result.update(account=data.get('creator_nickname'),account_id=data.get('creator_username'),max_video_post_duration_sec=data.get('max_video_post_duration_sec'),capabilities=['CREATOR_INFO_VERIFIED'],privacy_options=[v for v in data.get('privacy_level_options',[]) if v in {'PUBLIC_TO_EVERYONE','MUTUAL_FOLLOW_FRIENDS','FOLLOWER_OF_CREATOR','SELF_ONLY'}])
     return result

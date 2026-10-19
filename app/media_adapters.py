@@ -71,15 +71,13 @@ class VoiceAdapter:
 
 class PublishingAdapter:
     def prepare_youtube(self,scope_id,title,description='',privacy='private',thumbnail=None,subtitle_track=None):
-        from .identity_center import verify_google,provider_plan
         if privacy not in {'private','unlisted','public'}:raise ValueError('Privacy YouTube no válida.')
         if not str(title).strip() or len(str(title))>100 or len(str(description))>5000:raise ValueError('Título requerido (máximo 100) y descripción máximo 5000 caracteres.')
-        state=verify_google(scope_id,services=['YOUTUBE'])
-        cap=state.get('capabilities',{}).get('YOUTUBE',{})
-        ready=cap.get('status')=='CONNECTED' and cap.get('upload_capability') is True
-        if not ready:provider_plan(scope_id,'YOUTUBE')
+        from .text_video_social import connections
+        cap=connections(scope_id,['youtube'])['youtube']
+        ready=cap.get('ready') is True
         return {'ok':True,'dry_run':True,'validation':'LOCAL_AND_READ_ONLY_API','status':'READY_FOR_REVIEW' if ready else 'HUMAN_ACTION_REQUIRED',
-            'channel':(cap.get('channels') or [None])[0],'title':title,'description':description,'privacy':privacy,
+            'channel':cap.get('channel'),'title':title,'description':description,'privacy':privacy,
             'thumbnail':thumbnail,'subtitle_track':subtitle_track,'upload_capability':ready,'publish_capability':cap.get('publish_capability','BLOCKED'),
             'publish_status':'NOT_UPLOADED','message':'Sin subida: YouTube no ofrece dry-run de videos.insert; publicación y assets requieren confirmación posterior.'}
 

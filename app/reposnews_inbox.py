@@ -900,10 +900,13 @@ def register(app,scope_fn=None):
         except ValueError:abort(403)
         client=os.environ.get('INSTAGRAM_APP_ID','')
         if not client or not os.environ.get('INSTAGRAM_APP_SECRET'):return jsonify(error='ACTION_REQUIRED: crear/conectar app Meta de Instagram Login.'),409
-        state=secrets.token_urlsafe(32);session['reposnews_ig_state']={'value':state,'expires':time.time()+600}
+        permissions=list(PERMISSIONS)+(['instagram_business_content_publish'] if request.args.get('publishing')=='1' else [])
+        state=secrets.token_urlsafe(32);session['reposnews_ig_state']={'value':state,'expires':time.time()+600,'permissions':permissions}
+        target=request.args.get('return_to','')
+        if re.fullmatch(r'/video-project/[a-f0-9]{16}',target):session['reposnews_ig_state']['return_to']=target+'#publish'
         callback=os.environ.get('INSTAGRAM_REDIRECT_URI','https://web-production-a9565.up.railway.app/api/reposnews/instagram/callback')
         return redirect('https://www.instagram.com/oauth/authorize?'+urlencode({'client_id':client,'redirect_uri':callback,'response_type':'code',
-            'scope':','.join(PERMISSIONS),'state':state,'enable_fb_login':'0','force_authentication':'1'}))
+            'scope':','.join(permissions),'state':state,'enable_fb_login':'0','force_authentication':'1'}))
 
     @app.get('/api/reposnews/instagram/callback')
     def reposnews_instagram_callback():
@@ -917,6 +920,11 @@ def register(app,scope_fn=None):
                     ('Instagram autorizó la cuenta, pero no se completó '+error+'. Consulta el diagnóstico seguro en Inbox.') if error else 'Instagram conectado y capacidades de lectura verificadas.',
                     'error':error,'detail':detail or {},'checked_at':holdings._now()};rn.write(data)
             if error and request.accept_mimetypes.best=='application/json':return jsonify(error=error,**(detail or {})),http_status
+            if 'instagram_business_content_publish' in pending.get('permissions',[]):
+                if not error:
+                    from .text_video_social import connections
+                    connections(scope_fn(),['instagram'])
+                return redirect(pending.get('return_to','/?zar_workspace=orchestration#zarSocialConnections'))
             return redirect('/?zar_workspace=sites#reposnewsEditor')
         if pending.get('expires',0)<time.time() or not hmac.compare_digest(pending.get('value',''),request.args.get('state','')):return finish('OAUTH_STATE_INVALID',http_status=403)
         if not request.args.get('code'):return finish('OAUTH_CANCELLED')
@@ -933,7 +941,7 @@ def register(app,scope_fn=None):
             from . import oauth_vault
             user_id=str(who.get('user_id') or who.get('id') or token.get('user_id') or '')
             if not user_id:return finish('ACCOUNT_ID_NOT_VERIFIED',{'stage':stage})
-            record={'access_token':access,'user_id':user_id,'username':who['username'],'requested_permissions':list(PERMISSIONS),'identity_verified_at':holdings._now()}
+            record={'access_token':access,'user_id':user_id,'username':who['username'],'requested_permissions':list(PERMISSIONS)+(['instagram_business_content_publish'] if 'instagram_business_content_publish' in pending.get('permissions',[]) else []),'identity_verified_at':holdings._now()}
             # Preserve a valid identity token encrypted even if capability checks fail.
             pending_path=rn._path().parent/'instagram-oauth-pending'
             stage='TOKEN_PERSISTENCE';oauth_vault.persist(pending_path,json.dumps(record),rn._path().parent)

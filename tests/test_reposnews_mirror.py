@@ -66,6 +66,9 @@ def test_mirror_success_notifies_and_recovery_is_ready(editorial, monkeypatch):
     assert checked_assets == ['/media/reposnews/home.png']
     mirror.refresh()
     assert checked_assets == ['/media/reposnews/home.png']  # once per verified deployment
+    assert len(events)==1
+    assert mirror.view('owner')['sync_result']=='NOOP'
+    assert mirror.view('owner')['last_successful_sync']
 
 
 def test_mirror_failure_never_fails_primary_publication(editorial, monkeypatch):
@@ -160,8 +163,53 @@ def test_runner_skips_unchanged_verified_public_content(editorial):
     source = mirror.public_manifest()
     current = source | {'mirror_policy': 'noindex,follow', 'last_static_build': datetime.now(timezone.utc).isoformat()}
     assert runner.unchanged(source, current)
-    assert not runner.unchanged(source, current | {'request_nonce': 'new-manual-request'})
-    assert not runner.unchanged(source, current | {'last_static_build': '2000-01-01T00:00:00+00:00'})
+    assert runner.unchanged(source, current | {'request_nonce': 'new-manual-request'})
+    assert runner.unchanged(source, current | {'last_static_build': '2000-01-01T00:00:00+00:00'})
+    assert runner.unchanged(source, current | {'source_commit': 'unrelated-app-release'})
+    assert not runner.unchanged(source,current | {'source_hash':'changed'})
+
+
+def test_event_dispatch_after_verified_primary_once_per_change(editorial,monkeypatch):
+    from unittest.mock import Mock
+    monkeypatch.setenv('REPOSNEWS_MIRROR_DISPATCH_TOKEN','offline-dispatch-fixture')
+    source=mirror.public_manifest();state={}
+    monkeypatch.setattr(mirror,'_get',lambda url:SimpleNamespace(json=lambda:source))
+    post=Mock(return_value=SimpleNamespace(status_code=204));monkeypatch.setattr(mirror.requests,'post',post)
+    mirror.dispatch(source,state);mirror.dispatch(source,state)
+    assert post.call_count==1 and state['dispatch_status']=='DISPATCHED'
+    assert post.call_args.args[0].endswith('reposnews-mirror.yml/dispatches')
+    assert post.call_args.kwargs['json']=={'ref':'main'}
+
+
+def test_event_never_dispatches_unpublished_revision_or_without_runtime_auth(editorial,monkeypatch):
+    from unittest.mock import Mock
+    source=mirror.public_manifest();state={};post=Mock();monkeypatch.setattr(mirror.requests,'post',post)
+    monkeypatch.delenv('REPOSNEWS_MIRROR_DISPATCH_TOKEN',raising=False)
+    mirror.dispatch(source,state);assert state['dispatch_status']=='AUTH_REQUIRED';post.assert_not_called()
+    monkeypatch.setenv('REPOSNEWS_MIRROR_DISPATCH_TOKEN','offline-only')
+    monkeypatch.setattr(mirror,'_get',lambda url:SimpleNamespace(json=lambda:{'primary_status':'FAILED'}))
+    mirror.dispatch(source,state);assert state['dispatch_status']=='WAITING_FOR_PRIMARY';post.assert_not_called()
+
+
+def test_private_changes_do_not_wake_event_worker(editorial):
+    source=mirror.public_manifest();mirror._write({'source_revision':source['source_revision']});mirror._wake.clear()
+    editorial['articles'][0]['body_es']='Private edit';rn.write(editorial)
+    assert not mirror._wake.is_set()
+    editorial['articles'][0]['published_snapshot']['body_es']='New approved public text';rn.write(editorial)
+    assert mirror._wake.is_set()
+
+
+def test_even_manual_force_is_noop_without_output_build(editorial,monkeypatch,tmp_path):
+    from unittest.mock import Mock
+    source=mirror.public_manifest();remote=source | {'mirror_policy':'noindex,follow'}
+    class Response:
+        def __enter__(self):return self
+        def __exit__(self,*args):pass
+        def read(self):return json.dumps(remote).encode()
+    monkeypatch.setattr(runner,'manifest',lambda:source);monkeypatch.setattr(runner,'urlopen',lambda *a,**k:Response())
+    build=Mock();monkeypatch.setattr(runner,'build_mirror',build)
+    runner.prepare(tmp_path/'must-not-exist',force=True)
+    build.assert_not_called();assert not (tmp_path/'must-not-exist').exists()
 
 
 def test_native_notifications_deduplicate_and_resolve_failure(editorial):

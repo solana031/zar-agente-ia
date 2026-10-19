@@ -28,20 +28,15 @@ def manifest(fetch=public_fetch):
         if article.get('es') != '/es/repositorios/'+article['id']+'/' or article.get('en') != '/en/repositories/'+article['id']+'/':
             raise ValueError('PUBLIC_SLUG_REQUIRED')
     allowed = {key: value.get(key, '') for key in ('schema','source_revision','source_commit','primary_status','published_articles_count','request_nonce')}
+    allowed['source_hash'] = value.get('source_hash') or value['source_revision']
     allowed['articles'] = [{k: a[k] for k in ('id','revision','es','en')} for a in value['articles']]
     return allowed
 
 
 def unchanged(source, remote):
-    try:
-        built = datetime.fromisoformat(remote.get('last_static_build', '').replace('Z', '+00:00'))
-        recent = (datetime.now(timezone.utc)-built).total_seconds() < 7*86400
-    except (ValueError, TypeError):
-        recent = False
     return (source['source_revision'] == remote.get('source_revision')
-            and source.get('source_commit') == remote.get('source_commit')
-            and source.get('request_nonce', '') == remote.get('request_nonce', '')
-            and remote.get('mirror_policy') == 'noindex,follow' and recent)
+            and (source.get('source_hash') or source['source_revision']) == (remote.get('source_hash') or remote.get('source_revision'))
+            and remote.get('mirror_policy') == 'noindex,follow')
 
 
 def build_mirror(output, fetch=public_fetch):
@@ -84,7 +79,8 @@ def prepare(output, force=False):
         if error.code != 404:
             raise
         current = {}
-    changed = force or not unchanged(source, current)
+    # Manual requests, unrelated application commits and artifact age never force a rebuild.
+    changed = not unchanged(source, current)
     if changed:
         build_mirror(output)
     if os.getenv('GITHUB_OUTPUT'):

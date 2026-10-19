@@ -3,7 +3,7 @@
 name: ReposNews mirror
 on:
   schedule:
-    - cron: '2-59/5 * * * *'
+    - cron: '17 6 * * *'
   workflow_dispatch:
 permissions:
   contents: write
@@ -35,14 +35,7 @@ jobs:
           sparse-checkout: /tools/
       - name: Build only primary PUBLISHED snapshots
         id: build
-        env:
-          FORCE_SYNC: ${{ github.event_name == 'workflow_dispatch' }}
-        run: |
-          if [ "$FORCE_SYNC" = "true" ]; then
-            python3 builder/tools/reposnews_mirror_sync.py prepare --force
-          else
-            python3 builder/tools/reposnews_mirror_sync.py prepare
-          fi
+        run: python3 builder/tools/reposnews_mirror_sync.py prepare
       - name: Configure existing Pages
         if: steps.build.outputs.changed == 'true'
         uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5

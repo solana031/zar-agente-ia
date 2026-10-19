@@ -219,7 +219,7 @@ def _setup_actions(s):
       'SHOPIFY':('CONFIGURAR SHOPIFY','https://admin.shopify.com',['Configurar SHOPIFY_SHOP_DOMAIN y SHOPIFY_ADMIN_ACCESS_TOKEN únicamente en Railway principal','Pulsar CONTINUAR / VERIFICAR']),
       'STRIPE':('CONFIGURAR STRIPE','https://dashboard.stripe.com/apikeys',['Configurar STRIPE_SECRET_KEY y STRIPE_WEBHOOK_SECRET únicamente en Railway principal','Pulsar CONTINUAR / VERIFICAR'])})
     for a in s['human_actions']:
-        if a['service'] not in guides or a['status']=='DONE' or a.get('action')=='OBSERVED_BLOCKER':continue
+        if a['service'] not in guides or a['status']=='DONE' or a.get('action') in {'OBSERVED_BLOCKER','SOCIAL_CONNECTION'}:continue
         title,url,instructions=guides[a['service']]
         a.update(title=title,url=url,instructions=instructions)
         if a['service']=='ADSENSE' and 'falta autorización OAuth' in a.get('reason',''):a.update(title='Autorizar lectura AdSense',instructions=['Conectar el permiso AdSense para '+address,'Completar consentimiento humano si Google lo solicita','Verificar existencia y estado de cuenta antes de registrar otra'])

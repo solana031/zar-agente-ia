@@ -31,7 +31,7 @@ def chat_request(message):
 def summary(identifier,record):
     fields=('title','status','video_state','video_stage','error','render','providers','voice','captions','music','publication','publication_mode','scenes','assembly','video_revision')
     result={k:record.get(k) for k in fields};result.update(id=identifier,project=record.get('project'),preview='/api/holdings/media/video/'+identifier if record.get('artifact') else None)
-    result['publication']={p:{k:v for k,v in row.items() if k in {'platform','status','external_id','url','error','published_at','approved_at','container_id','publish_id'}} for p,row in record.get('publication',{}).items()}
+    result['publication']={p:{k:v for k,v in row.items() if k in {'platform','status','external_id','url','error','last_error','public_url','attempt_count','approval_id','video_revision_id','published_at','approved_at','container_id','publish_id'}} for p,row in record.get('publication',{}).items()}
     return result
 
 
