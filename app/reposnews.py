@@ -115,6 +115,8 @@ def read():
 def write(data):
     path=_path();path.parent.mkdir(parents=True,exist_ok=True)
     tmp=path.with_suffix('.tmp');tmp.write_text(json.dumps(data,ensure_ascii=False,indent=2),encoding='utf-8');tmp.replace(path)
+    from .reposnews_mirror import wake
+    wake()  # Derived mirror monitoring never performs network in primary publication.
 
 
 def state(scope):
@@ -511,6 +513,9 @@ def public_dispatch():
     if host not in HOSTS: return None
     if host=='reposnews.com': return redirect(ORIGIN+request.path,code=308)
     path=request.path.strip('/')
+    if path=='mirror-manifest.json':
+        from .reposnews_mirror import public_manifest
+        return Response(json.dumps(public_manifest()), mimetype='application/json', headers={'Cache-Control':'no-store'})
     if path.startswith('media/reposnews/'): return media(path.removeprefix('media/reposnews/'))
     if path in {'robots.txt','sitemap.xml','ads.txt'}:
         data=read()

@@ -38,7 +38,14 @@ for path in paths:
     with urlopen('https://www.reposnews.com'+path, timeout=30) as response: live=response.read().decode()
     static=(build/path.strip('/')/'index.html').read_text(encoding='utf-8')
     a,b=SEO(),SEO();a.feed(live);b.feed(static)
-    assert a.tags==b.tags and a.data==b.data, ('SEO mismatch',path)
+    is_mirror = json.loads((build/'build-manifest.json').read_text()).get('mirror_policy') == 'noindex,follow'
+    if is_mirror:
+        assert 'content="noindex,follow"' in static
+        def without_robots(tags):
+            return [(tag,attrs) for tag,attrs in tags if not (tag=='meta' and ('name','robots') in attrs)]
+        assert without_robots(a.tags)==without_robots(b.tags) and a.data==b.data, ('SEO mismatch',path)
+    else:
+        assert a.tags==b.tags and a.data==b.data, ('SEO mismatch',path)
     assert a.links==b.links, ('link mismatch',path)
     for href in b.links:
         if not href or not href.startswith('/') or href.startswith('//'):continue

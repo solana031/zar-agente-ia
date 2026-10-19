@@ -82,7 +82,7 @@ def deploy(root, approved_sha256, workspace, public_base=PREVIEW):
     git('config', 'core.autocrlf', 'false')
     # Remove only tracked public artifact files; never touch domain configuration.
     for name in git('ls-files').splitlines():
-        if name == 'CNAME':
+        if name == 'CNAME' or name.startswith('.github/'):
             continue
         path = checkout/name
         if checkout not in path.resolve().parents or path.is_symlink():

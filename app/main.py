@@ -1854,6 +1854,8 @@ from . import reposnews_editorial
 reposnews_editorial.register(app, _user_scope_id)
 from . import notification_center,reposnews_revisions,reposnews_history,workspace_creator
 notification_center.register(app,_user_scope_id)
+from . import reposnews_mirror
+reposnews_mirror.register(app,_user_scope_id)
 reposnews_revisions.register(app,_user_scope_id)
 reposnews_history.register(app,_user_scope_id)
 workspace_creator.register(app,_user_scope_id)
@@ -1861,6 +1863,7 @@ from . import text_video
 text_video.register(app,_user_scope_id)
 if os.environ.get('RAILWAY_PROJECT_ID') == '33af08fe-7e2e-4df3-afb5-c5a1ac41b2f5':
     reposnews_owner = reposnews.bootstrap()
+    reposnews_mirror.start_worker()
     reposnews_inbox.human_action(reposnews_owner)
     reposnews_inbox.start_worker()
     text_video.start_worker(reposnews_owner)

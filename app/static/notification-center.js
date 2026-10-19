@@ -7,6 +7,7 @@
  const safe=v=>{try{const u=new URL(v,location.origin);return ['https:','http:'].includes(u.protocol)?u.href:'#';}catch{return '#';}};
  const icon='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4M10 2h4"/></svg>';
  const labels={ARTICLE_READY:'Artículo listo',ARTICLE_UPDATE_READY:'Actualización disponible',ARTICLE_NEEDS_DISAMBIGUATION:'Necesito un dato',ARTICLE_FAILED:'No se pudo completar',DOC_READY:'Documento listo',SLIDES_READY:'Presentación lista',SHEET_READY:'Hoja lista',FORM_READY:'Formulario listo',VIDEO_READY:'Vídeo listo',PUBLISH_SUCCESS:'Publicación completada',PUBLISH_FAILED:'Publicación fallida',WORKER_OFFLINE:'Worker desconectado',WORKER_SESSION_EXPIRED:'Sesión caducada',SYSTEM_ACTION_REQUIRED:'Acción pendiente'};
+ Object.assign(labels,{MIRROR_SYNC_SUCCESS:'Mirror actualizado',MIRROR_SYNC_FAILED:'Mirror sin sincronizar',MIRROR_OUTDATED:'Mirror pendiente'});
  let state={items:[],historical:{}},csrf='',filter='TODAS',page=0,busy=false,message='',editing='',archived=false;
  const drafts=new Map(),expanded=new Set(),size=8;
  const dialog=document.createElement('dialog');dialog.id='zarNotificationCenter';dialog.setAttribute('aria-label','Centro de notificaciones ZAR');document.body.append(dialog);
@@ -31,6 +32,7 @@
    if(d.reel)actions=link(d.reel,'Ver Reel');
    form='<form data-resolve="'+esc(n.id)+'"><label>Nombre de herramienta<input name="project" maxlength="80" required value="'+esc(drafts.get(n.id)||'')+'"></label><button>Continuar</button></form>';
   }else if(n.type==='ARTICLE_FAILED'&&!n.completed){actions=d.status==='FAILED_PERMANENT'?'':button('retry',n.id,'Reintentar');if(d.reel)actions+=link(d.reel,'Ver Reel');}
+  else if(n.type==='MIRROR_SYNC_FAILED'&&!n.completed)actions=button('mirror-sync',n.id,'REINTENTAR MIRROR')+link(n.deep_link,'VER DETALLES');
   else actions=(n.actions||[{label:'Ver',url:n.deep_link}]).filter(x=>x.url).map(x=>link(x.url,x.label)).join('');
   const at=n.created_at?new Date(n.created_at):null,time=at&&!isNaN(at)?at.toLocaleString('es-ES',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}):'';
   const detail={diagnostico:n.message||n.reason,status:n.status,fuentes:d.sources,seo:d.seo,assets:a?.assets,error:d.diagnostic,etapa:d.failed_stage,intentos:d.attempts,detalle:n.details};
@@ -78,6 +80,7 @@
    else if(['publish','cancel'].includes(action))await post('/api/reposnews/editorial/decision',{id:n.article.id,decision:action==='publish'?'PUBLICAR':'CANCELAR',approval_request:n.article.approval_request});
    else if(['update','ignore'].includes(action))await post('/api/reposnews/revisions/decision',{id:n.entity_id,decision:action==='update'?'ACTUALIZAR':'IGNORAR',approval_request:n.approval_request});
    else if(action==='retry')await post('/api/holdings/workflows/reposnews_inbox_recover',{id:n.inbox_item_id||n.editorial?.inbox_item_id||n.entity_id});
+   else if(action==='mirror-sync')await post('/api/reposnews/mirror/sync',{});
    message='Acción guardada.';await refresh();render(true);
   }catch(x){message=x.message;render(true);}
  });
