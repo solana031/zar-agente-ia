@@ -29,23 +29,62 @@ def tiktok_direct_post(video_url, caption, privacy="SELF_ONLY", confirmed=False)
     return {"ok":True,"platform":"tiktok","data":r.json().get("data") or {}}
 
 
-def instagram_reel(video_url, caption, confirmed=False):
-    token=os.environ.get("INSTAGRAM_ACCESS_TOKEN","").strip(); user=os.environ.get("INSTAGRAM_IG_USER_ID","").strip(); ver=os.environ.get("META_GRAPH_VERSION","v24.0")
+def instagram_context(scope_id=None):
+    token=os.environ.get('INSTAGRAM_ACCESS_TOKEN','').strip();user=os.environ.get('INSTAGRAM_IG_USER_ID','').strip();base='https://graph.facebook.com/'+os.environ.get('META_GRAPH_VERSION','v24.0')
+    if scope_id:
+        from . import reposnews as rn,reposnews_inbox as inbox
+        if rn.read().get('owner')==scope_id:
+            auth=inbox.credentials()
+            if auth.get('access_token') and auth.get('user_id'):
+                token=auth['access_token'];user=str(auth['user_id'])
+                if auth.get('username') or any(p.startswith('instagram_business_') for p in auth.get('requested_permissions',[])):base='https://graph.instagram.com/v26.0'
+    return {'token':token,'user':user,'base':base}
+
+
+def scoped_instagram_readiness(scope_id):
+    context=instagram_context(scope_id);token=context['token'];user=context['user'];base=context['base']
+    if not token or not user:return {'connected':False,'publish_capability':'BLOCKED','blocker':'INSTAGRAM_NOT_CONNECTED'}
+    headers={'Authorization':'Bearer '+token};business='graph.instagram.com' in base
+    response=requests.get(base+'/me' if business else base+'/'+user,params={'fields':'user_id,username' if business else 'id,username'},headers=headers,timeout=20,allow_redirects=False)
+    if not response.ok:return {'connected':False,'publish_capability':'BLOCKED','blocker':'INSTAGRAM_IDENTITY_HTTP_'+str(response.status_code)}
+    data=response.json()
+    if str(data.get('user_id') or data.get('id'))!=user:return {'connected':False,'publish_capability':'BLOCKED','blocker':'INSTAGRAM_IDENTITY_MISMATCH'}
+    permission='instagram_business_content_publish' if business else 'instagram_content_publish'
+    permissions=requests.get(base+'/me/permissions',headers=headers,timeout=20,allow_redirects=False)
+    granted={r.get('permission') for r in permissions.json().get('data',[]) if r.get('status')=='granted'} if permissions.ok else set()
+    ready=permission in granted
+    return {'connected':True,'account':data.get('username'),'account_id':user,'publish_capability':'AUTHORIZED_NOT_TESTED' if ready else 'BLOCKED',
+            'blocker':None if ready else 'MISSING_OR_UNVERIFIED_'+permission.upper(),'required_permission':permission,'permission_check_http':permissions.status_code}
+
+
+def instagram_reel(video_url, caption, confirmed=False,scope_id=None):
+    context=instagram_context(scope_id);token=context['token'];user=context['user'];base=context['base']
     if not token or not user: return {"ok":False,"configured":False,"error":"Faltan INSTAGRAM_ACCESS_TOKEN / INSTAGRAM_IG_USER_ID."}
     if not confirmed: return {"ok":False,"requires_review":True,"message":"Confirma la publicación antes de enviarla a Instagram."}
-    base=f"https://graph.facebook.com/{ver}"
-    r=requests.post(f"{base}/{user}/media",params={"media_type":"REELS","video_url":video_url,"caption":str(caption or "")[:2200],"share_to_feed":"true","access_token":token},timeout=35)
+    headers={'Authorization':'Bearer '+token}
+    r=requests.post(f"{base}/{user}/media",data={"media_type":"REELS","video_url":video_url,"caption":str(caption or "")[:2200],"share_to_feed":"true"},headers=headers,timeout=35,allow_redirects=False)
     if not r.ok: raise RuntimeError(f"Instagram container {r.status_code}: {r.text[:900]}")
     cid=(r.json() or {}).get("id")
     if not cid: raise RuntimeError("Instagram no devolvió container id.")
     # Container processing can take time. We return the ID and publish can be retried after FINISHED.
-    status_r=requests.get(f"{base}/{cid}",params={"fields":"status_code,status","access_token":token},timeout=25)
+    status_r=requests.get(f"{base}/{cid}",params={"fields":"status_code,status"},headers=headers,timeout=25,allow_redirects=False)
     status_data=status_r.json() if status_r.ok else {}
     if str(status_data.get("status_code") or "").upper() != "FINISHED":
         return {"ok":True,"platform":"instagram","container_id":cid,"status":status_data,"pending_publish":True}
-    p=requests.post(f"{base}/{user}/media_publish",params={"creation_id":cid,"access_token":token},timeout=35)
+    p=requests.post(f"{base}/{user}/media_publish",data={"creation_id":cid},headers=headers,timeout=35,allow_redirects=False)
     if not p.ok: raise RuntimeError(f"Instagram publish {p.status_code}: {p.text[:900]}")
     return {"ok":True,"platform":"instagram","container_id":cid,"media":p.json()}
+
+
+def instagram_permalink(scope_id,identifier):
+    import re
+    if not re.fullmatch(r'[0-9]{1,80}',str(identifier)):return None
+    context=instagram_context(scope_id)
+    try:
+        response=requests.get(context['base']+'/'+str(identifier),params={'fields':'permalink'},headers={'Authorization':'Bearer '+context['token']},timeout=15,allow_redirects=False)
+        value=response.json().get('permalink') if response.ok else None
+        return value if isinstance(value,str) and value.startswith('https://www.instagram.com/') else None
+    except (ValueError,requests.RequestException):return None
 
 
 def publishing_readiness(platform):

@@ -25,7 +25,7 @@ def synthesize(text: str, voice: str = 'Kore', language: str = 'es-ES'):
 
     model = model_for('tts')
     url = f'https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent'
-    prompt = f'Lee en español de España, con naturalidad y sin añadir contenido: {text}'
+    prompt = f'Lee en {language}, con naturalidad y sin añadir contenido: {text}'
     payload = {
         'contents': [{'parts': [{'text': prompt}]}],
         'generationConfig': {

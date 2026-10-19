@@ -521,7 +521,8 @@ def _authorized():
 @app.before_request
 def _guard():
     allowed = {"login","health","oauth2callback","connect_google","connect_gmail","holdings_media_public_video_api","distributed_nodes.poll","distributed_nodes.claim","distributed_nodes.health","distributed_nodes.inference","agency_stripe_webhook","reposnews_instagram_webhook",
-               "instagram_local_worker_poll", "instagram_local_worker_progress", "instagram_local_worker_result", "instagram_local_worker_heartbeat", "workspace_artifact_image"}
+               "instagram_local_worker_poll", "instagram_local_worker_progress", "instagram_local_worker_result", "instagram_local_worker_heartbeat", "workspace_artifact_image",
+               "video_worker_poll", "video_worker_asset", "video_worker_progress", "video_worker_result"}
     if request.endpoint in allowed or request.path.startswith("/static/"):
         return None
     if request.endpoint in {'holdings_site_page','holdings_site_asset'}:
@@ -1856,10 +1857,13 @@ notification_center.register(app,_user_scope_id)
 reposnews_revisions.register(app,_user_scope_id)
 reposnews_history.register(app,_user_scope_id)
 workspace_creator.register(app,_user_scope_id)
+from . import text_video
+text_video.register(app,_user_scope_id)
 if os.environ.get('RAILWAY_PROJECT_ID') == '33af08fe-7e2e-4df3-afb5-c5a1ac41b2f5':
     reposnews_owner = reposnews.bootstrap()
     reposnews_inbox.human_action(reposnews_owner)
     reposnews_inbox.start_worker()
+    text_video.start_worker(reposnews_owner)
     workspace_creator.start_worker(reposnews_owner)
     def _verify_reposnews_after_start():
         try:
@@ -2051,6 +2055,9 @@ def holdings_media_public_video_api(token):
         if (record.get('checkpoint') or {}).get('project_id') != data['project']:
             raise ValueError('Export caducado')
         path = media_company.video_path(data['scope'], data['task'])
+        if data.get('digest'):
+            from .text_video_social import digest as video_digest
+            if video_digest(path)!=data['digest']:raise ValueError('Export de otra revisión')
         return send_file(path, mimetype='video/mp4', conditional=True, max_age=0)
     except (BadSignature, ValueError, KeyError, TypeError):
         return jsonify({'ok': False, 'error': 'Export no disponible.'}), 404

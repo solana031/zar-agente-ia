@@ -449,6 +449,9 @@ def _main():
         try:
             response = client.post(base+'/poll', json={'session': session_state}, timeout=(5, 20), allow_redirects=False)
             response.raise_for_status(); job = response.json().get('job')
+            if not job:
+                from .local_video_worker import poll_once
+                poll_once(config,LOCAL/'video-jobs',ffmpeg())
             if job:
                 if not re.fullmatch(r'[A-Za-z0-9_-]{1,128}', job.get('inbox_item_id', '')):
                     raise ValueError('INVALID_ITEM_ID')

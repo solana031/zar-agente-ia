@@ -126,6 +126,7 @@ def _save(scope_id, task_id, record):
     elif status=='PUBLISHING': phase='READY'
     elif status=='ERROR': phase='ERROR'
     record['project_state']=phase
+    if record.get('pipeline')=='TEXT_VIDEO':record['project_state']=record.get('video_state',phase)
     record.setdefault('costs',{'estimated':None,'actual':None,'currency':None,'provider':'DramaClaw DIRECT','usage':None})
     from .media_projects import trace
     trace(scope_id, task_id, record)
@@ -196,6 +197,9 @@ def _result(task, record):
         result["previous_preview_url"]="/api/holdings/media/video/"+task["id"]+"?revision=previous"
     if record.get("publish"):
         result["publish"] = record["publish"]
+    if record.get('pipeline')=='TEXT_VIDEO':
+        result.update(production_provider=(record.get('assembly') or {}).get('assembly','ZAR · DramaClaw / local'),caption=record.get('title',''),
+            video_state=record.get('video_state'),stage_label=record.get('video_stage'),text_video_url='/video-project/'+task['id'],providers=record.get('providers',[]))
     result['recovery'] = assess(record)
     return result
 
@@ -265,17 +269,17 @@ def produce_local(scope_id, task_id):
         return {"ok": True, "task_id": task_id, "status": record["status"], **_result(task, record)}
 
 
-def _narrator(text=None):
+def _narrator(text=None,language='es-ES'):
     from . import voice_pro
     text = text or "Esta es la voz del narrador. Una historia comienza con una idea y cobra vida en cada escena."
     if not voice_pro._eleven_configured() and not voice_pro._f5_url():
         from . import voice_tts
         if not voice_tts._api_key():
             return None
-        audio, mime = voice_tts.synthesize(text)
+        audio, mime = voice_tts.synthesize(text,language=language)
         return audio, mime, "Gemini"
     from .media_adapters import VoiceAdapter
-    return VoiceAdapter().synthesize(text)
+    return VoiceAdapter().synthesize(text,language=language)
 
 
 def process_one(scope_id):
@@ -306,6 +310,10 @@ def process_one(scope_id):
                 record["checkpoint"] = cp
                 _save(scope_id, task["id"], record)
             try:
+                if record.get('pipeline')=='TEXT_VIDEO':
+                    from .text_video import advance
+                    advance(scope_id,task,record)
+                    return 'Media: proyecto de texto a vídeo actualizado.'
                 if record.get('fallback',{}).get('status') in {'QUEUED','RUNNING'}:
                     from .media_fallback import render
                     render(scope_id,task,record)
@@ -399,6 +407,8 @@ def video_path(scope_id, task_id, previous=False):
 
 def publish(scope_id, task_id, video_url, platform, caption="", confirmed=False, metadata=None):
     _task(scope_id, task_id)
+    if _read(scope_id,task_id).get('pipeline')=='TEXT_VIDEO':
+        raise ValueError('Usa la comprobación y confirmación del proyecto de vídeo para conservar la aprobación y evitar duplicados.')
     if confirmed is not True:
         return {"ok": False, "requires_review": True, "message": "Confirma la publicación de este MP4."}
     if platform not in {"youtube", "tiktok", "instagram", "reels"}:

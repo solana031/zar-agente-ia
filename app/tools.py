@@ -34,6 +34,7 @@ TOOL_DEFINITIONS = [
 
 
 
+    {"type":"function","name":"video_create_short","description":"Crea un Reel o vídeo corto terminado y privado desde un tema o texto. Reutiliza el planificador, proveedores configurados y worker local de ZAR. Duración 30–60 segundos, por defecto 45; 9:16. No publica. Devuelve un proyecto en cola; consulta su estado antes de afirmar que el MP4 está listo.","parameters":{"type":"object","properties":{"topic":{"type":"string"},"duration":{"type":"number"},"platform":{"type":"string","enum":["instagram","tiktok","youtube"]},"language":{"type":"string","enum":["es-ES","en-US","en-GB"]},"source_article_id":{"type":"string"}},"required":["topic"],"additionalProperties":False}},
     {"type":"function","name":"video_get_current_project","description":"Devuelve el proyecto de vídeo activo de Zar y su timeline. Úsalo antes de editar cuando el usuario diga «este vídeo», «el vídeo que estamos haciendo» o «lo de antes».","parameters":{"type":"object","properties":{},"additionalProperties":False},"strict":True},
     {"type":"function","name":"video_edit_project","description":"Edita de forma no destructiva el proyecto de vídeo activo a partir de una orden natural. Puede reordenar/quitar clips, recortar, cambiar velocidad, zoom, giro, volteo, look, texto, transiciones y optimizar un montaje para vídeo corto. El archivo original se conserva hasta que se exporta un nuevo render.","parameters":{"type":"object","properties":{"project_id":{"type":"string"},"instruction":{"type":"string"}},"required":["instruction"],"additionalProperties":False},"strict":True},
     {"type":"function","name":"video_viral_optimize","description":"Aplica una optimización heurística al proyecto para Shorts/TikTok/YouTube basada en señales públicas de creatividad de plataforma: apertura rápida, ritmo, movimiento, formato y transiciones. No garantiza viralidad.","parameters":{"type":"object","properties":{"project_id":{"type":"string"},"platform":{"type":"string","enum":["shorts","tiktok","youtube"]}},"required":["platform"],"additionalProperties":False},"strict":True},
@@ -175,6 +176,14 @@ def execute_tool(name, args):
             from context import set_focus, set_media
         set_focus("spotify", args["query"]); set_media("spotify", args["query"], url)
         return {"ok":True,"platform":"spotify","query":args["query"],"url":url,"message":f"Spotify: {args['query']}"}
+    if name == "video_create_short":
+        from .text_video import queue
+        from .user_scope import get_current_user
+        from .context import set_last_video_project,set_focus
+        result=queue(get_current_user(),args)
+        set_last_video_project({'id':result['id'],'name':str(args['topic'])[:100],'pipeline':'TEXT_VIDEO'})
+        set_focus('video',str(args['topic'])[:100])
+        return {'ok':True,**result,'preview_url':'/video-project/'+result['id'],'message':'Proyecto privado guardado. Aún no afirmes que está renderizado; ZAR avisará en la campana al verificar el MP4.'}
     if name == "video_get_current_project":
         try:
             from .context import get_context, set_focus
@@ -183,6 +192,11 @@ def execute_tool(name, args):
             from context import get_context, set_focus
             from video_creator import get_project
         ctx=get_context(); pv=ctx.get("last_video_project") or {}; pid=pv.get("id") or (ctx.get("task") or {}).get("object_id")
+        if pv.get('pipeline')=='TEXT_VIDEO' and pid:
+            from .text_video import view,summary
+            from .user_scope import get_current_user
+            result=summary(pid,view(get_current_user(),pid))
+            return {'ok':True,'project':result,'preview_url':'/video-project/'+pid}
         project=get_project(pid) if pid else None
         if project:
             set_focus("video", project.get("name","proyecto de vídeo"))

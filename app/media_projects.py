@@ -43,7 +43,7 @@ def trace(scope, task_id, record):
     agent=STAGE_AGENT.get(stage,'StoryAgent')
     if record.get('status') in {'PUBLISHING','PUBLISHED'}: agent='PublishingAgent'
     event={'timestamp':holdings._now(),'agent':agent,'stage':stage,'state':record.get('status'),
-           'provider':'DramaClaw DIRECT','task_ids':[t.get('task_id') for t in cp.get('tasks',[])]}
+           'provider':'ZAR_TEXT_VIDEO' if record.get('pipeline')=='TEXT_VIDEO' else 'DramaClaw DIRECT','task_ids':[t.get('task_id') for t in cp.get('tasks',[])]}
     rows=record.setdefault('agent_trace',[])
     if not rows or (rows[-1]['stage'],rows[-1]['state']) != (event['stage'],event['state']): rows.append(event)
     with holdings.transaction(scope):
