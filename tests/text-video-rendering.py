@@ -46,6 +46,9 @@ def check(width):
         page.evaluate("document.body.dataset.workspaceType='sites'")
         expect(page.locator('#zarTextVideoCreator')).to_be_hidden()
         page.goto('https://zar.test/video-project/'+ID)
+        expect(page.locator('#zarNotificationBell')).to_be_visible()
+        bell=page.locator('#zarNotificationBell').evaluate("e=>({position:getComputedStyle(e).position,background:getComputedStyle(e).backgroundColor})")
+        assert bell=={'position':'fixed','background':'rgb(23, 19, 15)'}
         expect(page.locator('[data-social-form] [name=title]')).to_have_value('Guía original')
         expect(page.locator('[data-social-confirm]')).to_be_disabled()
         page.locator('[name=platform][value=instagram]').check();page.locator('[name=platform][value=youtube]').check()

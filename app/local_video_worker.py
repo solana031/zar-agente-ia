@@ -21,7 +21,7 @@ def poll_once(config,root,binary):
         folder=Path(root)/job['id']/job['render_key'];folder.mkdir(parents=True,exist_ok=True)
         endpoint=base+'/'+job['id'];headers={'X-ZAR-Video-Lease':job['lease']}
         def progress():
-            r=client.post(endpoint+'/progress',json={},headers=headers,timeout=(5,10),allow_redirects=False);r.raise_for_status()
+            r=client.post(endpoint+'/progress',json={},headers=headers,timeout=(5,40),allow_redirects=False);r.raise_for_status()
         try:
             for name in job.get('files',[]):
                 if not re.fullmatch(r'(asset-\d+\.png|voice-\d+\.wav)',name):raise ValueError('INVALID_VIDEO_ASSET')
