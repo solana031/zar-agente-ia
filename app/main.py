@@ -4495,6 +4495,15 @@ def _execute_workspace_action(pending):
 
 
 def _process_chat_message(msg):
+    from .text_video import chat_request
+    video_request=chat_request(msg)
+    if video_request:
+        try:
+            result=execute_tool('video_create_short',video_request)
+            reply='Proyecto de vídeo privado guardado. ZAR continuará el montaje y avisará en la campana cuando el MP4 esté verificado.\n\n[Ver proyecto de vídeo]('+result['preview_url']+')'
+        except ValueError as exc:reply='No se ha creado el vídeo: '+str(exc)
+        except Exception:reply='No se ha confirmado la creación del vídeo. Comprueba los proyectos de Clipper antes de repetir la solicitud.'
+        _remember_turn('user',msg);_remember_turn('assistant',reply);return reply
     from . import semantic_tasks
     proposed=semantic_tasks.plan(msg)
     pending_context = _ctx()

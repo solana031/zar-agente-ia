@@ -16,6 +16,18 @@ from . import holdings,media_company as media,reposnews as rn
 PIPELINE='TEXT_VIDEO';_started=set();_lock=threading.Lock();MAX_VIDEO=80*1024*1024
 
 
+def chat_request(message):
+    """Explicit creation requests win over generic words such as 'sin investigar'."""
+    import unicodedata
+    text=str(message or '').strip();low=''.join(c for c in unicodedata.normalize('NFD',text.lower()) if unicodedata.category(c)!='Mn')
+    if not re.match(r'^(?:zar[,\s:]+)?(?:crea(?:me)?|hazme|genera(?:me)?|produce(?:me)?|create|make|(?:quiero|necesito)(?: que (?:me )?(?:crees|generes))?)\s+(?:(?:un|una|a)\s+)?(?:reel|video|short)\b',low):return None
+    match=re.search(r'(\d+(?:[.,]\d+)?)\s*(segundos?|seconds?|secs?|s|minutos?|minutes?)\b',low)
+    duration=float(match[1].replace(',','.'))*(60 if match[2].startswith('min') else 1) if match else 45
+    source=re.search(r'\bsource_article_id(?:\s*[:=]\s*|\s+)([a-z0-9-]{3,160})\b',low)
+    return {'topic':text,'duration':duration,'platform':'tiktok' if 'tiktok' in low else 'youtube' if 'youtube' in low else 'instagram',
+            'language':'en-US' if re.search(r'\b(en ingles|in english)\b',low) else 'es-ES',**({'source_article_id':source[1]} if source else {})}
+
+
 def summary(identifier,record):
     fields=('title','status','video_state','video_stage','error','render','providers','voice','captions','music','publication','publication_mode','scenes','assembly','video_revision')
     result={k:record.get(k) for k in fields};result.update(id=identifier,project=record.get('project'),preview='/api/holdings/media/video/'+identifier if record.get('artifact') else None)
