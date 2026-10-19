@@ -27,11 +27,12 @@ def check(width):
         route.fulfill(content_type='application/json',body=json.dumps(data))
     with sync_playwright() as p:
         browser=p.chromium.launch();page=browser.new_page(viewport={'width':width,'height':900});errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
-        page.route('**/*',lambda r:r.abort());page.route('https://zar.test/clipper',lambda r:r.fulfill(content_type='text/html',body='<meta name="viewport" content="width=device-width,initial-scale=1"><div id="zarMediaWorkflowMount"></div>'))
+        page.route('**/*',lambda r:r.abort());page.route('https://zar.test/clipper',lambda r:r.fulfill(content_type='text/html',body='<meta name="viewport" content="width=device-width,initial-scale=1"><button onclick="this.insertAdjacentHTML(\'afterend\',\'<div id=zarMediaWorkflowMount></div>\');this.remove()">Abrir Clipper</button>'))
         page.route('**/api/**',api)
         page.route('**/static/*',lambda r:r.fulfill(path=str(ROOT/'app/static'/r.request.url.split('/')[-1].split('?')[0])))
         page.route('https://zar.test/video-project/'+ID,lambda r:r.fulfill(content_type='text/html',body=html))
         page.goto('https://zar.test/clipper');page.add_style_tag(path=str(ROOT/'app/static/text-video.css'));page.add_script_tag(path=str(ROOT/'app/static/text-video.js'))
+        page.get_by_role('button',name='Abrir Clipper',exact=True).click()
         expect(page.get_by_role('heading',name='De texto a vídeo terminado')).to_be_visible();expect(page.locator('[data-tv-projects] .tvCard')).to_have_count(6)
         page.get_by_role('button',name='Siguiente',exact=True).click();expect(page.locator('[data-tv-projects] .tvCard')).to_have_count(2)
         page.get_by_label('¿Sobre qué quieres el vídeo?').fill('Explica cuatro pasos para preparar contenido original.')
