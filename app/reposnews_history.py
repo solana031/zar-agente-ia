@@ -165,6 +165,13 @@ def register(app,scope_fn):
                 'diagnostic':row.get('error_diagnostic'),'error_history':row.get('error_history',[])[-3:],
                 'package_fields':sorted(package) if isinstance(package,dict) else [],'attempts':row.get('attempts'),
                 'attempt_limit':row.get('attempt_limit'),'reprocess_round':row.get('reprocess_round')})
+            from .reposnews_discovery import sanitize
+            analysis=row.get('analysis') or {};evidence=row.get('discovery_evidence') or {}
+            diagnostics[-1]['identity_evidence']=sanitize({'clarified_project':row.get('clarified_project'),
+                'project_names':analysis.get('project_names',[]),'repositories':analysis.get('repositories',[]),'links':analysis.get('links',[]),
+                'resolution':row.get('entity_resolution'), 'cross_reel':evidence.get('cross_reel'),
+                'visual_text':str(analysis.get('visual_findings',''))[:1800], 'transcript':str(analysis.get('transcript',''))[:1800],
+                'official_links':evidence.get('outbound_links',[])})
         return jsonify(ok=True,historical=summary(data),diagnostics=diagnostics)
 
     @app.post('/api/reposnews/history/start')

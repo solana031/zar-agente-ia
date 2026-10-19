@@ -206,6 +206,12 @@ def initialize(scope):
         return state(scope)
 
 
+class GitHubReadError(ValueError):
+    def __init__(self,status,retry_after=0):
+        super().__init__('GITHUB_RATE_LIMIT' if status in {403,429} else 'GITHUB_HTTP_'+str(status))
+        self.http_status=status;self.retry_after=retry_after
+
+
 def github(path, params=None):
     with requests.Session() as client:
         client.trust_env=False
@@ -213,7 +219,12 @@ def github(path, params=None):
             response=client.get('https://api.github.com/'+path,params=params,headers={'Accept':'application/vnd.github+json','User-Agent':'ReposNews-readonly/1'},timeout=(5,12),allow_redirects=False)
         except requests.RequestException as exc:
             raise ValueError('GitHub no está accesible; no se inventan datos.') from exc
-        if response.status_code in (403,429): raise ValueError('GitHub limita temporalmente las consultas. No se reintenta en bucle.')
+        if response.status_code in (403,429):
+            import time
+            headers=getattr(response,'headers',{})
+            try:delay=max(int(headers.get('Retry-After','60')),int(headers.get('X-RateLimit-Reset','0'))-int(time.time()))
+            except (ValueError,TypeError):delay=60
+            raise GitHubReadError(response.status_code,min(3600,max(60,delay)))
         if response.status_code!=200: raise ValueError('GitHub no devolvió datos verificables: HTTP '+str(response.status_code))
         return response.json()
 

@@ -776,12 +776,12 @@ def process(item_id):
         update(item_id,status='DRAFTING_EN',processing_state='DRAFTING_EN')
         store_ready(item_id,article)
     except (ValueError,KeyError,TypeError,OSError,requests.RequestException) as exc:
-        source_http=getattr(getattr(exc,'response',None),'status_code',None)
+        source_http=getattr(exc,'http_status',None) or getattr(getattr(exc,'response',None),'status_code',None)
         permanent=source_http in {404,410}
         safe_code='SOURCE_HTTP_'+str(source_http) if permanent else str(exc) if isinstance(exc,ValueError) and re.fullmatch('[A-Z0-9_]{1,70}',str(exc)) else 'SOURCE_OR_GENERATION_FAILED'
         current=next((x for x in rn.read().get('instagram_inbox',[]) if x['id']==item_id),{})
-        retryable=bool(re.fullmatch(r'AI_PROVIDER_(429|500|502|503|504)',safe_code)) or safe_code in {'AI_AUTH_REQUIRED','AI_RESPONSE_INVALID','DRAFT_INCOMPLETE','DRAFT_TOO_SHORT','UNVERIFIED_COMMAND','UNVERIFIED_CODE_EXAMPLE','EDITORIAL_REVIEW_REQUIRED','SOURCE_OR_GENERATION_FAILED','COMPLETE_BILINGUAL_DRAFT_REQUIRED'}
-        diagnostic={'component':current.get('processing_state','UNKNOWN'),'provider':'Gemini' if safe_code.startswith('AI_PROVIDER_') else 'SOURCE',
+        retryable=bool(re.fullmatch(r'AI_PROVIDER_(429|500|502|503|504)',safe_code)) or safe_code in {'GITHUB_RATE_LIMIT','AI_AUTH_REQUIRED','AI_RESPONSE_INVALID','DRAFT_INCOMPLETE','DRAFT_TOO_SHORT','UNVERIFIED_COMMAND','UNVERIFIED_CODE_EXAMPLE','EDITORIAL_REVIEW_REQUIRED','SOURCE_OR_GENERATION_FAILED','COMPLETE_BILINGUAL_DRAFT_REQUIRED'}
+        diagnostic={'component':current.get('processing_state','UNKNOWN'),'provider':'Gemini' if safe_code.startswith('AI_PROVIDER_') else 'GitHub' if safe_code.startswith('GITHUB_') else 'SOURCE',
                     'endpoint_class':'generateContent' if safe_code.startswith('AI_PROVIDER_') else 'source_read',
                     'http':int(safe_code.rsplit('_',1)[1]) if safe_code.startswith('AI_PROVIDER_') else source_http,
                     'retryable':retryable,'timestamp':holdings._now(),'code':safe_code}
@@ -796,7 +796,7 @@ def process(item_id):
             from .reposnews_automation import notify
             notify(item_id,'FAILED_PERMANENT');return
         if retryable and current.get('attempts',0)<current.get('attempt_limit',2):
-            update(item_id,status='FAILED_RETRYABLE',retry_after=time.time()+min(3600,30*2**min(current.get('run_attempts',1),6)))
+            update(item_id,status='FAILED_RETRYABLE',retry_after=time.time()+min(3600,max(getattr(exc,'retry_after',0),30*2**min(current.get('run_attempts',1),6))))
         elif current.get('attempts',0)>=current.get('attempt_limit',2):
             (rn._path().parent/'inbound'/item_id).unlink(missing_ok=True)
             from .reposnews_automation import notify

@@ -265,12 +265,13 @@ def test_official_hero_competes_with_contextual_reel_frame(context):
 
 def test_history_diagnostics_are_owner_only_and_do_not_return_package_contents(context):
     data=rn.read();row=data['instagram_inbox'][0]
-    row.update(backfill=True,error='SOURCE_OR_GENERATION_FAILED',research_package={'readme':'private source body','metadata':{}},error_diagnostic={'exception_type':'KeyError','operation':'module.py:build:12'})
+    row.update(backfill=True,error='SOURCE_OR_GENERATION_FAILED',research_package={'readme':'private source body','metadata':{}},error_diagnostic={'exception_type':'KeyError','operation':'module.py:build:12'},analysis={'project_names':['Example Tool']})
     rn.write(data);app=Flask(__name__);app.secret_key='test';history.register(app,lambda:'owner');client=app.test_client()
     assert client.get('/api/reposnews/history/status').status_code==401
     with client.session_transaction() as session:session['zar_auth']=True
     response=client.get('/api/reposnews/history/status');assert response.status_code==200
     assert response.json['diagnostics'][0]['package_fields']==['metadata','readme']
+    assert response.json['diagnostics'][0]['identity_evidence']['project_names']==['Example Tool']
     assert 'private source body' not in response.text
     data['owner']='another-owner';rn.write(data)
     assert client.get('/api/reposnews/history/status').status_code==403

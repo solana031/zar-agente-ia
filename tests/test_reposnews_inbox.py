@@ -51,6 +51,15 @@ class InstagramInboxTest(unittest.TestCase):
   self.assertEqual(row['error_diagnostic']['http'],503)
  def test_no_accessible_permalink_text_does_not_invent_a_project(self):
   self.assertEqual(inbox.resolve_entity('')['reason'],'NO_ACCESSIBLE_DISCOVERY_TEXT')
+ def test_github_limit_preserves_http_and_waits_without_losing_item(self):
+  import time
+  item=inbox.receive(self.event())[0];inbox.update(item,local_worker_done=True)
+  with patch('app.jev_decision.proposal',return_value={'decision':'ALLOW'}),patch.object(inbox,'research',side_effect=rn.GitHubReadError(429,120)):
+   inbox.process(item)
+  row=rn.read()['instagram_inbox'][0]
+  self.assertEqual(row['status'],'FAILED_RETRYABLE');self.assertEqual(row['error'],'GITHUB_RATE_LIMIT')
+  self.assertEqual(row['error_diagnostic']['http'],429);self.assertEqual(row['error_diagnostic']['provider'],'GitHub')
+  self.assertGreater(row['retry_after'],time.time()+115);self.assertEqual(row['attempts'],1)
  def test_missing_official_source_is_permanent_and_keeps_http_diagnostic(self):
   import requests
   item=inbox.receive(self.event())[0];inbox.update(item,local_worker_done=True)
