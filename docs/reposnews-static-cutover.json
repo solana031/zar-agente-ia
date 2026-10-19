@@ -1,0 +1,99 @@
+{
+  "canonical": "https://www.reposnews.com",
+  "target_hostname": "solana031.github.io",
+  "dns_changed": false,
+  "approval_required": true,
+  "current_dns": {
+    "captured_at": "2026-10-19T19:13:34.3562810Z",
+    "records": [
+      {
+        "Name": "reposnews.com",
+        "Type": 1,
+        "TTL": 3328,
+        "IPAddress": "217.160.0.54",
+        "NameHost": null
+      },
+      {
+        "Name": "reposnews.com",
+        "Type": 28,
+        "TTL": 3600,
+        "IPAddress": "2001:8d8:100f:f000::200",
+        "NameHost": null
+      },
+      {
+        "Name": "www.reposnews.com",
+        "Type": 5,
+        "TTL": 3600,
+        "IPAddress": null,
+        "NameHost": "4a4tnij4.up.railway.app"
+      },
+      {
+        "Name": "reposnews.com",
+        "Type": 2,
+        "TTL": 86400,
+        "IPAddress": null,
+        "NameHost": "ns1026.ui-dns.de"
+      },
+      {
+        "Name": "reposnews.com",
+        "Type": 2,
+        "TTL": 86400,
+        "IPAddress": null,
+        "NameHost": "ns1030.ui-dns.org"
+      },
+      {
+        "Name": "reposnews.com",
+        "Type": 2,
+        "TTL": 86400,
+        "IPAddress": null,
+        "NameHost": "ns1120.ui-dns.com"
+      },
+      {
+        "Name": "reposnews.com",
+        "Type": 2,
+        "TTL": 86400,
+        "IPAddress": null,
+        "NameHost": "ns1063.ui-dns.biz"
+      }
+    ],
+    "dns_changed": false
+  },
+  "target_dns": [
+    {
+      "name": "www",
+      "type": "CNAME",
+      "values": [
+        "solana031.github.io"
+      ],
+      "ttl": 3600
+    },
+    {
+      "name": "@",
+      "type": "A",
+      "values": [
+        "185.199.108.153",
+        "185.199.109.153",
+        "185.199.110.153",
+        "185.199.111.153"
+      ],
+      "ttl": 3600
+    },
+    {
+      "name": "@",
+      "type": "AAAA",
+      "values": [
+        "2606:50c0:8000::153",
+        "2606:50c0:8001::153",
+        "2606:50c0:8002::153",
+        "2606:50c0:8003::153"
+      ],
+      "ttl": 3600
+    }
+  ],
+  "before_dns": "After explicit cutover approval only: associate www.reposnews.com in GitHub Pages; export the IONOS zone and compare with this snapshot.",
+  "ssl": "GitHub-managed certificate; wait for issuance and enable Enforce HTTPS. Verify both hostnames before declaring cutover complete.",
+  "redirects": "HTTP to HTTPS; apex to www; retain all ES/EN paths. Canonical remains www.",
+  "rollback": "Restore the saved A/AAAA/CNAME values at IONOS, keep Railway serving www, verify HTTPS and paths. Do not change nameservers, MX or TXT.",
+  "static_rollback": "Revert the failed static-host commit with a new commit; push main and verify Pages. Never force-push.",
+  "source": "https://docs.github.com/en/pages/configuring-a-custom-domain-for-your-github-pages-site/managing-a-custom-domain-for-your-github-pages-site"
+}

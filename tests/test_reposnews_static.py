@@ -12,7 +12,7 @@ def public_fixture():
     sitemap = '<urlset>'+''.join('<url><loc>'+static.ORIGIN+p+'</loc></url>' for p in paths)+'</urlset>'
     html = '<html><head><link rel="canonical" href="https://www.reposnews.com/es/"><link hreflang="es"><link hreflang="en"><meta property="og:title"><link rel="stylesheet" href="/media/reposnews/editorial.css"></head><body><img src="/media/reposnews/home.png"><script type="application/ld+json">{}</script></body></html>'
     responses = {static.ORIGIN+p: html.encode() for p in paths}
-    responses.update({static.ORIGIN+'/sitemap.xml': sitemap.encode(), static.ORIGIN+'/media/reposnews/home.png': b'public-image', static.ORIGIN+'/media/reposnews/editorial.css': b'body{color:green}'})
+    responses.update({static.ORIGIN+'/sitemap.xml': sitemap.encode(), static.ORIGIN+'/media/reposnews/home.png': b'public-image', static.ORIGIN+'/media/reposnews/editorial.css': b'body{color:green}', static.ORIGIN+'/ads.txt': b'existing public publisher record'})
     return responses
 
 
@@ -25,6 +25,7 @@ def test_published_bilingual_assets_seo_only(tmp_path):
     for name in ['index.html', 'es/index.html', 'en/index.html', 'es/repositorios/approved/index.html', 'en/repositories/approved/index.html', 'sitemap.xml', 'robots.txt']:
         assert (tmp_path/name).is_file()
     assert (tmp_path/'media/reposnews/home.png').read_bytes() == b'public-image'
+    assert (tmp_path/'ads.txt').read_bytes() == b'existing public publisher record'
     assert all(b'PRIVATE DRAFT' not in p.read_bytes() for p in tmp_path.rglob('*') if p.is_file())
     with pytest.raises(ValueError, match='empty'):
         static.build_reposnews_static(tmp_path, responses.__getitem__)

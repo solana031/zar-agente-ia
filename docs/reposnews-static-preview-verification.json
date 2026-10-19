@@ -1,0 +1,24 @@
+{
+  "verified_at": "2026-10-19T19:21:10.391555+00:00",
+  "preview": "https://solana031.github.io/",
+  "static_commit": "45d6798a98e94e1ad9a5b3176e4d32b200b32d24",
+  "artifact_sha256": "e1d5d00417c2e979f9e92409a3d3c44cb4b0b5557e02ef46b03604c5746fb572",
+  "published_articles": 11,
+  "es_pages": 20,
+  "en_pages": 20,
+  "assets": 22,
+  "http_200_files": 67,
+  "seo_parity_pages": 40,
+  "broken_internal_links": 0,
+  "visual_pixel_identical_cases": 8,
+  "viewports": [
+    "1440x900",
+    "390x844"
+  ],
+  "railway_requests_blocked": true,
+  "static_search_verified": true,
+  "focused_tests_passed": 19,
+  "publication_hook": "prepared, approval gated, not automatically registered",
+  "dns_changed": false,
+  "custom_domain_associated": false
+}

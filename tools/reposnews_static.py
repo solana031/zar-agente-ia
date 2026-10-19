@@ -10,6 +10,7 @@ from pathlib import Path
 import re
 from urllib.parse import urljoin, urlsplit
 from urllib.request import urlopen
+from urllib.error import HTTPError
 import xml.etree.ElementTree as ET
 
 ORIGIN = 'https://www.reposnews.com'
@@ -17,7 +18,7 @@ PAGE = re.compile(r'/(?:es|en)/(?:|(?:about|contact|privacy|cookies|legal|reposi
 ARTICLE = re.compile(r'/(es/repositorios|en/repositories)/([a-z0-9-]{1,80})/')
 ASSET = re.compile(r'/media/reposnews/[a-zA-Z0-9_-]+\.(?:png|svg|jpg|jpeg|webp|css|js)')
 PRIVATE = re.compile(r'READY_PRIVATE|AWAITING_APPROVAL|reposnews-preview|https?://(?:localhost|127\.0\.0\.1)|web-production-[\w.-]+|[A-Za-z]:(?:\\|/(?!/))|/(?:tmp|data|worker)/|sk-(?:proj-)?[A-Za-z0-9_-]{20,}|(?:access_token|refresh_token|api_key)["\s]*[:=]', re.I)
-STATIC_SEARCH = """<script>document.querySelectorAll('form.search').forEach(f=>{const input=f.querySelector('input');const params=new URLSearchParams(location.search);input.value=params.get('q')||'';let category=params.get('category')||'';function filter(){document.querySelectorAll('.grid>.card').forEach(c=>{c.hidden=!(c.textContent.toLowerCase().includes(input.value.toLowerCase())&&(!category||c.querySelector('.tag').textContent===category))})}f.addEventListener('submit',e=>{e.preventDefault();filter()});document.querySelectorAll('.filters a').forEach(a=>a.addEventListener('click',e=>{e.preventDefault();category=new URL(a.href).searchParams.get('category')||'';filter()}));filter()});</script>"""
+STATIC_SEARCH = """<script>document.querySelectorAll('form.search').forEach(f=>{const input=f.querySelector('input');const params=new URLSearchParams(location.search);input.value=params.get('q')||'';let category=params.get('category')||'';function filter(){document.querySelectorAll('.grid>.card').forEach(c=>{c.hidden=!(c.textContent.toLowerCase().includes(input.value.toLowerCase())&&(!category||c.querySelector('.tag').textContent===category));c.style.display=c.hidden?'none':''})}f.addEventListener('submit',e=>{e.preventDefault();filter()});document.querySelectorAll('.filters a').forEach(a=>a.addEventListener('click',e=>{e.preventDefault();category=new URL(a.href).searchParams.get('category')||'';filter()}));filter()});</script>"""
 
 
 class Resources(HTMLParser):
@@ -98,6 +99,12 @@ class ReposNewsStaticBuilder:
         files['index.html'] = files['es/index.html']
         files['sitemap.xml'] = sitemap
         files['robots.txt'] = ('User-agent: *\nAllow: /\nSitemap: '+ORIGIN+'/sitemap.xml\n').encode()
+        # Preserve the existing public file; never change publisher configuration.
+        try:
+            files['ads.txt'] = self.fetch(ORIGIN+'/ads.txt')
+        except HTTPError as error:
+            if error.code != 404:
+                raise
         report = dict(status='STATIC_HOST_READY', published_articles=len(articles['es']), es=len(articles['es']), en=len(articles['en']), assets=len(assets), pages=len(paths)+1, backend_required=False)
         # Nothing is written until every page and dependency has passed validation.
         for relative, content in files.items():
