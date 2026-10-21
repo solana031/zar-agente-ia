@@ -48,3 +48,9 @@ body.zarEmbedded[data-workspace-type] #panel.panel{inset:0!important;left:0!impo
 @media(max-width:600px){#zarArticleForm{grid-template-columns:minmax(0,1fr)}}
 
 .zarBusinessPane[data-workspace-type=sites] #zarTextVideoCreator{display:none!important}
+
+/* Primary account navigation: pinned agent controls, compact shared-registry badge. */
+.side .zwtAgentNav{position:sticky;top:0;z-index:3;background:#100d0b;padding:5px 0;border-radius:10px}
+.side .nav .zwtAccountsButton,.zwtMobileAgentNav .zwtAccountsButton{display:flex!important;flex-direction:column;align-items:flex-start;gap:5px;width:100%;min-height:57px;padding:11px 13px;border:1px solid #b18c4f;border-radius:11px;background:linear-gradient(120deg,#35291b,#1a1510);color:#f1dbad;box-shadow:inset 3px 0 #c4a05c;cursor:pointer;font:inherit;text-align:left}
+.zwtAccountsTitle{font-size:12px;font-weight:800;letter-spacing:1px}.zwtAccountsBadge{font-size:9px;font-weight:700;letter-spacing:.6px;color:#c4b593}.zwtAccountsBadge[data-state=pending]{color:#ebc47e}.zwtAccountsBadge[data-state=connected]{color:#9bd5ac}
+.zwtAccountsButton:hover{border-color:#efd08f!important;background:#392d1e!important}.zwtAccountsButton:focus-visible{outline:2px solid #e4bd76;outline-offset:2px}.zwtMobileAgentNav{display:grid;gap:7px;position:sticky;top:0;z-index:2;background:#100d0b;padding:4px 0 8px}

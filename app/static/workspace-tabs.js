@@ -76,7 +76,7 @@
   const tabs=new Map([['home',{id:'home',loaded:true}]]);let active='home';
   function save(){try{sessionStorage.setItem('zar_workspace_tabs_v1',JSON.stringify({tabs:[...tabs.keys()],active}))}catch{}}
   function render(){bar.replaceChildren();for(const [id,t] of tabs){const item=document.createElement('div');item.className='zwtTab'+(id===active?' active':'');const b=document.createElement('button');b.type='button';b.setAttribute('role','tab');b.setAttribute('aria-selected',String(id===active));b.textContent=catalog[id].join(' ');b.onclick=()=>activate(id);item.append(b);if(id!=='home'){const x=document.createElement('button');x.className='zwtClose';x.textContent='×';x.setAttribute('aria-label','Cerrar '+catalog[id][1]);x.onclick=()=>close(id);item.append(x);}bar.append(item);}bar.querySelector('.active')?.scrollIntoView({block:'nearest',inline:'nearest'});}
-  function activate(id){if(!tabs.has(id))return;active=id;const t=tabs.get(id);if(id!=='home'&&!t.frame){const f=document.createElement('iframe');f.className='zwtPane';f.title=catalog[id][1];f.src=id==='accounts'?'/accounts':'/?zar_workspace='+encodeURIComponent(id);f.addEventListener('load',()=>{f.contentWindow?.postMessage({zarWorkspace:true,active:active===id},location.origin);});panes.append(f);t.frame=f;}
+  function activate(id){if(!tabs.has(id))return;active=id;const t=tabs.get(id);if(id!=='home'&&!t.frame){const f=document.createElement('iframe');f.className='zwtPane';f.title=catalog[id][1];f.src=id==='accounts'?'/accounts':'/?zar_workspace='+encodeURIComponent(id);f.addEventListener('load',()=>{f.contentWindow?.postMessage({zarWorkspace:true,active:active===id},location.origin);if(id==='accounts')updateAccountBadge();});panes.append(f);t.frame=f;}
    for(const [key,row] of tabs)if(row.frame){row.frame.hidden=key!==id;row.frame.contentWindow?.postMessage({zarWorkspace:true,active:key===id},location.origin);}panes.hidden=id==='home';document.body.classList.toggle('zarTabsActive',id!=='home');window.closeMobileDrawer?.();render();save();}
   function open(id){if(!catalog[id])return;if(!tabs.has(id))tabs.set(id,{id});activate(id);}
   function close(id){if(id==='home'||!tabs.has(id))return;const keys=[...tabs.keys()],index=keys.indexOf(id);tabs.get(id).frame?.remove();tabs.delete(id);if(active===id)activate(keys[index-1]||'home');else{render();save();}}
@@ -84,8 +84,33 @@
   for(const [fn,id] of Object.entries(hooks))if(typeof window[fn]==='function'||['showWebAgency','showSites','showDropshipping','showClipper','showHumanActions','showAccounts'].includes(fn))window[fn]=()=>open(id);
   if(window.ZARSkills)window.ZARSkills.open=()=>open('learning');
   window.navigationRegistry=Object.entries(catalog).map(([id,[icon,title]],order)=>({id,icon,title,order,desktop:true,mobile:true}));
-  const shortcuts=document.createElement('div');shortcuts.className='zwtLaunchers';shortcuts.innerHTML=Object.keys(catalog).map(id=>`<button data-zwt-open="${id}">${catalog[id].join(' ')}</button>`).join('');const side=document.querySelector('.side');if(side){for(const b of side.querySelectorAll('.nav button')){const handler=b.getAttribute('onclick')||'';if(Object.keys(hooks).some(fn=>handler.includes(fn+'('))||handler.includes('ZARSkills.open('))b.remove();}side.append(shortcuts);}
-  const mobile=document.querySelector('#mobileDrawer .mobileMenuSection');if(mobile)for(const b of document.querySelectorAll('#mobileDrawer button')){const handler=b.getAttribute('onclick')||'';if(Object.keys(hooks).some(fn=>handler.includes(fn+'('))||handler.includes('ZARSkills.open('))b.remove();}if(mobile)for(const id of Object.keys(catalog)){const b=document.createElement('button');b.className='mobileMenuItem';b.dataset.zwtOpen=id;b.textContent=catalog[id].join(' ');mobile.append(b);}
+  const shortcuts=document.createElement('div');shortcuts.className='zwtLaunchers';shortcuts.innerHTML=Object.keys(catalog).filter(id=>id!=='accounts').map(id=>`<button data-zwt-open="${id}">${catalog[id].join(' ')}</button>`).join('');const side=document.querySelector('.side');if(side){for(const b of side.querySelectorAll('.nav button')){const handler=b.getAttribute('onclick')||'';if(Object.keys(hooks).some(fn=>handler.includes(fn+'('))||handler.includes('ZARSkills.open('))b.remove();}side.append(shortcuts);}
+  const mobile=document.querySelector('#mobileDrawer .mobileMenuSection');if(mobile)for(const b of document.querySelectorAll('#mobileDrawer button')){const handler=b.getAttribute('onclick')||'';if(Object.keys(hooks).some(fn=>handler.includes(fn+'('))||handler.includes('ZARSkills.open('))b.remove();}if(mobile)for(const id of Object.keys(catalog).filter(id=>id!=='accounts')){const b=document.createElement('button');b.className='mobileMenuItem';b.dataset.zwtOpen=id;b.textContent=catalog[id].join(' ');mobile.append(b);}
+  // One prominent account entry per navigation surface; all state comes from the registry.
+  function accountButton(){const b=document.createElement('button');b.type='button';b.className='zwtAccountsButton';b.dataset.zwtOpen='accounts';b.innerHTML='<span class="zwtAccountsTitle">🔑 CUENTAS</span><small class="zwtAccountsBadge" aria-live="polite">SIN VERIFICAR</small>';return b;}
+  const agentNav=side?.querySelector('.nav');
+  if(agentNav){agentNav.classList.add('zwtAgentNav');const next=agentNav.querySelector('button[onclick*="newChat("]');if(next)next.before(accountButton());else agentNav.prepend(accountButton());}
+  const drawer=document.getElementById('mobileDrawer');
+  if(drawer){
+   drawer.querySelector('button[onclick*="mobileReconnectGoogle("]')?.remove();drawer.querySelector('#mobileGoogleState')?.remove();
+   const group=document.createElement('div');group.className='zwtAgentNav zwtMobileAgentNav';group.setAttribute('aria-label','Agente');
+   const chat=document.createElement('button');chat.type='button';chat.className='mobileMenuItem';chat.dataset.zwtOpen='home';chat.textContent='💬 Chat';
+   const fresh=drawer.querySelector('button[onclick*="newConversation("],button[onclick*="newChat("]')||document.createElement('button');fresh.type='button';fresh.className='mobileMenuItem';fresh.textContent='＋ Nueva conversación';if(!fresh.hasAttribute('onclick'))fresh.onclick=()=>{window.newChat?.();window.closeMobileDrawer?.();};
+   group.append(chat,accountButton(),fresh);const header=drawer.querySelector('.mobileDrawerHeader');if(header)header.after(group);else drawer.prepend(group);
+  }
+  let accountsReading=false;
+  async function updateAccountBadge(){
+   if(accountsReading||document.hidden)return;accountsReading=true;
+   try{const response=await fetch('/api/accounts/connections',{cache:'no-store'});if(!response.ok)throw Error('unavailable');const result=await response.json();
+    if(!result.ok||!Array.isArray(result.providers))throw Error('unavailable');
+    const attention=new Set(['PARTIAL','AUTH_REQUIRED','REAUTH_REQUIRED','PERMISSION_REQUIRED','CHANNEL_REQUIRED','DISCONNECTED','ERROR']);
+    const pending=result.providers.filter(p=>attention.has(p.status)).length;
+    const allConnected=result.providers.length>0&&result.providers.every(p=>['CONNECTED','UPLOAD_READY'].includes(p.status));
+    document.querySelectorAll('.zwtAccountsBadge').forEach(b=>{b.textContent=pending?pending+' PENDIENTES':allConnected?'✓ CONECTADAS':'SIN VERIFICAR';b.dataset.state=pending?'pending':allConnected?'connected':'unknown';});
+   }catch{document.querySelectorAll('.zwtAccountsBadge').forEach(b=>{b.textContent='SIN VERIFICAR';b.dataset.state='unknown';});}finally{accountsReading=false;}
+  }
+  updateAccountBadge();window.addEventListener('focus',updateAccountBadge);document.addEventListener('visibilitychange',()=>{if(!document.hidden)updateAccountBadge();});
+  setInterval(updateAccountBadge,60000);
   document.addEventListener('click',e=>{const b=e.target.closest('[data-zwt-open]');if(b)open(b.dataset.zwtOpen);const chat=e.target.closest('.side button');if(chat&&/Chat/.test(chat.textContent)&&!chat.textContent.includes('Nueva'))activate('home');});
   window.addEventListener('message',e=>{if(e.origin!==location.origin||!e.data?.zarWorkspace)return;const match=[...tabs.values()].find(t=>t.frame?.contentWindow===e.source);if(!match)return;if(e.data.action==='openAccounts'){open('accounts');const frame=tabs.get('accounts')?.frame;if(frame)frame.src='/accounts#'+encodeURIComponent(e.data.provider||'');}if(e.data.action==='openHuman')open('human');if(e.data.action==='close')close(match.id);if(e.data.action==='newChat'){activate('home');window.newChat?.();}if(e.data.action==='restore'){activate('home');window.restoreConversation?.(e.data.id);}});
   try{const saved=JSON.parse(sessionStorage.getItem('zar_workspace_tabs_v1')||'null');for(const id of saved?.tabs||[])if(catalog[id]&&!tabs.has(id))tabs.set(id,{id});active=catalog[saved?.active]?saved.active:'home';}catch{}
