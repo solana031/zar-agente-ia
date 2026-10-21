@@ -35,9 +35,9 @@ def safe_meta_error(response, token=''):
             'subcode':error.get('error_subcode') if isinstance(error.get('error_subcode'),int) else None,
             'type':re.sub(r'[^A-Za-z0-9_]','',str(error.get('type','')))[:60],'message':message}
 
-def verify_capabilities(token, user_id):
+def verify_capabilities(token, user_id, permission_response=None):
     headers={'Authorization':'Bearer '+token}
-    try:legacy=requests.get('https://graph.instagram.com/v26.0/me/permissions',headers=headers,timeout=20)
+    try:legacy=permission_response if permission_response is not None else requests.get('https://graph.instagram.com/v26.0/me/permissions',headers=headers,timeout=20)
     except requests.RequestException:legacy=None
     check={'requested':list(PERMISSIONS),'verification_method':'FUNCTIONAL_CAPABILITY_TEST','checked_at':holdings._now(),
            'permission_endpoint':{'http':legacy.status_code if legacy is not None else None},'basic':'UNKNOWN','manage_messages':'UNKNOWN','granted':[],'denied':[]}
@@ -65,38 +65,91 @@ def subscribe_messages(token, user_id):
     # The API's explicit success confirms subscription for this token's app/account.
     return {'status':'VERIFIED','fields':['messages'],'method':'OFFICIAL_ACCOUNT_SUBSCRIPTION','checked_at':holdings._now()}
 
-def reverify_connection():
-    """Owner/CSRF-protected workflow reuses encrypted credentials; no new OAuth."""
+def persist_identity(record):
+    """Commit identity independently of optional capabilities, then verify disk readback.
+
+    Only this helper promotes a credential. Fingerprints never leave this function.
+    A broken canonical vault must never fall back to an old environment credential.
+    """
     from . import oauth_vault
-    root=rn._path().parent;stage='TOKEN_RECOVERY'
-    result={'status':'ERROR','error':'TOKEN_UNAVAILABLE','stage':stage}
+    root=rn._path().parent
+    diagnostic={'NEW_TOKEN_PERSISTED':False,'NEW_TOKEN_READBACK':False,'STALE_SOURCE_SELECTED':False}
+    with holdings.transaction('instagram-oauth'):
+        previous=credentials()
+        if previous.get('issued_at','')>record.get('issued_at',''):
+            diagnostic['STALE_SOURCE_SELECTED']=True
+            raise ValueError('OAUTH_CALLBACK_SUPERSEDED')
+        try:
+            oauth_vault.persist(root/'instagram-oauth',json.dumps(record),root)
+            diagnostic['NEW_TOKEN_PERSISTED']=True
+            loaded=credentials()
+            same=hmac.compare_digest(hashlib.sha256(record['access_token'].encode()).digest(),hashlib.sha256(loaded.get('access_token','').encode()).digest())
+            diagnostic['STALE_SOURCE_SELECTED']=not same
+            if not same or loaded.get('user_id')!=record['user_id']:raise ValueError('PERSISTENT_CREDENTIAL_MISMATCH')
+            identity=requests.get('https://graph.instagram.com/v26.0/me',params={'fields':'user_id,username'},headers={'Authorization':'Bearer '+loaded['access_token']},timeout=20,allow_redirects=False)
+            who=identity.json() if identity.ok else {}
+            if who.get('username')!='zaragente031' or str(who.get('user_id') or who.get('id') or '')!=record['user_id']:raise ValueError('PERSISTENT_IDENTITY_NOT_VERIFIED')
+            diagnostic['NEW_TOKEN_READBACK']=True
+            loaded['verified_at']=holdings._now()
+            oauth_vault.persist(root/'instagram-oauth',json.dumps(loaded),root)
+            (root/'instagram-oauth-pending').unlink(missing_ok=True)
+            return loaded
+        finally:
+            with holdings.transaction('reposnews-editorial'):
+                data=rn.read();data['instagram_credential_diagnostic']=dict(diagnostic,checked_at=holdings._now(),source='CANONICAL_OAUTH');rn.write(data)
+
+
+def recover_pending_identity():
+    """One-time repair of the former split store; only provider identity reads."""
+    from . import oauth_vault
+    root=rn._path().parent;path=root/'instagram-oauth-pending'
+    if not path.exists():return False
+    try:
+        candidate=oauth_vault.decode(path.read_text(encoding='utf-8'),root)
+        current=credentials()
+        issued=candidate.get('issued_at') or candidate.get('identity_verified_at') or ''
+        if current.get('issued_at') and current['issued_at']>=issued:return False
+        token=candidate.get('access_token','');user=str(candidate.get('user_id') or '')
+        if not token or not re.fullmatch(r'[0-9]+',user):return False
+        response=requests.get('https://graph.instagram.com/v26.0/me',params={'fields':'user_id,username'},headers={'Authorization':'Bearer '+token},timeout=20,allow_redirects=False)
+        who=response.json() if response.ok else {}
+        if who.get('username')!='zaragente031' or str(who.get('user_id') or who.get('id') or '')!=user:return False
+        candidate.update(user_id=user,username=who['username'],issued_at=issued or holdings._now(),identity_verified_at=holdings._now())
+        persist_identity(candidate)
+        return True
+    except (ValueError,OSError,InvalidToken,requests.RequestException):return False
+
+
+def reverify_connection():
+    """Repair the former pending-store bug without exchanging another OAuth code."""
+    from . import oauth_vault
+    root=rn._path().parent
+    result={'status':'ERROR','error':'TOKEN_UNAVAILABLE'}
     try:
         path=root/'instagram-oauth-pending'
-        if not path.exists():path=root/'instagram-oauth'
+        record=credentials()
         if path.exists():
-            record=oauth_vault.decode(path.read_text(encoding='utf-8'),root)
-            stage='IDENTITY'
-            response=requests.get('https://graph.instagram.com/v26.0/me',params={'fields':'user_id,username'},headers={'Authorization':'Bearer '+record['access_token']},timeout=20)
-            if not response.ok:result.update(error='IDENTITY_NOT_VERIFIED',detail=safe_meta_error(response,record['access_token']))
-            elif response.json().get('username')!='zaragente031':result.update(error='ZAR_ACCOUNT_REQUIRED')
-            else:
-                stage='CAPABILITIES';check=verify_capabilities(record['access_token'],record['user_id'])
-                with holdings.transaction('reposnews-editorial'):
-                    data=rn.read();data['instagram_permission_check']=check;rn.write(data)
-                if not set(PERMISSIONS).issubset(check['granted']):result.update(error='REQUIRED_CAPABILITIES_NOT_VERIFIED',detail=check)
-                else:
-                    stage='TOKEN_PERSISTENCE';record.update(verified_at=holdings._now(),granted_permissions=check['granted'],denied_permissions=check['denied'],verification_method=check['verification_method'],capabilities=check)
-                    oauth_vault.persist(root/'instagram-oauth',json.dumps(record),root)
-                    stage='SUBSCRIPTION';subscription=subscribe_messages(record['access_token'],record['user_id'])
-                    with holdings.transaction('reposnews-editorial'):
-                        data=rn.read();data['instagram_subscription']=subscription;rn.write(data)
-                    result.update(status='CONNECTED' if subscription['status']=='VERIFIED' else 'ERROR',error=None if subscription['status']=='VERIFIED' else 'MESSAGES_SUBSCRIPTION_NOT_VERIFIED',detail=subscription)
-    except (ValueError,KeyError,TypeError,AttributeError,OSError,requests.RequestException) as exc:
-        result.update(error='VERIFICATION_EXCEPTION',exception_type=type(exc).__name__)
-    result.update(stage=stage,checked_at=holdings._now(),message='Instagram conectado y suscripción messages verificada.' if result['status']=='CONNECTED' else 'No se completó la verificación en '+stage+': '+str(result['error']))
+            candidate=oauth_vault.decode(path.read_text(encoding='utf-8'),root)
+            if not record.get('issued_at') or candidate.get('issued_at',candidate.get('identity_verified_at',''))>record.get('issued_at',''):record=candidate
+        if record.get('access_token') and record.get('user_id'):
+            record.setdefault('issued_at',record.get('identity_verified_at') or holdings._now())
+            # Validate before replacing canonical, even for legacy pending records.
+            response=requests.get('https://graph.instagram.com/v26.0/me',params={'fields':'user_id,username'},headers={'Authorization':'Bearer '+record['access_token']},timeout=20,allow_redirects=False)
+            who=response.json() if response.ok else {}
+            if who.get('username')!='zaragente031' or str(who.get('user_id') or who.get('id') or '')!=str(record['user_id']):raise ValueError('IDENTITY_NOT_VERIFIED')
+            record=persist_identity(record)
+            check=verify_capabilities(record['access_token'],record['user_id'])
+            subscription=subscribe_messages(record['access_token'],record['user_id']) if check['manage_messages']=='VERIFIED' else {'status':'UNKNOWN'}
+            with holdings.transaction('reposnews-editorial'):
+                data=rn.read();data['instagram_permission_check']=check;data['instagram_subscription']=subscription;rn.write(data)
+            result.update(status='CONNECTED',error=None,capabilities=check,subscription=subscription)
+    except (ValueError,KeyError,TypeError,AttributeError,OSError,requests.RequestException,InvalidToken):
+        result.update(error='PERSISTENT_CONNECTION_NOT_VERIFIED')
+    result['checked_at']=holdings._now()
     with holdings.transaction('reposnews-editorial'):
         data=rn.read();data['instagram_callback']=result;rn.write(data)
     return result
+
 
 def sender_ids():
     configured={x.strip() for x in os.environ.get('INSTAGRAM_REPOSNEWS_SENDERS','').split(',') if x.strip()}
@@ -180,7 +233,7 @@ def integration():
         'oauth':'CONNECTED' if auth.get('verified_at') and auth.get('access_token') else 'ACTION_REQUIRED',
         'permissions':{'requested':list(PERMISSIONS),'granted':granted,'denied':auth.get('denied_permissions',permission_check.get('denied',[])),'status':'VERIFIED' if set(PERMISSIONS).issubset(granted) else 'UNVERIFIED'},
         'last_event':{'timestamp':last.get('received_at'),'status':last.get('status')},
-        'capabilities':permission_check,'subscription':data.get('instagram_subscription',{'status':'UNVERIFIED'}),'callback':data.get('instagram_callback',{}),
+        'capabilities':permission_check,'subscription':data.get('instagram_subscription',{'status':'UNVERIFIED'}),'callback':data.get('instagram_callback',{}),'credential_diagnostic':data.get('instagram_credential_diagnostic',{}),
         'reel_access':last.get('access_level','UNVERIFIED'),
         'signed_event_structure':data.get('instagram_last_signed_structure',{}),
         'account_type':data.get('instagram_account',{}).get('account_type','UNVERIFIED'),
@@ -900,9 +953,10 @@ def register(app,scope_fn=None):
         except ValueError:abort(403)
         client=os.environ.get('INSTAGRAM_APP_ID','')
         if not client or not os.environ.get('INSTAGRAM_APP_SECRET'):return jsonify(error='ACTION_REQUIRED: crear/conectar app Meta de Instagram Login.'),409
-        permissions=list(PERMISSIONS)+(['instagram_business_content_publish'] if request.args.get('publishing')=='1' else [])
-        state=secrets.token_urlsafe(32);session['reposnews_ig_state']={'value':state,'expires':time.time()+600,'permissions':permissions}
+        permissions=list(PERMISSIONS)+['instagram_business_content_publish']
+        state=secrets.token_urlsafe(32);session['reposnews_ig_state']={'value':state,'expires':time.time()+600,'permissions':permissions,'issued_at':holdings._now()}
         target=request.args.get('return_to','')
+        if target=='/accounts':session['reposnews_ig_state']['return_to']='/accounts#instagram'
         if re.fullmatch(r'/video-project/[a-f0-9]{16}',target):session['reposnews_ig_state']['return_to']=target+'#publish'
         callback=os.environ.get('INSTAGRAM_REDIRECT_URI','https://web-production-a9565.up.railway.app/api/reposnews/instagram/callback')
         return redirect('https://www.instagram.com/oauth/authorize?'+urlencode({'client_id':client,'redirect_uri':callback,'response_type':'code',
@@ -924,7 +978,7 @@ def register(app,scope_fn=None):
                 if not error:
                     from .text_video_social import connections
                     connections(scope_fn(),['instagram'])
-                return redirect(pending.get('return_to','/?zar_workspace=orchestration#zarSocialConnections'))
+                return redirect(pending.get('return_to','/accounts#instagram'))
             return redirect('/?zar_workspace=sites#reposnewsEditor')
         if pending.get('expires',0)<time.time() or not hmac.compare_digest(pending.get('value',''),request.args.get('state','')):return finish('OAUTH_STATE_INVALID',http_status=403)
         if not request.args.get('code'):return finish('OAUTH_CANCELLED')
@@ -940,19 +994,19 @@ def register(app,scope_fn=None):
             if who.get('username')!='zaragente031':return finish('ZAR_ACCOUNT_REQUIRED')
             from . import oauth_vault
             user_id=str(who.get('user_id') or who.get('id') or token.get('user_id') or '')
-            if not user_id:return finish('ACCOUNT_ID_NOT_VERIFIED',{'stage':stage})
-            record={'access_token':access,'user_id':user_id,'username':who['username'],'requested_permissions':list(PERMISSIONS)+(['instagram_business_content_publish'] if 'instagram_business_content_publish' in pending.get('permissions',[]) else []),'identity_verified_at':holdings._now()}
-            # Preserve a valid identity token encrypted even if capability checks fail.
-            pending_path=rn._path().parent/'instagram-oauth-pending'
-            stage='TOKEN_PERSISTENCE';oauth_vault.persist(pending_path,json.dumps(record),rn._path().parent)
-            stage='CAPABILITIES'
+            if not re.fullmatch(r'[0-9]+',user_id) or not (who.get('user_id') or who.get('id')):return finish('ACCOUNT_ID_NOT_VERIFIED',{'stage':stage})
+            record={'access_token':access,'user_id':user_id,'username':who['username'],'requested_permissions':pending.get('permissions',list(PERMISSIONS)),
+                    'identity_verified_at':holdings._now(),'issued_at':pending.get('issued_at') or holdings._now()}
+            if isinstance(token.get('expires_in'),(int,float)):record['expires_in']=token['expires_in']
+            stage='TOKEN_PERSISTENCE'
+            record=persist_identity(record)
+            # All subsequent checks use the credential reloaded from the encrypted vault.
+            access=record['access_token'];user_id=record['user_id'];stage='CAPABILITIES'
             check=verify_capabilities(access,user_id)
             with holdings.transaction('reposnews-editorial'):
                 data=rn.read();data['instagram_permission_check']=check;rn.write(data)
-            if not set(PERMISSIONS).issubset(check['granted']):return finish('REQUIRED_CAPABILITIES_NOT_VERIFIED',check)
-            record.update(verified_at=holdings._now(),granted_permissions=check['granted'],denied_permissions=check['denied'],verification_method=check['verification_method'],capabilities=check)
-            oauth_vault.persist(rn._path().parent/'instagram-oauth',json.dumps(record),rn._path().parent)
-            pending_path.unlink(missing_ok=True)
+            # Missing messaging permissions do not undo a verified identity connection.
+            if check['manage_messages']!='VERIFIED':return finish()
             stage='SUBSCRIPTION';subscription=subscribe_messages(access,user_id)
             with holdings.transaction('reposnews-editorial'):
                 data=rn.read();data['instagram_subscription']=subscription;rn.write(data)

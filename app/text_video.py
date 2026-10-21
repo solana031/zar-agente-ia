@@ -379,3 +379,5 @@ def register(app,scope_fn):
         return render_template('text_video.html',identifier=identifier,record=record)
     from .text_video_social import register as register_social
     register_social(app,scope_fn,csrf_owner)
+    from .account_connections import register as register_accounts
+    register_accounts(app,scope_fn,csrf_owner)

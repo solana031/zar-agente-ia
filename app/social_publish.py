@@ -37,15 +37,15 @@ def instagram_context(scope_id=None):
         from . import reposnews as rn,reposnews_inbox as inbox
         if rn.read().get('owner')==scope_id:
             auth=inbox.credentials()
-            if auth.get('access_token') and auth.get('user_id'):
-                token=auth['access_token'];user=str(auth['user_id'])
-                if auth.get('username') or any(p.startswith('instagram_business_') for p in auth.get('requested_permissions',[])):base='https://graph.instagram.com/v26.0'
-    return {'token':token,'user':user,'base':base}
+            token=auth.get('access_token','');user=str(auth.get('user_id') or '')
+            if auth.get('username') or any(p.startswith('instagram_business_') for p in auth.get('requested_permissions',[])):base='https://graph.instagram.com/v26.0'
+    source='CANONICAL_OAUTH' if scope_id and rn.read().get('owner')==scope_id and (rn._path().parent/'instagram-oauth').exists() else 'LEGACY_ENV'
+    return {'token':token,'user':user,'base':base,'source':source}
 
 
 def scoped_instagram_readiness(scope_id):
     context=instagram_context(scope_id);token=context['token'];user=context['user'];base=context['base']
-    if not token or not user:return {'connected':False,'publish_capability':'BLOCKED','blocker':'INSTAGRAM_NOT_CONNECTED'}
+    if not token or not user:return {'connected':False,'publish_capability':'BLOCKED','blocker':'INSTAGRAM_NOT_CONNECTED','credential_source':context.get('source')}
     headers={'Authorization':'Bearer '+token};business='graph.instagram.com' in base
     response=requests.get(base+'/me' if business else base+'/'+user,params={'fields':'user_id,username' if business else 'id,username'},headers=headers,timeout=20,allow_redirects=False)
     if not response.ok:
@@ -54,16 +54,21 @@ def scoped_instagram_readiness(scope_id):
         # HTTP 401 alone cannot distinguish expiry from revocation/invalid token.
         cause={463:'EXPIRED_TOKEN',467:'INVALID_TOKEN',458:'AUTHORIZATION_REMOVED',460:'PASSWORD_CHANGED'}.get(diagnostic.get('subcode'),'PROVIDER_AUTH_ERROR_UNCLASSIFIED')
         return {'connected':False,'status':'REAUTH_REQUIRED' if response.status_code==401 or diagnostic.get('code')==190 else 'ERROR',
-                'publish_capability':'BLOCKED','blocker':'INSTAGRAM_IDENTITY_HTTP_'+str(response.status_code),'diagnostic':diagnostic,'verified_cause':cause}
+                'publish_capability':'BLOCKED','blocker':'INSTAGRAM_IDENTITY_HTTP_'+str(response.status_code),'diagnostic':diagnostic,'verified_cause':cause,'credential_source':context.get('source')}
     data=response.json()
     if str(data.get('user_id') or data.get('id'))!=user or data.get('username')!='zaragente031':return {'connected':False,'status':'ERROR','publish_capability':'BLOCKED','blocker':'INSTAGRAM_IDENTITY_MISMATCH'}
     permission='instagram_business_content_publish' if business else 'instagram_content_publish'
     permissions=requests.get(base+'/me/permissions',headers=headers,timeout=20,allow_redirects=False)
     granted={r.get('permission') for r in permissions.json().get('data',[]) if r.get('status')=='granted'} if permissions.ok else set()
     ready=permission in granted
+    from .reposnews_inbox import verify_capabilities
+    capabilities=verify_capabilities(token,user,permissions) if business else {}
     return {'connected':True,'account':data.get('username'),'account_id':user,'publish_capability':'AUTHORIZED_NOT_TESTED' if ready else 'BLOCKED',
             'status':'CONNECTED' if ready else 'PERMISSION_REQUIRED', 'permissions':sorted(granted),
-            'blocker':None if ready else 'MISSING_OR_UNVERIFIED_'+permission.upper(),'required_permission':permission,'permission_check_http':permissions.status_code}
+            'blocker':None if ready else 'MISSING_OR_UNVERIFIED_'+permission.upper(),'required_permission':permission,'permission_check_http':permissions.status_code,'identity_status':'CONNECTED','credential_source':context.get('source'),
+            'capabilities':{'messaging':'READY' if capabilities.get('manage_messages')=='VERIFIED' else 'PERMISSION_REQUIRED',
+                            'reel_discovery':'READY' if capabilities.get('manage_messages')=='VERIFIED' else 'PERMISSION_REQUIRED',
+                            'publishing':'READY' if ready else 'PERMISSION_REQUIRED'}}
 
 
 def instagram_reel(video_url, caption, confirmed=False,scope_id=None):

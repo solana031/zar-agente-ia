@@ -57,19 +57,10 @@
   }catch(err){document.getElementById('zarIdentityNotice').textContent=err.message;}finally{b.disabled=false;}
  });
 })();
-/* Compact connection panel in the existing account center. */
-(()=>{
- let csrf='',loaded=false,busy=false,panelHtml='';
- const esc=v=>String(v??'—').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
- async function verify(){
-  const host=document.getElementById('zarIdentityCenter');if(!host||busy||!csrf)return;
-  let card=document.getElementById('zarSocialConnections');if(!card){card=document.createElement('section');card.id='zarSocialConnections';host.prepend(card);}
-  busy=true;card.textContent='Verificando conexiones sociales · solo lectura';
-  try{const r=await fetch('/api/social/connections/readiness',{method:'POST',headers:{'Content-Type':'application/json','X-ZAR-Business-CSRF':csrf},body:'{}'}),j=await r.json();if(!r.ok||!j.ok)throw Error('No se pudo verificar');
-   card.innerHTML='<h3>Conexiones sociales</h3><div class="identityGrid">'+Object.entries(j.result).map(([p,c])=>'<article><b>'+esc(p.toUpperCase())+'</b><p>'+esc(c.status)+' · '+esc(c.channel?.title||c.account||'Sin verificar')+'</p><p>'+esc(c.channel?.id||'')+'</p><p>Permisos: '+esc((c.permissions||[]).join(', ')||'Sin verificar')+'</p><small>'+esc(c.last_verified)+'</small>'+(c.ready?'<p>UPLOAD_READY</p>':'<p>'+esc(c.human_action||c.blocker)+'</p><a href="'+esc(c.connect_url)+'">'+(p==='instagram'?'RECONECTAR':p==='tiktok'?'CONECTAR TIKTOK':'CONECTAR YOUTUBE')+'</a>')+'</article>').join('')+'</div><button type="button">REVERIFICAR CONEXIONES</button>';
-   card.querySelector('button').onclick=verify;panelHtml=card.innerHTML;loaded=true;
-  }catch{card.textContent='UNKNOWN · No se pudo verificar la conexión social.';}finally{busy=false;}
- }
- window.addEventListener('zar-workflow-state',e=>{csrf=e.detail.csrf;if(!loaded)verify();else if(!document.getElementById('zarSocialConnections')){const host=document.getElementById('zarIdentityCenter');if(host){const card=document.createElement('section');card.id='zarSocialConnections';card.innerHTML=panelHtml;host.prepend(card);card.querySelector('button').onclick=verify;}}});
- window.addEventListener('message',e=>{if(e.origin===location.origin&&e.data?.type==='zar-oauth-success')verify();});
-})();
+/* Existing identity tools link to the single global account registry. */
+window.addEventListener('zar-workflow-state',()=>{
+ const host=document.getElementById('zarIdentityCenter');if(!host||document.getElementById('zarSocialConnections'))return;
+ const card=document.createElement('section');card.id='zarSocialConnections';
+ card.innerHTML='<h3>CUENTAS</h3><p>Identidad, permisos y conexiones de todos los módulos.</p><a href="/accounts" target="_top">ABRIR CUENTAS</a>';
+ host.prepend(card);
+});

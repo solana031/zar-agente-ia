@@ -122,21 +122,24 @@ class InstagramInboxTest(unittest.TestCase):
   with patch.dict(os.environ,{'INSTAGRAM_APP_ID':'','INSTAGRAM_APP_SECRET':''}):
    self.assertEqual(self.client.get('/api/reposnews/instagram/connect').status_code,409)
   self.assertEqual(self.client.get('/api/reposnews/instagram/callback?state=wrong&code=fixture').status_code,403)
- def test_oauth_missing_scope_does_not_store_token(self):
+ def test_oauth_missing_messages_persists_verified_identity(self):
   with self.client.session_transaction() as session:session['reposnews_ig_state']={'value':'fixture-state','expires':9999999999}
   token=Mock(ok=True);token.json.return_value={'access_token':'fixture-token','user_id':'account'}
   identity=Mock(ok=True);identity.json.return_value={'user_id':'12345','username':'zaragente031'}
   permissions=Mock(ok=True,status_code=200);permissions.json.return_value={'data':[{'permission':inbox.PERMISSIONS[0],'status':'granted'},{'permission':inbox.PERMISSIONS[1],'status':'declined'}]}
-  with patch.dict(os.environ,{'INSTAGRAM_APP_ID':'fixture-app'}),patch.object(inbox.requests,'post',return_value=token),patch.object(inbox.requests,'get',side_effect=[identity,permissions,Mock(ok=True,json=lambda:{'data':[]}),Mock(ok=False,status_code=403,json=lambda:{'error':{'code':10,'message':'Permission denied'}})]):
+  with patch.dict(os.environ,{'INSTAGRAM_APP_ID':'fixture-app'}),patch.object(inbox.requests,'post',return_value=token),patch.object(inbox.requests,'get',side_effect=[identity,identity,permissions,Mock(ok=True,json=lambda:{'data':[]}),Mock(ok=False,status_code=403,json=lambda:{'error':{'code':10,'message':'Permission denied'}})]):
    response=self.client.get('/api/reposnews/instagram/callback?state=fixture-state&code=fixture')
-  self.assertEqual(response.status_code,400);self.assertEqual(response.json['denied'],[inbox.PERMISSIONS[1]])
-  self.assertFalse((rn._path().parent/'instagram-oauth').exists())
+  self.assertEqual(response.status_code,302)
+  self.assertTrue((rn._path().parent/'instagram-oauth').exists())
+  self.assertEqual(inbox.credentials()['user_id'],'12345')
+  self.assertEqual(rn.read()['instagram_permission_check']['denied'],[inbox.PERMISSIONS[1]])
+  self.assertTrue(rn.read()['instagram_credential_diagnostic']['NEW_TOKEN_READBACK'])
  def test_oauth_stores_only_verified_operational_identity_and_scopes(self):
   with self.client.session_transaction() as session:session['reposnews_ig_state']={'value':'fixture-state','expires':9999999999}
   token=Mock(ok=True);token.json.return_value={'access_token':'fixture-token','user_id':'account'}
   identity=Mock(ok=True);identity.json.return_value={'user_id':'12345','username':'zaragente031'}
   permissions=Mock(ok=True,status_code=200);permissions.json.return_value={'data':[{'permission':p,'status':'granted'} for p in inbox.PERMISSIONS]}
-  with patch.dict(os.environ,{'INSTAGRAM_APP_ID':'fixture-app'}),patch.object(inbox.requests,'post',side_effect=[token,Mock(ok=True,json=lambda:{'success':True})]),patch.object(inbox.requests,'get',side_effect=[identity,permissions,Mock(ok=True,json=lambda:{'data':[]}),Mock(ok=True,json=lambda:{'data':[]})]):
+  with patch.dict(os.environ,{'INSTAGRAM_APP_ID':'fixture-app'}),patch.object(inbox.requests,'post',side_effect=[token,Mock(ok=True,json=lambda:{'success':True})]),patch.object(inbox.requests,'get',side_effect=[identity,identity,permissions,Mock(ok=True,json=lambda:{'data':[]}),Mock(ok=True,json=lambda:{'data':[]})]):
    self.assertEqual(self.client.get('/api/reposnews/instagram/callback?state=fixture-state&code=fixture').status_code,302)
   self.assertNotIn('fixture-token',(rn._path().parent/'instagram-oauth').read_text())
   result=inbox.integration();self.assertEqual(result['permissions']['status'],'VERIFIED');self.assertEqual(result['oauth'],'CONNECTED')
@@ -178,7 +181,7 @@ class InstagramInboxTest(unittest.TestCase):
   from app import oauth_vault
   root=rn._path().parent
   oauth_vault.persist(root/'instagram-oauth-pending',json.dumps({'access_token':'fixture-token','user_id':'12345','username':'zaragente031'}),root)
-  with patch.object(inbox.requests,'get',side_effect=[Mock(ok=True,json=lambda:{'username':'zaragente031'}),Mock(ok=False,status_code=400,json=lambda:{'error':{'code':100}}),Mock(ok=True,json=lambda:{'data':[]}),Mock(ok=True,json=lambda:{'data':[]})]),patch.object(inbox.requests,'post',return_value=Mock(ok=True,json=lambda:{'success':True})) as post:
+  with patch.object(inbox.requests,'get',side_effect=[Mock(ok=True,json=lambda:{'username':'zaragente031','user_id':'12345'}),Mock(ok=True,json=lambda:{'username':'zaragente031','user_id':'12345'}),Mock(ok=False,status_code=400,json=lambda:{'error':{'code':100}}),Mock(ok=True,json=lambda:{'data':[]}),Mock(ok=True,json=lambda:{'data':[]})]),patch.object(inbox.requests,'post',return_value=Mock(ok=True,json=lambda:{'success':True})) as post:
    result=inbox.reverify_connection()
   self.assertEqual(result['status'],'CONNECTED');self.assertTrue((root/'instagram-oauth').exists())
   self.assertTrue(post.call_args.args[0].endswith('/12345/subscribed_apps'))

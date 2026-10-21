@@ -158,7 +158,7 @@ def test_youtube_status_uses_actual_privacy(project,privacy,expected):
 
 def test_existing_instagram_vault_identity_and_publish_permission_checked_separately(project):
     credentials={'access_token':'offline-fixture-token','user_id':'123','username':'zaragente031','requested_permissions':['instagram_business_basic','instagram_business_manage_messages']}
-    with patch('app.reposnews_inbox.credentials',return_value=credentials),patch.object(social.social.requests,'get',side_effect=[Mock(ok=True,json=lambda:{'user_id':'123','username':'zaragente031'}),Mock(ok=False,status_code=400)]) as read:
+    with patch('app.reposnews_inbox.credentials',return_value=credentials),patch.object(social.social.requests,'get',side_effect=[Mock(ok=True,json=lambda:{'user_id':'123','username':'zaragente031'}),Mock(ok=False,status_code=400),Mock(ok=True,json=lambda:{'data':[]}),Mock(ok=True,json=lambda:{'data':[]})]) as read:
         result=social.social.scoped_instagram_readiness('owner')
     assert result['connected'] and result['publish_capability']=='BLOCKED';assert 'CONTENT_PUBLISH' in result['blocker']
     assert all(call.args[0].startswith('https://graph.instagram.com/') for call in read.call_args_list)

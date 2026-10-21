@@ -4,7 +4,7 @@ from flask import jsonify, request, session
 from . import holdings, identity_center
 
 TYPES={'ARTICLE_READY','ARTICLE_UPDATE_READY','ARTICLE_NEEDS_DISAMBIGUATION','ARTICLE_FAILED','DOC_READY','SLIDES_READY','SHEET_READY','FORM_READY','VIDEO_READY','PUBLISH_SUCCESS','PUBLISH_FAILED','WORKER_OFFLINE','WORKER_SESSION_EXPIRED','SYSTEM_ACTION_REQUIRED'}
-TYPES.update({'MIRROR_SYNC_SUCCESS','MIRROR_SYNC_FAILED','MIRROR_OUTDATED'})
+TYPES.update({'ACCOUNT_CONNECTION','MIRROR_SYNC_SUCCESS','MIRROR_SYNC_FAILED','MIRROR_OUTDATED'})
 
 
 def emit(scope,kind,key,title,message,deep_link,entity_id='',entity_type='',actions=None,details=None,status='ACTION_REQUIRED',priority='P1'):

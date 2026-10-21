@@ -15,7 +15,7 @@ PLATFORMS={'instagram','tiktok','youtube'}
 OPERATIONAL_EMAIL='zaragente031@gmail.com'
 
 
-def connections(scope,only=None):
+def _provider_connections(scope,only=None):
     """Existing credentials only. Provider operations here are identity/status reads."""
     from . import cloud_auth,identity_center
     results={}
@@ -66,21 +66,16 @@ def connections(scope,only=None):
         item['upload_ready']=item['ready']
         if item['ready']:item['human_action']=None
         results[platform]=item
-    # Persist only safe observations and actual missing actions in the existing center.
+    # Legacy readers keep the same safe observations; actions belong to the registry.
     with holdings.transaction(scope):
-        data=holdings.read(scope);state=identity_center.ensure(data);data.setdefault('social_connections',{}).update(results)
-        for platform,item in results.items():
-            existing=next((a for a in state['human_actions'] if a.get('service')==platform.upper() and a.get('action')=='SOCIAL_CONNECTION'),None)
-            if item['ready']:
-                if existing:existing.update(status='DONE',completed_at=holdings._now())
-            else:
-                action=identity_center.queue(state,platform.upper(),'SOCIAL_CONNECTION',item.get('blocker') or item['status'],item['connect_url'],[item['human_action']])
-                action.update(title=item['human_action'],reason=item.get('blocker') or item['status'],url=item['connect_url'],instructions=[item['human_action']])
-                for old in state['human_actions']:
-                    if old is not action and old.get('service')==platform.upper() and old.get('action')=='SETUP' and old.get('status')!='DONE':
-                        old.update(status='DONE',resolution='SUPERSEDED_BY_VERIFIED_SOCIAL_ACTION',superseded_by=action['id'])
+        data=holdings.read(scope);data.setdefault('social_connections',{}).update(results)
         holdings.write(scope,data)
     return results
+
+
+def connections(scope,only=None):
+    from .account_connections import social_connections
+    return social_connections(scope,only)
 
 
 def validate_video(path):
