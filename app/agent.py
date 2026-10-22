@@ -281,6 +281,7 @@ def _api_profiles(cfg, route=None):
     return profiles
 
 def _post_api_json(base, key, payload, timeout=120):
+    from .secret_safety import redact_text
     headers = {'Authorization': f'Bearer {key}', 'Content-Type': 'application/json'}
     last_error = None
     for attempt, delay in enumerate((0, 1.2, 2.5), start=1):
@@ -289,17 +290,17 @@ def _post_api_json(base, key, payload, timeout=120):
         try:
             r = requests.post(f'{base}/chat/completions', headers=headers, json=payload, timeout=timeout)
         except requests.RequestException as exc:
-            last_error = RuntimeError(f'Error de conexión: {exc}')
+            last_error = RuntimeError('Error de conexión: '+redact_text(exc,[key]))
             if attempt < 3:
                 continue
             raise last_error
         if r.ok:
             return r.json()
         if r.status_code in RETRYABLE_API_CODES and attempt < 3:
-            last_error = RuntimeError(f'API {r.status_code}: {r.text[:700]}')
+            last_error = RuntimeError(f'API {r.status_code}: '+redact_text(r.text,[key])[:700])
             continue
         
-        detail = r.text[:900]
+        detail = redact_text(r.text,[key])[:900]
         if r.status_code == 429:
             raise RuntimeError('API 429: límite de solicitudes alcanzado. Zar no ha cambiado de proveedor. ' + detail)
         raise RuntimeError(f'API {r.status_code}: {detail}')

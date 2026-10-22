@@ -254,8 +254,9 @@ def finish_oauth(state, code, code_verifier, redirect_uri=None, user_id=None, ex
     except Exception:
         payload = {'error': token_response.text}
     if not token_response.ok:
+        from .secret_safety import redact_text
         err = payload.get('error_description') or payload.get('error') or f'HTTP {token_response.status_code}'
-        raise RuntimeError(f'Google rechazó el intercambio OAuth: {err}')
+        raise RuntimeError('Google rechazó el intercambio OAuth: '+redact_text(err,[client_secret,code,code_verifier]))
 
     access_token = payload.get('access_token')
     if not access_token:

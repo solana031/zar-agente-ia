@@ -48,6 +48,8 @@ from .youtube import status as youtube_status, upload as youtube_upload, video_s
 from app.youtube_publish import register_youtube
 
 app = Flask(__name__)
+from .secret_safety import install as install_secret_safety
+install_secret_safety(app)
 register_youtube(app)
 from .company_workspace import blueprint as company_workspace_blueprint
 app.register_blueprint(company_workspace_blueprint)

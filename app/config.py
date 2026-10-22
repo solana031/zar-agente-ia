@@ -46,21 +46,20 @@ def load():
         merged['provider'] = data['provider']
     # Environment variables are authoritative in cloud deployments.
     for k, env in [('api_key','GEMINI_API_KEY'),('base_url','ZAR_API_BASE_URL'),('model','ZAR_API_MODEL')]:
-        if os.environ.get(env): merged['api'][k] = os.environ[env]
+        if env in os.environ and (k=='api_key' or os.environ[env]): merged['api'][k] = os.environ[env]
     for k, env in [('api_key','OPENAI_API_KEY'),('base_url','OPENAI_BASE_URL'),('economy_model','ZAR_OPENAI_ECONOMY_MODEL'),('strong_model','ZAR_OPENAI_STRONG_MODEL'),('max_model','ZAR_OPENAI_MAX_MODEL')]:
-        if os.environ.get(env): merged['openai'][k] = os.environ[env]
+        if env in os.environ and (k=='api_key' or os.environ[env]): merged['openai'][k] = os.environ[env]
     for k, env in [('api_key','OPENROUTER_API_KEY'),('base_url','OPENROUTER_BASE_URL'),('model','OPENROUTER_MODEL')]:
-        if os.environ.get(env): merged['openrouter'][k] = os.environ[env]
+        if env in os.environ and (k=='api_key' or os.environ[env]): merged['openrouter'][k] = os.environ[env]
     if os.environ.get('ZAR_PROVIDER'): merged['provider'] = os.environ['ZAR_PROVIDER']
-    if os.environ.get('ZAR_MAPS_API_KEY'): merged['maps']['api_key'] = os.environ['ZAR_MAPS_API_KEY']
+    if 'ZAR_MAPS_API_KEY' in os.environ: merged['maps']['api_key'] = os.environ['ZAR_MAPS_API_KEY']
     return merged
 
 def save(data):
     CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
     # Never persist API secrets from the browser if env vars are present.
     clean = json.loads(json.dumps(data))
-    if os.environ.get('GEMINI_API_KEY'): clean['api']['api_key'] = ''
-    if os.environ.get('OPENAI_API_KEY'): clean['openai']['api_key'] = ''
-    if os.environ.get('OPENROUTER_API_KEY'): clean['openrouter']['api_key'] = ''
+    for section,env in [('api','GEMINI_API_KEY'),('openai','OPENAI_API_KEY'),('openrouter','OPENROUTER_API_KEY'),('maps','ZAR_MAPS_API_KEY')]:
+        if env in os.environ:clean.setdefault(section,{})['api_key']=''
     CONFIG_PATH.write_text(json.dumps(clean, ensure_ascii=False, indent=2), encoding='utf-8')
     return clean
