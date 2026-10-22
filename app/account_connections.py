@@ -6,7 +6,7 @@ it cannot publish, send messages, place orders or modify provider resources.
 import os
 import secrets
 from dataclasses import dataclass
-from flask import abort, jsonify, render_template, request, session
+from flask import abort, jsonify, render_template, request, session, redirect
 from . import holdings, identity_center
 
 GOOD={'CONNECTED','UPLOAD_READY','PARTIAL'}
@@ -182,11 +182,49 @@ def register(app,scope_fn,csrf_owner):
         registry=AccountConnectionRegistry(owner())
         return jsonify(ok=True,csrf=session.setdefault('business_csrf',secrets.token_urlsafe(32)),**registry.view())
 
+    @app.get('/oauth/accounts/start/<ident>')
+    def accounts_oauth_start(ident):
+        from . import oauth_transport as transport
+        from .user_scope import set_current_user
+        import time
+        row=transport.get('launch:'+ident,consume=True)
+        if not row:return transport.page('OAuth','OAUTH_STATE_INVALID')
+        # This grants permission to start only the requested OAuth, never ZAR login.
+        session.pop('zar_auth',None)
+        session['zar_user_id']=row['scope'];set_current_user(row['scope'])
+        session['accounts_oauth_handoff']=ident
+        session['accounts_oauth_launch']={'provider':row['provider'],'expires':time.time()+120}
+        response=redirect(row['path'])
+        response.headers['Referrer-Policy']='no-referrer'
+        response.headers['Cache-Control']='no-store'
+        return response
+
+    @app.get('/api/accounts/oauth/status/<ident>')
+    def accounts_oauth_status(ident):
+        from . import oauth_transport as transport
+        row=transport.get('result:'+ident)
+        if not row or row.get('scope')!=owner():return jsonify(status='EXPIRED'),404
+        if row['status']=='CONNECTED':
+            # Only the initiating authenticated cookie can adopt a migrated Google scope.
+            transport.get('result:'+ident,consume=True)
+            session['zar_user_id']=row.get('result_scope') or row['scope']
+        response=jsonify(status=row['status'])
+        response.headers['Cache-Control']='no-store'
+        return response
+
     @app.post('/api/accounts/connections/<provider>/<action>')
     def accounts_action(provider,action):
         registry=AccountConnectionRegistry(csrf_owner())
         if not registry.provider(provider):abort(404)
         if action=='reverify':return jsonify(ok=True,result=registry.reverify(provider))
         if action in {'connect','reconnect'}:
+            if (request.get_json(silent=True) or {}).get('external') is True and provider in {'google','instagram'}:
+                from . import oauth_transport as transport
+                if provider=='instagram':
+                    from . import reposnews
+                    if reposnews.read().get('owner')!=registry.scope:
+                        return jsonify(error='OWNER_SESSION_REQUIRED',message='Conecta primero Google en la sesión propietaria de ReposNews.'),403
+                ident=transport.begin(registry.scope,provider,registry.connect_url(provider))
+                return jsonify(ok=True,url=transport.origin()+'/oauth/accounts/start/'+ident,poll_id=ident,external=True)
             return jsonify(ok=True,url=registry.connect_url(provider),assistant=provider if provider in {'tiktok','shopify','stripe'} else None)
         abort(404)

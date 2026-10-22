@@ -67,14 +67,8 @@ def _client_config():
 
 
 def _redirect_uri():
-    explicit = os.environ.get('GOOGLE_REDIRECT_URI', '').strip()
-    if explicit:
-        return explicit
-    base = os.environ.get('PUBLIC_BASE_URL', '').strip().rstrip('/')
-    if base:
-        return base + '/oauth2callback'
-    return 'http://127.0.0.1:8765/oauth2callback'
-
+    from .oauth_transport import callback
+    return callback('google')
 
 def _save_credentials(creds, user_id=None):
     global _LAST_ERROR

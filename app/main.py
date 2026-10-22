@@ -77,6 +77,8 @@ app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
 )
+from .oauth_transport import configure_proxy
+configure_proxy(app)
 
 
 def _user_scope_id():
@@ -124,31 +126,14 @@ def _set_scope():
 
 
 def _canonical_origin():
-    """Return Zar's canonical public origin for browser/OAuth redirects."""
-    raw = os.environ.get("PUBLIC_BASE_URL", "").strip().rstrip("/")
-    if raw:
-        return raw
-    raw = os.environ.get("GOOGLE_REDIRECT_URI", "").strip().rstrip("/")
-    if raw and raw.endswith("/oauth2callback"):
-        return raw[:-len("/oauth2callback")].rstrip("/")
-    # Railway sits behind a reverse proxy. request.host_url can otherwise be
-    # built with the internal HTTP scheme even though the public browser URL is
-    # HTTPS, producing Google's exact error: redirect_uri_mismatch.
-    host = request.headers.get("X-Forwarded-Host", "").split(",")[0].strip() or request.host
-    proto = request.headers.get("X-Forwarded-Proto", "").split(",")[0].strip() or request.scheme
-    if host:
-        return f"{proto}://{host}"
-    return ""
+    from .oauth_transport import origin
+    return origin()
+
 
 def _google_redirect_uri():
-    """Build the exact public callback URI used by both OAuth steps."""
-    explicit = os.environ.get("GOOGLE_REDIRECT_URI", "").strip()
-    if explicit:
-        return explicit.rstrip("/")
-    origin = _canonical_origin().rstrip("/")
-    if origin:
-        return origin + "/oauth2callback"
-    return request.host_url.rstrip("/") + "/oauth2callback"
+    from .oauth_transport import callback
+    return callback('google')
+
 
 def _canonical_redirect_if_needed():
     origin = _canonical_origin()
@@ -163,8 +148,6 @@ def _canonical_redirect_if_needed():
         return None
     return redirect(origin + request.path + (("?" + request.query_string.decode()) if request.query_string else ""))
 
-_OAUTH_PENDING_FILE = Path(os.environ.get('ZAR_DATA_DIR', '/data')) / 'oauth_pending.json'
-
 def _save_oauth_pending(provider, state, verifier, redirect_uri=None, expected_email=None, purpose=None, service=None):
     """Persist OAuth transactions independently of the browser session.
 
@@ -174,63 +157,31 @@ def _save_oauth_pending(provider, state, verifier, redirect_uri=None, expected_e
     provider. This prevents a second authorization flow from invalidating the
     first one.
     """
-    try:
-        _OAUTH_PENDING_FILE.parent.mkdir(parents=True, exist_ok=True)
-        data = {}
-        if _OAUTH_PENDING_FILE.exists():
-            try:
-                data = json.loads(_OAUTH_PENDING_FILE.read_text(encoding='utf-8')) or {}
-            except Exception:
-                data = {}
-        if not isinstance(data, dict):
-            data = {}
-        data[state] = {'provider': provider, 'state': state, 'verifier': verifier, 'redirect_uri': redirect_uri, 'user_id': get_current_user(), 'created_at': time.time(),'expected_email':expected_email,'purpose':purpose,'service':service}
-        # Keep only recent transactions.
-        cutoff = time.time() - 15 * 60
-        data = {k: v for k, v in data.items() if isinstance(v, dict) and float(v.get('created_at', 0) or 0) >= cutoff}
-        tmp = _OAUTH_PENDING_FILE.with_suffix('.tmp')
-        tmp.write_text(json.dumps(data), encoding='utf-8')
-        tmp.replace(_OAUTH_PENDING_FILE)
-    except Exception:
-        pass
+    from .oauth_transport import put
+    put('state:'+provider+':'+state, dict(provider=provider, state=state, verifier=verifier,
+        redirect_uri=redirect_uri, user_id=get_current_user(), created_at=time.time(),
+        expected_email=expected_email, purpose=purpose, service=service,
+        handoff=session.get('accounts_oauth_handoff')))
+
 
 def _load_oauth_pending(provider, state=None):
-    try:
-        data = json.loads(_OAUTH_PENDING_FILE.read_text(encoding='utf-8'))
-        if not isinstance(data, dict):
-            return {}
-        # New format: every OAuth transaction is keyed by its state.
-        if state and isinstance(data.get(state), dict):
-            item = data[state]
-            if item.get('provider') == provider:
-                return item
-        # Backwards compatibility with the previous provider-keyed format.
-        legacy = data.get(provider)
-        if isinstance(legacy, dict):
-            return legacy
-    except Exception:
-        pass
-    return {}
+    from .oauth_transport import get
+    return get('state:'+provider+':'+state, consume=True) if state else {}
+
 
 def _clear_oauth_pending(provider, state=None):
-    try:
-        data = json.loads(_OAUTH_PENDING_FILE.read_text(encoding='utf-8')) if _OAUTH_PENDING_FILE.exists() else {}
-        if not isinstance(data, dict):
-            return
-        if state:
-            item = data.get(state)
-            if isinstance(item, dict) and item.get('provider') == provider:
-                data.pop(state, None)
-        else:
-            # Legacy cleanup.
-            data.pop(provider, None)
-        _OAUTH_PENDING_FILE.write_text(json.dumps(data), encoding='utf-8')
-    except Exception:
-        pass
+    from .oauth_transport import get
+    if state:get('state:'+provider+':'+state,consume=True)
+
 
 TEMPLATE_OAUTH_SUCCESS = "<!doctype html><html lang='es'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><meta name='theme-color' content='#090807'><title>Zar · Conexión correcta</title><style>*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;background:#090807;color:#f3ece4;font-family:Inter,system-ui,sans-serif;overflow:hidden}.bg{position:fixed;inset:0;background:linear-gradient(90deg,rgba(9,8,7,.2),rgba(9,8,7,.82)),url('/static/zar-dog.png') left center/cover no-repeat;filter:brightness(.7) saturate(.75);transform:scale(1.03)}.veil{position:fixed;inset:0;background:radial-gradient(circle at 50% 35%,rgba(215,169,100,.16),transparent 38%),linear-gradient(180deg,rgba(7,6,5,.25),rgba(7,6,5,.84))}.box{position:relative;width:min(720px,calc(100% - 30px));padding:32px;border:1px solid rgba(215,169,100,.5);border-radius:26px;background:rgba(20,15,11,.76);backdrop-filter:blur(18px);box-shadow:0 30px 100px rgba(0,0,0,.62);text-align:center}.dog{width:92px;height:76px;object-fit:cover;object-position:center 38%;border-radius:20px;margin:0 auto 12px;display:block}.oauthOk{width:64px;height:64px;border-radius:50%;display:grid;place-items:center;margin:6px auto 12px;border:1px solid rgba(215,169,100,.65);background:rgba(215,169,100,.12);font-size:34px;color:#e5c58e}.svc{min-height:72px;display:flex;flex-direction:column;align-items:center;justify-content:center;box-sizing:border-box}.svc span{display:block;font-size:20px;line-height:1;margin:0 0 6px}.svc b{display:block;font-size:10px;line-height:1.2}.svc small{display:block;font-size:8px;line-height:1.2;color:#8e8379;margin-top:5px}h1{font:700 38px Georgia,serif;color:#ead0a5;margin:0 0 8px}p{color:#b9aea3;font-size:14px;line-height:1.55;margin:8px 0}.services{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:20px 0}.svc{padding:11px 7px;border:1px solid #4a3828;border-radius:12px;background:rgba(8,7,6,.55);color:#d8cabb}.svc.ok{border-color:rgba(113,167,109,.55)}.svc.pending{border-color:rgba(185,145,76,.5)}.svc span{display:block;font-size:20px;margin-bottom:4px}.svc b{display:block;font-size:10px}.svc small{display:block;font-size:8px;color:#8e8379;margin-top:3px}.btn{display:inline-block;margin-top:12px;padding:12px 24px;border:1px solid #9d713c;border-radius:13px;background:linear-gradient(180deg,#ddb776,#bd8a4c);color:#1a120a;font-weight:800;text-decoration:none}small.note{display:block;margin-top:10px;color:#81766d}@media(max-width:560px){.box{padding:24px 16px}.services{grid-template-columns:repeat(2,1fr)}h1{font-size:32px}}</style></head><body><div class='bg'></div><div class='veil'></div><div class='box'><img class='dog' src='/static/zar-dog.png'><div class='oauthOk'>✓</div><h1>Conexión correcta</h1><p><strong>__LABEL__ conectado</strong></p><p>__DETAIL__</p><div class='services'>__CHIPS__</div><a class='btn' href='/'>Abrir Zar →</a><small class='note'>Volviendo automáticamente a Zar…</small></div><script>setTimeout(function(){try{if(window.opener&&!window.opener.closed){window.opener.postMessage({type:'zar-oauth-success'},window.location.origin);try{window.opener.focus()}catch(e){}setTimeout(function(){try{window.close()}catch(e){}},300);return}}catch(e){}window.location.href='/'},1100);</script></body></html>"
 
 def _oauth_success_page(provider):
+    from .oauth_transport import complete, page
+    handoff=session.pop('accounts_oauth_handoff',None)
+    if handoff:
+        complete(handoff,'CONNECTED',session.get('zar_user_id'))
+        return page('Google','CONNECTED',200)
     label = 'Google' if provider == 'google' else 'YouTube'
     if provider == 'google':
         detail = 'Tu cuenta de Google está conectada. Zar ha guardado la autorización y puede conservar una copia local consultable de tus datos permitidos.'
@@ -522,9 +473,12 @@ def _authorized():
 
 @app.before_request
 def _guard():
-    allowed = {"login","health","oauth2callback","connect_google","connect_gmail","holdings_media_public_video_api","distributed_nodes.poll","distributed_nodes.claim","distributed_nodes.health","distributed_nodes.inference","agency_stripe_webhook","reposnews_instagram_webhook",
+    allowed = {"login","health","oauth2callback","accounts_oauth_start","reposnews_instagram_callback","connect_google","connect_gmail","holdings_media_public_video_api","distributed_nodes.poll","distributed_nodes.claim","distributed_nodes.health","distributed_nodes.inference","agency_stripe_webhook","reposnews_instagram_webhook",
                "instagram_local_worker_poll", "instagram_local_worker_progress", "instagram_local_worker_result", "instagram_local_worker_heartbeat", "workspace_artifact_image",
                "video_worker_poll", "video_worker_asset", "video_worker_progress", "video_worker_result"}
+    launch=session.get('accounts_oauth_launch', {})
+    if request.endpoint == 'reposnews_instagram_connect' and launch.get('provider') == 'instagram' and launch.get('expires',0)>time.time():
+        return None
     if request.endpoint in allowed or request.path.startswith("/static/"):
         return None
     if request.endpoint in {'holdings_site_page','holdings_site_asset'}:
@@ -558,7 +512,7 @@ def login():
 def oauth2callback():
     state = request.args.get("state", "")
     code = request.args.get("code", "")
-    provider = session.get("oauth_provider")
+    provider = None  # Callback state, never the external browser cookie, selects the provider.
     pending = _load_oauth_pending(provider or "google", state) if state else {}
     if not pending and state:
         pending = _load_oauth_pending("google", state)
@@ -573,12 +527,17 @@ def oauth2callback():
         session["zar_user_id"] = pending.get("user_id")
         set_current_user(pending.get("user_id"))
     # Prefer the transaction matched by the callback state. The browser session
-    # is only a fallback; this makes OAuth resilient to Railway restarts, tabs,
+    # is not required; this makes OAuth resilient to Railway restarts, tabs,
     # popups and cookie/session changes during the Google redirect.
-    expected = pending.get("state") or session.get("oauth_state")
-    verifier = pending.get("verifier") or session.get("oauth_code_verifier")
+    expected = pending.get("state")
+    verifier = pending.get("verifier")
+    from . import oauth_transport as transport
+    if pending and request.args.get('error'):
+        transport.complete(pending.get('handoff'), 'OAUTH_CANCELLED')
+        return transport.page('Google','OAUTH_CANCELLED')
     if not code or not expected or not state or not secrets.compare_digest(state, expected):
         return _oauth_error_page('Estado OAuth inválido o caducado. Vuelve a Zar e inicia la conexión de Google de nuevo.') , 400
+    session['accounts_oauth_handoff'] = pending.get('handoff')
     try:
         if provider == "youtube":
             finish_youtube_oauth(state, code, verifier)
@@ -637,6 +596,7 @@ def oauth2callback():
         session.pop("oauth_code_verifier", None)
         return _oauth_success_page('google')
     except Exception as exc:
+        transport.complete(pending.get('handoff'), 'ERROR')
         return _oauth_error_page(f'No se pudo conectar {html_lib.escape("YouTube" if provider == "youtube" else "Google")}: {html_lib.escape(redact_secret_text(exc))}'), 500
 
 def _oauth_error_page(message):
@@ -3742,11 +3702,11 @@ def connect_google():
         url, state, verifier = authorization_url(force=force, redirect_uri=redirect_uri,service=service,expected_email=expected_email)
         session["oauth_provider"] = "google"
         session["oauth_state"] = state
-        session["oauth_code_verifier"] = verifier
         _save_oauth_pending('google', state, verifier, redirect_uri,expected_email,purpose,service)
         return redirect(url)
     except Exception as exc:
-        return f"<h2>No se pudo iniciar Google OAuth</h2><pre>{exc}</pre>", 500
+        from .oauth_transport import page
+        return page('Google','OAUTH_START_FAILED',500)
 
 @app.get("/connect/youtube")
 def connect_youtube():
@@ -3757,7 +3717,6 @@ def connect_youtube():
         url, state, verifier = youtube_authorization_url(force=True)
         session["oauth_provider"] = "youtube"
         session["oauth_state"] = state
-        session["oauth_code_verifier"] = verifier
         _save_oauth_pending('youtube', state, verifier)
         return redirect(url)
     except Exception as exc:
@@ -4012,7 +3971,6 @@ def connect_gmail():
         redirect_uri = _google_redirect_uri()
         url, state, verifier = authorization_url(force=force, redirect_uri=redirect_uri)
         session["oauth_state"] = state
-        session["oauth_code_verifier"] = verifier
         _save_oauth_pending('google', state, verifier, redirect_uri)
         return redirect(url)
     except Exception as exc:

@@ -950,29 +950,46 @@ def register(app,scope_fn=None):
     def reposnews_instagram_connect():
         if not scope_fn:abort(403)
         try:rn.state(scope_fn())
-        except ValueError:abort(403)
+        except ValueError:
+            from .oauth_transport import page
+            return page('Instagram','OWNER_SESSION_REQUIRED',403)
         client=os.environ.get('INSTAGRAM_APP_ID','')
         if not client or not os.environ.get('INSTAGRAM_APP_SECRET'):return jsonify(error='ACTION_REQUIRED: crear/conectar app Meta de Instagram Login.'),409
         permissions=list(PERMISSIONS)+['instagram_business_content_publish']
-        state=secrets.token_urlsafe(32);session['reposnews_ig_state']={'value':state,'expires':time.time()+600,'permissions':permissions,'issued_at':holdings._now()}
+        state=secrets.token_urlsafe(32);pending={'value':state,'expires':time.time()+600,'permissions':permissions,'issued_at':holdings._now()}
         target=request.args.get('return_to','')
-        if target=='/accounts':session['reposnews_ig_state']['return_to']='/accounts#instagram'
-        if re.fullmatch(r'/video-project/[a-f0-9]{16}',target):session['reposnews_ig_state']['return_to']=target+'#publish'
-        callback=os.environ.get('INSTAGRAM_REDIRECT_URI','https://web-production-a9565.up.railway.app/api/reposnews/instagram/callback')
+        if target=='/accounts':pending['return_to']='/accounts#instagram'
+        if re.fullmatch(r'/video-project/[a-f0-9]{16}',target):pending['return_to']=target+'#publish'
+        from .oauth_transport import callback as oauth_callback
+        callback=oauth_callback('instagram')
+        from .oauth_transport import put
+        pending.update(user_id=scope_fn(),handoff=session.get('accounts_oauth_handoff'),redirect_uri=callback)
+        put('state:instagram:'+state,pending)
         return redirect('https://www.instagram.com/oauth/authorize?'+urlencode({'client_id':client,'redirect_uri':callback,'response_type':'code',
             'scope':','.join(permissions),'state':state,'enable_fb_login':'0','force_authentication':'1'}))
 
     @app.get('/api/reposnews/instagram/callback')
     def reposnews_instagram_callback():
-        if not scope_fn:abort(403)
-        try:rn.state(scope_fn())
-        except ValueError:abort(403)
-        pending=session.pop('reposnews_ig_state',{})
+        from . import oauth_transport as transport
+        from .user_scope import set_current_user
+        pending=transport.get('state:instagram:'+request.args.get('state',''),consume=True)
+        if not pending or pending.get('expires',0)<time.time():
+            return transport.page('Instagram','OAUTH_STATE_INVALID',400)
+        # A consumed, authenticated initiation binds the callback to its original owner.
+        if rn.read().get('owner') != pending.get('user_id'):
+            transport.complete(pending.get('handoff'),'OWNER_SESSION_REQUIRED')
+            return transport.page('Instagram','OWNER_SESSION_REQUIRED',403)
+        session['zar_user_id']=pending['user_id']
+        set_current_user(pending['user_id'])
+        session.pop('reposnews_ig_state',None)
         def finish(error=None, detail=None, http_status=400):
+            transport.complete(pending.get('handoff'),error or 'CONNECTED',pending['user_id'])
             with holdings.transaction('reposnews-editorial'):
                 data=rn.read();data['instagram_callback']={'status':'ERROR' if error else 'CONNECTED','message':
                     ('Instagram autorizó la cuenta, pero no se completó '+error+'. Consulta el diagnóstico seguro en Inbox.') if error else 'Instagram conectado y capacidades de lectura verificadas.',
                     'error':error,'detail':detail or {},'checked_at':holdings._now()};rn.write(data)
+            if pending.get('handoff'):
+                return transport.page('Instagram',error or 'CONNECTED',http_status if error else 200)
             if error and request.accept_mimetypes.best=='application/json':return jsonify(error=error,**(detail or {})),http_status
             if 'instagram_business_content_publish' in pending.get('permissions',[]):
                 if not error:
@@ -981,8 +998,8 @@ def register(app,scope_fn=None):
                 return redirect(pending.get('return_to','/accounts#instagram'))
             return redirect('/?zar_workspace=sites#reposnewsEditor')
         if pending.get('expires',0)<time.time() or not hmac.compare_digest(pending.get('value',''),request.args.get('state','')):return finish('OAUTH_STATE_INVALID',http_status=403)
-        if not request.args.get('code'):return finish('OAUTH_CANCELLED')
-        callback=os.environ.get('INSTAGRAM_REDIRECT_URI','https://web-production-a9565.up.railway.app/api/reposnews/instagram/callback')
+        if request.args.get('error') or not request.args.get('code'):return finish('OAUTH_CANCELLED')
+        callback=pending['redirect_uri']
         stage='CODE_EXCHANGE'
         try:
             r=requests.post('https://api.instagram.com/oauth/access_token',data={'client_id':os.environ['INSTAGRAM_APP_ID'],'client_secret':os.environ['INSTAGRAM_APP_SECRET'],'grant_type':'authorization_code','redirect_uri':callback,'code':request.args['code']},timeout=25)
