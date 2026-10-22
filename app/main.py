@@ -48,7 +48,7 @@ from .youtube import status as youtube_status, upload as youtube_upload, video_s
 from app.youtube_publish import register_youtube
 
 app = Flask(__name__)
-from .secret_safety import install as install_secret_safety
+from .secret_safety import install as install_secret_safety, redact_text as redact_secret_text
 install_secret_safety(app)
 register_youtube(app)
 from .company_workspace import blueprint as company_workspace_blueprint
@@ -637,7 +637,7 @@ def oauth2callback():
         session.pop("oauth_code_verifier", None)
         return _oauth_success_page('google')
     except Exception as exc:
-        return _oauth_error_page(f'No se pudo conectar {html_lib.escape("YouTube" if provider == "youtube" else "Google")}: {html_lib.escape(str(exc))}'), 500
+        return _oauth_error_page(f'No se pudo conectar {html_lib.escape("YouTube" if provider == "youtube" else "Google")}: {html_lib.escape(redact_secret_text(exc))}'), 500
 
 def _oauth_error_page(message):
     return f'''<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#090807"><title>Zar · Error de conexión</title><style>*{{box-sizing:border-box}}body{{margin:0;min-height:100vh;display:grid;place-items:center;background:#090807;color:#f3ece4;font-family:Inter,system-ui,sans-serif}}.box{{width:min(520px,calc(100% - 32px));padding:32px;border:1px solid rgba(215,169,100,.45);border-radius:24px;background:rgba(20,15,11,.82);box-shadow:0 30px 100px rgba(0,0,0,.6);text-align:center}}h1{{font:700 34px Georgia,serif;color:#ead0a5;margin:0 0 12px}}p{{color:#b9aea3;line-height:1.55}}.btn{{display:inline-block;margin-top:12px;padding:12px 22px;border:1px solid #9d713c;border-radius:13px;background:linear-gradient(180deg,#ddb776,#bd8a4c);color:#1a120a;font-weight:700;text-decoration:none}}</style></head><body><div class="box"><h1>⚠️ No se pudo conectar</h1><p>{message}</p><a class="btn" href="/">Volver a Zar</a></div></body></html>'''

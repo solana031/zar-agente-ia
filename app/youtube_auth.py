@@ -46,6 +46,8 @@ def _save_credentials(creds):
 
 def get_credentials(auto_refresh=True):
     global _LAST_ERROR
+    from .secret_safety import redact_credential_error
+    creds=None
     with _LOCK:
         from .cloud_auth import get_credentials as google_credentials
         from .user_scope import get_current_user
@@ -62,17 +64,17 @@ def get_credentials(auto_refresh=True):
             creds=Credentials.from_authorized_user_info(decode(raw,DATA_DIR),[YOUTUBE_SCOPE])
             if json.loads(raw).get('format')!='ZAR_OAUTH_ENCRYPTED_V1':_save_credentials(creds)
         except Exception as exc:
-            _LAST_ERROR = str(exc)
+            _LAST_ERROR = redact_credential_error(exc,creds)
             return None
         if auto_refresh and creds and creds.expired and creds.refresh_token:
             try:
                 creds.refresh(Request())
                 _save_credentials(creds)
             except RefreshError as exc:
-                _LAST_ERROR = str(exc)
+                _LAST_ERROR = redact_credential_error(exc,creds)
                 return None
             except Exception as exc:
-                _LAST_ERROR = str(exc)
+                _LAST_ERROR = redact_credential_error(exc,creds)
                 return None
         return creds
 

@@ -288,7 +288,7 @@ def human_action_groups(state):
         groups.setdefault(key,[]).append(row)
     result=[]
     for (_,account,_),rows in groups.items():
-        primary=max(rows,key=lambda x:(x.get('action')=='OBSERVED_BLOCKER',x.get('last_checked') or x.get('created_at') or ''))
+        primary=max(rows,key=lambda x:(bool(x.get('security_rotation_2026_10')),x.get('action')=='OBSERVED_BLOCKER',x.get('last_checked') or x.get('created_at') or ''))
         item=deepcopy(primary)
         item.update(account=account,related_ids=[x['id'] for x in rows],
                     related_blockers=list(dict.fromkeys(x.get('reason','') for x in rows if x.get('reason'))))
@@ -303,8 +303,11 @@ def human_action_groups(state):
                     time_estimate='Depende de revisión del proveedor; sin estimación verificable',
                     cost='60 EUR de alta Advanced; no contratado' if optional else 'Sin coste confirmado')
         if optional:item['title']='WISE ADVANCED · OPCIONAL';item['exact_step']='Mantener Basic READ. Activar Advanced solo si un negocio necesita datos bancarios y Pablo decide contratarlo.'
+        if item.get('security_rotation_2026_10') and item.get('security_priority') in {'CRITICAL','HIGH','MEDIUM'}:
+            item.update(requirement='REQUIRED',priority=item['security_priority'])
         result.append(item)
-    return sorted(result,key=lambda x:(x['requirement']=='OPTIONAL',x['priority'],x.get('service','')))
+    security_rank={'CRITICAL':0,'HIGH':1,'MEDIUM':2}
+    return sorted(result,key=lambda x:(x.get('priority') not in security_rank,x['requirement']=='OPTIONAL',security_rank.get(x['priority'],3),x['priority'],x.get('service','')))
 
 
 def operate(scope,action,data):

@@ -47,10 +47,16 @@ def redact_text(value,extra_secrets=()):
     for secret in sorted(set(known_values())|{s for s in extra_secrets if isinstance(s,str) and s},key=len,reverse=True):
         text=text.replace(secret,REDACTED)
     for pattern in PATTERNS:text=pattern.sub(REDACTED,text)
+    text=re.sub(r'''(?i)(\bauthorization["']?\s*[:=]\s*["']?)(?:(?:Bearer|Basic|ApiKey|Token)\s+)?[^\s,"';<>]+''',r'\1'+REDACTED,text)
     text=re.sub(r'(?i)(Bearer\s+)[A-Za-z0-9_.~+/=-]{8,}',r'\1'+REDACTED,text)
-    text=re.sub(r'(?i)([?&](?:key|token|code|client_secret|access_token|refresh_token|api_key)=)[^&#\s"\']+',r'\1'+REDACTED,text)
-    text=re.sub(r'(?i)(https?://)[^/\s:@]+:[^@\s]+@',r'\1'+REDACTED+'@',text)
+    text=re.sub(r'''(?i)(["']?(?:api[_-]?key|api[_-]?secret|client[_-]?secret|access[_-]?token|refresh[_-]?token|id[_-]?token|webhook[_-]?secret|password)["']?\s*[:=]\s*)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s,;}&<>"']+)''',r'\1'+REDACTED,text)
+    text=re.sub(r'(?i)([?#&](?:key|token|code|auth_code|secret|password|client_?secret|access_?token|refresh_?token|id_?token|api_?key)=)[^&#\s"\']+',r'\1'+REDACTED,text)
+    text=re.sub(r'(?i)([a-z][a-z0-9+.-]*://)[^/\s:@]+:[^@\s]+@',r'\1'+REDACTED+'@',text)
     return text
+
+
+def redact_credential_error(error,credentials=None):
+    return redact_text(error,[getattr(credentials,name,None) for name in ('token','refresh_token','client_secret')])
 
 
 def redact_payload(value):
@@ -72,6 +78,7 @@ def install(app):
             if record.exc_info:
                 record.exc_text=redact_text(''.join(traceback.format_exception(*record.exc_info)))
                 record.exc_info=None
+            if record.stack_info:record.stack_info=redact_text(record.stack_info)
             return record
         safe_record._zar_secret_safe=True
         logging.setLogRecordFactory(safe_record)
@@ -80,7 +87,7 @@ def install(app):
     def secret_safe_json(response):
         if response.is_json and not response.is_streamed:
             payload=response.get_json(silent=True)
-            if isinstance(payload,(dict,list)):
+            if payload is not None:
                 clean=redact_payload(payload)
                 if clean!=payload:
                     response.set_data(app.json.dumps(clean))

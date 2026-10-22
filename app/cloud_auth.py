@@ -87,6 +87,8 @@ def _save_credentials(creds, user_id=None):
 def get_credentials(auto_refresh=True, user_id=None):
     """Load persisted Google credentials and refresh expired access tokens automatically."""
     global _LAST_ERROR
+    from .secret_safety import redact_credential_error
+    creds=None
     with _LOCK:
         path = _token_file(user_id)
         if not path.exists():
@@ -105,7 +107,7 @@ def get_credentials(auto_refresh=True, user_id=None):
                 persist(path,creds.to_json(),DATA_DIR)
                 _save_credentials(creds,user_id=user_id)
         except Exception as exc:
-            _LAST_ERROR = str(exc)
+            _LAST_ERROR = redact_credential_error(exc,creds)
             return None
 
         # If the token is expired but a refresh token exists, refresh it silently.
@@ -116,10 +118,10 @@ def get_credentials(auto_refresh=True, user_id=None):
                 creds.refresh(Request())
                 _save_credentials(creds, user_id=user_id)
             except RefreshError as exc:
-                _LAST_ERROR = str(exc)
+                _LAST_ERROR = redact_credential_error(exc,creds)
                 return None
             except Exception as exc:
-                _LAST_ERROR = str(exc)
+                _LAST_ERROR = redact_credential_error(exc,creds)
                 return None
         return creds
 

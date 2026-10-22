@@ -6,7 +6,7 @@ from unittest.mock import Mock,patch
 import pytest
 from flask import Flask,jsonify,session
 from app import config
-from app.secret_safety import install,redact_text,redact_payload
+from app.secret_safety import install,redact_text,redact_payload,redact_credential_error
 
 
 @pytest.fixture(autouse=True)
@@ -98,3 +98,48 @@ def test_recursive_redaction_does_not_mutate_evidence():
     assert clean['tokens'][0]['apiKey']=='[REDACTED]'
     assert clean['tokens'][0]['clientSecret']=='[REDACTED]'
     assert clean['diagnostic']==original['diagnostic']
+
+
+@pytest.mark.parametrize('message',[
+    'Authorization: Basic fixture-opaque-basic-value',
+    '{"client_secret":"fixture-opaque-basic-value"}',
+    "accessToken='fixture-opaque-basic-value'",
+    'https://example.test/callback#id_token=fixture-opaque-basic-value',
+    'postgresql://user:fixture-opaque-basic-value@db.test/app',
+])
+def test_opaque_credentials_in_error_text_are_redacted(message):
+    assert 'fixture-opaque-basic-value' not in redact_text(message)
+
+
+def test_scalar_json_and_file_only_refresh_errors_are_redacted(monkeypatch):
+    from types import SimpleNamespace
+    monkeypatch.setenv('GEMINI_API_KEY','fixture-scalar-env-value')
+    app=Flask('scalar-fixture');install(app)
+    @app.get('/')
+    def scalar():return jsonify('fixture-scalar-env-value')
+    assert app.test_client().get('/').json=='[REDACTED]'
+    creds=SimpleNamespace(token='fixture-file-access',refresh_token='fixture-file-refresh',client_secret='fixture-file-client')
+    result=redact_credential_error('failed fixture-file-access fixture-file-refresh fixture-file-client',creds)
+    assert 'fixture-file-' not in result and result.count('[REDACTED]')==3
+
+
+@pytest.mark.parametrize('module_name',['cloud_auth','youtube_auth'])
+def test_refresh_error_never_exposes_or_rewrites_existing_vault(tmp_path,monkeypatch,module_name):
+    import importlib
+    from app import holdings,oauth_vault
+    module=importlib.import_module('app.'+module_name)
+    path=tmp_path/'oauth.json';original='{"format":"ZAR_OAUTH_ENCRYPTED_V1","ciphertext":"fixture-only"}'
+    path.write_text(original)
+    class Credentials:
+        expired=True;token='fixture-vault-access';refresh_token='fixture-vault-refresh';client_secret='fixture-vault-client'
+        def refresh(self,request):raise module.RefreshError(self.token+' '+self.refresh_token+' '+self.client_secret)
+    monkeypatch.setattr(module.Credentials,'from_authorized_user_info',lambda *args:Credentials())
+    monkeypatch.setattr(oauth_vault,'decode',lambda *args:{})
+    monkeypatch.setattr(holdings,'read',lambda *args:{})
+    monkeypatch.setattr(module,'TOKEN_FILE',path)
+    if module_name=='cloud_auth':monkeypatch.setattr(module,'_token_file',lambda user_id=None:path)
+    monkeypatch.setattr(module,'_save_credentials',lambda *args,**kw:pytest.fail('Failed refresh must not overwrite vault'))
+    assert module.get_credentials() is None
+    assert 'fixture-vault-' not in module._LAST_ERROR
+    assert module._LAST_ERROR.count('[REDACTED]')==3
+    assert path.read_text()==original
