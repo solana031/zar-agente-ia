@@ -137,3 +137,51 @@ def test_dedup_updates_current_human_action_without_new_notification(blocked):
     registry.notification('instagram',meta.blocked_view('owner'))
     rows=holdings.read('owner')['identity_center']['human_actions']
     assert len(rows)==1 and 'personalmente' in rows[0]['message']
+
+def test_confirmed_developer_can_retry_oauth_once_without_claiming_api_recovery(blocked):
+    from app import oauth_transport
+    meta.observation('owner',{'account_confirmation_required':False,'confirmation_flow':'COMPLETED'})
+    assert not meta.oauth_recovery('owner')  # Confirmation alone is not authorization.
+    meta.observation('owner',{'oauth_recovery_authorized':True})
+    assert meta.blocked_view('owner')['oauth_recovery_available'] is True
+    before=(blocked/'instagram-oauth').read_bytes()
+    app=Flask(__name__);app.secret_key='fixture'
+    register(app,lambda:'owner',lambda:'owner');inbox.register(app,lambda:'owner')
+    client=app.test_client()
+    with patch.dict('os.environ',{'INSTAGRAM_APP_ID':'fixture','INSTAGRAM_APP_SECRET':'fixture'}),patch.object(meta.requests,'get') as read,patch.object(meta.requests,'post') as write:
+        launch=client.post('/api/accounts/connections/instagram/reconnect',json={'external':True})
+        assert launch.status_code==200
+        route=client.get('/api/reposnews/instagram/connect')
+        assert route.status_code==302 and route.location.startswith('https://www.instagram.com/oauth/authorize?')
+        assert client.get('/api/reposnews/instagram/connect').status_code==423
+    read.assert_not_called();write.assert_not_called()
+    assert meta.current('owner')['api_access_blocked'] is True
+    assert not meta.current('owner').get('resolved_at')
+    assert not meta.blocked_view('owner')['oauth_recovery_available']
+    assert meta.current('owner')['oauth_recovery_prior_block']['message']=='API access blocked.'
+    assert (blocked/'instagram-oauth').read_bytes()==before
+    assert rn.read()['instagram_callback']['detail']['message']=='API access blocked.'
+
+def test_recovery_callback_clears_block_only_after_canonical_identity_readback(blocked):
+    import time
+    from app import oauth_transport
+    app=Flask(__name__);app.secret_key='fixture';inbox.register(app,lambda:'owner')
+    oauth_transport.put('state:instagram:recovery',{'value':'recovery','expires':time.time()+60,'user_id':'owner','redirect_uri':'https://zar.test/api/reposnews/instagram/callback'})
+    def get(url,**kwargs):
+        if url.endswith('/me'):return response(200,{'username':'zaragente031','user_id':'123'})
+        return response(200,{'data':[]})
+    with patch.dict('os.environ',{'INSTAGRAM_APP_ID':'fixture','INSTAGRAM_APP_SECRET':'fixture'}),patch.object(inbox.requests,'post',return_value=response(200,{'access_token':'new-fixture','user_id':'123','success':True})),patch.object(inbox.requests,'get',side_effect=get):
+        app.test_client().get('/api/reposnews/instagram/callback?state=recovery&code=fixture')
+    assert not meta.blocked_view('owner')
+    assert inbox.credentials()['access_token']=='new-fixture'
+    assert rn.read()['instagram_credential_diagnostic']['NEW_TOKEN_READBACK'] is True
+
+def test_failed_persistence_keeps_provider_blocked(blocked):
+    import time
+    from app import oauth_transport
+    app=Flask(__name__);app.secret_key='fixture';inbox.register(app,lambda:'owner')
+    oauth_transport.put('state:instagram:failed',{'value':'failed','expires':time.time()+60,'user_id':'owner','redirect_uri':'https://zar.test/api/reposnews/instagram/callback'})
+    with patch.dict('os.environ',{'INSTAGRAM_APP_ID':'fixture','INSTAGRAM_APP_SECRET':'fixture'}),patch.object(inbox.requests,'post',return_value=response(200,{'access_token':'new-fixture','user_id':'123'})),patch.object(inbox.requests,'get',return_value=response(200,{'username':'zaragente031','user_id':'123'})),patch.object(inbox,'persist_identity',side_effect=ValueError('READBACK_FAILED')):
+        app.test_client().get('/api/reposnews/instagram/callback?state=failed&code=fixture')
+    assert meta.blocked_view('owner')['status']=='PROVIDER_BLOCKED'
+    assert not meta.current('owner').get('resolved_at')

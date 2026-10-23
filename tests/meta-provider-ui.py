@@ -35,12 +35,17 @@ with sync_playwright() as pw:
         expect(frame.locator('#notice')).to_have_text('Estado actualizado.')
         assert calls==['reverify'] and len(context.pages)==1
         assert page.frames[1].evaluate('document.documentElement.scrollWidth<=innerWidth')
+        row.update(oauth_recovery_available=True)
+        frame.get_by_role('button',name='REINTENTAR COMPROBACIÓN').click()
+        expect(frame.locator('#instagram .status')).to_have_text('BLOQUEADA POR META')
+        expect(frame.get_by_role('button',name='RECONECTAR',exact=True)).to_be_visible()
+        row.update(oauth_recovery_available=False)
         row.update(status='AUTH_REQUIRED',provider_blocked=False)
         frame.get_by_role('button',name='REINTENTAR COMPROBACIÓN').click()
         expect(frame.get_by_role('button',name='CONECTAR',exact=True)).to_be_visible()
         with context.expect_page() as new:frame.get_by_role('button',name='CONECTAR',exact=True).click()
         new.value.wait_for_url('https://zar.test/oauth/accounts/start/fixture')
-        assert calls==['reverify','reverify','connect']
+        assert calls==['reverify','reverify','reverify','connect']
         assert page.frames[1].url=='https://zar.test/accounts'
         assert not errors,errors
         context.close()

@@ -142,7 +142,7 @@ class AccountConnectionRegistry:
             result=blocked or provider.adapter(self.scope)
         except Exception:result={'status':'ERROR','human_action':'No se ha podido comprobar la conexión. Vuelve a verificar.','ready':False}
         # Explicit whitelist: adapters may hold private credentials internally, never in observations.
-        allowed={'status','connected','ready','upload_ready','account','account_id','channel','store','capabilities','permissions','human_action','diagnostic','blocker','identity_status','verified_cause','privacy_options','max_duration','max_video_post_duration_sec','publish_capability','required_permission','permission_check_http','provider_blocked','provider','reason','detected_at','retry_after','support_url','provider_url'}
+        allowed={'status','connected','ready','upload_ready','account','account_id','channel','store','capabilities','permissions','human_action','diagnostic','blocker','identity_status','verified_cause','privacy_options','max_duration','max_video_post_duration_sec','publish_capability','required_permission','permission_check_http','provider_blocked','oauth_recovery_available','provider','reason','detected_at','retry_after','support_url','provider_url'}
         safe={k:v for k,v in result.items() if k in allowed}
         safe.update(last_verified=holdings._now(),account_identity=result.get('account'),connect_url='/accounts#'+key,reconnect_url='/accounts#'+key)
         with holdings.transaction(self.scope):
@@ -248,7 +248,7 @@ def register(app,scope_fn,csrf_owner):
         if action in {'connect','reconnect'}:
             if provider=='instagram':
                 from . import meta_provider
-                if blocked:=meta_provider.blocked_view(registry.scope):
+                if (blocked:=meta_provider.blocked_view(registry.scope)) and not blocked.get('oauth_recovery_available'):
                     return jsonify(error='PROVIDER_BLOCKED',message=blocked['human_action']),423
             if (request.get_json(silent=True) or {}).get('external') is True and provider in {'google','youtube','adsense','instagram'}:
                 from . import oauth_transport as transport

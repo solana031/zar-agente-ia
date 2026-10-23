@@ -36,13 +36,41 @@ def observation(scope, evidence):
     """Record operator-observed official UI facts, excluding credentials/PII."""
     from . import reposnews as rn
     if rn.read().get('owner')!=scope:raise ValueError('OWNER_REQUIRED')
-    allowed={'account_confirmation_required','confirmation_ui_error','confirmation_flow','app_status','account_status','support_case_status'}
+    allowed={'account_confirmation_required','confirmation_ui_error','confirmation_flow','app_status','account_status','support_case_status','oauth_recovery_authorized'}
     safe={k:v for k,v in evidence.items() if k in allowed and isinstance(v,(bool,str))}
     if any(isinstance(v,str) and (len(v)>100 or not all(c.isalnum() or c in '_ -.' for c in v)) for v in safe.values()):raise ValueError('UNSAFE_DIAGNOSTIC')
     with holdings.transaction(scope):
         data=holdings.read(scope);diag=current(scope);diag.update(safe,observed_at=holdings._now())
         data['meta_provider_diagnostic']=diag;holdings.write(scope,data)
     return diag
+
+
+def oauth_recovery(scope, consume=False):
+    """One explicitly authorized OAuth attempt; never claims API recovery."""
+    with holdings.transaction(scope):
+        diag=current(scope)
+        available=(diag.get('oauth_recovery_authorized') is True
+                   and diag.get('account_confirmation_required') is False
+                   and diag.get('confirmation_flow')=='COMPLETED'
+                   and not diag.get('oauth_recovery_started_at'))
+        if available and consume:
+            data=holdings.read(scope)
+            from . import reposnews as rn
+            previous=rn.read().get('instagram_callback',{})
+            if api_blocked(previous.get('detail',{})):
+                diag['oauth_recovery_prior_block']={'checked_at':previous.get('checked_at'),'http':400,'code':200,'message':'API access blocked.'}
+            diag.update(oauth_recovery_started_at=holdings._now(),oauth_recovery_authorized=False)
+            data['meta_provider_diagnostic']=diag;holdings.write(scope,data)
+        return available
+
+
+def identity_recovered(scope):
+    """Called only after canonical token persistence and identity readback."""
+    with holdings.transaction(scope):
+        data=holdings.read(scope);diag=current(scope)
+        diag.update(api_access_blocked=False,resolved_at=holdings._now(),
+                    probe_result='IDENTITY_VERIFIED',account_confirmation_required=False,confirmation_ui_error=False)
+        data['meta_provider_diagnostic']=diag;holdings.write(scope,data)
 
 
 def mark_blocked(scope):
@@ -58,7 +86,9 @@ def blocked_view(scope):
     reason='DEVELOPER_ACCOUNT_CONFIRMATION_REQUIRED' if diag.get('account_confirmation_required') else 'META_API_ACCESS_BLOCKED'
     message=MESSAGE if diag.get('confirmation_ui_error') else 'Meta requiere confirmar personalmente la cuenta de desarrollador para recuperar el acceso a la API.' if diag.get('account_confirmation_required') else 'Meta bloquea el acceso a su API. Revisa el estado de la cuenta de desarrollador.'
     public={k:diag.get(k) for k in ('account_confirmation_required','api_access_blocked','confirmation_ui_error','confirmation_flow','last_checked','app_status','account_status','support_case_status','probe_http','probe_result')}
-    return {'status':'PROVIDER_BLOCKED','provider_blocked':True,'provider':'META','reason':reason,
+    recovery=oauth_recovery(scope)
+    if recovery:message='Confirmación de Developers completada. Hay un intento de reconexión autorizado; la API sigue pendiente de verificar.'
+    return {'status':'PROVIDER_BLOCKED','provider_blocked':True,'oauth_recovery_available':recovery,'provider':'META','reason':reason,
             'detected_at':diag.get('detected_at'),'retry_after':diag.get('retry_after'),
             'human_action':message,'support_url':SUPPORT,'provider_url':DEVELOPERS,
             'account':'zaragente031','account_identity':'@zaragente031','connected':False,'ready':False,

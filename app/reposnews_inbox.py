@@ -954,7 +954,7 @@ def register(app,scope_fn=None):
             from .oauth_transport import page
             return page('Instagram','OWNER_SESSION_REQUIRED',403)
         from . import meta_provider
-        if meta_provider.blocked_view(scope_fn()):
+        if meta_provider.blocked_view(scope_fn()) and not meta_provider.oauth_recovery(scope_fn(),consume=True):
             from .oauth_transport import page
             return page('Instagram','PROVIDER_BLOCKED',423)
         client=os.environ.get('INSTAGRAM_APP_ID','')
@@ -1023,6 +1023,8 @@ def register(app,scope_fn=None):
             if isinstance(token.get('expires_in'),(int,float)):record['expires_in']=token['expires_in']
             stage='TOKEN_PERSISTENCE'
             record=persist_identity(record)
+            from . import meta_provider
+            meta_provider.identity_recovered(pending['user_id'])
             # All subsequent checks use the credential reloaded from the encrypted vault.
             access=record['access_token'];user_id=record['user_id'];stage='CAPABILITIES'
             check=verify_capabilities(access,user_id)
