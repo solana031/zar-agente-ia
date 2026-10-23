@@ -181,7 +181,7 @@ def _oauth_success_page(provider):
     handoff=session.pop('accounts_oauth_handoff',None)
     if handoff:
         complete(handoff,'CONNECTED',session.get('zar_user_id'))
-        return page('Google','CONNECTED',200)
+        return page('YouTube' if provider=='youtube' else 'Google','CONNECTED',200)
     label = 'Google' if provider == 'google' else 'YouTube'
     if provider == 'google':
         detail = 'Tu cuenta de Google está conectada. Zar ha guardado la autorización y puede conservar una copia local consultable de tus datos permitidos.'

@@ -144,6 +144,51 @@ class OAuthTests(unittest.TestCase):
         with self.owner.session_transaction() as s:self.assertEqual(s['zar_user_id'],'new-google-scope')
         self.assertEqual(self.owner.get('/api/accounts/oauth/status/'+ident,base_url=BASE).status_code,404)
 
+    def test_same_browser_popup_preserves_existing_login_and_migration_receipt(self):
+        r=self.owner.post('/api/accounts/connections/google/reconnect',json={'external':True},headers={'X-ZAR-Business-CSRF':'TEST'},base_url=BASE)
+        ident=r.json['poll_id']
+        self.assertEqual(self.owner.get('/oauth/accounts/start/'+ident,base_url=BASE).status_code,302)
+        with self.owner.session_transaction() as s:self.assertTrue(s['zar_auth'])
+        transport.complete(ident,'CONNECTED','migrated-owner')
+        with self.owner.session_transaction() as s:s['zar_user_id']='migrated-owner'
+        self.assertEqual(self.owner.get('/api/accounts/oauth/status/'+ident,base_url=BASE).json['status'],'CONNECTED')
+        # A separate authenticated cookie for the destination scope has no
+        # initiating receipt and cannot adopt or consume this transaction.
+        ident=transport.begin('original-owner','google','/connect/google')
+        transport.complete(ident,'CONNECTED','migrated-owner')
+        other=self.app.test_client()
+        with other.session_transaction() as s:s.update(zar_auth=True,zar_user_id='migrated-owner')
+        self.assertEqual(other.get('/api/accounts/oauth/status/'+ident,base_url=BASE).status_code,404)
+        self.assertTrue(transport.get('result:'+ident))
+
+    def test_youtube_uses_same_external_handoff_and_iframe_cannot_consume_it(self):
+        r=self.owner.post('/api/accounts/connections/youtube/reconnect',json={'external':True},headers={'X-ZAR-Business-CSRF':'TEST'},base_url=BASE)
+        self.assertTrue(r.json['external']);ident=r.json['poll_id']
+        blocked=self.owner.get('/oauth/accounts/start/'+ident,base_url=BASE,headers={'Sec-Fetch-Dest':'iframe'})
+        self.assertEqual(blocked.status_code,200);self.assertIn('ventana externa',blocked.text)
+        self.assertIn('target="_blank"',blocked.text)
+        self.assertTrue(transport.get('launch:'+ident))
+        self.assertEqual(self.owner.get('/oauth/accounts/start/'+ident,base_url=BASE,headers={'Sec-Fetch-Dest':'document'}).status_code,302)
+
+    def test_external_deep_link_preserves_expected_email_and_service(self):
+        path='/connect/google?purpose=zar&service=docs&email=zaragente031%40gmail.com&force=1'
+        response=self.owner.post('/api/accounts/connections/google/reconnect',json={'external':True,'authorization_path':path},headers={'X-ZAR-Business-CSRF':'TEST'},base_url=BASE)
+        self.assertEqual(transport.get('launch:'+response.json['poll_id'])['path'],path)
+        for path in ['https://evil.test/connect/google','//evil.test/connect/google','/connect/google?service=youtube','/oauth2callback']:
+            self.assertEqual(self.owner.post('/api/accounts/connections/google/reconnect',json={'external':True,'authorization_path':path},headers={'X-ZAR-Business-CSRF':'TEST'},base_url=BASE).status_code,400)
+
+    def test_provider_routes_explain_iframe_instead_of_redirecting_to_provider(self):
+        for path in ['/connect/google','/connect/youtube','/api/reposnews/instagram/connect']:
+            response=self.owner.get(path,base_url=BASE,headers={'Sec-Fetch-Dest':'iframe'})
+            self.assertEqual(response.status_code,200)
+            self.assertNotIn('Location',response.headers)
+            self.assertIn('/static/oauth-launcher.js',response.text)
+        with self.app.test_request_context():
+            response=transport.page('Instagram','CONNECTED',200)
+            self.assertIn('Cuenta conectada correctamente.',response.get_data(as_text=True))
+            self.assertIn('data-oauth-provider="instagram"',response.get_data(as_text=True))
+            self.assertIn('/static/oauth-callback.js',response.get_data(as_text=True))
+
     def test_cookie_and_safe_error(self):
         ident=transport.begin('owner','google','/connect/google')
         r=self.app.test_client().get('/oauth/accounts/start/'+ident,base_url=BASE)

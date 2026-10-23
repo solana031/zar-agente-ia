@@ -8,6 +8,7 @@ import time
 from pathlib import Path
 from urllib.parse import urlsplit
 from flask import make_response
+from html import escape
 from . import oauth_vault
 
 TTL = 600
@@ -84,6 +85,18 @@ def complete(ident, status, scope=None):
         row.update(status=status, result_scope=scope)
         put('result:'+ident, row)
 
+def prevent_embedded_oauth():
+    from flask import request
+    if request.headers.get('Sec-Fetch-Dest')!='iframe':return None
+    provider={'/connect/google':'Google','/connect/youtube':'YouTube','/api/reposnews/instagram/connect':'Instagram'}.get(request.path)
+    if request.path.startswith('/oauth/accounts/start/'):provider='la cuenta'
+    if not provider:return None
+    # No state is issued and no one-use handoff is consumed inside an iframe.
+    response=make_response('<!doctype html><html lang="es"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/static/accounts.css"><body><main class="accounts"><h1>Autorizar '+provider+'</h1><p>'+provider+' requiere abrir una ventana externa para autorizar tu cuenta.</p><a href="'+escape(request.full_path.rstrip('?'),quote=True)+'" target="_blank" rel="noopener">ABRIR '+provider.upper()+'</a><p id="notice" role="status"></p></main><script src="/static/oauth-launcher.js?v=33.3.106"></script></body></html>')
+    response.headers['Cache-Control']='no-store';response.headers['Referrer-Policy']='no-referrer'
+    return response
+
+
 def page(provider, category, status=400):
     # No provider error text, OAuth code, state, session or token is reflected.
     logging.getLogger(__name__).info('oauth provider=%s category=%s http=%s correlation=%s', provider, category, status, secrets.token_hex(6))
@@ -91,7 +104,8 @@ def page(provider, category, status=400):
                 'OAUTH_CANCELLED':'Conexión cancelada. Puedes volver a intentarlo desde CUENTAS.',
                 'OWNER_SESSION_REQUIRED':'Abre CUENTAS en la sesión propietaria de ReposNews antes de conectar Instagram.',
                 'OAUTH_STATE_INVALID':'La conexión ha caducado o ya se utilizó. Iníciala otra vez desde CUENTAS.'}
-    response = make_response('<!doctype html><html lang="es"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ZAR · Conexión</title><body><h1>Conexión '+provider+'</h1><p>'+messages.get(category,'No se pudo completar la conexión. Vuelve a CUENTAS y reintenta.')+'</p><a href="/accounts">Volver a CUENTAS</a></body></html>', status)
+    success='<p>Cuenta conectada correctamente.</p>' if category=='CONNECTED' else ''
+    response = make_response('<!doctype html><html lang="es"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ZAR · Conexión</title><link rel="stylesheet" href="/static/accounts.css"><body data-oauth-provider="'+escape(provider.lower(),quote=True)+'" data-oauth-status="'+escape(category,quote=True)+'"><main class="accounts"><h1>Conexión '+escape(provider)+'</h1>'+success+'<p>'+messages.get(category,'No se pudo completar la conexión. Vuelve a CUENTAS y reintenta.')+'</p><a href="/accounts" target="_top">Volver a CUENTAS</a></main><script src="/static/oauth-callback.js?v=33.3.106"></script></body></html>', status)
     response.headers['Cache-Control'] = 'no-store'
     response.headers['Referrer-Policy'] = 'no-referrer'
     return response

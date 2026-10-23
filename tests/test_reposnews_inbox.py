@@ -1,4 +1,5 @@
-import hashlib,hmac,json,os,tempfile,unittest
+import hashlib,hmac,json,os,tempfile,time,unittest
+from app import oauth_transport as transport
 from pathlib import Path
 from unittest.mock import patch,Mock
 from flask import Flask
@@ -121,9 +122,9 @@ class InstagramInboxTest(unittest.TestCase):
  def test_oauth_not_configured_and_invalid_state(self):
   with patch.dict(os.environ,{'INSTAGRAM_APP_ID':'','INSTAGRAM_APP_SECRET':''}):
    self.assertEqual(self.client.get('/api/reposnews/instagram/connect').status_code,409)
-  self.assertEqual(self.client.get('/api/reposnews/instagram/callback?state=wrong&code=fixture').status_code,403)
+  self.assertEqual(self.client.get('/api/reposnews/instagram/callback?state=wrong&code=fixture').status_code,400)
  def test_oauth_missing_messages_persists_verified_identity(self):
-  with self.client.session_transaction() as session:session['reposnews_ig_state']={'value':'fixture-state','expires':9999999999}
+  transport.put('state:instagram:fixture-state',{'value':'fixture-state','expires':time.time()+60,'user_id':'owner','redirect_uri':'http://127.0.0.1:8765/api/reposnews/instagram/callback'})
   token=Mock(ok=True);token.json.return_value={'access_token':'fixture-token','user_id':'account'}
   identity=Mock(ok=True);identity.json.return_value={'user_id':'12345','username':'zaragente031'}
   permissions=Mock(ok=True,status_code=200);permissions.json.return_value={'data':[{'permission':inbox.PERMISSIONS[0],'status':'granted'},{'permission':inbox.PERMISSIONS[1],'status':'declined'}]}
@@ -135,7 +136,7 @@ class InstagramInboxTest(unittest.TestCase):
   self.assertEqual(rn.read()['instagram_permission_check']['denied'],[inbox.PERMISSIONS[1]])
   self.assertTrue(rn.read()['instagram_credential_diagnostic']['NEW_TOKEN_READBACK'])
  def test_oauth_stores_only_verified_operational_identity_and_scopes(self):
-  with self.client.session_transaction() as session:session['reposnews_ig_state']={'value':'fixture-state','expires':9999999999}
+  transport.put('state:instagram:fixture-state',{'value':'fixture-state','expires':time.time()+60,'user_id':'owner','redirect_uri':'http://127.0.0.1:8765/api/reposnews/instagram/callback'})
   token=Mock(ok=True);token.json.return_value={'access_token':'fixture-token','user_id':'account'}
   identity=Mock(ok=True);identity.json.return_value={'user_id':'12345','username':'zaragente031'}
   permissions=Mock(ok=True,status_code=200);permissions.json.return_value={'data':[{'permission':p,'status':'granted'} for p in inbox.PERMISSIONS]}
@@ -165,14 +166,14 @@ class InstagramInboxTest(unittest.TestCase):
    self.assertEqual(post.call_args.kwargs['data'],{'subscribed_fields':'messages'})
 
  def test_browser_failure_redirects_without_code_or_token(self):
-  with self.client.session_transaction() as session:session['reposnews_ig_state']={'value':'fixture-state','expires':9999999999}
+  transport.put('state:instagram:fixture-state',{'value':'fixture-state','expires':time.time()+60,'user_id':'owner','redirect_uri':'http://127.0.0.1:8765/api/reposnews/instagram/callback'})
   with patch.dict(os.environ,{'INSTAGRAM_APP_ID':'fixture-app'}),patch.object(inbox.requests,'post',return_value=Mock(ok=False,status_code=400,json=lambda:{'error':{'code':100,'message':'Bad request'}})):
    response=self.client.get('/api/reposnews/instagram/callback?state=fixture-state&code=fixture',headers={'Accept':'text/html'})
   self.assertEqual(response.status_code,302);self.assertEqual(response.location,'/?zar_workspace=sites#reposnewsEditor')
   self.assertEqual(rn.read()['instagram_callback']['status'],'ERROR')
 
  def test_personal_instagram_is_not_persisted(self):
-  with self.client.session_transaction() as session:session['reposnews_ig_state']={'value':'fixture-state','expires':9999999999}
+  transport.put('state:instagram:fixture-state',{'value':'fixture-state','expires':time.time()+60,'user_id':'owner','redirect_uri':'http://127.0.0.1:8765/api/reposnews/instagram/callback'})
   with patch.dict(os.environ,{'INSTAGRAM_APP_ID':'fixture-app'}),patch.object(inbox.requests,'post',return_value=Mock(ok=True,json=lambda:{'access_token':'fixture-token','user_id':'12345'})),patch.object(inbox.requests,'get',return_value=Mock(ok=True,json=lambda:{'username':'personal','user_id':'12345'})):
    self.assertEqual(self.client.get('/api/reposnews/instagram/callback?state=fixture-state&code=fixture').status_code,400)
   self.assertFalse((rn._path().parent/'instagram-oauth-pending').exists())

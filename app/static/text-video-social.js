@@ -20,7 +20,7 @@
   }catch(e){center.textContent='UNKNOWN · No se pudo verificar la conexión. '+e.message;}
  }
  window.addEventListener('focus',()=>{if(busy)return;plan=null;validity();verifyConnections();});
- window.addEventListener('message',e=>{if(e.origin===location.origin&&e.data?.type==='zar-oauth-success')verifyConnections();});
+ window.addEventListener('zar-accounts-changed',()=>{plan=null;validity();verifyConnections();});
  function options(){return {platforms:[...form.querySelectorAll('[name=platform]:checked')].map(x=>x.value),title:form.elements.title.value,caption:form.elements.caption.value,youtube_privacy:form.elements.youtube_privacy.value,tiktok_privacy:form.elements.tiktok_privacy.value};}
  function validity(){confirm.disabled=busy||!plan?.ready_to_publish||!options().platforms.length||!form.elements.rights.checked;}
  function error(e){feedback.textContent=reason(e.message);const detail=root.querySelector('[data-social-diagnostic]');detail.hidden=false;detail.querySelector('p').textContent=e.message;}

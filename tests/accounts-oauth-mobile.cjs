@@ -20,6 +20,7 @@ const assert=require('node:assert/strict');
     return route.fulfill({json:{ok:true,external:true,poll_id:'TEST-single-use',url:'https://zar.test/oauth/accounts/start/TEST-single-use'}});
    }
    if(u.pathname==='/api/accounts/oauth/status/TEST-single-use')return route.fulfill({json:{status:completed?'CONNECTED':'PENDING'}});
+   if(u.pathname==='/api/accounts/connections/google/reverify')return route.fulfill({json:{ok:true,result:{...provider,status:completed?'CONNECTED':'AUTH_REQUIRED'}}});
    throw Error('Unexpected network request '+u.origin+u.pathname);
   });
   await page.goto('https://zar.test/accounts');
@@ -31,8 +32,8 @@ const assert=require('node:assert/strict');
   assert(!href.includes('accounts.google.com'));
   assert((await page.locator('#notice').innerText()).includes('Conectando'));
   completed=true;
-  await page.waitForFunction(()=>document.querySelector('#notice').textContent==='Conexión completada.');
-  assert.equal(await page.locator('#google .status').innerText(),'✓ CONECTADA');
+  await page.waitForFunction(()=>document.querySelector('#notice').textContent==='Cuenta conectada correctamente.');
+  await page.waitForFunction(()=>document.querySelector('#google .status').textContent==='✓ CONECTADA');
   assert.equal(starts,1);assert.deepEqual(errors,[]);
   assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
   console.log(JSON.stringify({webview_external_intent:'PASS',csrf:'PASS',cookie_independent_poll:'PASS',status_refresh:'PASS',width:390,js_errors:0,real_oauth_grants:0}));

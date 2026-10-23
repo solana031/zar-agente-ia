@@ -168,6 +168,10 @@ def social_connections(scope,only=None):
 
 
 def register(app,scope_fn,csrf_owner):
+    from . import oauth_transport as transport
+    if not getattr(app,'_zar_oauth_frame_guard',False):
+        app.before_request(transport.prevent_embedded_oauth)
+        app._zar_oauth_frame_guard=True
     def owner():
         if session.get('zar_auth') is not True:abort(401)
         return scope_fn()
@@ -190,7 +194,11 @@ def register(app,scope_fn,csrf_owner):
         row=transport.get('launch:'+ident,consume=True)
         if not row:return transport.page('OAuth','OAUTH_STATE_INVALID')
         # This grants permission to start only the requested OAuth, never ZAR login.
-        session.pop('zar_auth',None)
+        # A popup retains its already authenticated owner; a fresh browser
+        # still receives permission to initiate OAuth, never a ZAR login.
+        if session.get('zar_auth') is not True or scope_fn()!=row['scope']:
+            session.pop('zar_auth',None)
+            session.pop('accounts_oauth_receipts',None)
         session['zar_user_id']=row['scope'];set_current_user(row['scope'])
         session['accounts_oauth_handoff']=ident
         session['accounts_oauth_launch']={'provider':row['provider'],'expires':time.time()+120}
@@ -203,11 +211,15 @@ def register(app,scope_fn,csrf_owner):
     def accounts_oauth_status(ident):
         from . import oauth_transport as transport
         row=transport.get('result:'+ident)
-        if not row or row.get('scope')!=owner():return jsonify(status='EXPIRED'),404
+        scope=owner()
+        receipts=session.get('accounts_oauth_receipts',{})
+        migrated=(row.get('status')=='CONNECTED' and row.get('result_scope')==scope and receipts.get(ident)==row.get('scope'))
+        if not row or (row.get('scope')!=scope and not migrated):return jsonify(status='EXPIRED'),404
         if row['status']=='CONNECTED':
             # Only the initiating authenticated cookie can adopt a migrated Google scope.
             transport.get('result:'+ident,consume=True)
             session['zar_user_id']=row.get('result_scope') or row['scope']
+            receipts.pop(ident,None);session['accounts_oauth_receipts']=receipts
         response=jsonify(status=row['status'])
         response.headers['Cache-Control']='no-store'
         return response
@@ -218,13 +230,26 @@ def register(app,scope_fn,csrf_owner):
         if not registry.provider(provider):abort(404)
         if action=='reverify':return jsonify(ok=True,result=registry.reverify(provider))
         if action in {'connect','reconnect'}:
-            if (request.get_json(silent=True) or {}).get('external') is True and provider in {'google','instagram'}:
+            if (request.get_json(silent=True) or {}).get('external') is True and provider in {'google','youtube','adsense','instagram'}:
                 from . import oauth_transport as transport
                 if provider=='instagram':
                     from . import reposnews
                     if reposnews.read().get('owner')!=registry.scope:
                         return jsonify(error='OWNER_SESSION_REQUIRED',message='Conecta primero Google en la sesión propietaria de ReposNews.'),403
-                ident=transport.begin(registry.scope,provider,registry.connect_url(provider))
+                path=registry.connect_url(provider)
+                requested=(request.get_json(silent=True) or {}).get('authorization_path')
+                if requested:
+                    from urllib.parse import urlsplit,parse_qs
+                    target=urlsplit(requested)
+                    service=parse_qs(target.query).get('service',['core'])[0]
+                    requested_provider=('youtube' if service=='youtube' else 'adsense' if service=='adsense' else 'google') if target.path=='/connect/google' else {'/connect/youtube':'youtube','/api/reposnews/instagram/connect':'instagram'}.get(target.path)
+                    if target.scheme or target.netloc or target.fragment or requested_provider!=provider:abort(400)
+                    # Preserve expected-email/service validation in the existing
+                    # provider route; never accept a caller-supplied redirect host.
+                    path=target.path+('?' + target.query if target.query else '')
+                ident=transport.begin(registry.scope,provider,path)
+                receipts=dict(list(session.get('accounts_oauth_receipts',{}).items())[-3:])
+                receipts[ident]=registry.scope;session['accounts_oauth_receipts']=receipts
                 return jsonify(ok=True,url=transport.origin()+'/oauth/accounts/start/'+ident,poll_id=ident,external=True)
             return jsonify(ok=True,url=registry.connect_url(provider),assistant=provider if provider in {'tiktok','shopify','stripe'} else None)
         abort(404)
