@@ -104,7 +104,7 @@
    if(accountsReading||document.hidden)return;accountsReading=true;
    try{const response=await fetch('/api/accounts/connections',{cache:'no-store'});if(!response.ok)throw Error('unavailable');const result=await response.json();
     if(!result.ok||!Array.isArray(result.providers))throw Error('unavailable');
-    const attention=new Set(['PARTIAL','AUTH_REQUIRED','REAUTH_REQUIRED','PERMISSION_REQUIRED','CHANNEL_REQUIRED','DISCONNECTED','ERROR']);
+    const attention=new Set(['PARTIAL','AUTH_REQUIRED','REAUTH_REQUIRED','PERMISSION_REQUIRED','CHANNEL_REQUIRED','DISCONNECTED','ERROR','PROVIDER_BLOCKED']);
     const pending=result.providers.filter(p=>attention.has(p.status)).length;
     const allConnected=result.providers.length>0&&result.providers.every(p=>['CONNECTED','UPLOAD_READY'].includes(p.status));
     document.querySelectorAll('.zwtAccountsBadge').forEach(b=>{b.textContent=pending?pending+' PENDIENTES':allConnected?'✓ CONECTADAS':'SIN VERIFICAR';b.dataset.state=pending?'pending':allConnected?'connected':'unknown';});

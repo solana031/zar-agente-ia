@@ -1825,6 +1825,8 @@ from . import text_video
 text_video.register(app,_user_scope_id)
 if os.environ.get('RAILWAY_PROJECT_ID') == '33af08fe-7e2e-4df3-afb5-c5a1ac41b2f5':
     reposnews_owner = reposnews.bootstrap()
+    from . import meta_provider
+    meta_provider.start_worker(reposnews_owner)
     reposnews_mirror.start_worker()
     reposnews_inbox.human_action(reposnews_owner)
     reposnews_inbox.start_worker()

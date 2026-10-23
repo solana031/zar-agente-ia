@@ -953,6 +953,10 @@ def register(app,scope_fn=None):
         except ValueError:
             from .oauth_transport import page
             return page('Instagram','OWNER_SESSION_REQUIRED',403)
+        from . import meta_provider
+        if meta_provider.blocked_view(scope_fn()):
+            from .oauth_transport import page
+            return page('Instagram','PROVIDER_BLOCKED',423)
         client=os.environ.get('INSTAGRAM_APP_ID','')
         if not client or not os.environ.get('INSTAGRAM_APP_SECRET'):return jsonify(error='ACTION_REQUIRED: crear/conectar app Meta de Instagram Login.'),409
         permissions=list(PERMISSIONS)+['instagram_business_content_publish']
@@ -983,6 +987,8 @@ def register(app,scope_fn=None):
         set_current_user(pending['user_id'])
         session.pop('reposnews_ig_state',None)
         def finish(error=None, detail=None, http_status=400):
+            from . import meta_provider
+            if meta_provider.api_blocked(detail):meta_provider.mark_blocked(pending['user_id'])
             transport.complete(pending.get('handoff'),error or 'CONNECTED',pending['user_id'])
             with holdings.transaction('reposnews-editorial'):
                 data=rn.read();data['instagram_callback']={'status':'ERROR' if error else 'CONNECTED','message':

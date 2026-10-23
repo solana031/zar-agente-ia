@@ -10,7 +10,7 @@ from flask import abort, jsonify, render_template, request, session, redirect
 from . import holdings, identity_center
 
 GOOD={'CONNECTED','UPLOAD_READY','PARTIAL'}
-ATTENTION={'AUTH_REQUIRED','REAUTH_REQUIRED','PERMISSION_REQUIRED','CHANNEL_REQUIRED','DISCONNECTED','ERROR','PARTIAL'}
+ATTENTION={'AUTH_REQUIRED','REAUTH_REQUIRED','PERMISSION_REQUIRED','CHANNEL_REQUIRED','DISCONNECTED','ERROR','PARTIAL','PROVIDER_BLOCKED'}
 
 
 @dataclass(frozen=True)
@@ -43,6 +43,9 @@ def google(scope):
 
 def social(scope,provider):
     if provider=='instagram':
+        from . import meta_provider
+        if meta_provider.blocked_view(scope):
+            return meta_provider.blocked_view(scope)
         from . import reposnews as rn, reposnews_inbox as inbox
         if rn.read().get('owner')==scope:inbox.recover_pending_identity()
     from .text_video_social import _provider_connections
@@ -120,16 +123,26 @@ class AccountConnectionRegistry:
                   'disconnect_available':False,'human_action':'Comprueba el estado de esta conexión.','diagnostic':{},
                   'used_by':list(provider.used_by),**observed}
             item.update(connect_url=self.connect_url(provider.id),reconnect_url=self.connect_url(provider.id))
+            if provider.id=='instagram':
+                from . import meta_provider
+                item.update(meta_provider.blocked_view(self.scope))
             rows.append(item)
         return {'providers':rows,'summary':{'connected':sum(x['status'] in GOOD for x in rows),'attention':sum(x['status'] in ATTENTION for x in rows)}}
 
-    def reverify(self,key):
+    def reverify(self,key,manual=False):
         provider=self.provider(key)
         if not provider:raise ValueError('UNKNOWN_PROVIDER')
-        try:result=provider.adapter(self.scope)
+        try:
+            blocked={}
+            if key=='instagram':
+                from . import meta_provider
+                if meta_provider.blocked_view(self.scope):
+                    meta_provider.probe(self.scope,manual=manual)
+                    blocked=meta_provider.blocked_view(self.scope)
+            result=blocked or provider.adapter(self.scope)
         except Exception:result={'status':'ERROR','human_action':'No se ha podido comprobar la conexión. Vuelve a verificar.','ready':False}
         # Explicit whitelist: adapters may hold private credentials internally, never in observations.
-        allowed={'status','connected','ready','upload_ready','account','account_id','channel','store','capabilities','permissions','human_action','diagnostic','blocker','identity_status','verified_cause','privacy_options','max_duration','max_video_post_duration_sec','publish_capability','required_permission','permission_check_http'}
+        allowed={'status','connected','ready','upload_ready','account','account_id','channel','store','capabilities','permissions','human_action','diagnostic','blocker','identity_status','verified_cause','privacy_options','max_duration','max_video_post_duration_sec','publish_capability','required_permission','permission_check_http','provider_blocked','provider','reason','detected_at','retry_after','support_url','provider_url'}
         safe={k:v for k,v in result.items() if k in allowed}
         safe.update(last_verified=holdings._now(),account_identity=result.get('account'),connect_url='/accounts#'+key,reconnect_url='/accounts#'+key)
         with holdings.transaction(self.scope):
@@ -151,14 +164,17 @@ class AccountConnectionRegistry:
                     row.update(status='DONE',completed_at=holdings._now(),read_at=holdings._now())
             holdings.write(self.scope,data)
         if attention:
-            emit(self.scope,'ACCOUNT_CONNECTION',prefix+condition,'Revisar conexión · '+self.provider(key).name,item.get('human_action') or 'La cuenta requiere atención.',
-                 '/accounts#'+key,entity_id=key,entity_type='ACCOUNT',actions=[{'label':'RECONECTAR' if condition=='REAUTH_REQUIRED' else 'VER CUENTA','url':'/accounts#'+key}],details={'condition':condition})
+            blocked=condition=='PROVIDER_BLOCKED'
+            actions=[{'label':'ABRIR META','url':'https://developers.facebook.com/apps/'},{'label':'REVERIFICAR','url':'/accounts?reverify=instagram#instagram'}] if blocked else [{'label':'RECONECTAR' if condition=='REAUTH_REQUIRED' else 'VER CUENTA','url':'/accounts#'+key}]
+            emit(self.scope,'ACCOUNT_CONNECTION',prefix+condition,'META BLOQUEA INSTAGRAM' if blocked else 'Revisar conexión · '+self.provider(key).name,item.get('human_action') or 'La cuenta requiere atención.',
+                 '/accounts#'+key,entity_id=key,entity_type='ACCOUNT',actions=actions,details={'condition':condition})
             # A later recurrence reopens the same condition, without duplicating it.
             with holdings.transaction(self.scope):
                 data=holdings.read(self.scope)
                 for row in identity_center.ensure(data)['human_actions']:
-                    if row.get('notification_key')==prefix+condition and row.get('status')=='DONE':
-                        row.update(status='ACTION_REQUIRED',read_at=None,completed_at=None)
+                    if row.get('notification_key')==prefix+condition:
+                        if blocked:row.update(title='META BLOQUEA INSTAGRAM',message=item.get('human_action'),reason=item.get('human_action'),actions=actions,details={'condition':condition})
+                        if row.get('status')=='DONE':row.update(status='ACTION_REQUIRED',read_at=None,completed_at=None)
                 holdings.write(self.scope,data)
 
 
@@ -228,8 +244,12 @@ def register(app,scope_fn,csrf_owner):
     def accounts_action(provider,action):
         registry=AccountConnectionRegistry(csrf_owner())
         if not registry.provider(provider):abort(404)
-        if action=='reverify':return jsonify(ok=True,result=registry.reverify(provider))
+        if action=='reverify':return jsonify(ok=True,result=registry.reverify(provider,manual=True))
         if action in {'connect','reconnect'}:
+            if provider=='instagram':
+                from . import meta_provider
+                if blocked:=meta_provider.blocked_view(registry.scope):
+                    return jsonify(error='PROVIDER_BLOCKED',message=blocked['human_action']),423
             if (request.get_json(silent=True) or {}).get('external') is True and provider in {'google','youtube','adsense','instagram'}:
                 from . import oauth_transport as transport
                 if provider=='instagram':

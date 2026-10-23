@@ -92,7 +92,7 @@ def prevent_embedded_oauth():
     if request.path.startswith('/oauth/accounts/start/'):provider='la cuenta'
     if not provider:return None
     # No state is issued and no one-use handoff is consumed inside an iframe.
-    response=make_response('<!doctype html><html lang="es"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/static/accounts.css"><body><main class="accounts"><h1>Autorizar '+provider+'</h1><p>'+provider+' requiere abrir una ventana externa para autorizar tu cuenta.</p><a href="'+escape(request.full_path.rstrip('?'),quote=True)+'" target="_blank" rel="noopener">ABRIR '+provider.upper()+'</a><p id="notice" role="status"></p></main><script src="/static/oauth-launcher.js?v=33.3.106"></script></body></html>')
+    response=make_response('<!doctype html><html lang="es"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/static/accounts.css"><body><main class="accounts"><h1>Autorizar '+provider+'</h1><p>'+provider+' requiere abrir una ventana externa para autorizar tu cuenta.</p><a href="'+escape(request.full_path.rstrip('?'),quote=True)+'" target="_blank" rel="noopener">ABRIR '+provider.upper()+'</a><p id="notice" role="status"></p></main><script src="/static/oauth-launcher.js?v=33.3.107"></script></body></html>')
     response.headers['Cache-Control']='no-store';response.headers['Referrer-Policy']='no-referrer'
     return response
 
@@ -100,12 +100,13 @@ def prevent_embedded_oauth():
 def page(provider, category, status=400):
     # No provider error text, OAuth code, state, session or token is reflected.
     logging.getLogger(__name__).info('oauth provider=%s category=%s http=%s correlation=%s', provider, category, status, secrets.token_hex(6))
-    messages = {'CONNECTED':'Conexión completada. Vuelve a CUENTAS en ZAR.',
+    messages = {'PROVIDER_BLOCKED':'Meta bloquea el acceso a su API. Revisa la confirmación de tu cuenta en Meta Developers; no repitas OAuth mientras siga bloqueada.',
+                'CONNECTED':'Conexión completada. Vuelve a CUENTAS en ZAR.',
                 'OAUTH_CANCELLED':'Conexión cancelada. Puedes volver a intentarlo desde CUENTAS.',
                 'OWNER_SESSION_REQUIRED':'Abre CUENTAS en la sesión propietaria de ReposNews antes de conectar Instagram.',
                 'OAUTH_STATE_INVALID':'La conexión ha caducado o ya se utilizó. Iníciala otra vez desde CUENTAS.'}
     success='<p>Cuenta conectada correctamente.</p>' if category=='CONNECTED' else ''
-    response = make_response('<!doctype html><html lang="es"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ZAR · Conexión</title><link rel="stylesheet" href="/static/accounts.css"><body data-oauth-provider="'+escape(provider.lower(),quote=True)+'" data-oauth-status="'+escape(category,quote=True)+'"><main class="accounts"><h1>Conexión '+escape(provider)+'</h1>'+success+'<p>'+messages.get(category,'No se pudo completar la conexión. Vuelve a CUENTAS y reintenta.')+'</p><a href="/accounts" target="_top">Volver a CUENTAS</a></main><script src="/static/oauth-callback.js?v=33.3.106"></script></body></html>', status)
+    response = make_response('<!doctype html><html lang="es"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ZAR · Conexión</title><link rel="stylesheet" href="/static/accounts.css"><body data-oauth-provider="'+escape(provider.lower(),quote=True)+'" data-oauth-status="'+escape(category,quote=True)+'"><main class="accounts"><h1>Conexión '+escape(provider)+'</h1>'+success+'<p>'+messages.get(category,'No se pudo completar la conexión. Vuelve a CUENTAS y reintenta.')+'</p><a href="/accounts" target="_top">Volver a CUENTAS</a></main><script src="/static/oauth-callback.js?v=33.3.107"></script></body></html>', status)
     response.headers['Cache-Control'] = 'no-store'
     response.headers['Referrer-Policy'] = 'no-referrer'
     return response
