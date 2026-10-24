@@ -128,6 +128,30 @@ def check(width,height,standalone=False):
             assert page.locator('#zarNotificationBell').count()==1
         browser.close()
 
+
+def check_direct_editor():
+    fixture={'project_id':'fixture','articles':[{'id':'direct-draft','repo':'Example/tool','title_es':'Borrador exacto','title_en':'Exact draft','summary_es':'Resumen','summary_en':'Summary','body_es':'Contenido privado','body_en':'Private content','state':'READY_PRIVATE','history':[]}],'editorial_notifications':[],'domain_status':'ACTIVE'}
+    with sync_playwright() as p:
+        browser=p.chromium.launch(headless=True,executable_path=os.environ.get('ZAR_TEST_BROWSER'))
+        page=browser.new_page(viewport={'width':390,'height':844})
+        page.route('**/api/**',lambda r:r.fulfill(content_type='application/json',body=json.dumps({'ok':True,'result':fixture})))
+        page.route('https://zar.test/?*',lambda r:r.fulfill(content_type='text/html',body='<html><body><main id="zwSites"><section id="reposnewsEditor"></section></main></body></html>'))
+        page.goto('https://zar.test/?zar_workspace=sites&edit_article=direct-draft')
+        page.add_script_tag(content=LEGACY);page.add_script_tag(content=EDITOR)
+        page.evaluate("window.dispatchEvent(new CustomEvent('zar-workflow-state',{detail:{csrf:'fixture'}}))")
+        editor=page.locator('#zarEditorialNotifications')
+        expect(editor).to_be_visible();expect(editor.locator('[name=title_es]')).to_have_value('Borrador exacto')
+        editor.locator('[name=title_es]').fill('Trabajo sin guardar')
+        page.evaluate("document.getElementById('reposnewsEditor').innerHTML='<h2>Workspace refreshed</h2>'")
+        expect(editor.locator('[name=title_es]')).to_have_value('Trabajo sin guardar')
+        assert editor.evaluate('e=>e.parentElement===document.body')
+        assert page.evaluate('document.documentElement.scrollWidth<=innerWidth')
+        editor.locator('[data-rn-close]').click();expect(editor).not_to_be_visible()
+        browser.close()
+    print('PASS direct editor survives workspace refresh')
+
 if __name__=='__main__':
     for case in [(1440,900,False),(390,844,False),(390,844,True)]:
         check(*case);print('PASS',case)
+
+    check_direct_editor()

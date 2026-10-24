@@ -197,7 +197,7 @@ def tick():
             (a.get('cover_status')!='READY' or not valid(a)) and a.get('cover_job',{}).get('lease',0)<time.time() and
             a.get('cover_job',{}).get('retry_after',0)<=time.time() and a.get('cover_job',{}).get('attempts',0)<2),None)
         if not target:return
-        kind,current=target;base=revision(current);article=deepcopy(current)
+        kind,current=target;base=revision(current);article=deepcopy(current);was_published=bool(current.get('published'))
         current.setdefault('cover_job',{})['lease']=time.time()+1200
         row=next((r for r in data.get('instagram_inbox',[]) if r.get('article_id')==article['id']),{})
         rn.write(data)
@@ -242,6 +242,6 @@ def tick():
         if event:emit(scope,event,event+':'+article['id']+':'+stamp,'Portada preparada' if status=='READY' else 'No se pudo generar la portada',
             'Consulta el borrador.' if status=='READY' else 'El borrador se conserva; el proveedor de imágenes no ha completado la portada.',
             '/?zar_workspace=sites&edit_article='+article['id']+'#reposnewsEditor',article['id'],'ARTICLE',status='COMPLETED' if status=='READY' else 'ACTION_REQUIRED')
-    if row.get('id') and status in {'READY','COVER_GENERATION_FAILED'} and not article.get('published'):
+    if kind=='article' and not was_published and row.get('id') and status in {'READY','COVER_GENERATION_FAILED'}:
         from .reposnews_automation import notify
         notify(row['id'])

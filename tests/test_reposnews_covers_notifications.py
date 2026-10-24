@@ -149,3 +149,13 @@ def test_notification_diagnostics_do_not_expose_credentials(isolated):
     center.emit('owner','ARTICLE_COVER_FAILED','safe-error','Error','Bearer private_value','/accounts',details={'access_token':'private_value','headers':{'authorization':'secret'},'stack_trace':'private trace','status':'FAILED'})
     payload=center.view('owner')
     assert 'private_value' not in str(payload);assert 'private trace' not in str(payload)
+
+
+def test_revision_cover_work_does_not_reclassify_its_published_source_inbox(isolated):
+    a=draft();a.update(image_asset='fastapi-official.png',cover_status='READY',published=True,state='PUBLISHED');a['published_snapshot']=deepcopy(a)
+    update=deepcopy(a);update.update(published=False,state='READY_PRIVATE');update.pop('cover_status')
+    row={'id':'a'*24,'article_id':a['id'],'status':'ARTICLE_UPDATE_DRAFT'}
+    rn.write({'owner':'owner','articles':[a],'instagram_inbox':[row],'article_revisions':[{'article_revision_id':'fixture-revision','article_id':a['id'],'state':'ARTICLE_UPDATE_DRAFT','draft':update}]})
+    with patch('app.reposnews_automation.notify') as notify:covers.tick()
+    notify.assert_not_called()
+    assert rn.read()['instagram_inbox'][0]['status']=='ARTICLE_UPDATE_DRAFT'
