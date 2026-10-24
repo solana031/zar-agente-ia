@@ -15,6 +15,11 @@ BASE='https://graph.instagram.com/v26.0/'
 DAY=86400
 
 
+class HistoryReadError(ValueError):
+    def __init__(self,code,detail,retry_after=0):
+        super().__init__(code);self.detail=detail;self.retry_after=retry_after
+
+
 def _owned(scope):
     data=rn.read()
     if data.get('owner')!=scope:raise ValueError('OWNER_REQUIRED')
@@ -25,8 +30,14 @@ def _read(path,token,params):
     if not re.fullmatch(r'[A-Za-z0-9_.:-]+(?:/(?:conversations|messages|shares))?',path):raise ValueError('INVALID_GRAPH_PATH')
     r=requests.get(BASE+path,params=params,headers={'Authorization':'Bearer '+token},timeout=25,allow_redirects=False)
     if not r.ok:
+        from .reposnews_inbox import safe_meta_error
+        detail=safe_meta_error(r,token)
+        if r.status_code==429 or detail.get('code') in {4,17,32,613}:
+            value=str(r.headers.get('Retry-After',''))
+            delay=max(600,min(DAY,int(value))) if value.isdigit() else 3600
+            raise HistoryReadError('META_HISTORY_RATE_LIMITED',detail,delay)
         if r.status_code in (429,500,502,503,504):raise ValueError('META_HISTORY_RETRYABLE_HTTP_'+str(r.status_code))
-        raise ValueError('META_HISTORY_HTTP_'+str(r.status_code))
+        raise HistoryReadError('META_HISTORY_HTTP_'+str(r.status_code),detail)
     b=r.json()
     if not isinstance(b,dict) or not isinstance(b.get('data'),list):raise ValueError('META_HISTORY_INVALID_RESPONSE')
     return b
@@ -56,18 +67,35 @@ def _pages(path,token,params,after=None):
         if after is None:return
 
 
-def _reels(message,token):
+def _reels(message,token,fetch=True):
     from .reposnews_history import links
     found=set(links(message.get('message','')))
     shared=message.get('shares') or {}
     if isinstance(shared,dict):
         found.update(links(shared.get('data',[])))
         after=_after(shared)
-        if after:
+        if after and fetch:
             for rows,_ in _pages(message['id']+'/shares',token,{'fields':'link','limit':100},after):found.update(links(rows))
     # Some official message attachments contain a permalink rather than a share edge.
     found.update(links(message.get('attachments',{})))
     return sorted(found)
+
+
+def _drain_shares(scope,token,senders):
+    """Complete secondary edges after the outer conversation pages are checkpointed."""
+    from .reposnews_history import links
+    pending=dict(rn.read()['instagram_conversation_sync'].get('pending_share_pages',{}))
+    for mid,record in pending.items():
+        if record['sender'] not in senders:raise ValueError('AUTHORIZED_SENDER_REQUIRED')
+        message={'id':mid,'from':{'id':record['sender']},'created_time':record.get('timestamp')}
+        for rows,cursor in _pages(mid+'/shares',token,{'fields':'link','limit':100},record['cursor']):
+            urls=sorted(set(links(rows)))
+            if urls:_ingest(scope,record['conversation_id'],message,urls)
+            with holdings.transaction('reposnews-editorial'):
+                data=_owned(scope);state=data['instagram_conversation_sync']
+                if cursor:state['pending_share_pages'][mid]['cursor']=cursor
+                else:state['pending_share_pages'].pop(mid,None)
+                state['lease_until']=time.time()+1800;rn.write(data)
 
 
 def _ingest(scope,cid,message,urls):
@@ -146,7 +174,8 @@ def summary(data):
     return dict(counts,conversation_found=bool(sync.get('conversation_ids')),messages_scanned=sync.get('messages_scanned',0),
                 last_sync=sync.get('completed_at'),status=sync.get('status','NOT_STARTED'),error=sync.get('error'),
                 history_exhausted=sync.get('history_exhausted',False),cursor_saved=bool(sync.get('checkpoints')),
-                daily_reconciliation=True,next_sync=sync.get('next_sync'),concurrency=1)
+                daily_reconciliation=True,next_sync=sync.get('next_sync'),retry_after=sync.get('retry_after'),
+                provider_error=sync.get('provider_error'),share_pages_pending=len(sync.get('pending_share_pages',{})),concurrency=1)
 
 
 def sync(scope,force=False):
@@ -155,6 +184,7 @@ def sync(scope,force=False):
     with holdings.transaction('reposnews-editorial'):
         data=_owned(scope);state=data.setdefault('instagram_conversation_sync',{})
         if state.get('lease_until',0)>now:return summary(data)
+        if state.get('retry_after',0)>now:return summary(data)
         if not force and not state.get('requested') and state.get('status')!='SYNCING' and state.get('next_sync',0)>now:return summary(data)
         state.update(status='SYNCING',started_at=holdings._now(),lease_until=now+1800,requested=False,next_sync=now+DAY,error=None)
         rn.write(data)
@@ -178,23 +208,28 @@ def sync(scope,force=False):
             latest_time=checkpoint.get('last_timestamp') if not complete else None
             after=None if complete else checkpoint.get('pagination_cursor')
             for messages,cursor in _pages(cid+'/messages',token,{'fields':'id,created_time,from,message,attachments,shares','limit':100},after):
-                stop=False;scanned=0
+                stop=False;scanned=0;share_pages={}
                 for message in messages:
                     scanned+=1
                     if not newest:newest=message.get('id');latest_time=message.get('created_time')
                     if message.get('id')==anchor:stop=True;break
                     if str((message.get('from') or {}).get('id')) in senders:
-                        urls=_reels(message,token)
+                        urls=_reels(message,token,fetch=False)
                         if urls:_ingest(scope,cid,message,urls)
+                        shared=message.get('shares') or {}
+                        share_cursor=_after(shared) if isinstance(shared,dict) else None
+                        if share_cursor:share_pages[message['id']]={'cursor':share_cursor,'sender':str(message['from']['id']),'timestamp':message.get('created_time'),'conversation_id':cid}
                 with holdings.transaction('reposnews-editorial'):
                     data=rn.read();state=data['instagram_conversation_sync']
                     state['messages_scanned']=state.get('messages_scanned',0)+scanned
+                    state.setdefault('pending_share_pages',{}).update(share_pages)
                     state.setdefault('checkpoints',{})[cid]={'last_message_id':newest or checkpoint.get('last_message_id'),'last_timestamp':latest_time or checkpoint.get('last_timestamp'),'pagination_cursor':None if stop else cursor,'history_exhausted':stop or cursor is None}
                     state['lease_until']=time.time()+1800;rn.write(data)
                 if stop:break
+        _drain_shares(scope,token,senders)
         with holdings.transaction('reposnews-editorial'):
             data=rn.read();state=data['instagram_conversation_sync'];refresh(data)
-            state.update(status='COMPLETED',history_exhausted=bool(conversations),completed_at=holdings._now(),lease_until=0)
+            state.update(status='COMPLETED',history_exhausted=bool(conversations) and not state.get('pending_share_pages'),completed_at=holdings._now(),lease_until=0,retry_after=0)
             # Add newly discovered Reels to the existing sequential, durable pipeline.
             data.setdefault('historical_backfill',{}).update(enabled=True,mode='BATCH_LIMITED',concurrency=1)
             rn.write(data)
@@ -203,7 +238,10 @@ def sync(scope,force=False):
         # No exception text: provider URLs/payloads can contain credentials or private text.
         with holdings.transaction('reposnews-editorial'):
             code=str(exc) if isinstance(exc,ValueError) and re.fullmatch(r'[A-Z0-9_]{1,80}',str(exc)) else 'OFFICIAL_CONVERSATION_SYNC_FAILED'
-            data=rn.read();data['instagram_conversation_sync'].update(status='FAILED_RETRYABLE',error=code,lease_until=0);rn.write(data)
+            data=rn.read();state=data['instagram_conversation_sync'];state.update(status='RATE_LIMITED' if code=='META_HISTORY_RATE_LIMITED' else 'FAILED_RETRYABLE',error=code,lease_until=0)
+            if isinstance(exc,HistoryReadError):state['provider_error']=exc.detail
+            if getattr(exc,'retry_after',0):state.update(retry_after=time.time()+exc.retry_after,next_sync=time.time()+exc.retry_after)
+            rn.write(data)
         return summary(data)
 
 
@@ -214,6 +252,11 @@ def tick():
     with holdings.transaction('reposnews-editorial'):
         data=rn.read();refresh(data);rn.write(data)
     result=summary(data)
+    if result['status']=='RATE_LIMITED':
+        from .notification_center import emit
+        emit(scope,'INSTAGRAM_HISTORY_SYNC','instagram-history:rate-limit','Historial pausado por límite de Meta',
+             'Meta ha limitado las solicitudes de mensajes. El cursor se conserva y ZAR reintentará automáticamente después de la espera.',
+             '/accounts#instagram',entity_type='INSTAGRAM_HISTORY',details=result,status='DONE',priority='P2')
     if result['status']=='COMPLETED' and not result['pending']:
         from .notification_center import emit
         emit(scope,'INSTAGRAM_HISTORY_SYNC','instagram-history:'+data['instagram_conversation_sync']['started_at'],

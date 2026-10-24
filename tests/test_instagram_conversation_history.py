@@ -130,3 +130,29 @@ def test_existing_entity_routes_to_no_change_without_duplicate_or_publication(st
         assert revisions.consider(data,row,candidate)
     assert row['status']=='NO_CHANGE' and row['linked_article_id']=='existing'
     assert len(data['articles'])==1 and data['articles'][0]==article
+
+def test_meta_rate_limit_403_code4_is_retryable_and_secret_free(store):
+    response=Mock(ok=False,status_code=403,headers={'Retry-After':'1200'},json=lambda:{'error':{'code':4,'error_subcode':1349210,'message':'Application request limit reached fixture-canonical','type':'OAuthException'}})
+    with patch.object(history.requests,'get',return_value=response):
+        with pytest.raises(history.HistoryReadError) as failure:history._read('conversation/messages','fixture-canonical',{})
+    assert str(failure.value)=='META_HISTORY_RATE_LIMITED' and failure.value.retry_after==1200
+    assert failure.value.detail['code']==4 and failure.value.detail['subcode']==1349210
+    assert 'fixture-canonical' not in str(failure.value.detail)
+
+def test_primary_reels_checkpoint_before_secondary_rate_limit_and_resume_without_full_rescan(store):
+    first=message('newest','one');first['shares']['paging']={'cursors':{'after':'share2'},'next':'https://graph.instagram.com/newest/shares'}
+    rate=history.HistoryReadError('META_HISTORY_RATE_LIMITED',{'http':403,'code':4,'subcode':1349210},3600)
+    with patch.object(history.time,'time',return_value=1000),patch.object(history,'_read',side_effect=[conversation(),page([first],'older'),page([message('older','two')]),rate]):
+        result=history.sync('owner',force=True)
+    assert result['status']=='RATE_LIMITED' and result['reels_found']==2
+    assert result['share_pages_pending']==1 and result['retry_after']==4600
+    checkpoint=rn.read()['instagram_conversation_sync']['checkpoints']['conversation']
+    assert checkpoint['history_exhausted'] and checkpoint['last_message_id']=='newest'
+    with patch.object(history.time,'time',return_value=2000),patch.object(history,'_read') as read:
+        history.sync('owner',force=True)
+    read.assert_not_called()  # Even a manual button cannot bypass provider backoff.
+    with patch.object(history.time,'time',return_value=4601),patch.object(history,'_read',side_effect=[conversation(),page([first]),page([{'link':'https://www.instagram.com/reel/three/'}])]) as read:
+        result=history.sync('owner')
+    assert result['history_exhausted'] and result['reels_found']==3 and result['share_pages_pending']==0
+    assert read.call_count==3 and read.call_args_list[-1].args[0]=='newest/shares'
+    assert read.call_args_list[-1].args[2]['after']=='share2'
