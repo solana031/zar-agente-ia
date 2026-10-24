@@ -63,8 +63,22 @@ def scoped_instagram_readiness(scope_id):
     ready=permission in granted
     from .reposnews_inbox import verify_capabilities
     capabilities=verify_capabilities(token,user,permissions) if business else {}
+    diagnostic={}
+    # Instagram Login has no /me/permissions field. Its documented quota read
+    # requires the publishing permission and does not create a media container.
+    if business:
+        granted.update(capabilities.get('granted',[]))
+        error=permissions.json().get('error',{}) if not permissions.ok else {}
+        unsupported=isinstance(error,dict) and error.get('code')==100 and 'nonexisting field (permissions)' in str(error.get('message',''))
+        if not ready and unsupported:
+            quota=requests.get(base+'/'+user+'/content_publishing_limit',params={'fields':'config,quota_usage'},headers=headers,timeout=20,allow_redirects=False)
+            rows=quota.json().get('data',[]) if quota.ok else []
+            ready=isinstance(rows,list) and any(isinstance(row,dict) and type(row.get('quota_usage')) is int and isinstance(row.get('config'),dict) and type(row['config'].get('quota_total')) is int for row in rows)
+            diagnostic={'publishing_permission_method':'CONTENT_PUBLISHING_LIMIT_READ','publishing_permission_http':quota.status_code}
+            if ready:granted.add(permission)
     return {'connected':True,'account':data.get('username'),'account_id':user,'publish_capability':'AUTHORIZED_NOT_TESTED' if ready else 'BLOCKED',
             'status':'CONNECTED' if ready else 'PERMISSION_REQUIRED', 'permissions':sorted(granted),
+            'diagnostic':diagnostic,
             'blocker':None if ready else 'MISSING_OR_UNVERIFIED_'+permission.upper(),'required_permission':permission,'permission_check_http':permissions.status_code,'identity_status':'CONNECTED','credential_source':context.get('source'),
             'capabilities':{'messaging':'READY' if capabilities.get('manage_messages')=='VERIFIED' else 'PERMISSION_REQUIRED',
                             'reel_discovery':'READY' if capabilities.get('manage_messages')=='VERIFIED' else 'PERMISSION_REQUIRED',

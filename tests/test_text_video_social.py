@@ -179,6 +179,33 @@ def test_instagram_personal_identity_blocked(project):
         assert social.social.scoped_instagram_readiness('owner')['blocker']=='INSTAGRAM_IDENTITY_MISMATCH'
 
 
+@pytest.mark.parametrize('quota_http,quota_body,ready',[
+    (200,{'data':[{'quota_usage':0,'config':{'quota_total':100}}]},True),
+    (403,{'error':{'code':200}},False),
+    (200,{'data':[]},False),
+    (200,{'data':[{'quota_usage':True,'config':{'quota_total':100}}]},False),
+])
+def test_instagram_publish_preflight_uses_documented_read_when_permissions_field_missing(project,quota_http,quota_body,ready):
+    context={'user':'123','token':'canonical-fixture','base':'https://graph.instagram.com/v26.0','source':'CANONICAL_OAUTH'}
+    def get(url,**kwargs):
+        if url.endswith('/me'):return Mock(ok=True,json=lambda:{'user_id':'123','username':'zaragente031'})
+        if url.endswith('/permissions'):return Mock(ok=False,status_code=400,json=lambda:{'error':{'code':100,'message':'Tried accessing nonexisting field (permissions)'}})
+        if url.endswith('/content_publishing_limit'):return Mock(ok=quota_http==200,status_code=quota_http,json=lambda:quota_body)
+        return Mock(ok=True,status_code=200,json=lambda:{'data':[]})
+    with patch.object(social.social,'instagram_context',return_value=context),patch.object(social.social.requests,'get',side_effect=get) as read,patch.object(social.social.requests,'post') as write:
+        result=social.social.scoped_instagram_readiness('owner')
+    write.assert_not_called()
+    assert result['connected'] is True
+    assert result['status']==('CONNECTED' if ready else 'PERMISSION_REQUIRED')
+    assert result['capabilities']['publishing']==('READY' if ready else 'PERMISSION_REQUIRED')
+    assert result['capabilities']['messaging']=='READY'
+    assert ('instagram_business_content_publish' in result['permissions']) is ready
+    assert result['credential_source']=='CANONICAL_OAUTH'
+    quota_call=next(c for c in read.call_args_list if c.args[0].endswith('/content_publishing_limit'))
+    assert quota_call.kwargs['params']=={'fields':'config,quota_usage'}
+    assert quota_call.kwargs['headers']=={'Authorization':'Bearer canonical-fixture'}
+
+
 def test_three_real_connection_states_are_not_inferred_from_config(project,monkeypatch):
     monkeypatch.delenv('TIKTOK_ACCESS_TOKEN',raising=False)
     with patch('app.cloud_auth.get_credentials',return_value=None),patch.object(social.social,'scoped_instagram_readiness',return_value={'status':'REAUTH_REQUIRED','publish_capability':'BLOCKED','blocker':'INSTAGRAM_IDENTITY_HTTP_401'}):
