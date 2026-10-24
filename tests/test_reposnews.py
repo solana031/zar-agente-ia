@@ -14,7 +14,7 @@ class ReposNewsTest(unittest.TestCase):
   for lang in ('es','en'):
    response=self.get('/'+lang+'/privacy/');self.assertEqual(response.status_code,200)
    html=response.get_data(as_text=True)
-   for required in ('instagram_business_basic','instagram_business_manage_messages','id="instagram-deletion"','zaragente031@gmail.com'):
+   for required in ('ZAR ReposNews Integration','Google Gemini','id="instagram-deletion"','zaragente031@gmail.com'):
     self.assertIn(required,html)
  def test_public_economic_profile_never_exposes_private_identity(self):
   data=rn.read();data['legal']={'controller':'Approved owner','address':'PRIVATE STREET 999','tax_id':'12345678Z','registration':'PRIVATE REGISTER','privacy_contact':'private@example.test','activity_mode':'ECONOMIC','entity_type':'PERSON','processing_basis':'Approved basis 12345678Z','retention':'Approved retention PRIVATE STREET 999','providers_reviewed':True};data['legal_reviewed']=True
@@ -67,7 +67,7 @@ class ReposNewsTest(unittest.TestCase):
   self.assertIn('title_es',result['articles'][0]['history'][-1]['fields']);self.assertFalse(result['articles'][0]['published'])
  def test_legal_draft_isolation(self):
   rn.operate('owner','legal_save',{'controller':'PRIVATE UNREVIEWED'})
-  r=self.get('/es/legal/');self.assertEqual(r.status_code,200);self.assertNotIn(b'PRIVATE UNREVIEWED',r.data);self.assertIn(b'ACTION_REQUIRED',r.data)
+  r=self.get('/es/legal/');self.assertEqual(r.status_code,200);self.assertNotIn(b'PRIVATE UNREVIEWED',r.data);self.assertNotIn(b'ACTION_REQUIRED',r.data);self.assertIn(b'zaragente031@gmail.com',r.data)
  def test_breadcrumb_and_related(self):
   r=self.c.get('/reposnews-preview/en/playwright');self.assertEqual(r.status_code,200);self.assertIn(b'BreadcrumbList',r.data);self.assertIn(b'Related guides',r.data)
  def test_legal_applicability(self):
