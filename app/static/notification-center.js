@@ -8,6 +8,7 @@
  const icon='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4M10 2h4"/></svg>';
  const labels={ACCOUNT_CONNECTION:'Cuenta requiere atención',ARTICLE_READY:'Artículo listo',ARTICLE_UPDATE_READY:'Actualización disponible',ARTICLE_NEEDS_DISAMBIGUATION:'Necesito un dato',ARTICLE_FAILED:'No se pudo completar',DOC_READY:'Documento listo',SLIDES_READY:'Presentación lista',SHEET_READY:'Hoja lista',FORM_READY:'Formulario listo',VIDEO_READY:'Vídeo listo',PUBLISH_SUCCESS:'Publicación completada',PUBLISH_FAILED:'Publicación fallida',WORKER_OFFLINE:'Worker desconectado',WORKER_SESSION_EXPIRED:'Sesión caducada',SYSTEM_ACTION_REQUIRED:'Acción pendiente'};
  Object.assign(labels,{MIRROR_SYNC_SUCCESS:'Mirror actualizado',MIRROR_SYNC_FAILED:'Mirror sin sincronizar',MIRROR_OUTDATED:'Mirror pendiente'});
+ Object.assign(labels,{INSTAGRAM_HISTORY_SYNC:'Historial de Instagram revisado',SOCIAL_ACCOUNT_READY:'Cuenta preparada',SOCIAL_ACCOUNT_BLOCKED:'Cuenta requiere atención'});
  let state={items:[],historical:{}},csrf='',filter='TODAS',page=0,busy=false,message='',editing='',archived=false;
  const drafts=new Map(),expanded=new Set(),size=8;
  const dialog=document.createElement('dialog');dialog.id='zarNotificationCenter';dialog.setAttribute('aria-label','Centro de notificaciones ZAR');document.body.append(dialog);

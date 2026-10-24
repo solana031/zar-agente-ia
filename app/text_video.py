@@ -29,7 +29,7 @@ def chat_request(message):
 
 
 def summary(identifier,record):
-    fields=('title','status','video_state','video_stage','error','render','providers','voice','captions','music','publication','publication_mode','scenes','assembly','video_revision')
+    fields=('title','status','video_state','video_stage','error','render','providers','voice','captions','music','publication','publication_mode','scenes','assembly','video_revision','pre_publish_state','required_approval_phrase')
     result={k:record.get(k) for k in fields};result.update(id=identifier,project=record.get('project'),preview='/api/holdings/media/video/'+identifier if record.get('artifact') else None)
     result['publication']={p:{k:v for k,v in row.items() if k in {'platform','status','external_id','url','error','last_error','public_url','attempt_count','approval_id','video_revision_id','published_at','approved_at','container_id','publish_id'}} for p,row in record.get('publication',{}).items()}
     return result
@@ -381,3 +381,5 @@ def register(app,scope_fn):
     register_social(app,scope_fn,csrf_owner)
     from .account_connections import register as register_accounts
     register_accounts(app,scope_fn,csrf_owner)
+    from .instagram_conversation_history import register as register_conversation_history
+    register_conversation_history(app,scope_fn,csrf_owner)

@@ -55,6 +55,9 @@ def notify(item_id,kind='READY_PRIVATE'):
     with holdings.transaction('reposnews-editorial'):
         data=rn.read();row=next((r for r in data.get('instagram_inbox',[]) if r['id']==item_id),None)
         if not row or not data.get('owner'):return
+        # Backfill delivers one aggregate result; only reviewable article drafts
+        # and update drafts need individual decisions in the existing bell.
+        if row.get('backfill') and kind!=READY:return
         article=next((a for a in data.get('articles',[]) if a['id']==row.get('article_id')),None)
         if kind==READY and (not article or not complete(article)):return
         if kind!=READY:article=None

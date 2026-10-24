@@ -32,11 +32,13 @@ def _provider_connections(scope,only=None):
                 check=social.publishing_readiness('tiktok')
                 item.update(check,permissions=['video.publish'] if check.get('connected') else [],
                             status=check.get('status') or ('CONNECTED' if check.get('connected') else 'DISCONNECTED'),
-                            ready=bool(check.get('connected') and check.get('privacy_options')),
+                            ready=bool(check.get('connected') and check.get('privacy_options') and float(check.get('max_video_post_duration_sec') or 0)>0),
                             connect_url='https://developers.tiktok.com/apps/',
                             human_action='Conectar cuenta operacional ZAR en la app TikTok existente y guardar TIKTOK_ACCESS_TOKEN en Railway principal; autorizar video.publish. No existe OAuth TikTok en ZAR.')
                 if check.get('connected') and check.get('account_id')!='zaragente031':
                     item.update(status='ERROR',ready=False,blocker='TIKTOK_OPERATIONAL_IDENTITY_NOT_VERIFIED')
+                elif check.get('connected') and not item['ready']:
+                    item.update(status='PERMISSION_REQUIRED',blocker='TIKTOK_PRIVACY_OR_DURATION_UNVERIFIED')
             else:
                 item.update(connect_url=identity_center.connect_url(OPERATIONAL_EMAIL,'youtube'),
                             human_action='Autorizar YouTube con '+OPERATIONAL_EMAIL+' (lectura del canal y youtube.upload).',status='AUTH_REQUIRED')
@@ -142,13 +144,17 @@ def prepared(scope,identifier,data):
         if platform in record.get('publication',{}) and record['publication'][platform].get('status') not in {'BLOCKED','FAILED'}:checks[platform].update(ready=False,blocker='PUBLICATION_ALREADY_REQUESTED_CHECK_EXISTING_RESULT')
     plan={'id':identifier,'revision':record.get('video_revision',0),'video_digest':digest(media.video_path(scope,identifier)),
           'options':options,'checks':checks,'validation':validation,'ready_to_publish':all(c['ready'] for c in checks.values()),'created_at':time.time(),'dry_run':True,'publication_mode':'CONFIRM_ONCE'}
+    plan['available_platforms']=[p for p,c in checks.items() if c['ready']]
+    plan['pre_publish_state']='PRE_PUBLISH_READY' if plan['available_platforms'] else 'BLOCKED'
+    plan['required_approval_phrase']=record.get('required_approval_phrase')
     plan['platform_payloads']={p:({'snippet':{'title':options['title'],'description':options['description'],'tags':options['hashtags']},'status':{'privacyStatus':options['youtube_privacy']}} if p=='youtube' else {'media_type':'REELS','caption':options['caption']} if p=='instagram' else {'post_info':{'title':options['caption'],'privacy_level':options['tiktok_privacy'],'is_aigc':True}}) for p in options['platforms']}
     plan['approval_request']=URLSafeTimedSerializer(current_app.secret_key,salt='text-video-publish-v1').dumps({'scope':scope,**plan})
     with media._job_lock(scope,identifier) as locked:
         if not locked:raise ValueError('VIDEO_PROJECT_BUSY')
         current=video.view(scope,identifier)
         if current.get('video_revision',0)!=plan['revision'] or digest(file)!=plan['video_digest']:raise ValueError('VIDEO_CHANGED_DURING_PREFLIGHT')
-        current['last_social_dry_run']={k:v for k,v in plan.items() if k!='approval_request'};media._save(scope,identifier,current)
+        current['last_social_dry_run']={k:v for k,v in plan.items() if k!='approval_request'}
+        current['pre_publish_state']=plan['pre_publish_state'];media._save(scope,identifier,current)
     return plan
 
 
@@ -160,6 +166,8 @@ def confirm(scope,identifier,data):
     with media._job_lock(scope,identifier) as locked:
         if not locked:raise ValueError('VIDEO_PROJECT_BUSY')
         record=video.view(scope,identifier)
+        if record.get('required_approval_phrase') and data.get('approval_phrase')!=record['required_approval_phrase']:
+            raise ValueError('EXPLICIT_PUBLICATION_PHRASE_REQUIRED')
         if record.get('last_social_dry_run',{}).get('options')!=plan['options'] or ('options' in data and payload(data['options'])!=plan['options']):raise ValueError('PUBLICATION_METADATA_CHANGED_REVIEW_AGAIN')
         if holdings.read(scope).get('global_stop'):raise ValueError('GLOBAL_STOP_ACTIVE')
         if record.get('video_state')!='READY_PRIVATE' or plan['revision']!=record.get('video_revision',0) or plan['video_digest']!=digest(media.video_path(scope,identifier)):raise ValueError('VIDEO_CHANGED_REVIEW_EXACT_RENDER_AGAIN')

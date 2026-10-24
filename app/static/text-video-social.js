@@ -8,6 +8,7 @@
  let plan=null,busy=false,project=null,connectionState={};
  root.innerHTML='<form data-social-form><fieldset><legend>Redes de destino</legend>'+Object.entries(names).map(([k,v])=>'<label class="tvPlatform"><input type="checkbox" name="platform" value="'+k+'">'+v+'</label>').join('')+'</fieldset><label>Título<input name="title" maxlength="100" required></label><label>Texto de publicación<textarea name="caption" maxlength="2200" rows="4"></textarea></label><div class="tvGrid"><label>Privacidad de YouTube<select name="youtube_privacy" aria-label="Privacidad de YouTube"><option value="private">Privado</option><option value="unlisted">No listado</option><option value="public">Público</option></select></label><label>Privacidad de TikTok<select name="tiktok_privacy" aria-label="Privacidad de TikTok"><option value="">Elige una opción</option><option value="SELF_ONLY">Solo yo</option><option value="PUBLIC_TO_EVERYONE">Público</option><option value="MUTUAL_FOLLOW_FRIENDS">Amigos mutuos</option><option value="FOLLOWER_OF_CREATOR">Seguidores</option></select></label></div><button type="button" data-social-prepare>Comprobar redes · no publica</button><div data-social-checks></div><label class="tvPlatform"><input type="checkbox" name="rights">He revisado este vídeo y los derechos de sus imágenes, voz y música.</label><button type="submit" disabled data-social-confirm>Confirmar publicación en las redes seleccionadas</button></form><p role="status" data-social-feedback></p><details hidden data-social-diagnostic><summary>Ver detalle del bloqueo</summary><p></p></details><h3>Resultado por red</h3><div data-social-results></div>';
  const form=root.querySelector('form'),feedback=root.querySelector('[data-social-feedback]'),confirm=root.querySelector('[data-social-confirm]');
+ const phrase=document.createElement('label');phrase.hidden=true;phrase.innerHTML='Confirmación requerida<input name="approval_phrase" autocomplete="off">';form.insertBefore(phrase,confirm);
  const center=document.createElement('section');center.id='zarSocialConnections';root.prepend(center);
  for(const checkbox of form.querySelectorAll('[name=platform]'))checkbox.disabled=true;
  async function verifyConnections(){
@@ -22,9 +23,9 @@
  window.addEventListener('focus',()=>{if(busy)return;plan=null;validity();verifyConnections();});
  window.addEventListener('zar-accounts-changed',()=>{plan=null;validity();verifyConnections();});
  function options(){return {platforms:[...form.querySelectorAll('[name=platform]:checked')].map(x=>x.value),title:form.elements.title.value,caption:form.elements.caption.value,youtube_privacy:form.elements.youtube_privacy.value,tiktok_privacy:form.elements.tiktok_privacy.value};}
- function validity(){confirm.disabled=busy||!plan?.ready_to_publish||!options().platforms.length||!form.elements.rights.checked;}
+ function validity(){confirm.disabled=busy||!plan?.ready_to_publish||!options().platforms.length||!form.elements.rights.checked||Boolean(project?.required_approval_phrase&&form.elements.approval_phrase.value!==project.required_approval_phrase);}
  function error(e){feedback.textContent=reason(e.message);const detail=root.querySelector('[data-social-diagnostic]');detail.hidden=false;detail.querySelector('p').textContent=e.message;}
- form.oninput=form.onchange=e=>{if(e.target.name!=='rights')plan=null;validity();};
+ form.oninput=form.onchange=e=>{if(!['rights','approval_phrase'].includes(e.target.name))plan=null;validity();};
  root.querySelector('[data-social-prepare]').onclick=async e=>{
   if(busy)return;busy=true;e.target.disabled=true;validity();feedback.textContent='Comprobando accesos, cuenta y privacidad. No se sube ningún vídeo.';
   try{
@@ -39,11 +40,12 @@
   e.preventDefault();if(busy||!plan?.ready_to_publish||!form.elements.rights.checked)return;
   busy=true;validity();
   if(!window.confirm('Publicar '+form.elements.title.value+' en: '+plan.options.platforms.map(p=>names[p]).join(', ')+'?')){busy=false;validity();return;}
-  try{await videoPost('/api/video-projects/'+videoId+'/social/confirm',{approval_request:plan.approval_request,options:options(),confirmed:true,rights_confirmed:true});plan=null;feedback.textContent='Confirmación guardada. Los envíos se procesan por separado; recibirás el resultado en la campana.';await refresh();}catch(x){error(x);}finally{busy=false;validity();}
+  try{await videoPost('/api/video-projects/'+videoId+'/social/confirm',{approval_request:plan.approval_request,approval_phrase:form.elements.approval_phrase.value,options:options(),confirmed:true,rights_confirmed:true});plan=null;feedback.textContent='Confirmación guardada. Los envíos se procesan por separado; recibirás el resultado en la campana.';await refresh();}catch(x){error(x);}finally{busy=false;validity();}
  };
  async function refresh(){
   try{const r=await fetch('/api/video-projects'),j=await r.json();if(!r.ok||!j.ok)return;const next=j.projects.find(p=>p.id===videoId);if(!next)return;
    if(!project){form.elements.title.value=(next.title||next.project?.title||'Vídeo ZAR').slice(0,100);form.elements.caption.value='';}project=next;
+   phrase.hidden=!project.required_approval_phrase;form.elements.approval_phrase.placeholder=project.required_approval_phrase||'';validity();
    root.querySelector('[data-social-results]').innerHTML=Object.entries(project.publication||{}).map(([platform,p])=>'<article class="tvCard"><h4>'+esc(names[platform])+'</h4><p>'+esc(states[p.status]||p.status)+'</p>'+(p.url&&/^https:\/\/(www\.)?(youtube\.com|instagram\.com|tiktok\.com)\//.test(p.url)?'<a href="'+esc(p.url)+'" target="_blank" rel="noopener">Ver en la red</a>':'')+(p.external_id?'<p>Referencia: '+esc(p.external_id)+'</p>':'')+(p.error?'<details><summary>Ver detalle</summary><p>'+esc(p.error)+'</p></details>':'')+'</article>').join('')||'<p>No hay envíos confirmados para este proyecto.</p>';
   }catch{}
  }

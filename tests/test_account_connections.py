@@ -77,6 +77,24 @@ def test_registry_get_has_no_network_and_no_false_connected(isolated):
     assert 'expired-legacy-fixture' not in json.dumps(data)
 
 
+def test_tiktok_existing_app_access_is_an_exact_human_action_not_fake_ready(isolated):
+    from app.account_connections import social
+    data=holdings.read('owner');data['tiktok_setup_observation']={'existing_app_access_required':True,'organization':'ZAR'};holdings.write('owner',data)
+    with patch('app.text_video_social._provider_connections',return_value={'tiktok':{'connected':False,'ready':False,'status':'DISCONNECTED'}}):
+        result=social('owner','tiktok')
+    assert result['status']=='PERMISSION_REQUIRED' and result['ready'] is False
+    assert result['blocker']=='TIKTOK_EXISTING_APP_ACCESS_REQUIRED'
+    assert 'No crees otra app' in result['human_action']
+
+
+def test_social_ready_notification_is_deduplicated_in_existing_bell(isolated):
+    registry=AccountConnectionRegistry('owner')
+    registry.notification('youtube',{'status':'UPLOAD_READY','ready':True})
+    registry.notification('youtube',{'status':'UPLOAD_READY','ready':True})
+    rows=holdings.read('owner')['identity_center']['human_actions']
+    assert len(rows)==1 and rows[0]['type']=='SOCIAL_ACCOUNT_READY' and rows[0]['status']=='DONE'
+
+
 def test_notifications_deduplicate_and_resolve(isolated):
     registry=AccountConnectionRegistry('owner')
     registry.providers=[Provider('instagram','Instagram','SOCIAL','I',('ReposNews',),lambda scope:{'status':'REAUTH_REQUIRED','human_action':'Reconecta Instagram.'})]

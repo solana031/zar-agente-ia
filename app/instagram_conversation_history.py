@@ -1,0 +1,233 @@
+"""Official, sender-scoped conversation reconciliation into the existing Reel pipeline.
+
+Stores only Reel evidence/metadata. Pagination URLs are never followed with credentials;
+only cursors are carried onto fixed Instagram Graph endpoints. No publishing operations.
+"""
+import hashlib
+import re
+import time
+from urllib.parse import urlsplit,parse_qs
+import requests
+from . import holdings,reposnews as rn
+from .instagram_local_queue import reel_url,same_reel
+
+BASE='https://graph.instagram.com/v26.0/'
+DAY=86400
+
+
+def _owned(scope):
+    data=rn.read()
+    if data.get('owner')!=scope:raise ValueError('OWNER_REQUIRED')
+    return data
+
+
+def _read(path,token,params):
+    if not re.fullmatch(r'[A-Za-z0-9_.:-]+(?:/(?:conversations|messages|shares))?',path):raise ValueError('INVALID_GRAPH_PATH')
+    r=requests.get(BASE+path,params=params,headers={'Authorization':'Bearer '+token},timeout=25,allow_redirects=False)
+    if not r.ok:
+        if r.status_code in (429,500,502,503,504):raise ValueError('META_HISTORY_RETRYABLE_HTTP_'+str(r.status_code))
+        raise ValueError('META_HISTORY_HTTP_'+str(r.status_code))
+    b=r.json()
+    if not isinstance(b,dict) or not isinstance(b.get('data'),list):raise ValueError('META_HISTORY_INVALID_RESPONSE')
+    return b
+
+
+def _after(body):
+    paging=body.get('paging') or {}
+    if not paging.get('next'):return None
+    # Only the opaque cursor is reused; ignore any host, token or other next params.
+    cursor=(paging.get('cursors') or {}).get('after')
+    if not cursor:
+        u=urlsplit(paging['next'])
+        if u.scheme!='https' or u.hostname!='graph.instagram.com':raise ValueError('META_HISTORY_UNSAFE_PAGINATION')
+        cursor=parse_qs(u.query).get('after',[None])[0]
+    if not isinstance(cursor,str) or not cursor or len(cursor)>4096:raise ValueError('META_HISTORY_CURSOR_MISSING')
+    return cursor
+
+
+def _pages(path,token,params,after=None):
+    seen=set()
+    while True:
+        if after in seen:raise ValueError('META_HISTORY_PAGINATION_STALLED')
+        seen.add(after)
+        body=_read(path,token,dict(params,**({'after':after} if after else {})))
+        after=_after(body)
+        yield body['data'],after
+        if after is None:return
+
+
+def _reels(message,token):
+    from .reposnews_history import links
+    found=set(links(message.get('message','')))
+    shared=message.get('shares') or {}
+    if isinstance(shared,dict):
+        found.update(links(shared.get('data',[])))
+        after=_after(shared)
+        if after:
+            for rows,_ in _pages(message['id']+'/shares',token,{'fields':'link','limit':100},after):found.update(links(rows))
+    # Some official message attachments contain a permalink rather than a share edge.
+    found.update(links(message.get('attachments',{})))
+    return sorted(found)
+
+
+def _ingest(scope,cid,message,urls):
+    from .reposnews_inbox import sender_ids,safe_caption
+    sender=str((message.get('from') or {}).get('id') or '')
+    if sender not in sender_ids():return
+    mid=str(message.get('id') or '')
+    if not mid:return
+    with holdings.transaction('reposnews-editorial'):
+        data=_owned(scope);rows=data.setdefault('instagram_inbox',[])
+        index=data.setdefault('instagram_conversation_reel_index',[])
+        for url in urls:
+            url=reel_url(url);key=hashlib.sha256((mid+'|'+url).encode()).hexdigest()[:24]
+            if any(x['id']==key for x in index):continue
+            existing=next((x for x in rows if same_reel(x.get('source_url'),url)),None)
+            known=existing is not None and not existing.get('conversation_discovered')
+            if existing:
+                existing['external_ids']=list(dict.fromkeys(existing.get('external_ids',[existing['external_id']])+[mid]))
+            else:
+                item=hashlib.sha256(('conversation:'+url).encode()).hexdigest()[:24]
+                existing={'id':item,'external_id':mid,'external_ids':[mid],'sender':sender,'source_url':url,
+                          'received_at':holdings._now(),'meta_timestamp':message.get('created_time'),'caption':safe_caption(message.get('message',''))[:1500],
+                          'status':'RECEIVED','processing_state':'RECEIVED','attempts':0,'attempt_limit':8,
+                          'backfill':True,'discovery_only':True,'access_level':'OFFICIAL_SHARE_PERMALINK',
+                          'conversation_id':cid,'conversation_discovered':True,'discovery_metadata':{'source':'OFFICIAL_MESSAGES_API'}}
+                rows.append(existing)
+                # Direct CDN media, when supplied by Meta, goes through the existing
+                # encrypted transient inbox before any dedicated-browser fallback.
+                attachments=message.get('attachments',{})
+                private=[]
+                for attachment in attachments.get('data',[]) if isinstance(attachments,dict) else []:
+                    video=attachment.get('video_data') or {}
+                    url_value=video.get('url')
+                    if isinstance(url_value,str) and url_value.startswith('https://'):private.append({'type':'video','url':url_value})
+                if private:
+                    import json
+                    from . import oauth_vault
+                    oauth_vault.persist(rn._path().parent/'inbound'/item,json.dumps(private),rn._path().parent)
+                    existing['official_media_available']=True
+            index.append({'id':key,'external_message_id':mid,'timestamp':message.get('created_time'),
+                          'permalink':url,'media_id':None,'sender':sender,'conversation_id':cid,
+                          'processing_status':existing.get('status'),'article_id':existing.get('linked_article_id') or existing.get('article_id'),
+                          'source_entity_id':None,'inbox_item_id':existing['id'],'previously_known':known,'last_checked':holdings._now()})
+        rn.write(data)
+
+
+def refresh(data):
+    """Project existing pipeline results into the conversation index; no reprocessing."""
+    from .reposnews_revisions import identity
+    rows={r['id']:r for r in data.get('instagram_inbox',[])}
+    articles={a['id']:a for a in data.get('articles',[])}
+    for entry in data.get('instagram_conversation_reel_index',[]):
+        row=rows.get(entry.get('inbox_item_id'),{})
+        entry.update(processing_status=row.get('status','SOURCE_UNAVAILABLE'),article_id=row.get('linked_article_id') or row.get('article_id'),last_checked=holdings._now())
+        entry['source_availability']='SOURCE_UNAVAILABLE' if row.get('local_result')=='CONTENT_UNAVAILABLE' or row.get('error') in {'SOURCE_HTTP_404','SOURCE_HTTP_410'} else 'AVAILABLE_OR_UNVERIFIED'
+        entry['retry_exhausted']=row.get('status')=='FAILED_RETRYABLE' and row.get('attempts',0)>=row.get('attempt_limit',8)
+        article=articles.get(entry['article_id'])
+        if article:entry['source_entity_id']=identity(article)['entity_id']
+
+
+def summary(data):
+    entries=data.get('instagram_conversation_reel_index',[])
+    # Counts represent distinct Reels/jobs, while all message associations are retained.
+    unique={e['permalink']:e for e in entries}.values()
+    terminal={'READY_PRIVATE','ARTICLE_UPDATE_DRAFT','NO_CHANGE','PUBLISHED','NEEDS_DISAMBIGUATION','FAILED_PERMANENT','FAILED_SOURCE','SOURCE_UNAVAILABLE','CANCELLED','DISCARDED'}
+    counts={'reels_found':0,'previously_known':0,'newly_discovered':0,'processed':0,'pending':0,'new_drafts':0,'updates_proposed':0,'no_change':0,'ambiguous':0,'failed':0,'articles_matched':0}
+    known={e['permalink'] for e in entries if e.get('previously_known')}
+    for e in unique:
+        counts['reels_found']+=1;counts['previously_known' if e['permalink'] in known else 'newly_discovered']+=1
+        state=e.get('processing_status');counts['processed' if state in terminal or e.get('retry_exhausted') else 'pending']+=1
+        if e.get('article_id'):counts['articles_matched']+=1
+        key={'READY_PRIVATE':'new_drafts','ARTICLE_UPDATE_DRAFT':'updates_proposed','NO_CHANGE':'no_change','NEEDS_DISAMBIGUATION':'ambiguous','FAILED_SOURCE':'failed','FAILED_PERMANENT':'failed','SOURCE_UNAVAILABLE':'failed'}.get(state)
+        if key:counts[key]+=1
+        elif e.get('retry_exhausted'):counts['failed']+=1
+    sync=data.get('instagram_conversation_sync',{})
+    return dict(counts,conversation_found=bool(sync.get('conversation_ids')),messages_scanned=sync.get('messages_scanned',0),
+                last_sync=sync.get('completed_at'),status=sync.get('status','NOT_STARTED'),error=sync.get('error'),
+                history_exhausted=sync.get('history_exhausted',False),cursor_saved=bool(sync.get('checkpoints')),
+                daily_reconciliation=True,next_sync=sync.get('next_sync'),concurrency=1)
+
+
+def sync(scope,force=False):
+    from .reposnews_inbox import credentials,sender_ids
+    now=time.time()
+    with holdings.transaction('reposnews-editorial'):
+        data=_owned(scope);state=data.setdefault('instagram_conversation_sync',{})
+        if state.get('lease_until',0)>now:return summary(data)
+        if not force and not state.get('requested') and state.get('status')!='SYNCING' and state.get('next_sync',0)>now:return summary(data)
+        state.update(status='SYNCING',started_at=holdings._now(),lease_until=now+1800,requested=False,next_sync=now+DAY,error=None)
+        rn.write(data)
+    try:
+        auth=credentials();token=auth.get('access_token')
+        senders=sender_ids()
+        if not token or not senders:raise ValueError('INSTAGRAM_AUTHORIZED_SENDER_OR_TOKEN_REQUIRED')
+        conversations=[]
+        for sender in sorted(senders):
+            # Server-side user filter; independently verify the participant identity too.
+            for rows,_ in _pages('me/conversations',token,{'platform':'instagram','user_id':sender,'fields':'id,participants,updated_time','limit':100}):
+                for c in rows:
+                    participants=(c.get('participants') or {}).get('data',[])
+                    if any(str(p.get('id'))==sender and p.get('username')=='solana031' for p in participants):conversations.append(c['id'])
+        with holdings.transaction('reposnews-editorial'):
+            data=rn.read();state=data['instagram_conversation_sync'];state['conversation_ids']=list(dict.fromkeys(conversations));rn.write(data)
+        for cid in dict.fromkeys(conversations):
+            checkpoint=rn.read()['instagram_conversation_sync'].get('checkpoints',{}).get(cid,{})
+            complete=checkpoint.get('history_exhausted',False);anchor=checkpoint.get('last_message_id') if complete else None
+            newest=checkpoint.get('last_message_id') if not complete else None
+            latest_time=checkpoint.get('last_timestamp') if not complete else None
+            after=None if complete else checkpoint.get('pagination_cursor')
+            for messages,cursor in _pages(cid+'/messages',token,{'fields':'id,created_time,from,message,attachments,shares','limit':100},after):
+                stop=False;scanned=0
+                for message in messages:
+                    scanned+=1
+                    if not newest:newest=message.get('id');latest_time=message.get('created_time')
+                    if message.get('id')==anchor:stop=True;break
+                    if str((message.get('from') or {}).get('id')) in senders:
+                        urls=_reels(message,token)
+                        if urls:_ingest(scope,cid,message,urls)
+                with holdings.transaction('reposnews-editorial'):
+                    data=rn.read();state=data['instagram_conversation_sync']
+                    state['messages_scanned']=state.get('messages_scanned',0)+scanned
+                    state.setdefault('checkpoints',{})[cid]={'last_message_id':newest or checkpoint.get('last_message_id'),'last_timestamp':latest_time or checkpoint.get('last_timestamp'),'pagination_cursor':None if stop else cursor,'history_exhausted':stop or cursor is None}
+                    state['lease_until']=time.time()+1800;rn.write(data)
+                if stop:break
+        with holdings.transaction('reposnews-editorial'):
+            data=rn.read();state=data['instagram_conversation_sync'];refresh(data)
+            state.update(status='COMPLETED',history_exhausted=bool(conversations),completed_at=holdings._now(),lease_until=0)
+            # Add newly discovered Reels to the existing sequential, durable pipeline.
+            data.setdefault('historical_backfill',{}).update(enabled=True,mode='BATCH_LIMITED',concurrency=1)
+            rn.write(data)
+        return summary(data)
+    except (ValueError,KeyError,TypeError,OSError,requests.RequestException) as exc:
+        # No exception text: provider URLs/payloads can contain credentials or private text.
+        with holdings.transaction('reposnews-editorial'):
+            code=str(exc) if isinstance(exc,ValueError) and re.fullmatch(r'[A-Z0-9_]{1,80}',str(exc)) else 'OFFICIAL_CONVERSATION_SYNC_FAILED'
+            data=rn.read();data['instagram_conversation_sync'].update(status='FAILED_RETRYABLE',error=code,lease_until=0);rn.write(data)
+        return summary(data)
+
+
+def tick():
+    data=rn.read();scope=data.get('owner')
+    if not scope:return
+    sync(scope)
+    with holdings.transaction('reposnews-editorial'):
+        data=rn.read();refresh(data);rn.write(data)
+    result=summary(data)
+    if result['status']=='COMPLETED' and not result['pending']:
+        from .notification_center import emit
+        emit(scope,'INSTAGRAM_HISTORY_SYNC','instagram-history:'+data['instagram_conversation_sync']['started_at'],
+             'Revisión histórica de Instagram completada','Reels encontrados: '+str(result['reels_found'])+'. Procesados: '+str(result['processed'])+'.',
+             '/accounts#instagram',entity_type='INSTAGRAM_HISTORY',details=result,status='DONE',priority='P2')
+
+
+def register(app,scope_fn,csrf_owner):
+    from flask import jsonify
+    @app.post('/api/reposnews/history/sync')
+    def request_sync():
+        scope=csrf_owner()
+        with holdings.transaction('reposnews-editorial'):
+            try:data=_owned(scope)
+            except ValueError:return jsonify(ok=False,error='OWNER_REQUIRED'),403
+            data.setdefault('instagram_conversation_sync',{})['requested']=True;rn.write(data)
+        return jsonify(ok=True,result=summary(data))

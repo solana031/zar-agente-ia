@@ -52,6 +52,24 @@ def test_legacy_publisher_cannot_bypass_exact_render_approval(project):
     provider.assert_not_called()
 
 
+def test_worldmonitor_requires_exact_phrase_and_keeps_one_confirmation(project):
+    record=video.view('owner',project);record['required_approval_phrase']='APRUEBO PUBLICAR WORLDMONITOR';media._save('owner',project,record)
+    with ready_connections():plan=social.prepared('owner',project,OPTIONS)
+    assert plan['pre_publish_state']=='PRE_PUBLISH_READY'
+    assert plan['required_approval_phrase']=='APRUEBO PUBLICAR WORLDMONITOR'
+    with pytest.raises(ValueError,match='EXPLICIT_PUBLICATION_PHRASE_REQUIRED'):
+        social.confirm('owner',project,{'approval_request':plan['approval_request'],'confirmed':True,'rights_confirmed':True})
+    assert not video.view('owner',project)['publication']
+
+
+def test_pre_publish_ready_for_available_networks_without_approving_blocked_destinations(project):
+    with patch.object(social,'connections',return_value={'instagram':{'status':'UPLOAD_READY','publish_capability':'AUTHORIZED_NOT_TESTED','account':'zaragente031'},'youtube':{'status':'UPLOAD_READY','ready':True,'channel':{'id':'fixture'}},'tiktok':{'status':'PERMISSION_REQUIRED','connected':False,'ready':False}}):
+        plan=social.prepared('owner',project,OPTIONS)
+    assert plan['pre_publish_state']=='PRE_PUBLISH_READY' and not plan['ready_to_publish']
+    assert set(plan['available_platforms'])=={'instagram','youtube'}
+    assert not video.view('owner',project)['publication']
+
+
 def test_dm_connection_is_not_publication_permission(project):
     with ready_connections(),patch.object(social.social,'scoped_instagram_readiness',return_value={'publish_capability':'BLOCKED','account':'fixture-ig','blocker':'MISSING_OR_UNVERIFIED_INSTAGRAM_BUSINESS_CONTENT_PUBLISH'}):
         plan=social.prepared('owner',project,OPTIONS)

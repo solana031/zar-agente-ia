@@ -21,7 +21,7 @@ def links(value):
 def index(data):
     found={}
     # Do not scan credentials, arbitrary user files or unrelated providers.
-    for source in ('instagram_inbox','articles','editorial_notifications','instagram_event_history','instagram_local_worker_history','article_revisions'):
+    for source in ('instagram_inbox','articles','editorial_notifications','instagram_event_history','instagram_local_worker_history','article_revisions','instagram_conversation_reel_index'):
         for url in links(data.get(source,[])):
             found.setdefault(url,{'id':hashlib.sha256(url.encode()).hexdigest()[:24],'permalink':url,'origins':[]})['origins'].append(source)
     old={}
@@ -146,7 +146,7 @@ def tick():
             row.update(reprocess_round=entry['reprocess_round'],reprocess_attempt_budget=3,metadata_refresh_v3=False)
             # Keep old evidence and IDs; the next local acquisition replaces analysis.
         cached_media=entry.get('reprocess_reuse_media') and row.get('local_worker_done') and row.get('visual_assets') and row.get('asset_quality_version')==2
-        if reprocess and not cached_media or not row.get('visual_assets') or row.get('asset_quality_version')!=2:
+        if (reprocess and not cached_media or not row.get('visual_assets') or row.get('asset_quality_version')!=2) and not row.get('official_media_available'):
             row.update(asset_refresh=True,local_worker_done=False,local_media_received=False,local_job=True,status='WAITING_LOCAL_WORKER',processing_state='WAITING_LOCAL_WORKER',local_lease=0)
         else:row.update(status='RECEIVED',processing_state='RECEIVED')
         entry.update(state='PROCESSING',active_item_id=row['id']);rn.write(data)

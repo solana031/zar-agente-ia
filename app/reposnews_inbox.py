@@ -739,7 +739,7 @@ def process(item_id):
         from .instagram_local_queue import reel_url
         try: local_permalink=reel_url(row.get('source_url'))
         except ValueError: local_permalink=None
-        if local_permalink and not row.get('local_worker_done'):
+        if local_permalink and not row.get('local_worker_done') and not (rn._path().parent/'inbound'/item_id).exists():
             row.update(status='WAITING_LOCAL_WORKER',processing_state='WAITING_LOCAL_WORKER',local_job=True)
             rn.write(data);return
         row.update(status='ANALYZING',processing_state='ANALYZING',attempts=row.get('attempts',0)+1,run_attempts=row.get('run_attempts',0)+1,lease=time.time()+300,media_analysis='OPTIONAL');rn.write(data)
@@ -934,6 +934,8 @@ def start_worker():
         repair_known_source_failures()
         while True:
             try:
+                from .instagram_conversation_history import tick as conversation_tick
+                conversation_tick()
                 from .reposnews_history import tick
                 from .reposnews_revisions import notify_pending
                 tick();notify_pending()

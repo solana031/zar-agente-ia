@@ -62,6 +62,10 @@ def social(scope,provider):
     if provider=='tiktok':
         result['capabilities']={'publishing':'READY' if result.get('ready') else 'PERMISSION_REQUIRED'}
         if not result.get('connected'):result['human_action']='Conecta la cuenta ZAR desde la app existente de TikTok Developers. Abre el asistente para ver el paso pendiente.'
+        if not result.get('connected') and holdings.read(scope).get('tiktok_setup_observation',{}).get('existing_app_access_required') is True:
+            result.update(status='PERMISSION_REQUIRED',blocker='TIKTOK_EXISTING_APP_ACCESS_REQUIRED',
+                human_action='TikTok Developers no muestra la app existente de ZAR. Recupera su acceso o vincúlala a la organización ZAR desde la cuenta propietaria. Después autoriza @zaragente031 con video.publish y guarda la credencial en el servicio web principal. No crees otra app.')
+    if provider in {'youtube','tiktok'} and result.get('ready'):result['status']='UPLOAD_READY'
     return result
 
 
@@ -126,6 +130,9 @@ class AccountConnectionRegistry:
             if provider.id=='instagram':
                 from . import meta_provider
                 item.update(meta_provider.blocked_view(self.scope))
+                from . import reposnews as rn,instagram_conversation_history as conversation_history
+                editorial=rn.read()
+                if editorial.get('owner')==self.scope:item['reel_history']=conversation_history.summary(editorial)
             rows.append(item)
         return {'providers':rows,'summary':{'connected':sum(x['status'] in GOOD for x in rows),'attention':sum(x['status'] in ATTENTION for x in rows)}}
 
@@ -166,7 +173,7 @@ class AccountConnectionRegistry:
         if attention:
             blocked=condition=='PROVIDER_BLOCKED'
             actions=[{'label':'ABRIR META','url':'https://developers.facebook.com/apps/'},{'label':'REVERIFICAR','url':'/accounts?reverify=instagram#instagram'}] if blocked else [{'label':'RECONECTAR' if condition=='REAUTH_REQUIRED' else 'VER CUENTA','url':'/accounts#'+key}]
-            emit(self.scope,'ACCOUNT_CONNECTION',prefix+condition,'META BLOQUEA INSTAGRAM' if blocked else 'Revisar conexión · '+self.provider(key).name,item.get('human_action') or 'La cuenta requiere atención.',
+            emit(self.scope,'SOCIAL_ACCOUNT_BLOCKED' if key in {'youtube','tiktok','instagram'} else 'ACCOUNT_CONNECTION',prefix+condition,'META BLOQUEA INSTAGRAM' if blocked else 'Revisar conexión · '+self.provider(key).name,item.get('human_action') or 'La cuenta requiere atención.',
                  '/accounts#'+key,entity_id=key,entity_type='ACCOUNT',actions=actions,details={'condition':condition})
             # A later recurrence reopens the same condition, without duplicating it.
             with holdings.transaction(self.scope):
@@ -176,6 +183,9 @@ class AccountConnectionRegistry:
                         if blocked:row.update(title='META BLOQUEA INSTAGRAM',message=item.get('human_action'),reason=item.get('human_action'),actions=actions,details={'condition':condition})
                         if row.get('status')=='DONE':row.update(status='ACTION_REQUIRED',read_at=None,completed_at=None)
                 holdings.write(self.scope,data)
+        elif key in {'youtube','tiktok','instagram'} and item.get('ready'):
+            emit(self.scope,'SOCIAL_ACCOUNT_READY',prefix+'ready',self.provider(key).name+' preparada',
+                 'Identidad y permisos verificados. No se ha publicado contenido.','/accounts#'+key,entity_id=key,entity_type='ACCOUNT',status='DONE',priority='P2')
 
 
 def social_connections(scope,only=None):

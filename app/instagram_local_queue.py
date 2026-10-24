@@ -72,6 +72,8 @@ def enqueue_pending(data):
     for row in data.get('instagram_inbox', []):
         if row.get('sender') not in senders:
             continue
+        if row.get('official_media_available') and (rn._path().parent/'inbound'/row['id']).exists():
+            continue
         if row.get('local_media_received') or row.get('local_worker_done') or row.get('article_id') and not row.get('asset_refresh') or row.get('status') in {'CANCELLED','DISCARDED', 'PUBLISHED', 'READY', 'READY_PRIVATE', 'UPDATE_PROPOSAL'}:
             continue
         try:
