@@ -49,6 +49,8 @@ def modify_request(scope,payload):
             row['requested_image']={'url':image,'source':image,'permission':'USER_PROVIDED'}
         row.update(status='RECEIVED',processing_state='MODIFYING',modification_request=text,upgrade_article_id=article['id'],
             retry_after=0,attempt_limit=row.get('attempts',0)+8)
+        if re.search(r'(?:otra|nueva|regenera|cambia).{0,40}portada|(?:new|regenerate|replace).{0,40}cover',text,re.I):
+            row['replace_cover']=holdings._now()
         row['research_package']['current_draft']={k:article.get(k) for k in ('title_es','title_en','summary_es','summary_en','body_es','body_en')}
         rn.write(data)
     from .reposnews_inbox import start_worker

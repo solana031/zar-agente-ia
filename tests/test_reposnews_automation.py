@@ -8,7 +8,7 @@ from app import reposnews as rn, reposnews_inbox as inbox, reposnews_automation 
 
 def draft():
     a={'id':'example-tool','repo':'example/tool','website':'https://example.org','category':'Tools','language':'Python','license':'MIT',
-       'checked_at':'2026-10-18','state':'READY_PRIVATE','published':False,'inbox_item_id':'a'*24,
+       'image_asset':'fastapi-official.png','checked_at':'2026-10-18','state':'READY_PRIVATE','published':False,'inbox_item_id':'a'*24,
        'sources':['https://example.org','https://github.com/example/tool'], 'review_kind':'AUTOMATED_SOURCE_REVIEW'}
     for language in ('es','en'):
         a.update({'title_'+language:'Example Tool','summary_'+language:'A source-verified guide','body_'+language:'verified word '*260})

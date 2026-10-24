@@ -359,7 +359,7 @@ def operate(scope, op, payload):
             article=next((a for a in data['articles'] if a['id']==payload.get('id')),None)
             if not article: raise ValueError('Artículo no encontrado.')
             if op=='save':
-                from .reposnews_automation import revoke, complete
+                from .reposnews_automation import revoke, reviewable
                 revoke(article)
                 before=dict(article)
                 for key,limit in [('title_es',180),('title_en',180),('summary_es',500),('summary_en',500),('body_es',24000),('body_en',24000)]:
@@ -370,7 +370,7 @@ def operate(scope, op, payload):
                 if stage not in STAGES: raise ValueError('Etapa inválida.')
                 if stage in {'PUBLISHED','ARCHIVED'}: raise ValueError('Usa publicación o retirada con confirmación separada.')
                 if article.get('inbox_item_id'):
-                    stage='READY_PRIVATE' if complete(article) else 'MODIFYING'
+                    stage='READY_PRIVATE' if reviewable(article) else 'MODIFYING'
                 article['state']=stage;article['status']=stage;article['updated_at']=holdings._now()
                 article['history']=(article.get('history',[])+[{'at':article['updated_at'],'fields':[k for k in ('title_es','title_en','summary_es','summary_en','body_es','body_en','state') if before.get(k)!=article.get(k)],'reason':str(payload.get('reason') or 'Edición de borrador privado')[:500]}])[-60:]
                 article['seo']={l:{'title':article['title_'+l],'description':article['summary_'+l],'canonical':article['seo'][l]['canonical']} for l in ('es','en')}
@@ -488,9 +488,9 @@ def public_legal_profile(data):
 
 
 def media(asset):
-    if re.fullmatch(r'source-[a-f0-9]{24}\.png',asset):
+    if re.fullmatch(r'(?:source-[a-f0-9]{24}\.png|cover-[a-f0-9]{24}(?:\.png|-sm\.webp))',asset):
         data=read()
-        public=any(a.get('published') and (a.get('published_snapshot',a).get('image_asset')==asset or any(x.get('asset')==asset for x in a.get('published_snapshot',a).get('assets',[]))) for a in data.get('articles',[]))
+        public=any(a.get('published') and (a.get('published_snapshot',a).get('image_asset')==asset or a.get('published_snapshot',a).get('cover_thumb')=='/media/reposnews/'+asset or any(x.get('asset')==asset for x in a.get('published_snapshot',a).get('assets',[]))) for a in data.get('articles',[]))
         if not public:
             from .user_scope import get_current_user
             try:
@@ -499,7 +499,7 @@ def media(asset):
             except ValueError:abort(404)
         path=_path().parent/'media'/asset
         if not path.is_file():abort(404)
-        response=send_file(path,mimetype='image/png',max_age=86400)
+        response=send_file(path,mimetype='image/webp' if asset.endswith('.webp') else 'image/png',max_age=86400)
         response.headers['X-Content-Type-Options']='nosniff'
         return response
     if asset not in {'editorial.css','favicon.svg','home.png','uv.png','playwright.png','fastapi.png','uv-official.svg','fastapi-official.png','playwright-official.svg','jev-editorial.svg','automaton-editorial.svg','dramaclaw-official.png'}: abort(404)

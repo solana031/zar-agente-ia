@@ -72,7 +72,7 @@ def test_static_https_verification(artifact, monkeypatch):
 def publication(monkeypatch):
     from app import reposnews_static_publish as pipeline
     from app.reposnews_automation import revision
-    article = {'id': 'approved', 'state': 'PUBLISHED', 'published': True, 'title_es': 'Public article', 'approval_status': 'APPROVED_BY_USER'}
+    article = {'image_asset':'fastapi-official.png', 'id': 'approved', 'state': 'PUBLISHED', 'published': True, 'title_es': 'Public article', 'approval_status': 'APPROVED_BY_USER'}
     article['approval'] = {'owner': 'owner', 'revision': revision(article), 'at': '2026-10-19'}
     monkeypatch.setattr(pipeline.rn, 'read', lambda: {'owner': 'owner', 'articles': [article]})
     events = []

@@ -638,7 +638,13 @@ def store_ready(item_id,article):
     package=next((x.get('research_package',{}) for x in rn.read().get('instagram_inbox',[]) if x['id']==item_id),{})
     from .reposnews_assets import prepare
     asset_row=next(r for r in rn.read().get('instagram_inbox',[]) if r['id']==item_id)
-    prepare(asset_row,article,package)
+    from .reposnews_covers import VISUAL_FIELDS, valid as valid_cover
+    previous=next((a for a in rn.read().get('articles',[]) if a['id']==article['id']),None)
+    if previous and valid_cover(previous) and not any(asset_row.get(k) for k in ('requested_image','requested_cover','replace_cover')):
+        for key in VISUAL_FIELDS:
+            if key in previous:article[key]=previous[key]
+    if asset_row.get('replace_cover'):article['cover_request_id']=asset_row['replace_cover']
+    if not valid_cover(article):prepare(asset_row,article,package)
     current=next((r for r in rn.read().get('instagram_inbox',[]) if r['id']==item_id),{})
     if current.get('requested_image'):
         requested=current['requested_image']
@@ -653,12 +659,15 @@ def store_ready(item_id,article):
             folder=rn._path().parent/'media';folder.mkdir(parents=True,exist_ok=True)
             with Image.open(io.BytesIO(content)) as image:image.convert('RGB').save(folder/asset,format='PNG')
             article.update(image_asset=asset,image_kind='USER_SELECTED_REEL_FRAME',image_source=cover['source'],image_license='USER_APPROVED',cover_url=cover['url'])
+    from .reposnews_covers import ensure as ensure_cover
+    ensure_cover(article,current,package)
     update(item_id,status='SEO',processing_state='SEO')
     with holdings.transaction('reposnews-editorial'):
         data=rn.read();row=next(x for x in data['instagram_inbox'] if x['id']==item_id)
         if row.get('status') in {'DISCARDED','CANCELLED'}:return
         existing=next((x for x in data['articles'] if x['id']==article['id']),None)
-        article.update(inbox_item_id=item_id,state='READY_PRIVATE',status='READY_PRIVATE',approval_status='PENDING')
+        ready='READY_PRIVATE' if article.get('cover_status') in {'READY','COVER_GENERATION_FAILED'} else 'DRAFT'
+        article.update(inbox_item_id=item_id,state=ready,status=ready,approval_status='PENDING')
         if row.get('requested_cover'):
             selected=dict(row['requested_cover'],asset=article.get('image_asset'),url='/media/reposnews/'+article.get('image_asset','home.png'),role='HERO_FRAME')
             article['assets']=[a for a in article['assets'] if a.get('asset')!=selected.get('asset')]+[selected]
@@ -672,11 +681,12 @@ def store_ready(item_id,article):
             history=list(existing.get('history',[]));existing.update(article);existing['history']=history+[{'at':holdings._now(),'fields':['body_es','body_en'],'reason':'Artículo completo generado automáticamente desde fuentes oficiales'}]
         elif existing.get('published'):
             row.update(status='UPDATE_PROPOSAL',article_id=existing['id']);rn.write(data);return
-        row.update(status='READY_PRIVATE',processing_state='READY_PRIVATE',
+        row.update(status='READY_PRIVATE' if ready=='READY_PRIVATE' else 'COVER_PENDING',processing_state=ready,
                    article_id=article['id'],updated_at=holdings._now(),error='',error_diagnostic={})
         row.pop('modification_request',None)
+        row.pop('replace_cover',None)
         rn.write(data)
-    automation.notify(item_id)
+    if ready=='READY_PRIVATE':automation.notify(item_id)
 
 
 def service_source_note(package,discovery):
@@ -939,6 +949,8 @@ def start_worker():
                 from .reposnews_history import tick
                 from .reposnews_revisions import notify_pending
                 tick();notify_pending()
+                from .reposnews_covers import tick as cover_tick
+                cover_tick()
                 for item in rn.read().get('instagram_inbox',[]):
                     if item.get('status') in {'RECEIVED','FAILED_RETRYABLE'} and item.get('retry_after',0)<=time.time():process(item['id'])
                     elif not item.get('local_job') and item.get('status') in {'FETCHING','ANALYZING','FETCHING_MEDIA','BROWSING','TRANSCRIBING','VISION_ANALYSIS','IDENTIFYING','RESEARCHING','DRAFTING_ES','DRAFTING_EN','DRAFTING','IMAGES','ASSETS','SEO'} and item.get('lease',0)<time.time():

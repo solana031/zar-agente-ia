@@ -56,7 +56,7 @@ async def check():
                             await page.locator('.card img').evaluate_all("els=>Promise.all(els.map(i=>i.decode()))")
                             frames = await page.locator('.card-visual').evaluate_all("els=>els.map(e=>({w:e.clientWidth,h:e.clientHeight}))")
                             assert len(frames) == len(articles)
-                            assert all(abs(f['w']/f['h']-1.6)<.03 for f in frames), frames
+                            assert all(abs(f['w']/f['h']-16/9)<.03 for f in frames), frames
                             for image in await page.locator('.card img').all():
                                 assert await image.evaluate('i=>i.naturalWidth>0 && !!i.alt')
                             first = page.locator('.card h2 a').first

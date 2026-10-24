@@ -10,7 +10,7 @@ from app import reposnews as rn,reposnews_assets as assets,reposnews_history as 
 
 def article():
     return rn.article_defaults({'id':'example-tool','repo':'Example/Tool','repository_url':'https://github.com/Example/Tool','website':'https://example.org','category':'Tools','language':'Python','license':'MIT',
-        'checked_at':'2026-10-18','state':'READY_PRIVATE','published':False,'sources':['https://example.org','https://github.com/example/tool'],
+        'image_asset':'fastapi-official.png','checked_at':'2026-10-18','state':'READY_PRIVATE','published':False,'sources':['https://example.org','https://github.com/example/tool'],
         'review_kind':'AUTOMATED_SOURCE_REVIEW','title_es':'Ejemplo','title_en':'Example','summary_es':'Guía','summary_en':'Guide',
         'body_es':'hecho verificado '*300,'body_en':'verified fact '*300,'discovery_source':'https://www.instagram.com/reel/Original/','source_reels':['https://www.instagram.com/reel/Original/']})
 
@@ -49,7 +49,7 @@ def test_frames_deduplicate_and_keep_provenance(context):
 def test_failed_asset_attempts_are_honestly_limited(context):
     a,row=context
     with patch('app.reposnews_discovery.official_image',return_value={}):assets.prepare(row,a,{})
-    assert a['asset_status']=='ASSETS_LIMITED';assert a['asset_attempts'];assert a['assets'][-1]['kind']=='EDITORIAL_COVER'
+    assert a['asset_status']=='ASSETS_LIMITED';assert a['asset_attempts'];assert not any(x.get('asset')=='home.png' for x in a['assets'])
 
 
 def test_historical_index_unifies_permalinks_not_titles(context):

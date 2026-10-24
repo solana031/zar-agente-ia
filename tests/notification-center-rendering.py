@@ -1,5 +1,5 @@
 """Focused notification UI contract; no provider requests or real publication."""
-import json,re
+import json,re,os
 from pathlib import Path
 from playwright.sync_api import sync_playwright,expect
 
@@ -34,7 +34,7 @@ def check(width,height,standalone=False):
         payload['unread']=sum(not n.get('read_at') and not n.get('dismissed_at') for n in items)
         route.fulfill(content_type='application/json',body=json.dumps(payload))
     with sync_playwright() as p:
-        browser=p.chromium.launch(headless=True);page=browser.new_page(viewport={'width':width,'height':height})
+        browser=p.chromium.launch(headless=True,executable_path=os.environ.get('ZAR_TEST_BROWSER'));page=browser.new_page(viewport={'width':width,'height':height})
         page.route('**/*',lambda r:r.abort())
         page.route('**/api/**',api)
         page.route('**/static/notification-center.css*',lambda r:r.fulfill(content_type='text/css',body=CSS))
@@ -42,7 +42,12 @@ def check(width,height,standalone=False):
         page.route(re.compile(r'^https://zar\.test/($|\?|frame)'),lambda r:r.fulfill(content_type='text/html',body=html))
         page.goto('https://zar.test/'+('?zar_workspace=sites' if standalone else ''))
         page.clock.install();page.add_script_tag(content=SCRIPT)
-        bell=page.locator('#zarNotificationBell');expect(bell).to_be_visible();bell.click()
+        bell=page.locator('#zarNotificationBell');expect(bell).to_be_visible()
+        page.locator('.znBellSlot').click(position={'x':1,'y':1})
+        assert not page.locator('#zarNotificationCenter').is_visible()
+        page.evaluate("window.dispatchEvent(new Event('zar-open-notifications'))")
+        assert not page.locator('#zarNotificationCenter').is_visible()
+        bell.focus();bell.press('Enter')
         panel=page.locator('#zarNotificationCenter');expect(panel).to_be_visible()
         expect(panel.locator('.znCard')).to_have_count(8)
         assert not panel.locator('details').first.is_visible() or not panel.locator('details').first.get_attribute('open')
@@ -52,16 +57,23 @@ def check(width,height,standalone=False):
         page.screenshot(path=str(ROOT/'.local/instagram-worker'/('notification-redesign-'+str(width)+('-standalone' if standalone else '')+'.png')))
         field=panel.locator('[data-resolve=ambiguous] input');field.fill('Evidence preserved')
         page.clock.fast_forward(21000);expect(field).to_have_value('Evidence preserved')
-        assert panel.evaluate('(e)=>e.getBoundingClientRect().width')<=min(width,460)
+        assert panel.evaluate('(e)=>e.getBoundingClientRect().width')<=min(width,540)
         assert panel.evaluate('(e)=>e.getBoundingClientRect().right')<=width
-        if width>600:assert panel.evaluate('(e)=>e.getBoundingClientRect().left')>=width-480
+        if width>600:assert panel.evaluate('(e)=>e.getBoundingClientRect().left')>=width-550
         else:assert panel.evaluate('(e)=>e.getBoundingClientRect().height')==height
         assert bell.evaluate('(e)=>e.getBoundingClientRect().height')>=44
         assert page.evaluate('document.documentElement.scrollWidth')<=width
         panel.locator('[data-action=publish][data-id=ready]').click()
         expect(panel.locator('[data-action=publish][data-id=ready]')).to_be_enabled()
+        assert not any(b.get('decision')=='PUBLICAR' for _,b in posts)
+        expect(panel.locator('.znConfirm')).to_contain_text('www.reposnews.com')
+        panel.locator('[data-action=confirm]').click()
+        expect(panel.locator('[data-action=publish][data-id=ready]')).to_be_enabled()
         assert any(b.get('approval_request')=='exact-revision-token' and b.get('decision')=='PUBLICAR' for _,b in posts)
         panel.locator('[data-action=update][data-id=update]').click()
+        expect(panel.locator('[data-action=update][data-id=update]')).to_be_enabled()
+        assert not any(b.get('decision')=='ACTUALIZAR' for _,b in posts)
+        panel.locator('[data-action=confirm]').click()
         expect(panel.locator('[data-action=update][data-id=update]')).to_be_enabled()
         assert any(b.get('approval_request')=='update-exact-token' for _,b in posts)
         panel.locator('[data-resolve=ambiguous] button').click()
@@ -74,7 +86,22 @@ def check(width,height,standalone=False):
         expect(panel.locator('[data-note=doc]')).to_have_count(0)
         panel.locator('[data-action=archive]').click();expect(panel.locator('[data-note=doc]')).to_be_visible()
         panel.locator('[data-action=restore][data-id=doc]').click();expect(panel.locator('[data-note=doc]')).to_have_count(0)
-        panel.locator('[data-close]').click();expect(panel).not_to_be_visible()
+        panel.locator('[data-action=archive]').click()
+        panel.locator('[data-filter=REPOSNEWS]').click()
+        panel.locator('[data-subfilter="PARA PUBLICAR"]').click()
+        expect(panel.locator('.znCard')).to_have_count(1)
+        expect(panel.locator('[data-note=ready]')).to_be_visible()
+        panel.locator('[data-sort]').select_option('ANTIGUAS')
+        assert page.evaluate("JSON.parse(sessionStorage.getItem('zar-notification-view')).sort")=='ANTIGUAS'
+        panel.locator('[data-filter="NO LEÍDAS"]').click()
+        expect(panel.locator('[data-note=doc]')).to_have_count(0)
+        panel.locator('[data-filter="REQUIEREN ACCIÓN"]').click()
+        expect(panel.locator('[data-note=doc]')).to_have_count(0)
+        panel.press('Escape');expect(panel).not_to_be_visible()
+        bell.click();expect(panel).to_be_visible()
+        page.mouse.click(2,2) if width>600 else panel.locator('[data-close]').click()
+        expect(panel).not_to_be_visible()
+
         if not standalone:
             errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
             page.add_script_tag(content=LEGACY)

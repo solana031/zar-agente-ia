@@ -111,7 +111,7 @@ def prepare(row,article,package):
             assets=[x for x in assets if x.get('kind') not in {'OFFICIAL_IMAGE','REEL_THUMBNAIL'}]
             for field in ('image_asset','cover_url'):article.pop(field,None)
     real=any(x.get('asset') for x in assets)
-    if not real:assets.append({'kind':'EDITORIAL_COVER','asset':'home.png','url':'/media/reposnews/home.png','permission':'OWNED',**provenance('EDITORIAL_COVER','ReposNews')})
+    # Missing visuals are explicit; reposnews_covers resolves a subject-specific fallback.
     if chosen and not visual:visual={'shows_es':'Fotogramas seleccionados del vídeo accesible como evidencia visual para revisar junto a las fuentes oficiales.','shows_en':'Selected frames from the accessible video, provided as visual evidence to review alongside official sources.'}
     article.update(assets=assets,asset_status='ASSETS_READY' if real else 'ASSETS_LIMITED',asset_attempts=attempts or [{'source_type':'REEL_FRAME','valid':False,'reason':'NO_ACCESSIBLE_FRAMES'}],
                    contextual_asset_status='READY' if len(chosen)>1 else 'LIMITED',reel_content=visual,source_reels=list(dict.fromkeys(article.get('source_reels',[])+[row['source_url']])))

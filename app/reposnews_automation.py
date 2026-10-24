@@ -31,12 +31,20 @@ def complete(article):
         and len(article.get('sources') or [])>=2)
 
 
+def reviewable(article):
+    from .reposnews_covers import valid
+    return bool(complete(article) and all(article.get('seo',{}).get(lang,{}).get('canonical') for lang in ('es','en'))
+                and (valid(article) or article.get('cover_status')=='COVER_GENERATION_FAILED'))
+
+
 def gate(article,scope):
     approval=article.get('approval') or {}
     if (article.get('approval_status')!='APPROVED_BY_USER' or approval.get('owner')!=scope
             or approval.get('revision')!=revision(article) or not approval.get('at')):
         raise ValueError('EXPLICIT_USER_APPROVAL_REQUIRED')
     if article.get('state')=='CANCELLED':raise ValueError('ARTICLE_CANCELLED')
+    from .reposnews_covers import valid as valid_cover
+    if not valid_cover(article):raise ValueError('VALID_ARTICLE_COVER_REQUIRED')
 
 
 def revoke(article):
@@ -46,7 +54,7 @@ def revoke(article):
 def decorate(scope,data):
     # Tokens authorize a specific authenticated UI decision, not worker preparation.
     for article in data.get('articles',[]):
-        if not article.get('published') and article.get('state') in {'READY',READY,'AWAITING_APPROVAL'}:
+        if not article.get('published') and article.get('state') in {'READY',READY,'AWAITING_APPROVAL'} and reviewable(article):
             article['approval_request']=request_token(scope,article)
     return data
 
@@ -59,14 +67,14 @@ def notify(item_id,kind='READY_PRIVATE'):
         # and update drafts need individual decisions in the existing bell.
         if row.get('backfill') and kind!=READY:return
         article=next((a for a in data.get('articles',[]) if a['id']==row.get('article_id')),None)
-        if kind==READY and (not article or not complete(article)):return
+        if kind==READY and (not article or not reviewable(article)):return
         if kind!=READY:article=None
         scope=data['owner'];key='article:'+article['id'] if article else 'reel:'+item_id
         name=article.get('title_es') if article else 'Proyecto sin identificar'
         notification={'key':key,'kind':kind,'inbox_item_id':item_id,'article_id':article['id'] if article else None,
             'project':article.get('repo') if article else None,'title':'Artículo listo: '+name if article else 'No he podido identificar con seguridad el proyecto del Reel.',
             'message':'He analizado el Reel y preparado el artículo completo ES/EN. ¿Quieres publicarlo, modificarlo o cancelarlo?' if article else 'Indica solo el nombre de la herramienta o proyecto. No hace falta reenviar el Reel.',
-            'reel':row.get('source_url'),'image':'/media/reposnews/'+(article.get('image_asset') or 'home.png') if article else None,
+            'reel':row.get('source_url'),'image':article.get('cover_thumb') or article.get('cover_url') or ('/media/reposnews/'+article['image_asset'] if article.get('image_asset') else None) if article else None,
             'preview_es':'/reposnews-preview/es/'+article['id'] if article else None,'preview_en':'/reposnews-preview/en/'+article['id'] if article else None,
             'sources':article.get('sources',[]) if article else [],'seo':article.get('seo',{}) if article else {},
             'status':'AWAITING_APPROVAL' if article else 'NEEDS_DISAMBIGUATION','created_at':holdings._now(),'reprocess_round':row.get('reprocess_round')}
@@ -111,6 +119,8 @@ def publish_article(data,article,scope):
     if holdings.read(scope).get('global_stop'):raise ValueError('STOP GLOBAL activo.')
     if rn.legal_status(data)['status']!='LEGAL_READY':raise ValueError('Revisión legal pendiente.')
     if article.get('state') not in {'READY',READY,'AWAITING_APPROVAL'} or not complete(article):raise ValueError('COMPLETE_BILINGUAL_DRAFT_REQUIRED')
+    from .reposnews_covers import valid as valid_cover
+    if not valid_cover(article):raise ValueError('VALID_ARTICLE_COVER_REQUIRED')
     from . import jev_decision
     proposal=jev_decision.proposal(scope,{'source_agent':'ReposNewsPublicationAction','task':'Publicación aprobada por el titular','action':'publish article','resources':[rn.ORIGIN],'expected_cost':0,'risk':.3,'urgency':.5})
     if proposal['decision']=='REJECT':raise ValueError('JEV rechazó publicación.')

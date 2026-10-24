@@ -7,3 +7,6 @@
 .card-visual{display:grid;place-items:center;aspect-ratio:16/10;overflow:hidden;position:relative;margin:12px 12px 0;border-radius:12px;background:radial-gradient(ellipse at 50% 30%,#fff 0%,#eef3e8 65%,#e1e9db 100%);border:1px solid #dce6d7}.card .card-visual .official-cover{width:100%;height:100%;min-height:0;aspect-ratio:auto;object-fit:contain;padding:28px;background:transparent;transition:transform .25s ease}.card-visual-source{background:#132a24}.card .card-visual-source .official-cover{padding:0;object-fit:contain}.card-visual:hover img{transform:scale(1.035)}
 @media(max-width:600px){.article.info-page{padding:24px 20px;margin:14px auto}.info-page>h1{font-size:34px}.info-page .lead{font-size:18px}.cookie-details{padding:6px 16px}.cookie-details>div{grid-template-columns:1fr;gap:3px}.card-visual{aspect-ratio:16/10}}
 @media(prefers-reduced-motion:reduce){.card,.card .card-visual img{transition:none}.card:hover,.card-visual:hover img{transform:none}}
+
+/* Canonical cover crop; the pipeline fits logos on a 16:9 canvas. */
+.card-visual{aspect-ratio:16/9}.card .card-visual .official-cover,.card .card-visual-source .official-cover{object-fit:cover;padding:0}.article .article-cover.official-cover{aspect-ratio:16/9;object-fit:cover;padding:0}

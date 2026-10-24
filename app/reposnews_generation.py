@@ -15,6 +15,33 @@ def parse(text):
     return result
 
 
+def generate_article_cover(article, context):
+    """Use ZAR's economical image route; credentials and private inputs stay server-side."""
+    import base64
+    from . import web_search, model_router
+    if not os.environ.get('GEMINI_API_KEY'):
+        from .config import load
+        if urlsplit(load().get('api',{}).get('base_url','')).hostname!='generativelanguage.googleapis.com':
+            raise ValueError('COVER_PROVIDER_NOT_CONFIGURED')
+    key=web_search._gemini_key()
+    if not key:raise ValueError('COVER_PROVIDER_NOT_CONFIGURED')
+    model=model_router.model_for('image')
+    if not re.fullmatch(r'[a-zA-Z0-9._-]+',model):raise ValueError('COVER_MODEL_INVALID')
+    response=requests.post('https://generativelanguage.googleapis.com/v1beta/models/'+model+':generateContent',
+        headers={'x-goog-api-key':key},json={'contents':[{'parts':[{'text':context['prompt']}]}],
+        'generationConfig':{'responseModalities':['TEXT','IMAGE'],'imageConfig':{'aspectRatio':'16:9','imageSize':'1K'}}},
+        timeout=(5,120),allow_redirects=False)
+    if not response.ok:raise ValueError('COVER_PROVIDER_'+str(response.status_code))
+    for candidate in response.json().get('candidates',[]):
+        for part in candidate.get('content',{}).get('parts',[]):
+            inline=part.get('inlineData') or {}
+            if not part.get('thought') and inline.get('mimeType') in {'image/png','image/jpeg','image/webp'}:
+                raw=inline.get('data','')
+                if len(raw)>16000000:raise ValueError('COVER_RESPONSE_TOO_LARGE')
+                return base64.b64decode(raw,validate=True),'Gemini/'+model
+    raise ValueError('COVER_PROVIDER_NO_IMAGE')
+
+
 def generate_json(prompt,parts=None):
     from . import web_search, model_router
     from .config import load
