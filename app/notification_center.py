@@ -54,7 +54,7 @@ def clean(value,depth=0):
     """Bounded diagnostic view; never expose credentials or raw provider traces."""
     if depth>4:return None
     if isinstance(value,dict):return {k:clean(v,depth+1) for k,v in list(value.items())[:20] if not re.search(r'token|secret|password|credential|headers|stack|trace|authorization',k,re.I)}
-    if isinstance(value,list):return [clean(v,depth+1) for v in value[:15]]
+    if isinstance(value,list):return [clean(v,depth+1) for v in value[:50 if depth<0 else 15]]
     if isinstance(value,str):
         value=re.sub(r'https?://\S+[?]\S+','[enlace omitido]',value)
         return re.sub(r'(?i)(?:bearer\s+\S+|(?:sk-|AIza|ghp_|github_pat_|IGQ)[\w-]{8,}|(?:token|password|secret|api[_ -]?key)\s*[:=]\s*\S+)','[oculto]',value)[:1200]
@@ -152,7 +152,7 @@ def view(scope):
                     item['article'].pop('approval_request',None)
             item['category']=category(item)
             item['requires_action']=bool(not item['completed'] and not item.get('processing') and (item.get('status') in {'ACTION_REQUIRED','AWAITING_APPROVAL','NEEDS_DISAMBIGUATION','FAILED_RETRYABLE','FAILED_PERMANENT','HUMAN_ACTION_REQUIRED'} or item.get('type') in {'ARTICLE_READY','ARTICLE_UPDATE_READY','ARTICLE_COVER_FAILED'}))
-            item['repos_filter']='PUBLICADAS' if item.get('outcome') in {'PUBLISHED','APPLIED'} else 'CANCELADAS' if item.get('outcome') in {'CANCELLED','IGNORED'} else 'ERRORES' if re.search('FAILED|ERROR',item.get('type','')+' '+item.get('status','')) else 'ACTUALIZACIONES' if item.get('type')=='ARTICLE_UPDATE_READY' else 'PARA PUBLICAR' if item.get('type')=='ARTICLE_READY' and not item['completed'] and item.get('article',{}).get('approval_request') else 'NECESITAN REVISIÓN'
+            item['repos_filter']='PUBLICADAS' if item.get('outcome') in {'PUBLISHED','APPLIED'} else 'CANCELADAS' if item.get('outcome') in {'CANCELLED','IGNORED'} else 'ERRORES' if re.search('FAILED|ERROR',item.get('type','')+' '+item.get('status','')) else 'NECESITAN IDENTIFICACIÓN' if item.get('type')=='ARTICLE_IDENTIFICATION_REQUIRED' and not item['completed'] else 'ACTUALIZACIONES' if item.get('type')=='ARTICLE_UPDATE_READY' else 'PARA PUBLICAR' if item.get('type')=='ARTICLE_READY' and not item['completed'] and item.get('article',{}).get('approval_request') else 'NECESITAN REVISIÓN'
             for key in ('message','reason','title','details','editorial'):
                 if key in item:item[key]=clean(item[key],-3 if key=='details' and item.get('type')=='ARTICLE_IDENTIFICATION_REQUIRED' else 0)
             result.append(item)

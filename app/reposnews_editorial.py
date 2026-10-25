@@ -8,13 +8,13 @@ import secrets
 from . import holdings, reposnews as rn
 
 
-def keep_frames(item_id,parts,permalink,duration=0):
+def keep_frames(item_id,parts,permalink,duration=0,frame_timestamps=None):
     if not re.fullmatch(r'[a-f0-9]{24}',item_id):return []
     folder=rn._path().parent/'private-assets'/item_id
     rows=[]
     for part in parts:
         media=part.get('inlineData') or {}
-        if media.get('mimeType')!='image/jpeg' or len(rows)>=10:continue
+        if media.get('mimeType')!='image/jpeg' or len(rows)>=12:continue
         content=base64.b64decode(media['data'])
         if len(content)>1500000:continue
         asset=hashlib.sha256(content).hexdigest()[:24]+'.jpg'
@@ -22,7 +22,7 @@ def keep_frames(item_id,parts,permalink,duration=0):
         from .reposnews_assets import provenance
         rows.append({'kind':'REEL_FRAME','asset':asset,'url':'/reposnews-preview/assets/'+item_id+'/'+asset,
             'source':permalink,'permission':'REVIEW_REQUIRED','created_at':holdings._now(),
-            **provenance('REEL_FRAME',permalink,frame_timestamp=round((len(rows)+.5)*duration/8,2) if duration else None)})
+            **provenance('REEL_FRAME',permalink,frame_timestamp=frame_timestamps[len(rows)] if frame_timestamps and len(rows)<len(frame_timestamps) else round((len(rows)+.5)*duration/8,2) if duration and frame_timestamps is None else None)})
     return rows
 
 

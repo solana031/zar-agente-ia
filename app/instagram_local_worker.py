@@ -229,9 +229,14 @@ def gallery_fetch(url, directory, cookies):
 
 def analyze(path, directory):
     meta = validate_video(path)
-    frames = directory/'frame-%02d.jpg'
-    run([ffmpeg(), '-v', 'error', '-y', '-protocol_whitelist', 'file,pipe', '-i', str(path), '-vf', f'fps={8/meta["duration"]},scale=960:-2', '-frames:v', '8', str(frames)], 40)
-    images = list(directory.glob('frame-*.jpg'))[:8]
+    frames = directory/'scene-%02d.jpg'
+    run([ffmpeg(), '-v', 'error', '-y', '-protocol_whitelist', 'file,pipe', '-i', str(path), '-vf', 'select=gt(scene\\,0.12),scale=960:-2', '-vsync','vfr','-frames:v', '24', str(frames)], 40)
+    images=sorted(directory.glob('scene-*.jpg'))[:24]
+    if len(images)<8:
+        run([ffmpeg(),'-v','error','-y','-protocol_whitelist','file,pipe','-i',str(path),'-vf',f'fps={12/meta["duration"]},scale=960:-2','-frames:v','12',str(directory/'sample-%02d.jpg')],40)
+        images+=sorted(directory.glob('sample-*.jpg'))[:12]
+    from .reel_frames import informative_indices
+    images=[images[i] for i in informative_indices([p.read_bytes() for p in images],12)]
     texts = []
     try:
         import pytesseract
@@ -276,7 +281,7 @@ def analyze(path, directory):
     names = list(dict.fromkeys(n.casefold() for n in named))[:3]
     return {'transcript': transcript, 'visual_findings': text, 'links': links[:20],
         'repositories': repos, 'project_names': names,
-        'coverage': 'FULL_VIDEO_BYTES_PROVIDED', 'frame_extraction': [{'frames': len(images), 'audio': 'EXTRACTED' if audio.exists() else 'NO_AUDIO', 'duration': meta['duration']}]}
+        'coverage': 'FULL_VIDEO_BYTES_PROVIDED', 'frame_extraction': [{'frames': len(images),'selection':'SCENE_TEXT_DETAIL_NOVELTY', 'audio': 'EXTRACTED' if audio.exists() else 'NO_AUDIO', 'duration': meta['duration']}]}
 
 
 def fetch(job, directory, progress):

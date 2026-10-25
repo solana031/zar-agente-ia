@@ -37,12 +37,13 @@ def test_all_pages_and_incremental_cursor_without_private_messages_or_duplicate_
     assert 'unrelated private text' not in str(rn.read())
     with patch.object(history,'_read') as read:history.sync('owner')
     read.assert_not_called()
-    with patch.object(history,'_read',side_effect=[conversation(),page([message('new','new'),message('m0','r0'),message('older','must-not-rescan')],'unused')]) as read:
+    with patch.object(history,'_read',side_effect=[page([message('new','new'),message('m0','r0'),message('older','must-not-rescan')],'unused')]) as read:
         result=history.sync('owner',force=True)
-    assert result['reels_found']==76 and read.call_count==2
+    assert result['reels_found']==76 and read.call_count==1
+    assert read.call_args.args[0]=='conversation/messages'  # Reuse the verified conversation.
     checkpoint=rn.read()['instagram_conversation_sync']['checkpoints']['conversation']
     assert checkpoint['last_message_id']=='new' and checkpoint['history_exhausted']
-    with patch.object(history,'_read',side_effect=[conversation(),page([message('new','new')])]):history.sync('owner',force=True)
+    with patch.object(history,'_read',side_effect=[page([message('new','new')])]):history.sync('owner',force=True)
     assert rn.read()['instagram_conversation_sync']['checkpoints']['conversation']['last_message_id']=='new'
 
 def test_checkpoint_resumes_after_rate_limit_and_preserves_previous_associations(store):
@@ -51,10 +52,10 @@ def test_checkpoint_resumes_after_rate_limit_and_preserves_previous_associations
         result=history.sync('owner',force=True)
     assert result['error']=='META_HISTORY_RETRYABLE_HTTP_429'
     assert rn.read()['instagram_conversation_sync']['checkpoints']['conversation']['pagination_cursor']=='resume'
-    with patch.object(history,'_read',side_effect=[conversation(),page([message('m2','new')])]) as read:
+    with patch.object(history,'_read',side_effect=[page([message('m2','new')])]) as read:
         result=history.sync('owner',force=True)
     assert result['history_exhausted'] and result['previously_known']==1
-    assert read.call_args_list[1].args[2]['after']=='resume'
+    assert read.call_args_list[0].args[2]['after']=='resume'
     existing=next(r for r in rn.read()['instagram_inbox'] if r['id']=='existing')
     assert existing['status']=='NO_CHANGE' and existing['article_id']=='article'
 
@@ -88,7 +89,8 @@ def test_one_summary_when_existing_pipeline_finishes(store):
 def test_owner_and_cursor_guard(store):
     with pytest.raises(ValueError):history.sync('other',force=True)
     with patch.object(history,'_read',return_value=page([],'same')):
-        with pytest.raises(ValueError,match='PAGINATION_CURSOR_REPEAT'):list(history._pages('conversation/messages','fixture',{}))
+        progress={};assert len(list(history._pages('conversation/messages','fixture',{},progress=progress)))==2
+        assert progress['provider_exhausted'] and progress['pattern']=='EMPTY_PAGE_WITH_SELF_NEXT'
 
 def test_official_video_refs_precede_browser_and_are_never_stored_in_metadata(store):
     msg=message('media','video');msg['attachments']={'data':[{'video_data':{'url':'https://cdn.example.fbcdn.net/video.mp4?signature=private'}}]}
@@ -151,8 +153,8 @@ def test_primary_reels_checkpoint_before_secondary_rate_limit_and_resume_without
     with patch.object(history.time,'time',return_value=2000),patch.object(history,'_read') as read:
         history.sync('owner',force=True)
     read.assert_not_called()  # Even a manual button cannot bypass provider backoff.
-    with patch.object(history.time,'time',return_value=4601),patch.object(history,'_read',side_effect=[conversation(),page([first]),page([{'link':'https://www.instagram.com/reel/three/'}])]) as read:
+    with patch.object(history.time,'time',return_value=4601),patch.object(history,'_read',side_effect=[page([first]),page([{'link':'https://www.instagram.com/reel/three/'}])]) as read:
         result=history.sync('owner')
     assert result['history_exhausted'] and result['reels_found']==3 and result['share_pages_pending']==0
-    assert read.call_count==3 and read.call_args_list[-1].args[0]=='newest/shares'
+    assert read.call_count==2 and read.call_args_list[-1].args[0]=='newest/shares'
     assert read.call_args_list[-1].args[2]['after']=='share2'

@@ -921,6 +921,8 @@ def start_worker():
             try:
                 from .reposnews_ambiguity import tick as ambiguity_tick
                 ambiguity_tick()
+                from .reposnews_recovery import tick as recovery_tick
+                recovery_tick()
                 from .instagram_conversation_history import tick as conversation_tick
                 conversation_tick()
                 from .reposnews_history import tick

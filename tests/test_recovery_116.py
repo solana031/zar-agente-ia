@@ -86,17 +86,17 @@ def page(ids,cursor=None):return {'data':[{'id':i,'created_time':'2026-10-25T01:
 
 
 def test_repeat_saves_checkpoint_and_resumes_previous_valid_page_not_whole_history(store):
-    with patch('app.reposnews_inbox.credentials',return_value={'access_token':'fixture'}),patch('app.reposnews_inbox.sender_ids',return_value={'sender'}),patch.object(history,'_read',side_effect=[conversation(),page(['m1'],'a'),page(['m2'],'b'),page(['m3'],'b')]):
+    with patch('app.reposnews_inbox.credentials',return_value={'access_token':'fixture'}),patch('app.reposnews_inbox.sender_ids',return_value={'sender'}),patch.object(history,'_read',side_effect=[conversation(),page(['m1'],'a'),page(['m2'],'b'),page(['m3'],'b'),page(['m3'],'b')]):
         result=history.sync('owner',force=True)
     assert result['error']=='PAGINATION_CURSOR_REPEAT'
     data=rn.read();checkpoint=data['instagram_conversation_sync']['checkpoints']['c']
     assert checkpoint['pages_completed']==3 and checkpoint['messages_seen']==3
-    assert checkpoint['last_successful_cursor']=='a' and checkpoint['cursor_recovery_required']
+    assert checkpoint['last_successful_cursor']=='b' and checkpoint['cursor_recovery_required']
     assert data['instagram_conversation_sync']['page_diagnostics']['messages:c']['cursor_in']=='b'
     assert result['retry_after']>time.time()+3500
-    with patch('app.reposnews_inbox.credentials',return_value={'access_token':'fixture'}),patch('app.reposnews_inbox.sender_ids',return_value={'sender'}),patch.object(history.time,'time',return_value=time.time()+3601),patch.object(history,'_read',side_effect=[conversation(),page(['m2','m3'],'fresh'),page(['m4'])]) as read:
+    with patch('app.reposnews_inbox.credentials',return_value={'access_token':'fixture'}),patch('app.reposnews_inbox.sender_ids',return_value={'sender'}),patch.object(history.time,'time',return_value=time.time()+3601),patch.object(history,'_read',side_effect=[page(['m2','m3'],'fresh'),page(['m4'])]) as read:
         result=history.sync('owner')
-    assert result['status']=='COMPLETED' and read.call_args_list[1].args[2]['after']=='a'
+    assert result['status']=='COMPLETED' and read.call_args_list[0].args[2]['after']=='b'
     assert rn.read()['instagram_conversation_sync']['checkpoints']['c']['messages_seen']==4
 
 

@@ -165,13 +165,21 @@ class DiscoveryTest(unittest.TestCase):
         self.assertEqual(parts, []); self.assertEqual(state['frames'], 0); self.assertEqual(state['audio'], 'NATIVE_VIDEO_INPUT')
 
     def test_frame_and_audio_extraction_is_bounded_and_in_memory(self):
+        import io,random,base64
+        from PIL import Image
+        rng=random.Random(7);frames=[]
+        for _ in range(14):
+            out=io.BytesIO();Image.frombytes('L',(64,64),bytes(rng.randrange(256) for _ in range(4096))).save(out,format='JPEG');frames.append(out.getvalue())
         responses = [Mock(stdout=b'{"format":{"duration":"12"}}'),
-                     Mock(stdout=(b'\xff\xd8fixture\xff\xd9' * 9), returncode=0),
+                     Mock(stdout=b''.join(frames),stderr=' '.join('pts_time:'+str(i) for i in range(14)).encode(), returncode=0),
                      Mock(stdout=b'RIFF' + b'x' * 80, returncode=0)]
         with patch('shutil.which', return_value='/fixture/ffmpeg'), patch('subprocess.run', side_effect=responses) as run:
-            parts, state = discovery.video_parts(b'fixture-video', 2000)
-        self.assertEqual(state['frames'], 8); self.assertEqual(state['audio'], 'EXTRACTED_FULL_BOUNDED_AUDIO')
-        self.assertEqual(len(parts), 9)
+            parts, state = discovery.video_parts(b'fixture-video', 50000)
+        self.assertEqual(state['frames'], 12); self.assertEqual(state['audio'], 'EXTRACTED_FULL_BOUNDED_AUDIO')
+        self.assertEqual(len(parts), 13)
+        self.assertLessEqual(sum(len(base64.b64decode(p['inlineData']['data'])) for p in parts),50000)
+        self.assertEqual(state['selection'],'SCENE_TEXT_DETAIL_NOVELTY')
+        self.assertEqual(len(state['frame_timestamps']),12)
         self.assertIn('pipe:0', run.call_args.args[0]); self.assertEqual(run.call_args.kwargs['input'], b'fixture-video')
 
     def test_transient_llm_failure_uses_only_existing_flash_fallback(self):

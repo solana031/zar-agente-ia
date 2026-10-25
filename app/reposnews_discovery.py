@@ -171,7 +171,7 @@ def evidence(row, analysis, discovery, metadata):
 
 
 def video_parts(content, remaining):
-    """At most eight distributed frames and 180 seconds of mono audio, in memory."""
+    """At most twelve scene/text-diverse frames and 180 seconds of mono audio."""
     import base64
     import shutil
     import subprocess
@@ -181,14 +181,21 @@ def video_parts(content, remaining):
                                input=content, capture_output=True, timeout=10)
         duration = float(json.loads(probe.stdout).get('format', {}).get('duration', 0))
         if not 0 < duration <= 180: return [], {'frames': 0, 'audio': 'NATIVE_VIDEO_INPUT', 'duration_limit': True}
-        frames = subprocess.run(['ffmpeg', '-v', 'error', '-protocol_whitelist', 'pipe', '-i', 'pipe:0', '-vf',
-                                 f'fps={8 / duration},scale=960:1280:force_original_aspect_ratio=decrease',
-                                 '-frames:v', '8', '-f', 'image2pipe', '-vcodec', 'mjpeg', 'pipe:1'],
-                                input=content, capture_output=True, timeout=20)
-        parts = []; count = 0
-        for frame in re.findall(b'\xff\xd8.*?\xff\xd9', frames.stdout, re.S)[:8]:
+        def extract(filter_,limit):
+            result=subprocess.run(['ffmpeg','-v','info','-protocol_whitelist','pipe','-i','pipe:0','-vf',filter_+',showinfo,scale=960:1280:force_original_aspect_ratio=decrease',
+                '-vsync','vfr','-frames:v',str(limit),'-f','image2pipe','-vcodec','mjpeg','pipe:1'],input=content,capture_output=True,timeout=30)
+            images=re.findall(b'\xff\xd8.*?\xff\xd9',result.stdout,re.S)[:limit]
+            times=[float(x) for x in re.findall(r'pts_time:([0-9.]+)',result.stderr.decode('utf-8','replace'))]
+            return [(image,times[i] if i<len(times) else None) for i,image in enumerate(images)]
+        candidates=extract('select=gt(scene\\,0.12)',24)
+        if len(candidates)<8:candidates+=extract(f'fps={12/duration}',12)
+        from .reel_frames import informative_indices
+        chosen=informative_indices([raw for raw,_ in candidates],12)
+        parts = []; count = 0;timestamps=[]
+        for selected in chosen:
+            frame,at=candidates[selected]
             if len(frame) > remaining: break
-            remaining -= len(frame); count += 1
+            remaining -= len(frame); count += 1;timestamps.append(at)
             parts.append({'inlineData': {'mimeType': 'image/jpeg', 'data': base64.b64encode(frame).decode()}})
         audio = subprocess.run(['ffmpeg', '-v', 'error', '-protocol_whitelist', 'pipe', '-i', 'pipe:0', '-t', '180', '-vn', '-ac', '1', '-ar', '16000', '-f', 'wav', 'pipe:1'],
                                input=content, capture_output=True, timeout=20)
@@ -196,7 +203,7 @@ def video_parts(content, remaining):
             parts.append({'inlineData': {'mimeType': 'audio/wav', 'data': base64.b64encode(audio.stdout).decode()}})
             audio_state = 'EXTRACTED_FULL_BOUNDED_AUDIO'
         else: audio_state = 'NATIVE_VIDEO_INPUT'
-        return parts, {'frames': count, 'audio': audio_state, 'duration': duration}
+        return parts, {'frames': count, 'audio': audio_state, 'duration': duration,'selection':'SCENE_TEXT_DETAIL_NOVELTY','frame_timestamps':timestamps}
     except (OSError, ValueError, subprocess.SubprocessError): return [], {'frames': 0, 'audio': 'NATIVE_VIDEO_INPUT'}
 
 

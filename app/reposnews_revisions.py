@@ -66,6 +66,9 @@ def consider(data,row,candidate):
         relevant=relevant or review.get('relevant') is True
         if review.get('relevant') is True:summary=str(review.get('change_summary',''))[:2000]
     if not relevant:
+        # Provenance grows privately even when the published article needs no edit.
+        # Do not mutate the published snapshot or grant publication approval.
+        old['source_reels']=list(dict.fromkeys([x for x in known+[row['source_url']] if x]))
         row.update(status='NO_CHANGE',processing_state='NO_CHANGE',backfill_decision='NO_CHANGE');return True
     candidate.update(id=old['id'],source_reels=list(dict.fromkeys([x for x in known+[row['source_url']] if x])),canonical_entity_id=identity(old)['entity_id'])
     for lang in ('es','en'):candidate['seo'][lang]['canonical']=old['seo'][lang]['canonical']

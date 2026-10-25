@@ -190,7 +190,7 @@ def register(app):
                 parts, coverage = video_parts(content, MAX_BYTES)
                 from .reposnews_editorial import keep_frames
                 source=next(r['source_url'] for r in rn.read().get('instagram_inbox',[]) if r['id']==item_id)
-                visual_assets=keep_frames(item_id,parts,source,coverage.get('duration',0))
+                visual_assets=keep_frames(item_id,parts,source,coverage.get('duration',0),coverage.get('frame_timestamps'))
                 if coverage.get('frames'):
                     analysis['frame_extraction'] = [coverage]
                 try:

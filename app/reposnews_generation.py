@@ -49,11 +49,12 @@ def generate_article_cover(article, context):
     return generate(article, context)
 
 
-def generate_json(prompt,parts=None):
+def generate_json(prompt,parts=None,economy=False):
     from . import web_search, model_router
     from .config import load
     cfg=load();key=web_search._gemini_key();last=503
     primary=model_router.model_for('reasoning');secondary=web_search._model()
+    if economy and 'flash' in secondary.lower():primary=secondary
     models=list(dict.fromkeys([primary]+([secondary] if 'flash' in secondary.lower() else [])))[:2]
     if len(models)==1:models.append(primary)
     if key:
@@ -81,6 +82,7 @@ def generate_json(prompt,parts=None):
     if api.get('api_key'):
         profiles.append((api.get('base_url',''),api['api_key'],os.environ.get('ZAR_GEMINI_FALLBACK_MODEL') or 'gemini-3.5-flash-lite'))
     for section,model_key in [('openrouter','model'),('openai','economy_model')]:
+        if economy and section=='openrouter':continue  # Identification must not depend on its exhausted balance.
         configured=cfg.get(section,{})
         if configured.get('api_key'):profiles.append((configured.get('base_url',''),configured['api_key'],configured.get(model_key,'')))
     for base,token,model in profiles[:3]:

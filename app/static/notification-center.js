@@ -12,7 +12,7 @@
  let saved={};try{saved=JSON.parse(sessionStorage.getItem('zar-notification-view')||'{}');}catch{}
  let state={items:[],historical:{}},csrf='',filter=saved.filter||'TODAS',subfilter=saved.subfilter||'TODAS',sort=saved.sort||'PRIORIDAD',page=0,busy=false,message='',editing='',archived=false,confirmation=null,acting=false;
  const filters=['TODAS','NO LEÍDAS','REQUIEREN ACCIÓN','REPOSNEWS','SOCIAL','CUENTAS','SISTEMA'];
- const subfilters=['TODAS','PARA PUBLICAR','ACTUALIZACIONES','NECESITAN REVISIÓN','PUBLICADAS','CANCELADAS','ERRORES'];
+ const subfilters=['TODAS','PARA PUBLICAR','ACTUALIZACIONES','NECESITAN IDENTIFICACIÓN','NECESITAN REVISIÓN','PUBLICADAS','CANCELADAS','ERRORES'];
  const remember=()=>{try{sessionStorage.setItem('zar-notification-view',JSON.stringify({filter,subfilter,sort}));}catch{}};
  const drafts=new Map(),expanded=new Set(),size=8;
  const dialog=document.createElement('dialog');dialog.id='zarNotificationCenter';dialog.setAttribute('aria-label','Centro de notificaciones ZAR');document.body.append(dialog);
@@ -22,7 +22,7 @@
  Object.assign(labels,{ARTICLE_COVER_GENERATED:'Portada preparada',ARTICLE_COVER_FAILED:'Portada pendiente'});
  const group=n=>n.category||(/^ARTICLE|INSTAGRAM_HISTORY/.test(n.type)?'REPOSNEWS':/^SOCIAL|VIDEO_/.test(n.type)?'SOCIAL':n.type==='ACCOUNT_CONNECTION'?'CUENTAS':'SISTEMA');
  const required=n=>n.requires_action??(!n.completed&&!n.processing&&(/ARTICLE_READY|ARTICLE_UPDATE_READY|ACTION|FAILED|OFFLINE|EXPIRED/.test(n.type+' '+n.status)));
- const rnfilter=n=>n.repos_filter||(n.type==='ARTICLE_UPDATE_READY'?'ACTUALIZACIONES':n.type==='ARTICLE_READY'&&!n.completed?'PARA PUBLICAR':'NECESITAN REVISIÓN');
+ const rnfilter=n=>n.repos_filter||(n.type==='ARTICLE_IDENTIFICATION_REQUIRED'?'NECESITAN IDENTIFICACIÓN':n.type==='ARTICLE_UPDATE_READY'?'ACTUALIZACIONES':n.type==='ARTICLE_READY'&&!n.completed?'PARA PUBLICAR':'NECESITAN REVISIÓN');
  const category=n=>n.processing?'INFO':/FAILED|ERROR/.test(n.type+' '+n.status)?'ERROR':n.completed?'SUCCESS':/_READY$/.test(n.type)?'READY':/ACTION|DISAMBIGUATION|OFFLINE|EXPIRED/.test(n.type+' '+n.status)?'ACTION_REQUIRED':'INFO';
  const link=(href,text)=>'<a href="'+esc(safe(href))+'" target="_blank" rel="noopener">'+esc(text)+'</a>';
  const button=(action,id,text,extra='')=>'<button type="button" data-action="'+action+'" data-id="'+esc(id)+'" '+extra+'>'+esc(text)+'</button>';
@@ -39,7 +39,7 @@
    actions=link(n.deep_link,'Revisar cambios');
    if(!n.completed&&n.approval_request)actions+=button('update',n.id,'Actualizar')+button('ignore',n.id,'Ignorar');
   }else if(n.type==='ARTICLE_IDENTIFICATION_REQUIRED'&&!n.completed){
-   form=(n.details?.items||[]).map(item=>'<form data-resolve="'+esc(n.id)+'" data-item="'+esc(item.id)+'">'+(item.thumbnail?'<img src="'+esc(safe(item.thumbnail))+'" alt="Reel pendiente de identificación" loading="lazy">':'')+'<p>'+esc(item.date||'')+'</p><p>'+esc((item.candidates||[]).map(c=>c.candidate).join(' · ')||'Sin candidato fiable')+'</p><label>¿Qué herramienta/proyecto es?<input name="project" maxlength="80" required value="'+esc(drafts.get(item.id)||'')+'"></label><button>Continuar</button></form>').join('');
+   form=(n.details?.items||[]).map(item=>{const date=new Date(item.date),when=item.date&&!isNaN(date)?date.toLocaleString('es-ES'):String(item.date||'Fecha no disponible');return '<form data-resolve="'+esc(n.id)+'" data-item="'+esc(item.id)+'">'+(item.thumbnail?'<img src="'+esc(safe(item.thumbnail))+'" alt="Reel pendiente de identificación" loading="lazy">':'')+'<p>'+esc(when)+'</p><p>'+esc(item.caption||'')+'</p><p>'+esc((item.candidates||[]).slice(0,3).map(c=>c.candidate).join(' · ')||'Sin candidato fiable')+'</p><label>¿Qué herramienta/proyecto es?<input name="project" maxlength="80" required value="'+esc(drafts.get(item.id)||'')+'"></label><button>CONFIRMAR</button></form>';}).join('');
   }else if(n.type==='ARTICLE_NEEDS_DISAMBIGUATION'&&!n.completed){
    if(d.reel)actions=link(d.reel,'Ver Reel');
    form='<form data-resolve="'+esc(n.id)+'"><label>Nombre de herramienta<input name="project" maxlength="80" required value="'+esc(drafts.get(n.id)||'')+'"></label><button>Continuar</button></form>';
