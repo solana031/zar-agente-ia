@@ -127,7 +127,10 @@ class OAuthTests(unittest.TestCase):
         transport.put('state:instagram:success',dict(value='success',user_id='owner',expires=time.time()+60,permissions=[],handoff=ident,redirect_uri=transport.callback('instagram')))
         token_response=Mock(ok=True,json=lambda:{'access_token':'TEST-only-token','user_id':'123'})
         identity_response=Mock(ok=True,json=lambda:{'username':'zaragente031','user_id':'123'})
-        with patch.object(reposnews_inbox.rn,'read',return_value={'owner':'owner'}),patch.object(reposnews_inbox.rn,'write'),patch.object(reposnews_inbox.holdings,'transaction'),patch.object(reposnews_inbox.requests,'post',return_value=token_response),patch.object(reposnews_inbox.requests,'get',return_value=identity_response),patch.object(reposnews_inbox,'persist_identity',side_effect=lambda record:record),patch.object(reposnews_inbox,'verify_capabilities',return_value={'manage_messages':'PERMISSION_REQUIRED'}):
+        def get(url,**kwargs):
+            if url=='https://graph.instagram.com/access_token':return Mock(ok=True,json=lambda:{'access_token':'TEST-only-long-token','expires_in':5184000})
+            return identity_response
+        with patch.object(reposnews_inbox.rn,'read',return_value={'owner':'owner'}),patch.object(reposnews_inbox.rn,'write'),patch.object(reposnews_inbox.holdings,'transaction'),patch.object(reposnews_inbox.requests,'post',return_value=token_response),patch.object(reposnews_inbox.requests,'get',side_effect=get),patch.object(reposnews_inbox,'persist_identity',side_effect=lambda record:record),patch.object(reposnews_inbox,'verify_capabilities',return_value={'manage_messages':'PERMISSION_REQUIRED'}):
             r=self.app.test_client().get('/api/reposnews/instagram/callback?state=success&code=TEST',base_url=BASE)
         self.assertEqual(r.status_code,200);self.assertIn('completada',r.text)
         self.assertNotIn('TEST-only-token',r.text)

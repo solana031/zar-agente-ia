@@ -66,37 +66,8 @@ def subscribe_messages(token, user_id):
     return {'status':'VERIFIED','fields':['messages'],'method':'OFFICIAL_ACCOUNT_SUBSCRIPTION','checked_at':holdings._now()}
 
 def persist_identity(record):
-    """Commit identity independently of optional capabilities, then verify disk readback.
-
-    Only this helper promotes a credential. Fingerprints never leave this function.
-    A broken canonical vault must never fall back to an old environment credential.
-    """
-    from . import oauth_vault
-    root=rn._path().parent
-    diagnostic={'NEW_TOKEN_PERSISTED':False,'NEW_TOKEN_READBACK':False,'STALE_SOURCE_SELECTED':False}
-    with holdings.transaction('instagram-oauth'):
-        previous=credentials()
-        if previous.get('issued_at','')>record.get('issued_at',''):
-            diagnostic['STALE_SOURCE_SELECTED']=True
-            raise ValueError('OAUTH_CALLBACK_SUPERSEDED')
-        try:
-            oauth_vault.persist(root/'instagram-oauth',json.dumps(record),root)
-            diagnostic['NEW_TOKEN_PERSISTED']=True
-            loaded=credentials()
-            same=hmac.compare_digest(hashlib.sha256(record['access_token'].encode()).digest(),hashlib.sha256(loaded.get('access_token','').encode()).digest())
-            diagnostic['STALE_SOURCE_SELECTED']=not same
-            if not same or loaded.get('user_id')!=record['user_id']:raise ValueError('PERSISTENT_CREDENTIAL_MISMATCH')
-            identity=requests.get('https://graph.instagram.com/v26.0/me',params={'fields':'user_id,username'},headers={'Authorization':'Bearer '+loaded['access_token']},timeout=20,allow_redirects=False)
-            who=identity.json() if identity.ok else {}
-            if who.get('username')!='zaragente031' or str(who.get('user_id') or who.get('id') or '')!=record['user_id']:raise ValueError('PERSISTENT_IDENTITY_NOT_VERIFIED')
-            diagnostic['NEW_TOKEN_READBACK']=True
-            loaded['verified_at']=holdings._now()
-            oauth_vault.persist(root/'instagram-oauth',json.dumps(loaded),root)
-            (root/'instagram-oauth-pending').unlink(missing_ok=True)
-            return loaded
-        finally:
-            with holdings.transaction('reposnews-editorial'):
-                data=rn.read();data['instagram_credential_diagnostic']=dict(diagnostic,checked_at=holdings._now(),source='CANONICAL_OAUTH');rn.write(data)
+    from .instagram_tokens import promote
+    return promote(record)
 
 
 def recover_pending_identity():
@@ -1014,23 +985,31 @@ def register(app,scope_fn=None):
                 data=rn.read();data['instagram_callback']={'status':'ERROR' if error else 'CONNECTED','message':
                     ('Instagram autorizó la cuenta, pero no se completó '+error+'. Consulta el diagnóstico seguro en Inbox.') if error else 'Instagram conectado y capacidades de lectura verificadas.',
                     'error':error,'detail':detail or {},'checked_at':holdings._now()};rn.write(data)
-            if pending.get('handoff'):
-                return transport.page('Instagram',error or 'CONNECTED',http_status if error else 200)
             if error and request.accept_mimetypes.best=='application/json':return jsonify(error=error,**(detail or {})),http_status
             if 'instagram_business_content_publish' in pending.get('permissions',[]):
                 if not error:
                     from .text_video_social import connections
-                    connections(scope_fn(),['instagram'])
+                    connected=connections(scope_fn(),['instagram']).get('instagram',{})
+                    if connected.get('ready'):
+                        from .instagram_tokens import confirm_capabilities,resume_after_recovery
+                        confirm_capabilities(connected.get('permissions',[]),record['access_token'])
+                        resume_after_recovery(scope_fn())
+                if pending.get('handoff'):return transport.page('Instagram',error or 'CONNECTED',http_status if error else 200)
                 return redirect(pending.get('return_to','/accounts#instagram'))
+            if pending.get('handoff'):return transport.page('Instagram',error or 'CONNECTED',http_status if error else 200)
             return redirect('/?zar_workspace=sites#reposnewsEditor')
         if pending.get('expires',0)<time.time() or not hmac.compare_digest(pending.get('value',''),request.args.get('state','')):return finish('OAUTH_STATE_INVALID',http_status=403)
         if request.args.get('error') or not request.args.get('code'):return finish('OAUTH_CANCELLED')
         callback=pending['redirect_uri']
         stage='CODE_EXCHANGE'
+        from .instagram_tokens import TokenError
         try:
             r=requests.post('https://api.instagram.com/oauth/access_token',data={'client_id':os.environ['INSTAGRAM_APP_ID'],'client_secret':os.environ['INSTAGRAM_APP_SECRET'],'grant_type':'authorization_code','redirect_uri':callback,'code':request.args['code']},timeout=25)
             if not r.ok:return finish('OAUTH_EXCHANGE_FAILED',safe_meta_error(r))
-            token=r.json();access=token['access_token'];stage='IDENTITY'
+            from .instagram_tokens import normalize_response,exchange_short
+            token=normalize_response(r.json());stage='LONG_LIVED_EXCHANGE'
+            long_token=exchange_short(token,pending.get('issued_at'))
+            access=long_token['access_token'];stage='IDENTITY'
             identity=requests.get('https://graph.instagram.com/v26.0/me',params={'fields':'user_id,username'},headers={'Authorization':'Bearer '+access},timeout=20)
             if not identity.ok:return finish('IDENTITY_NOT_VERIFIED',safe_meta_error(identity,access))
             who=identity.json()
@@ -1038,9 +1017,7 @@ def register(app,scope_fn=None):
             from . import oauth_vault
             user_id=str(who.get('user_id') or who.get('id') or token.get('user_id') or '')
             if not re.fullmatch(r'[0-9]+',user_id) or not (who.get('user_id') or who.get('id')):return finish('ACCOUNT_ID_NOT_VERIFIED',{'stage':stage})
-            record={'access_token':access,'user_id':user_id,'username':who['username'],'requested_permissions':pending.get('permissions',list(PERMISSIONS)),
-                    'identity_verified_at':holdings._now(),'issued_at':pending.get('issued_at') or holdings._now()}
-            if isinstance(token.get('expires_in'),(int,float)):record['expires_in']=token['expires_in']
+            record=dict(long_token,user_id=user_id,username=who['username'],requested_permissions=pending.get('permissions',list(PERMISSIONS)),identity_verified_at=holdings._now())
             stage='TOKEN_PERSISTENCE'
             record=persist_identity(record)
             from . import meta_provider
@@ -1056,6 +1033,7 @@ def register(app,scope_fn=None):
             with holdings.transaction('reposnews-editorial'):
                 data=rn.read();data['instagram_subscription']=subscription;rn.write(data)
             if subscription['status']!='VERIFIED':return finish('MESSAGES_SUBSCRIPTION_NOT_VERIFIED',subscription)
+        except TokenError as exc:return finish('INSTAGRAM_TOKEN_LIFECYCLE_FAILED',dict(exc.detail,stage=stage,lifecycle_error=str(exc)))
         except (ValueError,KeyError,TypeError,AttributeError,OSError,requests.RequestException) as exc:return finish('OAUTH_CONNECTION_FAILED',{'stage':stage,'exception_type':type(exc).__name__})
         return finish()
 

@@ -117,7 +117,10 @@ def test_callback_detects_provider_block_without_promoting_unverified_token(bloc
     before=(blocked/'instagram-oauth').read_bytes()
     app=Flask(__name__);app.secret_key='fixture';inbox.register(app,lambda:'owner')
     oauth_transport.put('state:instagram:fixture',{'value':'fixture','expires':time.time()+60,'user_id':'owner','redirect_uri':'https://zar.test/api/reposnews/instagram/callback'})
-    with patch.dict('os.environ',{'INSTAGRAM_APP_ID':'fixture','INSTAGRAM_APP_SECRET':'fixture'}),patch.object(inbox.requests,'post',return_value=response(200,{'access_token':'unverified-fixture','user_id':'123'})),patch.object(inbox.requests,'get',return_value=response(400,{'error':{'code':200,'message':'API access blocked.'}})):
+    def get(url,**kwargs):
+        if url=='https://graph.instagram.com/access_token':return response(200,{'access_token':'unverified-long-fixture','expires_in':5184000})
+        return response(400,{'error':{'code':200,'message':'API access blocked.'}})
+    with patch.dict('os.environ',{'INSTAGRAM_APP_ID':'fixture','INSTAGRAM_APP_SECRET':'fixture'}),patch.object(inbox.requests,'post',return_value=response(200,{'access_token':'unverified-fixture','user_id':'123'})),patch.object(inbox.requests,'get',side_effect=get):
         app.test_client().get('/api/reposnews/instagram/callback?state=fixture&code=fixture')
     assert meta.blocked_view('owner')['status']=='PROVIDER_BLOCKED'
     assert rn.read()['instagram_callback']['error']=='IDENTITY_NOT_VERIFIED'
@@ -168,12 +171,14 @@ def test_recovery_callback_clears_block_only_after_canonical_identity_readback(b
     app=Flask(__name__);app.secret_key='fixture';inbox.register(app,lambda:'owner')
     oauth_transport.put('state:instagram:recovery',{'value':'recovery','expires':time.time()+60,'user_id':'owner','redirect_uri':'https://zar.test/api/reposnews/instagram/callback'})
     def get(url,**kwargs):
+        if url=='https://graph.instagram.com/access_token':return response(200,{'access_token':'new-long-fixture','token_type':'bearer','expires_in':5184000})
         if url.endswith('/me'):return response(200,{'username':'zaragente031','user_id':'123'})
         return response(200,{'data':[]})
     with patch.dict('os.environ',{'INSTAGRAM_APP_ID':'fixture','INSTAGRAM_APP_SECRET':'fixture'}),patch.object(inbox.requests,'post',return_value=response(200,{'access_token':'new-fixture','user_id':'123','success':True})),patch.object(inbox.requests,'get',side_effect=get):
         app.test_client().get('/api/reposnews/instagram/callback?state=recovery&code=fixture')
     assert not meta.blocked_view('owner')
-    assert inbox.credentials()['access_token']=='new-fixture'
+    assert inbox.credentials()['access_token']=='new-long-fixture'
+    assert inbox.credentials()['token_class']=='LONG_LIVED'
     assert rn.read()['instagram_credential_diagnostic']['NEW_TOKEN_READBACK'] is True
 
 def test_failed_persistence_keeps_provider_blocked(blocked):
@@ -181,7 +186,10 @@ def test_failed_persistence_keeps_provider_blocked(blocked):
     from app import oauth_transport
     app=Flask(__name__);app.secret_key='fixture';inbox.register(app,lambda:'owner')
     oauth_transport.put('state:instagram:failed',{'value':'failed','expires':time.time()+60,'user_id':'owner','redirect_uri':'https://zar.test/api/reposnews/instagram/callback'})
-    with patch.dict('os.environ',{'INSTAGRAM_APP_ID':'fixture','INSTAGRAM_APP_SECRET':'fixture'}),patch.object(inbox.requests,'post',return_value=response(200,{'access_token':'new-fixture','user_id':'123'})),patch.object(inbox.requests,'get',return_value=response(200,{'username':'zaragente031','user_id':'123'})),patch.object(inbox,'persist_identity',side_effect=ValueError('READBACK_FAILED')):
+    def get(url,**kwargs):
+        if url=='https://graph.instagram.com/access_token':return response(200,{'access_token':'new-long-fixture','expires_in':5184000})
+        return response(200,{'username':'zaragente031','user_id':'123'})
+    with patch.dict('os.environ',{'INSTAGRAM_APP_ID':'fixture','INSTAGRAM_APP_SECRET':'fixture'}),patch.object(inbox.requests,'post',return_value=response(200,{'access_token':'new-fixture','user_id':'123'})),patch.object(inbox.requests,'get',side_effect=get),patch.object(inbox,'persist_identity',side_effect=ValueError('READBACK_FAILED')):
         app.test_client().get('/api/reposnews/instagram/callback?state=failed&code=fixture')
     assert meta.blocked_view('owner')['status']=='PROVIDER_BLOCKED'
     assert not meta.current('owner').get('resolved_at')

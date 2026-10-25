@@ -3,7 +3,7 @@ import json
 from unittest.mock import Mock, patch
 import pytest
 from flask import Flask, abort, session, request
-from app import holdings, reposnews as rn, reposnews_inbox as inbox, oauth_vault, social_publish
+from app import holdings, reposnews as rn, reposnews_inbox as inbox, oauth_vault, social_publish, instagram_tokens as tokens
 from app.account_connections import AccountConnectionRegistry, Provider, register
 
 
@@ -21,7 +21,8 @@ def identity():
 
 
 def record():
-    return {'access_token':'new-oauth-fixture','user_id':'12345','username':'zaragente031','issued_at':'2026-10-21T12:00:00+00:00'}
+    return {'access_token':'new-oauth-fixture','user_id':'12345','username':'zaragente031','issued_at':tokens.stamp(),
+        'token_class':'LONG_LIVED','acquired_by':'IG_EXCHANGE_TOKEN','expires_at':tokens.stamp(__import__('time').time()+5184000),'renew_after':tokens.stamp(__import__('time').time()+4500000)}
 
 
 def test_atomic_persistence_replaces_old_and_readback_uses_new(isolated):
@@ -47,23 +48,24 @@ def test_corrupt_canonical_never_resurrects_legacy_env(isolated):
 
 
 def test_mismatched_persistent_readback_cannot_claim_success(isolated):
-    with patch.object(inbox,'credentials',return_value=dict(record(),access_token='unexpected-fixture')):
+    with patch.object(tokens,'canonical',side_effect=[{},dict(record(),access_token='unexpected-fixture')]),patch.object(inbox.requests,'get',return_value=identity()):
         with pytest.raises(ValueError,match='PERSISTENT_CREDENTIAL_MISMATCH'):inbox.persist_identity(record())
     proof=rn.read()['instagram_credential_diagnostic']
     assert proof['NEW_TOKEN_PERSISTED'] and not proof['NEW_TOKEN_READBACK'] and proof['STALE_SOURCE_SELECTED']
 
 
 def test_failed_readback_identity_cannot_claim_connected(isolated):
-    with patch.object(inbox.requests,'get',return_value=Mock(ok=False)):
-        with pytest.raises(ValueError,match='PERSISTENT_IDENTITY_NOT_VERIFIED'):inbox.persist_identity(record())
+    with patch.object(inbox.requests,'get',side_effect=[identity(),Mock(ok=False,status_code=401,json=lambda:{'error':{'code':190}})]):
+        with pytest.raises(ValueError,match='INSTAGRAM_IDENTITY_NOT_VERIFIED'):inbox.persist_identity(record())
     assert not rn.read()['instagram_credential_diagnostic']['NEW_TOKEN_READBACK']
     assert inbox.credentials()['access_token']=='new-oauth-fixture'
 
 
 def test_older_callback_never_replaces_newer_credential(isolated):
     oauth_vault.persist(isolated/'instagram-oauth',json.dumps(record()),isolated)
-    with pytest.raises(ValueError,match='SUPERSEDED'):inbox.persist_identity(dict(record(),issued_at='2026-10-20'))
-    assert inbox.credentials()['issued_at']==record()['issued_at']
+    original=inbox.credentials()['issued_at']
+    with patch.object(inbox.requests,'get',return_value=identity()),pytest.raises(ValueError,match='SUPERSEDED'):inbox.persist_identity(dict(record(),issued_at='2026-10-20'))
+    assert inbox.credentials()['issued_at']==original
 
 
 def test_registry_get_has_no_network_and_no_false_connected(isolated):
@@ -159,7 +161,7 @@ def test_valid_pending_recovery_uses_only_identity_reads(isolated):
     oauth_vault.persist(isolated/'instagram-oauth-pending',json.dumps(record()),isolated)
     with patch.object(inbox.requests,'get',return_value=identity()) as read,patch.object(inbox.requests,'post') as write:
         assert inbox.recover_pending_identity()
-    assert read.call_count==2
+    assert read.call_count==3
     write.assert_not_called()
     assert social_publish.instagram_context('owner')['token']=='new-oauth-fixture'
     assert not (isolated/'instagram-oauth-pending').exists()

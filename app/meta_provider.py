@@ -135,6 +135,8 @@ def probe(scope,manual=False,now=None):
 
 
 def daily_check(scope):
+    from .instagram_tokens import tick as token_tick
+    token_tick(scope)
     if not blocked_view(scope):return
     diag=probe(scope)
     from .account_connections import AccountConnectionRegistry

@@ -201,6 +201,10 @@ def sync(scope,force=False):
         data=_owned(scope);state=data.setdefault('instagram_conversation_sync',{})
         if state.get('lease_until',0)>now:return summary(data)
         if state.get('retry_after',0)>now:return summary(data)
+        from .instagram_tokens import state_for
+        if state_for(credentials(),now)=='REAUTH_REQUIRED':
+            state.update(status='AUTH_REQUIRED',error='META_HISTORY_AUTH_REQUIRED',requested=False);rn.write(data)
+            return summary(data)
         if not force and not state.get('requested') and state.get('status')!='SYNCING' and state.get('next_sync',0)>now:return summary(data)
         state.update(status='SYNCING',started_at=holdings._now(),lease_until=now+1800,requested=False,next_sync=now+DAY,error=None)
         rn.write(data)

@@ -46,13 +46,21 @@ def instagram_context(scope_id=None):
 def scoped_instagram_readiness(scope_id):
     context=instagram_context(scope_id);token=context['token'];user=context['user'];base=context['base']
     if not token or not user:return {'connected':False,'publish_capability':'BLOCKED','blocker':'INSTAGRAM_NOT_CONNECTED','credential_source':context.get('source')}
+    if context.get('source')=='CANONICAL_OAUTH':
+        from . import reposnews_inbox as inbox,instagram_tokens
+        record=inbox.credentials()
+        if instagram_tokens.state_for(record)=='REAUTH_REQUIRED':
+            return {'connected':False,'ready':False,'status':'REAUTH_REQUIRED','publish_capability':'BLOCKED',
+                'blocker':'INSTAGRAM_TOKEN_EXPIRED','verified_cause':'EXPIRED_TOKEN','credential_source':'CANONICAL_OAUTH',
+                'diagnostic':{'token_lifecycle':instagram_tokens.safe_metadata(record)}}
     headers={'Authorization':'Bearer '+token};business='graph.instagram.com' in base
     response=requests.get(base+'/me' if business else base+'/'+user,params={'fields':'user_id,username' if business else 'id,username'},headers=headers,timeout=20,allow_redirects=False)
     if not response.ok:
         from .reposnews_inbox import safe_meta_error
         diagnostic=safe_meta_error(response,token)
         # HTTP 401 alone cannot distinguish expiry from revocation/invalid token.
-        cause={463:'EXPIRED_TOKEN',467:'INVALID_TOKEN',458:'AUTHORIZATION_REMOVED',460:'PASSWORD_CHANGED'}.get(diagnostic.get('subcode'),'PROVIDER_AUTH_ERROR_UNCLASSIFIED')
+        from .instagram_tokens import classify
+        cause=classify(diagnostic)
         return {'connected':False,'status':'REAUTH_REQUIRED' if response.status_code==401 or diagnostic.get('code')==190 else 'ERROR',
                 'publish_capability':'BLOCKED','blocker':'INSTAGRAM_IDENTITY_HTTP_'+str(response.status_code),'diagnostic':diagnostic,'verified_cause':cause,'credential_source':context.get('source')}
     data=response.json()
