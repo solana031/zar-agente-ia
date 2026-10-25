@@ -807,7 +807,7 @@ def process(item_id):
         evid=discover.evidence(row,analysis,discovery,metadata)
         from .reposnews_entity_evidence import hints
         accumulated=hints(rn.read(),row,evid)
-        primary_name=complete_media_name(analysis)
+        primary_name=row.get('automatic_project') or complete_media_name(analysis)
         if accumulated['status']=='NO_MATCH' and not matches and not evid.get('github_urls') and not row.get('clarified_project'):
             update(item_id,status='IDENTIFYING',processing_state='IDENTIFYING')
             if not primary_name:
@@ -866,6 +866,8 @@ def process(item_id):
                     notify(item_id,'FAILED_RETRYABLE');return
                 update(item_id,status='NEEDS_DISAMBIGUATION',processing_state='IDENTIFYING',error=resolution['reason'],error_diagnostic={'component':'IDENTIFYING','provider':'PUBLIC_SOURCE','endpoint_class':'discovery','http':None,'retryable':False,'timestamp':holdings._now()});return
             matches=[resolution['repo']]
+        if row.get('expanded_identification',{}).get('status')=='AUTO_IDENTIFIED' and row.get('automatic_repo'):
+            matches=[row['automatic_repo']]
         unique=list(dict.fromkeys(x.removesuffix('.git').lower() for x in matches))
         if len(unique)!=1:
             update(item_id,status='NEEDS_DISAMBIGUATION',processing_state='IDENTIFYING',error='MULTIPLE_REPOSITORIES',entity_resolution={'candidates':unique});return
@@ -942,8 +944,12 @@ def start_worker():
         migrate()
         from .reposnews_history import repair_known_source_failures
         repair_known_source_failures()
+        from .reposnews_ambiguity import start as start_ambiguity
+        if rn.read().get('owner'):start_ambiguity(rn.read()['owner'])
         while True:
             try:
+                from .reposnews_ambiguity import tick as ambiguity_tick
+                ambiguity_tick()
                 from .instagram_conversation_history import tick as conversation_tick
                 conversation_tick()
                 from .reposnews_history import tick

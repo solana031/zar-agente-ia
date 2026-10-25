@@ -50,6 +50,9 @@ def check(width,height,standalone=False):
         bell.focus();bell.press('Enter')
         panel=page.locator('#zarNotificationCenter');expect(panel).to_be_visible()
         expect(panel.locator('.znCard')).to_have_count(8)
+        assert panel.locator('.znCard').nth(0).get_attribute('data-note')=='ready'
+        assert panel.locator('.znCard').nth(1).get_attribute('data-note')=='update'
+        panel.locator('[data-sort]').select_option('RECIENTES')
         assert not panel.locator('details').first.is_visible() or not panel.locator('details').first.get_attribute('open')
         expect(panel.locator('[data-note=failed] .znMessage')).not_to_contain_text('PROVIDER_503')
         expect(panel.locator('[data-note=info0]')).to_contain_text('Reanalizando el Reel')
@@ -151,8 +154,37 @@ def check_direct_editor():
         browser.close()
     print('PASS direct editor survives workspace refresh')
 
+def check_grouped_identification():
+    items=[{'id':'group','type':'ARTICLE_IDENTIFICATION_REQUIRED','status':'ACTION_REQUIRED','title':'2 Reels requieren identificación','details':{'items':[
+        {'id':'one','date':'2026-10-25','candidates':[{'candidate':'Candidate one'}]},
+        {'id':'two','date':'2026-10-25','candidates':[{'candidate':'Candidate two'}]}]}}]
+    posts=[]
+    with sync_playwright() as p:
+        browser=p.chromium.launch(headless=True,executable_path=os.environ.get('ZAR_TEST_BROWSER'))
+        page=browser.new_page(viewport={'width':390,'height':844})
+        page.route('https://zar.test/',lambda r:r.fulfill(content_type='text/html',body='<html><body><div class="topActions"></div></body></html>'))
+        def api(route):
+            if route.request.method=='POST':posts.append(route.request.post_data_json)
+            route.fulfill(content_type='application/json',body=json.dumps({'ok':True,'csrf':'fixture','items':items,'unread':1}))
+        page.route('**/api/**',api)
+        page.route('**/static/notification-center.css*',lambda r:r.fulfill(content_type='text/css',body=CSS))
+        page.goto('https://zar.test/');page.add_script_tag(content=SCRIPT)
+        page.locator('#zarNotificationBell').click()
+        panel=page.locator('#zarNotificationCenter')
+        expect(panel.locator('[data-item]')).to_have_count(2)
+        panel.locator('[data-item=two] input').fill('Verified tool two')
+        panel.locator('[data-item=one] input').fill('Verified tool one')
+        panel.locator('[data-item=one] button').click()
+        expect(panel.locator('[data-item=two] input')).to_have_value('Verified tool two')
+        assert posts==[{'id':'one','name':'Verified tool one'}]
+        assert page.evaluate('document.documentElement.scrollWidth')<=390
+        browser.close()
+    print('PASS grouped identification targets exact Reel and preserves other inputs')
+
+
 if __name__=='__main__':
     for case in [(1440,900,False),(390,844,False),(390,844,True)]:
         check(*case);print('PASS',case)
 
     check_direct_editor()
+    check_grouped_identification()

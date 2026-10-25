@@ -10,7 +10,7 @@
  Object.assign(labels,{MIRROR_SYNC_SUCCESS:'Mirror actualizado',MIRROR_SYNC_FAILED:'Mirror sin sincronizar',MIRROR_OUTDATED:'Mirror pendiente'});
  Object.assign(labels,{INSTAGRAM_HISTORY_SYNC:'Historial de Instagram revisado',SOCIAL_ACCOUNT_READY:'Cuenta preparada',SOCIAL_ACCOUNT_BLOCKED:'Cuenta requiere atención'});
  let saved={};try{saved=JSON.parse(sessionStorage.getItem('zar-notification-view')||'{}');}catch{}
- let state={items:[],historical:{}},csrf='',filter=saved.filter||'TODAS',subfilter=saved.subfilter||'TODAS',sort=saved.sort||'RECIENTES',page=0,busy=false,message='',editing='',archived=false,confirmation=null,acting=false;
+ let state={items:[],historical:{}},csrf='',filter=saved.filter||'TODAS',subfilter=saved.subfilter||'TODAS',sort=saved.sort||'PRIORIDAD',page=0,busy=false,message='',editing='',archived=false,confirmation=null,acting=false;
  const filters=['TODAS','NO LEÍDAS','REQUIEREN ACCIÓN','REPOSNEWS','SOCIAL','CUENTAS','SISTEMA'];
  const subfilters=['TODAS','PARA PUBLICAR','ACTUALIZACIONES','NECESITAN REVISIÓN','PUBLICADAS','CANCELADAS','ERRORES'];
  const remember=()=>{try{sessionStorage.setItem('zar-notification-view',JSON.stringify({filter,subfilter,sort}));}catch{}};
@@ -38,6 +38,8 @@
   }else if(n.type==='ARTICLE_UPDATE_READY'){
    actions=link(n.deep_link,'Revisar cambios');
    if(!n.completed&&n.approval_request)actions+=button('update',n.id,'Actualizar')+button('ignore',n.id,'Ignorar');
+  }else if(n.type==='ARTICLE_IDENTIFICATION_REQUIRED'&&!n.completed){
+   form=(n.details?.items||[]).map(item=>'<form data-resolve="'+esc(n.id)+'" data-item="'+esc(item.id)+'">'+(item.thumbnail?'<img src="'+esc(safe(item.thumbnail))+'" alt="Reel pendiente de identificación" loading="lazy">':'')+'<p>'+esc(item.date||'')+'</p><p>'+esc((item.candidates||[]).map(c=>c.candidate).join(' · ')||'Sin candidato fiable')+'</p><label>¿Qué herramienta/proyecto es?<input name="project" maxlength="80" required value="'+esc(drafts.get(item.id)||'')+'"></label><button>Continuar</button></form>').join('');
   }else if(n.type==='ARTICLE_NEEDS_DISAMBIGUATION'&&!n.completed){
    if(d.reel)actions=link(d.reel,'Ver Reel');
    form='<form data-resolve="'+esc(n.id)+'"><label>Nombre de herramienta<input name="project" maxlength="80" required value="'+esc(drafts.get(n.id)||'')+'"></label><button>Continuar</button></form>';
@@ -64,7 +66,8 @@
   const scrollTop=dialog.querySelector('.znList')?.scrollTop||0;
   dialog.querySelectorAll('[data-details]').forEach(d=>d.open?expanded.add(d.dataset.details):expanded.delete(d.dataset.details));
   const notes=state.items.filter(n=>archived?Boolean(n.dismissed_at):!n.dismissed_at&&(filter==='TODAS'||filter==='NO LEÍDAS'&&!n.read_at||filter==='REQUIEREN ACCIÓN'&&required(n)||group(n)===filter)&&(filter!=='REPOSNEWS'||subfilter==='TODAS'||rnfilter(n)===subfilter));
-  notes.sort((a,b)=>sort==='ANTIGUAS'?String(a.created_at||'').localeCompare(b.created_at||''):sort==='PRIORIDAD'?String(a.priority||'P2').localeCompare(b.priority||'P2')||String(b.created_at||'').localeCompare(a.created_at||''):String(b.created_at||'').localeCompare(a.created_at||''));
+  const rank=n=>!n.completed&&n.type==='ARTICLE_READY'?0:!n.completed&&n.type==='ARTICLE_UPDATE_READY'?1:required(n)?2:3;
+  notes.sort((a,b)=>sort==='ANTIGUAS'?String(a.created_at||'').localeCompare(b.created_at||''):sort==='PRIORIDAD'?rank(a)-rank(b)||String(a.priority||'P2').localeCompare(b.priority||'P2')||String(b.created_at||'').localeCompare(a.created_at||''):String(b.created_at||'').localeCompare(a.created_at||''));
   page=Math.min(page,Math.max(0,Math.ceil(notes.length/size)-1));
   dialog.innerHTML='<header class="znHeader"><div><span class="znEyebrow">TU BANDEJA DE ACCIONES</span><h2>Notificaciones <small>'+esc(state.unread||0)+' sin leer</small></h2></div>'+button('close','','Cerrar','data-close aria-label="Cerrar notificaciones"')+'</header>'+
    '<nav class="znTabs" aria-label="Filtrar notificaciones">'+filters.map(t=>'<button data-filter="'+t+'" aria-pressed="'+(t===filter&&!archived)+'">'+t+' <small>'+esc(state.counts?.[t]??state.items.filter(n=>!n.dismissed_at&&(t==='TODAS'||t==='NO LEÍDAS'&&!n.read_at||t==='REQUIEREN ACCIÓN'&&required(n)||group(n)===t)).length)+'</small></button>').join('')+'</nav>'+(filter==='REPOSNEWS'?'<nav class="znTabs znSubTabs" aria-label="Filtrar ReposNews">'+subfilters.map(t=>'<button data-subfilter="'+t+'" aria-pressed="'+(t===subfilter)+'">'+t+'</button>').join('')+'</nav>':'')+
@@ -82,7 +85,7 @@
  dialog.addEventListener('click',e=>{if(e.target===dialog){const r=dialog.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)close();}});
  dialog.addEventListener('cancel',e=>{e.preventDefault();close();});
  dialog.addEventListener('change',e=>{if(e.target.matches('[data-sort]')){sort=e.target.value;page=0;remember();render(true);}});
- dialog.addEventListener('input',e=>{const form=e.target.closest('[data-resolve],[data-edit]');if(form)drafts.set(form.dataset.resolve||form.dataset.edit,e.target.value);});
+ dialog.addEventListener('input',e=>{const form=e.target.closest('[data-resolve],[data-edit]');if(form)drafts.set(form.dataset.item||form.dataset.resolve||form.dataset.edit,e.target.value);});
  dialog.addEventListener('click',async e=>{
   const b=e.target.closest('button');if(!b)return;
   if(b.dataset.filter){filter=b.dataset.filter;archived=false;page=0;remember();render(true);return;}
@@ -106,8 +109,8 @@
  });
  dialog.addEventListener('submit',async e=>{
   const form=e.target.closest('[data-resolve],[data-edit]');if(!form)return;e.preventDefault();const n=state.items.find(x=>x.id===(form.dataset.resolve||form.dataset.edit));const values=Object.fromEntries(new FormData(form));form.querySelector('button').disabled=true;
-  try{if(form.dataset.resolve)await post('/api/holdings/workflows/reposnews_inbox_resolve',{id:n.inbox_item_id||n.editorial?.inbox_item_id||n.entity_id,name:values.project});else await post('/api/reposnews/editorial/modify',{id:n.article.id,instruction:values.instruction});
-   drafts.delete(n.id);editing='';message='ZAR continúa el trabajo. Te avisará cuando termine.';await refresh();render(true);
+  try{if(form.dataset.resolve)await post('/api/holdings/workflows/reposnews_inbox_resolve',{id:form.dataset.item||n.inbox_item_id||n.editorial?.inbox_item_id||n.entity_id,name:values.project});else await post('/api/reposnews/editorial/modify',{id:n.article.id,instruction:values.instruction});
+   drafts.delete(form.dataset.item||n.id);editing='';message='ZAR continúa el trabajo. Te avisará cuando termine.';await refresh();render(true);
   }catch(x){message=x.message;render(true);}
  });
  refresh();setInterval(refresh,20000);

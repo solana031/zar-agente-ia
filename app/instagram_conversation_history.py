@@ -36,6 +36,8 @@ def _read(path,token,params):
             value=str(r.headers.get('Retry-After',''))
             delay=max(600,min(DAY,int(value))) if value.isdigit() else 3600
             raise HistoryReadError('META_HISTORY_RATE_LIMITED',detail,delay)
+        if detail.get('code')==100 and re.search('cursor|paging|pagination',detail.get('message',''),re.I):
+            raise HistoryReadError('PAGINATION_CURSOR_INVALID',detail,3600)
         if r.status_code in (429,500,502,503,504):raise ValueError('META_HISTORY_RETRYABLE_HTTP_'+str(r.status_code))
         raise HistoryReadError('META_HISTORY_HTTP_'+str(r.status_code),detail)
     b=r.json()
@@ -56,15 +58,24 @@ def _after(body):
     return cursor
 
 
-def _pages(path,token,params,after=None):
-    seen=set()
+def _pages(path,token,params,after=None,progress=None):
+    seen=set();ids=set();progress=progress if progress is not None else {}
     while True:
-        if after in seen:raise ValueError('META_HISTORY_PAGINATION_STALLED')
+        if len(seen)>=10:raise HistoryReadError('PAGINATION_PAGE_BUDGET',{'edge':path.rsplit('/',1)[-1]},600)
+        if after in seen:raise HistoryReadError('PAGINATION_CURSOR_REPEAT',{'edge':path.rsplit('/',1)[-1]},3600)
         seen.add(after)
         body=_read(path,token,dict(params,**({'after':after} if after else {})))
-        after=_after(body)
-        yield body['data'],after
-        if after is None:return
+        cursor=_after(body);rows=body['data'];page_ids=[str(m.get('id') or m.get('link') or '') for m in rows]
+        new=sum(bool(mid) and mid not in ids for mid in page_ids);ids.update(page_ids)
+        repeated=cursor is not None and cursor in seen
+        progress.update(cursor_in=after,cursor_out=cursor,first_message_id=page_ids[0] if page_ids else None,
+            last_message_id=page_ids[-1] if page_ids else None,count=len(rows),new_message_count=new,
+            cursor_repeat=repeated,pages_completed=progress.get('pages_completed',0)+1)
+        yield rows,cursor
+        if repeated:raise HistoryReadError('PAGINATION_CURSOR_REPEAT',{'edge':path.rsplit('/',1)[-1]},3600)
+        if cursor is None:return
+        if not new and cursor==after:raise HistoryReadError('PAGINATION_NO_PROGRESS',{'edge':path.rsplit('/',1)[-1]},3600)
+        after=cursor
 
 
 def _reels(message,token,fetch=True):
@@ -85,17 +96,22 @@ def _drain_shares(scope,token,senders):
     """Complete secondary edges after the outer conversation pages are checkpointed."""
     from .reposnews_history import links
     pending=dict(rn.read()['instagram_conversation_sync'].get('pending_share_pages',{}))
-    for mid,record in pending.items():
+    for mid,record in list(pending.items())[:5]:
         if record['sender'] not in senders:raise ValueError('AUTHORIZED_SENDER_REQUIRED')
         message={'id':mid,'from':{'id':record['sender']},'created_time':record.get('timestamp')}
-        for rows,cursor in _pages(mid+'/shares',token,{'fields':'link','limit':100},record['cursor']):
+        progress={};after=(record.get('last_successful_cursor') or record['cursor']) if record.get('cursor_recovery_required') else record['cursor']
+        for rows,cursor in _pages(mid+'/shares',token,{'fields':'link','limit':25 if record.get('cursor_recovery_required') else 100},after,progress):
             urls=sorted(set(links(rows)))
             if urls:_ingest(scope,record['conversation_id'],message,urls)
             with holdings.transaction('reposnews-editorial'):
                 data=_owned(scope);state=data['instagram_conversation_sync']
-                if cursor:state['pending_share_pages'][mid]['cursor']=cursor
+                if cursor and not progress.get('cursor_repeat'):
+                    state['pending_share_pages'][mid].update(cursor=cursor,last_successful_cursor=progress.get('cursor_in'),cursor_recovery_required=False)
+                elif cursor:state['pending_share_pages'][mid].update(pagination_error='PAGINATION_CURSOR_REPEAT',cursor_recovery_required=True)
                 else:state['pending_share_pages'].pop(mid,None)
+                state.setdefault('page_diagnostics',{})['shares:'+mid]=dict(progress)
                 state['lease_until']=time.time()+1800;rn.write(data)
+    if len(pending)>5:raise HistoryReadError('PAGINATION_PAGE_BUDGET',{'edge':'shares'},600)
 
 
 def _ingest(scope,cid,message,urls):
@@ -193,12 +209,19 @@ def sync(scope,force=False):
         senders=sender_ids()
         if not token or not senders:raise ValueError('INSTAGRAM_AUTHORIZED_SENDER_OR_TOKEN_REQUIRED')
         conversations=[]
+        # Preserve known verified conversations when discovery itself repeats a cursor.
+        existing_conversations=rn.read()['instagram_conversation_sync'].get('conversation_ids',[])
         for sender in sorted(senders):
             # Server-side user filter; independently verify the participant identity too.
-            for rows,_ in _pages('me/conversations',token,{'platform':'instagram','user_id':sender,'fields':'id,participants,updated_time','limit':100}):
+            progress={}
+            for rows,_ in _pages('me/conversations',token,{'platform':'instagram','user_id':sender,'fields':'id,participants,updated_time','limit':100},progress=progress):
                 for c in rows:
                     participants=(c.get('participants') or {}).get('data',[])
                     if any(str(p.get('id'))==sender and p.get('username')=='solana031' for p in participants):conversations.append(c['id'])
+                with holdings.transaction('reposnews-editorial'):
+                    data=rn.read();state=data['instagram_conversation_sync']
+                    state['conversation_ids']=list(dict.fromkeys(existing_conversations+conversations))
+                    state.setdefault('page_diagnostics',{})['conversations']=dict(progress);rn.write(data)
         with holdings.transaction('reposnews-editorial'):
             data=rn.read();state=data['instagram_conversation_sync'];state['conversation_ids']=list(dict.fromkeys(conversations));rn.write(data)
         for cid in dict.fromkeys(conversations):
@@ -207,12 +230,18 @@ def sync(scope,force=False):
             newest=checkpoint.get('last_message_id') if not complete else None
             latest_time=checkpoint.get('last_timestamp') if not complete else None
             after=None if complete else checkpoint.get('pagination_cursor')
-            for messages,cursor in _pages(cid+'/messages',token,{'fields':'id,created_time,from,message,attachments,shares','limit':100},after):
+            if checkpoint.get('cursor_recovery_required'):
+                after=checkpoint.get('last_successful_cursor') or after
+            progress={};seen_ids=set(checkpoint.get('seen_message_ids',[]));pages_before=checkpoint.get('pages_completed',0)
+            limit=25 if checkpoint.get('cursor_recovery_required') else 100
+            for messages,cursor in _pages(cid+'/messages',token,{'fields':'id,created_time,from,message,attachments,shares','limit':limit},after,progress):
                 stop=False;scanned=0;share_pages={}
                 for message in messages:
                     scanned+=1
                     if not newest:newest=message.get('id');latest_time=message.get('created_time')
                     if message.get('id')==anchor:stop=True;break
+                    if message.get('id') in seen_ids:continue
+                    seen_ids.add(message.get('id'))
                     if str((message.get('from') or {}).get('id')) in senders:
                         urls=_reels(message,token,fetch=False)
                         if urls:_ingest(scope,cid,message,urls)
@@ -223,7 +252,18 @@ def sync(scope,force=False):
                     data=rn.read();state=data['instagram_conversation_sync']
                     state['messages_scanned']=state.get('messages_scanned',0)+scanned
                     state.setdefault('pending_share_pages',{}).update(share_pages)
-                    state.setdefault('checkpoints',{})[cid]={'last_message_id':newest or checkpoint.get('last_message_id'),'last_timestamp':latest_time or checkpoint.get('last_timestamp'),'pagination_cursor':None if stop else cursor,'history_exhausted':stop or cursor is None}
+                    repeated=progress.get('cursor_repeat',False)
+                    prior=state.setdefault('checkpoints',{}).get(cid,{})
+                    state['checkpoints'][cid]={'last_message_id':newest or checkpoint.get('last_message_id'),'last_timestamp':latest_time or checkpoint.get('last_timestamp'),
+                        'last_message_timestamp':latest_time or checkpoint.get('last_timestamp'),
+                        'pagination_cursor':None if stop else prior.get('last_successful_cursor') if repeated else cursor,
+                        'last_successful_cursor':prior.get('last_successful_cursor') if repeated else progress.get('cursor_in'),
+                        'cursor_recovery_required':repeated,'pages_completed':pages_before+progress['pages_completed'],
+                        'last_processed_message_id':progress.get('last_message_id'),
+                        'last_processed_message_timestamp':messages[-1].get('created_time') if messages else prior.get('last_processed_message_timestamp'),
+                        'messages_seen':len(seen_ids),'seen_message_ids':sorted(x for x in seen_ids if x)[-10000:],
+                        'history_exhausted':stop or cursor is None}
+                    state.setdefault('page_diagnostics',{})['messages:'+cid]=dict(progress)
                     state['lease_until']=time.time()+1800;rn.write(data)
                 if stop:break
         _drain_shares(scope,token,senders)
@@ -240,6 +280,9 @@ def sync(scope,force=False):
             code=str(exc) if isinstance(exc,ValueError) and re.fullmatch(r'[A-Z0-9_]{1,80}',str(exc)) else 'OFFICIAL_CONVERSATION_SYNC_FAILED'
             data=rn.read();state=data['instagram_conversation_sync'];state.update(status='RATE_LIMITED' if code=='META_HISTORY_RATE_LIMITED' else 'FAILED_RETRYABLE',error=code,lease_until=0)
             if isinstance(exc,HistoryReadError):state['provider_error']=exc.detail
+            if code=='PAGINATION_CURSOR_INVALID':
+                for checkpoint in state.get('checkpoints',{}).values():
+                    if not checkpoint.get('history_exhausted'):checkpoint['cursor_recovery_required']=True
             if getattr(exc,'retry_after',0):state.update(retry_after=time.time()+exc.retry_after,next_sync=time.time()+exc.retry_after)
             rn.write(data)
         return summary(data)

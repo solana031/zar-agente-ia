@@ -48,6 +48,8 @@ from .youtube import status as youtube_status, upload as youtube_upload, video_s
 from app.youtube_publish import register_youtube
 
 app = Flask(__name__)
+from .runtime_health import install as install_runtime_health
+install_runtime_health(app)
 from .secret_safety import install as install_secret_safety, redact_text as redact_secret_text
 install_secret_safety(app)
 register_youtube(app)
@@ -496,8 +498,8 @@ register_node_coordinator(app)
 
 @app.get("/health")
 def health():
-    from .reposnews import summary
-    return jsonify({"ok": True, "service": "zar", "version": (Path(__file__).parent / "VERSION.txt").read_text().strip(), "reposnews":summary()})
+    # The early local_liveness hook serves this route without session/storage work.
+    return jsonify(status='ok')
 
 @app.route("/login", methods=["GET","POST"])
 def login():
@@ -1823,7 +1825,7 @@ reposnews_history.register(app,_user_scope_id)
 workspace_creator.register(app,_user_scope_id)
 from . import text_video
 text_video.register(app,_user_scope_id)
-if os.environ.get('RAILWAY_PROJECT_ID') == '33af08fe-7e2e-4df3-afb5-c5a1ac41b2f5':
+def _start_reposnews_services():
     reposnews_owner = reposnews.bootstrap()
     from . import meta_provider
     meta_provider.start_worker(reposnews_owner)
@@ -1840,6 +1842,9 @@ if os.environ.get('RAILWAY_PROJECT_ID') == '33af08fe-7e2e-4df3-afb5-c5a1ac41b2f5
     reposnews_verification = threading.Timer(30, _verify_reposnews_after_start)
     reposnews_verification.daemon = True
     reposnews_verification.start()
+if os.environ.get('RAILWAY_PROJECT_ID') == '33af08fe-7e2e-4df3-afb5-c5a1ac41b2f5':
+    from .runtime_health import start_background
+    start_background(_start_reposnews_services)
 from . import agency_events
 agency_events.register(app)
 

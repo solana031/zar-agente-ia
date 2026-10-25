@@ -60,7 +60,8 @@ def test_failure_retries_are_bounded_and_keep_complete_text(isolated):
         covers.ensure(a);covers.ensure(a);assert gen.call_count==1
         a['cover_job']['retry_after']=0;covers.ensure(a)
         a['cover_job']['retry_after']=0;covers.ensure(a)
-    assert gen.call_count==2;assert a['cover_status']=='COVER_GENERATION_FAILED';assert auto.complete(a)
+    assert gen.call_count==1;assert a['cover_status']=='READY';assert auto.complete(a)
+    assert covers.valid(a) and a['cover_provenance']['generator'].startswith('ReposNews/internal')
 
 
 def test_blank_tiny_extreme_aspect_rejected():
@@ -113,7 +114,7 @@ def test_published_cover_repair_is_only_a_private_proposal(isolated):
 def test_generation_provider_uses_configured_image_route_without_private_article(isolated):
     import base64
     from unittest.mock import Mock
-    from app.reposnews_generation import generate_article_cover
+    from app.reposnews_generation import _gemini_article_cover as generate_article_cover
     response=Mock(ok=True);response.json.return_value={'candidates':[{'content':{'parts':[{'inlineData':{'mimeType':'image/png','data':base64.b64encode(pixels()).decode()}}]}}]}
     with patch('app.web_search._gemini_key',return_value='fixture-key'),patch('app.model_router.model_for',return_value='fixture-image'),patch('app.reposnews_generation.requests.post',return_value=response) as post:
         blob,provider=generate_article_cover({'private_dm':'NEVER SEND'}, {'prompt':'safe editorial prompt'})

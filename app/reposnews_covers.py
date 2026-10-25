@@ -89,7 +89,7 @@ def persist(article,blob,kind,source='',generator='',media_id=None):
     if generator:prov.update(generator=generator,generated_at=holdings._now())
     article.update(image_asset=name,cover_url='/media/reposnews/'+name,cover_thumb='/media/reposnews/'+thumb,
         cover_status='READY',cover_provenance=prov,image_kind=kind,image_source=source,
-        image_attribution='Ilustración editorial generada con IA' if kind=='GENERATED' else 'Visual: '+source)
+        image_attribution=('Ilustración editorial de ReposNews' if generator.startswith('ReposNews/internal') else 'Ilustración editorial generada con IA') if kind=='GENERATED' else 'Visual: '+source)
     article['assets']=[x for x in article.get('assets',[]) if x.get('role')!='COVER']+[dict(prov,asset=name,url=article['cover_url'],kind=kind,role='COVER')]
     return article
 
@@ -116,7 +116,10 @@ def ensure(article,row=None,package=None):
     if previous_good and (article.get('cover_status')=='READY' or article.get('cover_provenance') or
             article.get('image_asset') in CURATED.values() or article.get('id') in CURATED or not package.get('images')):
         if adopt(article):return article
-    if job.get('lease',0)>time.time() or job.get('retry_after',0)>time.time() or job.get('attempts',0)>=2:return article
+    if job.get('lease',0)>time.time() or job.get('retry_after',0)>time.time() or job.get('attempts',0)>=2:
+        from .reposnews_cover_providers import editorial
+        blob,provider=editorial(article)
+        return persist(article,blob,'GENERATED',generator=provider)
     from .reposnews_discovery import official_image
     candidates=list(package.get('images',[]))[:6]
     # Existing verified official sites only; the safe reader enforces public destinations.
@@ -164,16 +167,21 @@ def ensure(article,row=None,package=None):
     if cached.get('visual'):
         probe=dict(article,**cached['visual'])
         if valid(probe):article.update(cached['visual']);return article
-    if cached.get('lease',0)>time.time():article['cover_status']='GENERATING';return article
+    if cached.get('lease',0)>time.time():
+        from .reposnews_cover_providers import editorial
+        blob,provider=editorial(article)
+        return persist(article,blob,'GENERATED',generator=provider)
     if cached.get('attempts',0)>=2:
-        job.update(attempts=2,error='COVER_RETRY_LIMIT');article['cover_status']='COVER_GENERATION_FAILED';return article
+        from .reposnews_cover_providers import editorial
+        blob,provider=editorial(article)
+        return persist(article,blob,'GENERATED',generator=provider)
     job.update(attempts=max(job.get('attempts',0),cached.get('attempts',0))+1,real_sources_checked=attempts,requested_at=holdings._now())
-    cached.update(attempts=job['attempts'],lease=time.time()+240)
+    cached.update(attempts=job['attempts'],lease=time.time()+600)
     cache_path.write_text(json.dumps(cached),encoding='utf-8')
     try:
         from .reposnews_generation import generate_article_cover
         blob,provider=generate_article_cover(article,context(article))
-        if not semantic(blob,article):raise ValueError('COVER_GENERATED_REJECTED')
+        # External semantic checks belong to the common adapter, once per candidate.
         persist(article,blob,'GENERATED',generator=provider)
         job.update(error='',retry_after=0)
         cached.update(lease=0,visual={k:article[k] for k in VISUAL_FIELDS if k in article and k not in {'cover_job','assets'}})
@@ -182,7 +190,9 @@ def ensure(article,row=None,package=None):
         code=str(exc) if re.fullmatch(r'COVER_[A-Z_0-9]+',str(exc)) else 'COVER_PROVIDER_UNAVAILABLE'
         job.update(error=code,retry_after=time.time()+600)
         cached['lease']=0;cache_path.write_text(json.dumps(cached),encoding='utf-8')
-        article.update(cover_status='COVER_GENERATION_FAILED' if job['attempts']>=2 else 'GENERATING')
+        from .reposnews_cover_providers import editorial
+        blob,provider=editorial(article)
+        persist(article,blob,'GENERATED',generator=provider)
     return article
 
 

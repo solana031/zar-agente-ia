@@ -88,7 +88,7 @@ def test_one_summary_when_existing_pipeline_finishes(store):
 def test_owner_and_cursor_guard(store):
     with pytest.raises(ValueError):history.sync('other',force=True)
     with patch.object(history,'_read',return_value=page([],'same')):
-        with pytest.raises(ValueError,match='PAGINATION_STALLED'):list(history._pages('conversation/messages','fixture',{}))
+        with pytest.raises(ValueError,match='PAGINATION_CURSOR_REPEAT'):list(history._pages('conversation/messages','fixture',{}))
 
 def test_official_video_refs_precede_browser_and_are_never_stored_in_metadata(store):
     msg=message('media','video');msg['attachments']={'data':[{'video_data':{'url':'https://cdn.example.fbcdn.net/video.mp4?signature=private'}}]}

@@ -8,6 +8,38 @@ TYPES={'ARTICLE_READY','ARTICLE_UPDATE_READY','ARTICLE_NEEDS_DISAMBIGUATION','AR
 TYPES.update({'ACCOUNT_CONNECTION','MIRROR_SYNC_SUCCESS','MIRROR_SYNC_FAILED','MIRROR_OUTDATED'})
 TYPES.update({'INSTAGRAM_HISTORY_SYNC','SOCIAL_ACCOUNT_READY','SOCIAL_ACCOUNT_BLOCKED'})
 TYPES.update({'ARTICLE_COVER_GENERATED','ARTICLE_COVER_FAILED'})
+TYPES.add('ARTICLE_IDENTIFICATION_REQUIRED')
+
+
+def reconcile_actions(rows,editorial,connections=None):
+    """Resolve proven obsolete actions, retaining their history and real blockers."""
+    seen={};resolved=0;connections=connections or {}
+    inbox={r['id']:r for r in editorial.get('instagram_inbox',[])}
+    job=editorial.get('ambiguous_reprocessing',{})
+    grouped_ids=set(job.get('ids',[])) if len(job.get('completed',[]))==len(job.get('ids',[])) and job.get('ids') else set()
+    grouped_sources={inbox[i].get('source_url') for i in grouped_ids if i in inbox}
+    for row in reversed(rows):
+        if row.get('status') in {'DONE','COMPLETED','CANCELLED','PUBLISHED','IGNORED'}:continue
+        details=row.get('editorial') or row.get('details') or {}
+        kind=row.get('type') or row.get('action','')
+        item=inbox.get(row.get('inbox_item_id') or details.get('inbox_item_id') or row.get('entity_id'))
+        reason=None
+        if item and kind in {'ARTICLE_FAILED','ARTICLE_NEEDS_DISAMBIGUATION'}:
+            if item.get('status') in {'READY_PRIVATE','ARTICLE_UPDATE_DRAFT','NO_CHANGE','PUBLISHED','CANCELLED','DISCARDED'}:reason='SOURCE_RESOLVED'
+            elif item['id'] in grouped_ids or item.get('source_url') and item.get('source_url') in grouped_sources:reason='GROUPED_IDENTIFICATION'
+        if kind=='ARTICLE_IDENTIFICATION_REQUIRED' and not any(inbox.get(i,{}).get('status')=='NEEDS_DISAMBIGUATION' for i in grouped_ids):reason='IDENTIFICATION_RESOLVED'
+        account=row.get('entity_id') if kind in {'ACCOUNT_CONNECTION','SOCIAL_ACCOUNT_BLOCKED'} else str(row.get('service','')).lower()
+        cached=connections.get(account,{})
+        if cached.get('status') in {'CONNECTED','UPLOAD_READY'} and not cached.get('human_action') and str(cached.get('last_verified') or '')>=str(row.get('created_at') or ''):
+            if kind in {'ACCOUNT_CONNECTION','SOCIAL_ACCOUNT_BLOCKED'} or row.get('action') in {'CONNECT','AUTHORIZE','RECONNECT','VERIFY','REAUTH_REQUIRED','PERMISSION_REQUIRED'}:reason='ACCOUNT_VERIFIED'
+        key=row.get('notification_key')
+        if not key and kind.startswith('ARTICLE'):
+            key=(kind,row.get('article_id') or details.get('article_id') or row.get('inbox_item_id') or row.get('entity_id'),details.get('revision'))
+        if key and key in seen:reason='DUPLICATE'
+        if key:seen[key]=row['id']
+        if reason:
+            row.update(status='DONE',outcome=reason,completed_at=holdings._now());resolved+=1
+    return resolved
 
 
 def category(item):
@@ -70,10 +102,14 @@ def view(scope):
     worker=instagram_local_queue.status();editorial_data=rn.read()
     if editorial_data.get('owner')==scope:reconcile_ready(scope,editorial_data)
     if editorial_data.get('owner')==scope:
+        from .reposnews_ambiguity import grouped
+        grouped(scope,editorial_data)
+    if editorial_data.get('owner')==scope:
         if worker.get('session')=='EXPIRED':emit(scope,'WORKER_SESSION_EXPIRED','worker-session-expired','Instagram requiere iniciar sesión','Abre el perfil exclusivo del worker y renueva la sesión local.','/?zar_workspace=sites#reposnewsEditor',entity_type='WORKER')
         elif worker.get('state')=='OFFLINE':emit(scope,'WORKER_OFFLINE','worker-offline','Worker de Reels desconectado','Los trabajos permanecen en cola hasta que el PC y el worker estén disponibles.','/?zar_workspace=sites#reposnewsEditor',entity_type='WORKER')
     with holdings.transaction(scope):
         data=holdings.read(scope);rows=identity_center.ensure(data)['human_actions']
+        reconcile_actions(rows,editorial_data if editorial_data.get('owner')==scope else {},data.get('account_connections',{}))
         result=[]
         for row in rows:
             editorial=row.get('editorial') or {}
@@ -118,7 +154,7 @@ def view(scope):
             item['requires_action']=bool(not item['completed'] and not item.get('processing') and (item.get('status') in {'ACTION_REQUIRED','AWAITING_APPROVAL','NEEDS_DISAMBIGUATION','FAILED_RETRYABLE','FAILED_PERMANENT','HUMAN_ACTION_REQUIRED'} or item.get('type') in {'ARTICLE_READY','ARTICLE_UPDATE_READY','ARTICLE_COVER_FAILED'}))
             item['repos_filter']='PUBLICADAS' if item.get('outcome') in {'PUBLISHED','APPLIED'} else 'CANCELADAS' if item.get('outcome') in {'CANCELLED','IGNORED'} else 'ERRORES' if re.search('FAILED|ERROR',item.get('type','')+' '+item.get('status','')) else 'ACTUALIZACIONES' if item.get('type')=='ARTICLE_UPDATE_READY' else 'PARA PUBLICAR' if item.get('type')=='ARTICLE_READY' and not item['completed'] and item.get('article',{}).get('approval_request') else 'NECESITAN REVISIÓN'
             for key in ('message','reason','title','details','editorial'):
-                if key in item:item[key]=clean(item[key])
+                if key in item:item[key]=clean(item[key],-3 if key=='details' and item.get('type')=='ARTICLE_IDENTIFICATION_REQUIRED' else 0)
             result.append(item)
         holdings.write(scope,data)
     result.sort(key=lambda x:x.get('created_at',''),reverse=True)

@@ -15,7 +15,7 @@ def parse(text):
     return result
 
 
-def generate_article_cover(article, context):
+def _gemini_article_cover(article, context):
     """Use ZAR's economical image route; credentials and private inputs stay server-side."""
     import base64
     from . import web_search, model_router
@@ -31,7 +31,9 @@ def generate_article_cover(article, context):
         headers={'x-goog-api-key':key},json={'contents':[{'parts':[{'text':context['prompt']}]}],
         'generationConfig':{'responseModalities':['TEXT','IMAGE'],'imageConfig':{'aspectRatio':'16:9','imageSize':'1K'}}},
         timeout=(5,120),allow_redirects=False)
-    if not response.ok:raise ValueError('COVER_PROVIDER_'+str(response.status_code))
+    if not response.ok:
+        from .reposnews_cover_providers import ProviderError
+        raise ProviderError('COVER_PROVIDER_'+str(response.status_code), response.headers.get('Retry-After'))
     for candidate in response.json().get('candidates',[]):
         for part in candidate.get('content',{}).get('parts',[]):
             inline=part.get('inlineData') or {}
@@ -40,6 +42,11 @@ def generate_article_cover(article, context):
                 if len(raw)>16000000:raise ValueError('COVER_RESPONSE_TOO_LARGE')
                 return base64.b64decode(raw,validate=True),'Gemini/'+model
     raise ValueError('COVER_PROVIDER_NO_IMAGE')
+
+
+def generate_article_cover(article, context):
+    from .reposnews_cover_providers import generate
+    return generate(article, context)
 
 
 def generate_json(prompt,parts=None):
