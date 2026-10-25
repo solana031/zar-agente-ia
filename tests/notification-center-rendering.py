@@ -134,11 +134,12 @@ def check_direct_editor():
     with sync_playwright() as p:
         browser=p.chromium.launch(headless=True,executable_path=os.environ.get('ZAR_TEST_BROWSER'))
         page=browser.new_page(viewport={'width':390,'height':844})
-        page.route('**/api/**',lambda r:r.fulfill(content_type='application/json',body=json.dumps({'ok':True,'result':fixture})))
+        page.route('**/api/**',lambda r:r.fulfill(content_type='application/json',body=json.dumps({'ok':True,'csrf':'fixture'} if r.request.url.endswith('/notifications') else {'ok':True,'result':fixture})))
         page.route('https://zar.test/?*',lambda r:r.fulfill(content_type='text/html',body='<html><body><main id="zwSites"><section id="reposnewsEditor"></section></main></body></html>'))
         page.goto('https://zar.test/?zar_workspace=sites&edit_article=direct-draft')
-        page.add_script_tag(content=LEGACY);page.add_script_tag(content=EDITOR)
+        # Reproduce a direct link opened after the initial workspace event has already fired.
         page.evaluate("window.dispatchEvent(new CustomEvent('zar-workflow-state',{detail:{csrf:'fixture'}}))")
+        page.add_script_tag(content=LEGACY);page.add_script_tag(content=EDITOR)
         editor=page.locator('#zarEditorialNotifications')
         expect(editor).to_be_visible();expect(editor.locator('[name=title_es]')).to_have_value('Borrador exacto')
         editor.locator('[name=title_es]').fill('Trabajo sin guardar')

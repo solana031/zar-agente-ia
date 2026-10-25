@@ -33,5 +33,7 @@
  try{if(button.dataset.rnIdentify){const id=button.dataset.rnIdentify;const input=document.querySelector(`[data-rn-project="${id}"]`);state=await post('inbox_resolve',{id,name:input.value});render();return;}const current=await post('status');state=current;if(button.hasAttribute('data-publish-batch')){const ids=[...document.querySelectorAll('#reposnewsEditor input[data-select]:checked')].map(x=>x.dataset.select);state=await post('approve_batch',{ids,decision:'PUBLICAR',approved_digest:button.dataset.approvedDigest,approvals:Object.fromEntries(ids.map(id=>[id,state.articles.find(a=>a.id===id)?.approval_request]))});render();return;}const id=button.dataset.article||button.dataset.publish;const a=state.articles.find(x=>x.id===id);if(!a)throw Error('Borrador no encontrado');const decision=button.dataset.rnDecision||'PUBLICAR';state=await post('editorial_decision',{id,decision,approval_request:a.approval_request});if(decision==='MODIFICAR'){render();editor(state.articles.find(x=>x.id===id));}else{editing=null;render();}window.dispatchEvent(new Event('zar-reposnews-saved'));}
  catch(x){alertNotice(x.message);}finally{button.disabled=false;}
  },true);
+ // Deep links can load after the workspace's initial event. Recover its existing session CSRF.
+ if(requestedEdit)fetch('/api/notifications').then(r=>r.ok?r.json():null).then(j=>{if(j?.ok&&j.csrf){csrf=j.csrf;return refresh();}}).catch(()=>{});
  setInterval(refresh,15000);
 })();
