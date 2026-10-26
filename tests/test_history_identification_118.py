@@ -205,3 +205,52 @@ def test_group_reopens_automatic_resolution_but_preserves_user_archive(store,dis
     note=next(x for x in identity_center.ensure(holdings.read('owner'))['human_actions'] if x['id']=='group')
     assert note['status']==('DONE' if dismissed else 'ACTION_REQUIRED')
     assert note['dismissed_at']==dismissed and len(note['details']['items'])==1
+
+
+def test_identical_share_pages_with_rotating_cursors_stop_without_claiming_end(store):
+    progress={}
+    with patch.object(h,'_read',side_effect=[page(['same'],'cursor-'+str(n)) for n in range(5)]) as read:
+        result=list(h._pages('message/shares','fixture',{},progress=progress))
+    assert read.call_count==4 and len(result)==4
+    assert progress['pagination_stalled'] and not progress.get('provider_exhausted')
+    with patch.object(h,'_read',side_effect=[page(['same'],'a'),page(['same'],'b'),page(['same'],'c'),page(['new'],None)]):
+        assert len(list(h._pages('message/shares','fixture',{})))==4
+
+
+def test_stalled_share_preserves_cursor_and_allows_other_edges_then_backoff(store):
+    d=rn.read();d['instagram_conversation_sync']={'requested':True,'conversation_ids':['verified'],
+        'checkpoints':{'verified':{'history_exhausted':True,'provider_exhausted':True,'head_check_after':time.time()+h.DAY}},
+        'pending_share_pages':{'stalled':{'sender':'sender','conversation_id':'verified','cursor':'last-good'},
+            'healthy':{'sender':'sender','conversation_id':'verified','cursor':'healthy-end'}}};rn.write(d)
+    with patch.object(h,'_read',side_effect=[page(['same'],'cursor-'+str(n)) for n in range(4)]+[page([],None)]) as read:
+        result=h.sync('owner')
+    assert read.call_count==5 and read.call_args_list[-1].args[0]=='healthy/shares'
+    s=rn.read()['instagram_conversation_sync'];pending=s['pending_share_pages']
+    assert set(pending)=={'stalled'} and pending['stalled']['cursor']=='cursor-0'
+    assert pending['stalled']['last_successful_cursor']=='last-good'  # Only the first page had new IDs.
+    assert pending['stalled']['seen_links']==['same'] and pending['stalled']['retry_after']>time.time()+h.DAY-10
+    assert result['completion_state']=='PAGINATION_STALLED' and not result['history_exhausted']
+    with patch.object(h,'_read',side_effect=AssertionError('backoff must prevent requests')):h.sync('owner',force=True)
+    future=time.time()+h.DAY+1
+    with patch.object(h.time,'time',return_value=future),patch.object(h,'_read',side_effect=[page(['same'],'cursor-'+str(n+1)) for n in range(4)]) as read:
+        h._drain_shares('owner','fixture',{'sender'})
+    assert read.call_count==4  # Prior-attempt cursors are not a fresh cycle.
+    assert rn.read()['instagram_conversation_sync']['pending_share_pages']['stalled']['cursor']=='cursor-0'
+
+
+def test_stalled_share_batch_skips_waiting_edges_and_reaches_next_batch(store):
+    d=rn.read();d['instagram_conversation_sync']={'pending_share_pages':{
+        'message'+str(n):{'sender':'sender','conversation_id':'verified','cursor':'saved'} for n in range(11)}};rn.write(d)
+    calls={}
+    def read(path,token,params):
+        calls[path]=calls.get(path,0)+1
+        return page(['link-'+path],'cursor-'+str(calls[path]))
+    with patch.object(h,'_read',side_effect=read):
+        with pytest.raises(h.HistoryReadError,match='PAGINATION_PAGE_BUDGET'):h._drain_shares('owner','fixture',{'sender'})
+        assert len(calls)==10
+        h._drain_shares('owner','fixture',{'sender'})
+        assert len(calls)==11 and all(n==4 for n in calls.values())
+        h._drain_shares('owner','fixture',{'sender'})
+        assert sum(calls.values())==44  # All waiting edges stay quiet.
+    pending=rn.read()['instagram_conversation_sync']['pending_share_pages']
+    assert len(pending)==11 and all(r['retry_after']>time.time()+h.DAY-10 for r in pending.values())

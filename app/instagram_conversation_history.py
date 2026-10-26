@@ -67,12 +67,16 @@ def _after(body):
 def _pages(path,token,params,after=None,progress=None):
     progress=progress if progress is not None else {}
     seen=set(progress.get('seen_cursors',[]));ids=set(progress.get('seen_message_ids',[]));requests_made=0
+    previous_page=None;duplicate_pages=0
     while True:
         if requests_made>=10:raise HistoryReadError('PAGINATION_PAGE_BUDGET',{'edge':path.rsplit('/',1)[-1]},60)
         body=_read(path,token,dict(params,**({'after':after} if after else {})))
         requests_made+=1;seen.add(after)
         cursor=_after(body);rows=body['data'];page_ids=[str(m.get('id') or m.get('link') or '') for m in rows]
         new=sum(bool(mid) and mid not in ids for mid in page_ids);ids.update(page_ids)
+        fingerprint=tuple(sorted(page_ids))
+        duplicate_pages=duplicate_pages+1 if page_ids and all(page_ids) and not new and fingerprint==previous_page else 0
+        previous_page=fingerprint
         repeated=cursor is not None and cursor in seen
         times=sorted(str(m.get('created_time')) for m in rows if m.get('created_time'))
         pattern='EMPTY_PAGE_WITH_NEXT_CURSOR' if not rows and cursor else 'DUPLICATE_BOUNDARY_MESSAGE' if new<len(page_ids) else 'PROGRESS'
@@ -84,11 +88,14 @@ def _pages(path,token,params,after=None,progress=None):
             pattern=pattern,seen_cursors=list(seen),seen_message_ids=sorted(ids))
         if repeated and not new and not rows:
             progress.update(provider_exhausted=True,pattern='EMPTY_PAGE_WITH_SELF_NEXT' if cursor==after else 'EMPTY_CURSOR_CYCLE')
+        if path.endswith('/shares') and duplicate_pages>=3 and cursor and not repeated:
+            progress.update(pagination_stalled=True,pattern='IDENTICAL_SHARE_PAGE_WITH_ROTATING_CURSOR')
         yield rows,cursor
         # Empty self-referential end pages are an observed provider limit, not proof
         # that all historical content exists locally. A repeated cursor with NEW
         # messages may be read again; dedup and the request budget bound that case.
         if progress.get('provider_exhausted'):return
+        if progress.get('pagination_stalled'):return
         if repeated and not new:raise HistoryReadError('PAGINATION_CURSOR_REPEAT',{'edge':path.rsplit('/',1)[-1],'pattern':pattern},3600)
         if cursor is None:return
         after=cursor
@@ -122,17 +129,26 @@ def _drain_shares(scope,token,senders):
     """Complete secondary edges after the outer conversation pages are checkpointed."""
     from .reposnews_history import links
     pending=dict(rn.read()['instagram_conversation_sync'].get('pending_share_pages',{}))
-    for mid,record in list(pending.items())[:10]:
+    due=[(mid,record) for mid,record in pending.items() if record.get('retry_after',0)<=time.time()]
+    for mid,record in due[:10]:
         if record['sender'] not in senders:raise ValueError('AUTHORIZED_SENDER_REQUIRED')
         message={'id':mid,'from':{'id':record['sender']},'created_time':record.get('timestamp')}
         progress={'seen_message_ids':record.get('seen_links',[]),'seen_cursors':record.get('seen_cursors',[])}
+        if record.get('pagination_error')=='PAGINATION_DUPLICATE_PAGE_ROTATING_CURSOR':
+            # Retry traversal starts at the persisted cursor. Previously visited
+            # cursors remain in the record/audit, not in this attempt's cycle set.
+            progress['seen_cursors']=[]
         after=(record.get('last_successful_cursor') or record['cursor']) if record.get('cursor_recovery_required') else record['cursor']
         for rows,cursor in _pages(mid+'/shares',token,{'fields':'link','limit':25 if record.get('cursor_recovery_required') else 100},after,progress):
             urls=sorted(set(links(rows)))
             if urls:_ingest(scope,record['conversation_id'],message,urls)
             with holdings.transaction('reposnews-editorial'):
                 data=_owned(scope);state=data['instagram_conversation_sync']
-                if progress.get('provider_exhausted'):
+                if progress.get('pagination_stalled'):
+                    state['pending_share_pages'][mid].update(retry_after=time.time()+DAY,
+                        pagination_error='PAGINATION_DUPLICATE_PAGE_ROTATING_CURSOR',
+                        seen_links=progress.get('seen_message_ids',[]),seen_cursors=progress.get('seen_cursors',[]))
+                elif progress.get('provider_exhausted'):
                     state.setdefault('share_provider_limits',{})[mid]=dict(record,reason=progress['pattern'],checked_at=holdings._now())
                     state['pending_share_pages'].pop(mid,None)
                 elif cursor and progress.get('new_message_count'):
@@ -142,7 +158,9 @@ def _drain_shares(scope,token,senders):
                 else:state['pending_share_pages'].pop(mid,None)
                 _page_audit(state,'shares:'+mid,progress)
                 state['lease_until']=time.time()+1800;rn.write(data)
-    if len(pending)>10:raise HistoryReadError('PAGINATION_PAGE_BUDGET',{'edge':'shares'},60)
+    remaining=rn.read()['instagram_conversation_sync'].get('pending_share_pages',{})
+    if any(r.get('retry_after',0)<=time.time() for r in remaining.values()):
+        raise HistoryReadError('PAGINATION_PAGE_BUDGET',{'edge':'shares'},60)
 
 
 def _ingest(scope,cid,message,urls):
@@ -340,8 +358,12 @@ def sync(scope,force=False):
             data=rn.read();state=data['instagram_conversation_sync'];refresh(data)
             limited=any(c.get('provider_exhausted') for c in state.get('checkpoints',{}).values()) or bool(state.get('share_provider_limits'))
             exhausted=bool(conversations) and all(c.get('history_exhausted') for c in state.get('checkpoints',{}).values()) and not state.get('pending_share_pages')
-            state.update(status='COMPLETED',completion_state='PAGINATION_EXHAUSTED_BY_PROVIDER' if limited else 'HISTORY_COMPLETE' if exhausted else 'PAGINATION_STALLED',
+            stalled=bool(state.get('pending_share_pages'))
+            state.update(status='FAILED_RETRYABLE' if stalled else 'COMPLETED',completion_state='PAGINATION_STALLED' if stalled else 'PAGINATION_EXHAUSTED_BY_PROVIDER' if limited else 'HISTORY_COMPLETE' if exhausted else 'PAGINATION_STALLED',
                 history_exhausted=exhausted and not limited,completed_at=holdings._now(),lease_until=0,retry_after=0)
+            if stalled:
+                retry=min(r.get('retry_after',time.time()+DAY) for r in state['pending_share_pages'].values())
+                state.update(error='PAGINATION_DUPLICATE_PAGE_ROTATING_CURSOR',retry_after=retry,next_sync=retry)
             # Add newly discovered Reels to the existing sequential, durable pipeline.
             data.setdefault('historical_backfill',{}).update(enabled=True,mode='BATCH_LIMITED',concurrency=1)
             rn.write(data)
