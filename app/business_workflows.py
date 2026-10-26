@@ -38,6 +38,9 @@ def view(scope):
 
 
 def operate(scope, action, data):
+    if action=='adsense_provider_availability':
+        from .reposnews_adsense import record_provider_availability
+        return record_provider_availability(scope,data)
     if action=='adsense_provider_observation':
         from .reposnews_adsense import record_provider_observation
         return record_provider_observation(scope,data)

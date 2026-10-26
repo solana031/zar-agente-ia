@@ -21,6 +21,60 @@ PRIVATE = re.compile(r'READY_PRIVATE|AWAITING_APPROVAL|reposnews-preview|https?:
 STATIC_SEARCH = """<script>document.querySelectorAll('form.search').forEach(f=>{const input=f.querySelector('input');const params=new URLSearchParams(location.search);input.value=params.get('q')||'';let category=params.get('category')||'';function filter(){document.querySelectorAll('.grid>.card').forEach(c=>{c.hidden=!(c.textContent.toLowerCase().includes(input.value.toLowerCase())&&(!category||c.querySelector('.tag').textContent===category));c.style.display=c.hidden?'none':''})}f.addEventListener('submit',e=>{e.preventDefault();filter()});document.querySelectorAll('.filters a').forEach(a=>a.addEventListener('click',e=>{e.preventDefault();category=new URL(a.href).searchParams.get('category')||'';filter()}));filter()});</script>"""
 
 
+# The primary can verify its CMP through the private ZAR opener. A static mirror
+# has neither that opener nor ad serving. Omit only these explicit primary tags;
+# validate everything that remains with the unchanged PRIVATE/resource guards.
+PRIMARY_ONLY_SCRIPTS = (
+    r'<script\b(?=[^>]*\bsrc="/media/reposnews/consent\.js")[^>]*>\s*</script>',
+    r'<script\b(?=[^>]*\btype="text/plain")(?=[^>]*\bdata-adsense-prepared="consent-required")(?=[^>]*\bsrc="https://pagead2\.googlesyndication\.com/pagead/js/adsbygoogle\.js\?client=ca-pub-\d{16}")[^>]*>\s*</script>',
+    r'<script\b(?=[^>]*\bdata-google-cmp="official-loader")(?=[^>]*\bsrc="https://fundingchoicesmessages\.google\.com/i/pub-\d{16}\?ers=1")[^>]*>\s*</script>',
+)
+
+
+def static_document(document):
+    """Project primary-only empty script tags out before validating the artifact.
+
+    Nonempty script payloads, other scripts and private content are never scrubbed
+    into acceptance. Their existing guards still reject the build.
+    """
+    for pattern in PRIMARY_ONLY_SCRIPTS:
+        document = re.sub(pattern, '', document, flags=re.I)
+    return document
+
+
+class DocumentedLoopbacks(HTMLParser):
+    """Locate prose/code examples; never exempt attributes, scripts or styles."""
+    def __init__(self, document):
+        super().__init__(convert_charrefs=False)
+        self.offsets=[0]
+        for line in document.splitlines(keepends=True):self.offsets.append(self.offsets[-1]+len(line))
+        self.stack=[];self.spans=[]
+
+    def handle_starttag(self,tag,attrs):
+        if tag not in {'area','base','br','col','embed','hr','img','input','link','meta','param','source','track','wbr'}:self.stack.append(tag)
+
+    def handle_endtag(self,tag):
+        if tag in self.stack:self.stack=self.stack[:len(self.stack)-1-self.stack[::-1].index(tag)]
+
+    def handle_data(self,data):
+        if not {'script','style'}.intersection(self.stack) and {'p','pre','code'}.intersection(self.stack):
+            line,column=self.getpos();start=self.offsets[line-1]+column
+            self.spans.append((start,start+len(data)))
+
+
+def private_document_match(document):
+    """Keep all private rules; a documented local install URL is not a dependency."""
+    matches=list(PRIVATE.finditer(document))
+    prose=None
+    for match in matches:
+        if re.fullmatch(r'https?://(?:localhost|127\.0\.0\.1)',match.group(),re.I):
+            if prose is None:
+                prose=DocumentedLoopbacks(document);prose.feed(document)
+            if any(start<=match.start() and match.end()<=end for start,end in prose.spans):continue
+        return match
+    return None
+
+
 class Resources(HTMLParser):
     def __init__(self, origin):
         super().__init__()
@@ -76,8 +130,8 @@ class ReposNewsStaticBuilder:
             raise ValueError('Published ES/EN content is incomplete')
         files, assets = {}, set()
         for path in sorted(paths):
-            document = self.fetch(ORIGIN + path).decode('utf-8')
-            if PRIVATE.search(document) or 'noindex,nofollow' in document:
+            document = static_document(self.fetch(ORIGIN + path).decode('utf-8'))
+            if private_document_match(document) or 'noindex,nofollow' in document:
                 raise ValueError('Private data or backend dependency in public HTML: '+path)
             if not all(marker in document for marker in ('rel="canonical"', 'hreflang="es"', 'hreflang="en"', 'og:title')):
                 raise ValueError('Missing public SEO: '+path)

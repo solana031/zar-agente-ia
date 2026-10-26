@@ -20,7 +20,7 @@ ACCOUNT_FIELDS={
  'consistency':'Nombre del beneficiario, perfil de pagos, formulario fiscal y dirección coherentes entre sí'}
 TAX_STATUSES={'UNKNOWN','ACCEPTED','IN_REVIEW','PENDING','REJECTED','NOT_APPLICABLE'}
 FINDINGS={'PAYEE_NAME_MISMATCH':'Nombre y apellidos del perfil distintos del formulario fiscal',
- 'POSTAL_STREET_MISSING':'Dirección del perfil sin calle, número u otros datos postales necesarios',
+ 'POSTAL_STREET_MISSING':'Calle no visible en el perfil; comprobar Dirección, línea 1',
  'GOOGLE_PROFILE_SAVE_ERROR':'Google devuelve un error al guardar el perfil; corrección no confirmada'}
 MESSAGE='Los datos de la cuenta que ha introducido son imprecisos o están incompletos.'
 PUBLIC_FIELDS={'controller':'Titular / denominación social','email':'Correo de contacto público','activity':'Actividad',
@@ -93,7 +93,9 @@ def view(scope,data=None):
  cmp=saved.get('cmp_probe',{})
  cmp_current=_fresh(cmp.get('checked_at')) and cmp.get('publisher')==data.get('publisher') and cmp.get('loader')==public_config(data)['cmp_loader']
  cmp_status=cmp.get('status','MISSING') if cmp_current else 'UNKNOWN' if cmp else 'MISSING'
- checks['CMP']='READY' if cmp_status=='READY' else 'ACTION_REQUIRED'
+ availability=saved.get('provider_availability',{})
+ cmp_waiting=availability.get('cmp')=='WAITING_FOR_ADSENSE_AVAILABILITY' and availability.get('observed_by')==scope and availability.get('publisher')==data.get('publisher') and _fresh(availability.get('checked_at'))
+ checks['CMP']='READY' if cmp_status=='READY' else 'WAITING_FOR_ADSENSE_AVAILABILITY' if cmp_waiting else 'ACTION_REQUIRED'
  account=saved.get('account_review',{})
  confirmed=account.get('completed_by')==scope and all(account.get('checks',{}).get(k) is True for k in ACCOUNT_FIELDS)
  observation=saved.get('provider_observation',{})
@@ -111,16 +113,19 @@ def view(scope,data=None):
  legal_ready=bool(public_identity(data)) and legal.get('economic')=='YES' and (not proof or proof.get('legal_page_present') is True)
  checks['LEGAL IDENTITY']='READY' if legal_ready else 'REVIEW_REQUIRED' if legal else 'ACTION_REQUIRED'
  site_ready=all(checks[k]=='READY' for k in LABELS[:6])
- ready=site_ready and checks['CMP']=='READY' and legal_ready and confirmed and tax in {'ACCEPTED','NOT_APPLICABLE'}
+ ready=site_ready and (checks['CMP']=='READY' or cmp_waiting) and legal_ready and confirmed and tax in {'ACCEPTED','NOT_APPLICABLE'}
  return {'status':'READY_FOR_RESUBMISSION' if ready else 'SITE_READY_FOR_ADSENSE' if site_ready else 'ACTION_REQUIRED',
  'site_ready_for_adsense':site_ready,'checklist':checks,'ready_for_resubmission':ready,
- 'blockers':[k for k,v in checks.items() if v not in {'READY','NOT_APPLICABLE'}],
+ 'blockers':[k for k,v in checks.items() if v not in {'READY','NOT_APPLICABLE','WAITING_FOR_ADSENSE_AVAILABILITY'}],
  'checked_at':proof.get('checked_at') or audit.get('checked_at'),'audit_current':valid,
  'account_message':saved.get('account_message',MESSAGE),'account_fields':ACCOUNT_FIELDS,'account_checks':account.get('checks',{}),
  'account_reviewed':confirmed,'account_confirmation':'CONFIRMED_BY_USER' if confirmed else 'ACTION_REQUIRED',
  'tax_status':tax,'tax_evidence':tax_source,'provider_observation_at':observation.get('checked_at'),
  'account_findings':{k:FINDINGS[k] for k in findings},'finding_options':FINDINGS,
- 'cmp_note':CMP_STEPS[0],'cmp_steps':CMP_STEPS,'cmp_status':cmp_status,'cmp_probe':{k:cmp.get(k) for k in ('api','loaded','readable','cmp_id','event_status','has_tc_string','checked_at')},
+ 'cmp_note':CMP_STEPS[0],'cmp_steps':CMP_STEPS,'cmp_status':cmp_status,
+ 'cmp_configuration_status':checks['CMP'],'cmp_availability':availability.get('cmp','UNKNOWN') if cmp_waiting else 'UNKNOWN',
+ 'cmp_required_for_ad_serving':True,'cmp_required_for_resubmission':False if cmp_waiting else None,
+ 'cmp_review_policy_source':'https://support.google.com/adsense/answer/7584263','cmp_probe':{k:cmp.get(k) for k in ('api','loaded','readable','cmp_id','event_status','has_tc_string','checked_at')},
  'public_fields':PUBLIC_FIELDS,'legal_review':legal,'cmp_loader':public_config(data)['cmp_loader'],
  'ads':'DISABLED','account_approval':'NOT_VERIFIED','site_approval':'NOT_VERIFIED','submission':'NOT_RESUBMITTED',
  'audit_summary':audit.get('summary',{}) if valid else {}}
@@ -137,7 +142,8 @@ def ensure_actions(scope):
  _owned(scope)
  from .notification_center import emit
  result=view(scope)
- descriptions=[('REVISAR DATOS DE CUENTA ADSENSE',' · '.join(result['account_findings'].values()) or MESSAGE,{'findings':list(result['account_findings'].values()),'tax_status':result['tax_status'],'checklist':list(ACCOUNT_FIELDS.values()),'instructions':'Revisar en Google, resolver las diferencias entre beneficiario, pagos, formulario y dirección. Aquí solo se registran comprobaciones; no valores privados. No crear otra cuenta ni reenviar.'}),
+ account_title='Corregir nombre y comprobar línea 1 de dirección AdSense' if {'PAYEE_NAME_MISMATCH','POSTAL_STREET_MISSING'}<=set(result['account_findings']) else 'Comprobar línea 1 de dirección del perfil AdSense' if 'POSTAL_STREET_MISSING' in result['account_findings'] else 'REVISAR DATOS DE CUENTA ADSENSE'
+ descriptions=[(account_title,' · '.join(result['account_findings'].values()) or MESSAGE,{'findings':list(result['account_findings'].values()),'tax_status':result['tax_status'],'checklist':list(ACCOUNT_FIELDS.values()),'instructions':'Revisar en Google, resolver las diferencias entre beneficiario, pagos, formulario y dirección. Aquí solo se registran comprobaciones; no valores privados. No crear otra cuenta ni reenviar.'}),
  ('CONFIGURAR CMP ADSENSE',result['cmp_note'],{'steps':CMP_STEPS}),
  ('CONFIRMAR IDENTIFICACIÓN LEGAL PARA MONETIZACIÓN','Confirmar persona física o sociedad, actividad económica y la identificación pública legalmente exigible.',
  {'PUBLIC_REQUIRED':PUBLIC_FIELDS,'PRIVATE_ADMINISTRATIVE':['documentos fiscales','datos bancarios','perfil de pagos','contactos privados'],
@@ -155,7 +161,7 @@ def ensure_actions(scope):
    if key in seen:row.update(status='DONE',outcome='DUPLICATE');continue
    seen.add(key);i=KEYS.index(key);title,message,details=descriptions[i]
    row.update(title=title,message=message,details=details,priority='CRITICAL' if i==0 else 'P1',deep_link='/?zar_workspace=sites#zarAdsenseReadiness',
-    actions=[{'label':'REVISAR','url':'/?zar_workspace=sites#zarAdsenseReadiness'}],status='DONE' if complete[i] else 'ACTION_REQUIRED',
+    actions=[{'label':'REVISAR','url':'/?zar_workspace=sites#zarAdsenseReadiness'}],status='DONE' if complete[i] else 'WAITING_PROVIDER' if i==1 and result['checklist']['CMP']=='WAITING_FOR_ADSENSE_AVAILABILITY' else 'ACTION_REQUIRED',
     outcome='EVIDENCE_CONFIRMED' if complete[i] else None)
   holdings.write(scope,d)
 
@@ -167,6 +173,16 @@ def confirm_account_review(scope,payload):
  if tax not in TAX_STATUSES:raise ValueError('INVALID_TAX_STATUS')
  _store(scope,'account_review',{'checks':dict(checks),'tax_status':tax,'completed_by':scope,'completed_at':holdings._now(),'source':'OWNER_ATTESTATION_NOT_GOOGLE_APPROVAL'})
  ensure_actions(scope);return view(scope)
+
+def record_provider_availability(scope,payload):
+ data=_auth(scope)
+ if set(payload)!={'cmp','account_not_approved','confirmed'} or payload.get('confirmed') is not True:raise ValueError('PROVIDER_AVAILABILITY_CONFIRMATION_REQUIRED')
+ if payload.get('cmp') not in {'AVAILABLE','UNKNOWN','WAITING_FOR_ADSENSE_AVAILABILITY'} or type(payload.get('account_not_approved')) is not bool:raise ValueError('INVALID_PROVIDER_AVAILABILITY')
+ if payload['cmp']=='WAITING_FOR_ADSENSE_AVAILABILITY' and payload['account_not_approved'] is not True:raise ValueError('ONBOARDING_STATE_REQUIRED')
+ _store(scope,'provider_availability',{'cmp':payload['cmp'],'account_not_approved':payload['account_not_approved'],
+  'publisher':data.get('publisher'),'observed_by':scope,'checked_at':holdings._now(),'source':'OBSERVED_ADSENSE_ONBOARDING'})
+ ensure_actions(scope);return view(scope)
+
 
 def record_provider_observation(scope,payload):
  data=_auth(scope)

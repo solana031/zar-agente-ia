@@ -85,6 +85,15 @@ async def check():
                 await page.wait_for_timeout(100)
                 assert posts[-1]['path'].endswith('/adsense_provider_observation')
                 assert posts[-1]['data']=={'tax_status':'IN_REVIEW','findings':['PAYEE_NAME_MISMATCH','POSTAL_STREET_MISSING'],'confirmed':True}
+                await panel.get_by_text('Disponibilidad de la CMP en AdSense · ACTION_REQUIRED',exact=True).click()
+                availability=panel.locator('form[data-form=adsense-provider-availability]')
+                await availability.locator('[name=cmp]').select_option('WAITING_FOR_ADSENSE_AVAILABILITY')
+                await availability.locator('[name=account_not_approved]').check()
+                await availability.locator('[name=confirmed]').check()
+                await availability.get_by_role('button',name='Guardar disponibilidad de CMP').click()
+                await page.wait_for_timeout(100)
+                assert posts[-1]['path'].endswith('/adsense_provider_availability')
+                assert posts[-1]['data']=={'cmp':'WAITING_FOR_ADSENSE_AVAILABILITY','account_not_approved':True,'confirmed':True}
                 async with page.expect_popup() as opened:
                     await panel.get_by_role('button',name='REVERIFICAR ADSENSE / CMP').click()
                 probe_page=await opened.value

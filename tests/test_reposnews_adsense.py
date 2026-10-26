@@ -304,3 +304,44 @@ def test_new_findings_invalidate_earlier_account_confirmation_and_cannot_restore
         assert result['checklist']['ACCOUNT INFO']=='ACTION_REQUIRED' and result['checklist']['TAX INFO']=='IN_REVIEW'
     d=holdings.read('owner');state=d['reposnews_adsense'];state['account_review']['completed_at']=(datetime.now(timezone.utc)-timedelta(days=5)).isoformat();state['provider_observation']['checked_at']=(datetime.now(timezone.utc)-timedelta(days=4)).isoformat();holdings.write('owner',d)
     assert ads.view('owner')['checklist']['TAX INFO']=='UNKNOWN'
+
+
+def test_cmp_provider_wait_does_not_touch_tax_or_legal_and_has_no_human_action(site):
+    from copy import deepcopy
+    with site[0].test_request_context():
+        session['zar_auth']=True
+        ads.record_provider_observation('owner',{'tax_status':'IN_REVIEW','findings':['POSTAL_STREET_MISSING'],'confirmed':True})
+        before=deepcopy(holdings.read('owner')['reposnews_adsense']['provider_observation']);legal=deepcopy(rn.read()['legal'])
+        r=ads.record_provider_availability('owner',{'cmp':'WAITING_FOR_ADSENSE_AVAILABILITY','account_not_approved':True,'confirmed':True})
+        assert r['checklist']['CMP']=='WAITING_FOR_ADSENSE_AVAILABILITY' and r['cmp_status']=='MISSING'
+        assert r['checklist']['TAX INFO']=='IN_REVIEW' and not r['ready_for_resubmission']
+        assert r['cmp_required_for_ad_serving'] is True
+        assert holdings.read('owner')['reposnews_adsense']['provider_observation']==before and rn.read()['legal']==legal
+    rows=identity_center.ensure(holdings.read('owner'))['human_actions']
+    assert next(r for r in rows if r['notification_key']==ads.KEYS[1])['status']=='WAITING_PROVIDER'
+    assert next(r for r in rows if r['notification_key']==ads.KEYS[0])['title']=='Comprobar línea 1 de dirección del perfil AdSense'
+
+
+def test_provider_availability_requires_owner_and_exact_onboarding_state(site):
+    with site[0].test_request_context():
+        payload={'cmp':'WAITING_FOR_ADSENSE_AVAILABILITY','account_not_approved':True,'confirmed':True}
+        with pytest.raises(ValueError,match='AUTHENTICATED'):ads.record_provider_availability('owner',payload)
+        session['zar_auth']=True
+        with pytest.raises(ValueError,match='ONBOARDING'):ads.record_provider_availability('owner',{**payload,'account_not_approved':False})
+        with pytest.raises(ValueError):ads.record_provider_availability('owner',{**payload,'tax_id':'SENSITIVE'})
+
+
+def test_authorized_optional_cmp_review_path_preserves_account_tax_and_ad_gates(site):
+    ads.record_public_audit('owner',{k:'READY' for k in ads.LABELS},{})
+    with site[0].test_request_context():
+        session['zar_auth']=True
+        ads.confirm_legal_review('owner',legal_payload())
+        ads.record_provider_availability('owner',{'cmp':'WAITING_FOR_ADSENSE_AVAILABILITY','account_not_approved':True,'confirmed':True})
+        assert not ads.view('owner')['ready_for_resubmission']
+        r=ads.confirm_account_review('owner',{'checks':{k:True for k in ads.ACCOUNT_FIELDS},'tax_status':'IN_REVIEW','confirmed':True})
+        assert not r['ready_for_resubmission'] and 'TAX INFO' in r['blockers'] and 'CMP' not in r['blockers']
+        r=ads.confirm_account_review('owner',{'checks':{k:True for k in ads.ACCOUNT_FIELDS},'tax_status':'ACCEPTED','confirmed':True})
+        assert r['ready_for_resubmission'] and not r['blockers']
+        assert r['ads']=='DISABLED' and r['submission']=='NOT_RESUBMITTED' and r['cmp_status']=='MISSING'
+        d=holdings.read('owner');d['reposnews_adsense']['provider_availability']['checked_at']=(datetime.now(timezone.utc)-timedelta(days=4)).isoformat();holdings.write('owner',d)
+        assert not ads.view('owner')['ready_for_resubmission']

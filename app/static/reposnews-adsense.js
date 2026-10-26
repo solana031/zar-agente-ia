@@ -29,6 +29,12 @@
   <form data-form="adsense-cmp-setup"><label style="display:block">URL pública de la etiqueta CMP independiente oficial proporcionada por Google <input style="width:100%" name="official_url" type="url" value="${esc(r.cmp_loader||'')}"></label>
   <label style="display:block"><input name="confirmed" type="checkbox" required> He publicado el mensaje y esta URL procede de su etiqueta CMP oficial para el publisher actual. No es una etiqueta de anuncios.</label>
   <button class="zoBtn">Guardar etiqueta CMP</button></form></details>
+  <details><summary>Disponibilidad de la CMP en AdSense · ${esc(r.cmp_configuration_status||'UNKNOWN')}</summary>
+  <p>El <a href="https://support.google.com/adsense/answer/7584263" target="_blank" rel="noopener">proceso oficial de Google</a> sitúa la selección de CMP como opcional después de solicitar revisión. Sigue siendo necesaria para la publicidad correspondiente; aquí no se activan anuncios. La ausencia del menú en este onboarding se registra como espera del proveedor, sin dar la CMP por instalada.</p>
+  <form data-form="adsense-provider-availability"><label style="display:block">Configuración CMP en la cuenta actual <select name="cmp"><option value="UNKNOWN">Sin verificar</option><option value="AVAILABLE">Menú disponible</option><option value="WAITING_FOR_ADSENSE_AVAILABILITY" ${r.cmp_availability==='WAITING_FOR_ADSENSE_AVAILABILITY'?'selected':''}>Menú no disponible en el onboarding</option></select></label>
+  <label style="display:block"><input name="account_not_approved" type="checkbox"> Google muestra que la cuenta todavía no está aprobada.</label>
+  <label style="display:block"><input name="confirmed" type="checkbox" required> He comprobado el menú y el estado de esta cuenta en Google. No se modifica información fiscal.</label>
+  <button class="zoBtn">Guardar disponibilidad de CMP</button></form></details>
   <details><summary>CONFIRMAR IDENTIFICACIÓN LEGAL PARA MONETIZACIÓN</summary>
   <p>PUBLIC_REQUIRED: información que autorizas expresamente a mostrar en el aviso legal. PRIVATE_ADMINISTRATIVE: documentación fiscal, bancos, pagos y contactos privados; no se importan ni se solicitan aquí.</p>
   <p>Para actividad económica, <a href="https://www.boe.es/buscar/act.php?id=BOE-A-2002-13758#a10" target="_blank" rel="noopener">LSSI, artículo 10</a>: titular, domicilio o establecimiento, contacto e identificación fiscal; registro, autorización o profesión regulada si procede. Confirma la aplicabilidad antes de publicar datos; el teléfono privado no se solicita.</p>
