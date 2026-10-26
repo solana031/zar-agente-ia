@@ -18,6 +18,10 @@ ACCOUNT_FIELDS={
  'treaty':'Tratado fiscal según el formulario presentado, sin presumir beneficios',
  'no_duplicates':'No existe otra cuenta AdSense duplicada',
  'consistency':'Nombre del beneficiario, perfil de pagos, formulario fiscal y dirección coherentes entre sí'}
+TAX_STATUSES={'UNKNOWN','ACCEPTED','IN_REVIEW','PENDING','REJECTED','NOT_APPLICABLE'}
+FINDINGS={'PAYEE_NAME_MISMATCH':'Nombre y apellidos del perfil distintos del formulario fiscal',
+ 'POSTAL_STREET_MISSING':'Dirección del perfil sin calle, número u otros datos postales necesarios',
+ 'GOOGLE_PROFILE_SAVE_ERROR':'Google devuelve un error al guardar el perfil; corrección no confirmada'}
 MESSAGE='Los datos de la cuenta que ha introducido son imprecisos o están incompletos.'
 PUBLIC_FIELDS={'controller':'Titular / denominación social','email':'Correo de contacto público','activity':'Actividad',
  'address':'Domicilio o establecimiento exigible','tax_id':'Identificación fiscal exigible',
@@ -92,9 +96,17 @@ def view(scope,data=None):
  checks['CMP']='READY' if cmp_status=='READY' else 'ACTION_REQUIRED'
  account=saved.get('account_review',{})
  confirmed=account.get('completed_by')==scope and all(account.get('checks',{}).get(k) is True for k in ACCOUNT_FIELDS)
+ observation=saved.get('provider_observation',{})
+ latest_observation=bool(observation) and str(observation.get('checked_at',''))>str(account.get('completed_at',''))
+ findings=[k for k in observation.get('findings',[]) if k in FINDINGS] if latest_observation else []
+ if findings:confirmed=False
  checks['ACCOUNT INFO']='READY' if confirmed else 'ACTION_REQUIRED'
  tax=account.get('tax_status','UNKNOWN') if confirmed else 'UNKNOWN'
- checks['TAX INFO']='READY' if tax=='ACCEPTED' else 'NOT_APPLICABLE' if tax=='NOT_APPLICABLE' else 'ACTION_REQUIRED' if tax in {'PENDING','REJECTED'} else 'UNKNOWN'
+ tax_source=account.get('source','NO_CURRENT_W8_ACCEPTANCE_EVIDENCE')
+ if latest_observation:
+  tax=observation.get('tax_status','UNKNOWN') if observation.get('observed_by')==scope and observation.get('publisher')==data.get('publisher') and _fresh(observation.get('checked_at')) else 'UNKNOWN'
+  tax_source=observation.get('source','UNKNOWN')
+ checks['TAX INFO']='READY' if tax=='ACCEPTED' else 'NOT_APPLICABLE' if tax=='NOT_APPLICABLE' else 'IN_REVIEW' if tax=='IN_REVIEW' else 'ACTION_REQUIRED' if tax in {'PENDING','REJECTED'} else 'UNKNOWN'
  legal=saved.get('legal_review',{})
  legal_ready=bool(public_identity(data)) and legal.get('economic')=='YES' and (not proof or proof.get('legal_page_present') is True)
  checks['LEGAL IDENTITY']='READY' if legal_ready else 'REVIEW_REQUIRED' if legal else 'ACTION_REQUIRED'
@@ -106,7 +118,8 @@ def view(scope,data=None):
  'checked_at':proof.get('checked_at') or audit.get('checked_at'),'audit_current':valid,
  'account_message':saved.get('account_message',MESSAGE),'account_fields':ACCOUNT_FIELDS,'account_checks':account.get('checks',{}),
  'account_reviewed':confirmed,'account_confirmation':'CONFIRMED_BY_USER' if confirmed else 'ACTION_REQUIRED',
- 'tax_status':tax,'tax_evidence':account.get('source','NO_CURRENT_W8_ACCEPTANCE_EVIDENCE'),
+ 'tax_status':tax,'tax_evidence':tax_source,'provider_observation_at':observation.get('checked_at'),
+ 'account_findings':{k:FINDINGS[k] for k in findings},'finding_options':FINDINGS,
  'cmp_note':CMP_STEPS[0],'cmp_steps':CMP_STEPS,'cmp_status':cmp_status,'cmp_probe':{k:cmp.get(k) for k in ('api','loaded','readable','cmp_id','event_status','has_tc_string','checked_at')},
  'public_fields':PUBLIC_FIELDS,'legal_review':legal,'cmp_loader':public_config(data)['cmp_loader'],
  'ads':'DISABLED','account_approval':'NOT_VERIFIED','site_approval':'NOT_VERIFIED','submission':'NOT_RESUBMITTED',
@@ -124,7 +137,7 @@ def ensure_actions(scope):
  _owned(scope)
  from .notification_center import emit
  result=view(scope)
- descriptions=[('REVISAR DATOS DE CUENTA ADSENSE',MESSAGE,{'checklist':list(ACCOUNT_FIELDS.values()),'instructions':'Revisar en Google, resolver las diferencias entre beneficiario, pagos, formulario y dirección. Aquí solo se registran comprobaciones; no valores privados. No crear otra cuenta ni reenviar.'}),
+ descriptions=[('REVISAR DATOS DE CUENTA ADSENSE',' · '.join(result['account_findings'].values()) or MESSAGE,{'findings':list(result['account_findings'].values()),'tax_status':result['tax_status'],'checklist':list(ACCOUNT_FIELDS.values()),'instructions':'Revisar en Google, resolver las diferencias entre beneficiario, pagos, formulario y dirección. Aquí solo se registran comprobaciones; no valores privados. No crear otra cuenta ni reenviar.'}),
  ('CONFIGURAR CMP ADSENSE',result['cmp_note'],{'steps':CMP_STEPS}),
  ('CONFIRMAR IDENTIFICACIÓN LEGAL PARA MONETIZACIÓN','Confirmar persona física o sociedad, actividad económica y la identificación pública legalmente exigible.',
  {'PUBLIC_REQUIRED':PUBLIC_FIELDS,'PRIVATE_ADMINISTRATIVE':['documentos fiscales','datos bancarios','perfil de pagos','contactos privados'],
@@ -151,9 +164,19 @@ def confirm_account_review(scope,payload):
  if set(payload)-{'checks','confirmed','tax_status'}:raise ValueError('PERSONAL_ACCOUNT_VALUES_NOT_ACCEPTED')
  checks=payload.get('checks',{});tax=payload.get('tax_status','UNKNOWN')
  if payload.get('confirmed') is not True or set(checks)!=set(ACCOUNT_FIELDS) or any(v is not True for v in checks.values()):raise ValueError('Revisa todos los puntos en Google; no introduzcas valores personales aquí.')
- if tax not in {'UNKNOWN','ACCEPTED','PENDING','REJECTED','NOT_APPLICABLE'}:raise ValueError('INVALID_TAX_STATUS')
+ if tax not in TAX_STATUSES:raise ValueError('INVALID_TAX_STATUS')
  _store(scope,'account_review',{'checks':dict(checks),'tax_status':tax,'completed_by':scope,'completed_at':holdings._now(),'source':'OWNER_ATTESTATION_NOT_GOOGLE_APPROVAL'})
  ensure_actions(scope);return view(scope)
+
+def record_provider_observation(scope,payload):
+ data=_auth(scope)
+ if set(payload)!={'tax_status','findings','confirmed'} or payload.get('confirmed') is not True:raise ValueError('PROVIDER_OBSERVATION_CONFIRMATION_REQUIRED')
+ tax=payload.get('tax_status');findings=payload.get('findings')
+ if not isinstance(tax,str) or tax not in TAX_STATUSES or not isinstance(findings,list) or len(findings)>len(FINDINGS) or any(not isinstance(k,str) or k not in FINDINGS for k in findings):raise ValueError('ONLY_STATUS_AND_FINDING_CODES_ACCEPTED')
+ _store(scope,'provider_observation',{'tax_status':tax,'findings':list(dict.fromkeys(findings)),
+  'publisher':data.get('publisher'),'observed_by':scope,'checked_at':holdings._now(),'source':'OPERATOR_OBSERVATION_OF_GOOGLE_PAYMENTS_NOT_ACCOUNT_APPROVAL'})
+ ensure_actions(scope);return view(scope)
+
 
 def confirm_legal_review(scope,payload):
  _auth(scope)

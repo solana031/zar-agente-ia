@@ -75,6 +75,16 @@ async def check():
                 payload=posts[-1]['data'];assert set(payload)=={'checks','confirmed','tax_status'}
                 assert set(payload['checks'])==set(ads.ACCOUNT_FIELDS) and all(x is True for x in payload['checks'].values())
                 assert payload['tax_status']=='UNKNOWN'
+                await panel.get_by_text('Estado observado en Google · UNKNOWN',exact=True).click()
+                observed=panel.locator('form[data-form=adsense-provider-observation]')
+                await observed.locator('[name=tax_status]').select_option('IN_REVIEW')
+                await observed.locator('[name=PAYEE_NAME_MISMATCH]').check()
+                await observed.locator('[name=POSTAL_STREET_MISSING]').check()
+                await observed.locator('[name=confirmed]').check()
+                await observed.get_by_role('button',name='Guardar comprobación de Google').click()
+                await page.wait_for_timeout(100)
+                assert posts[-1]['path'].endswith('/adsense_provider_observation')
+                assert posts[-1]['data']=={'tax_status':'IN_REVIEW','findings':['PAYEE_NAME_MISMATCH','POSTAL_STREET_MISSING'],'confirmed':True}
                 async with page.expect_popup() as opened:
                     await panel.get_by_role('button',name='REVERIFICAR ADSENSE / CMP').click()
                 probe_page=await opened.value

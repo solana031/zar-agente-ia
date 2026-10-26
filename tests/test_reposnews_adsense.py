@@ -265,3 +265,42 @@ def test_public_reverify_fixed_urls_failure_and_no_private_google_calls(site,mon
     assert all(k['allow_redirects'] is False for _,k in calls)
     monkeypatch.setattr(requests,'get',lambda *a,**k:(_ for _ in ()).throw(requests.Timeout()))
     checks,errors=ads._check_public(rn.read());assert len(errors)==3 and checks['SITE']=='UNKNOWN'
+
+
+def test_provider_review_is_independent_from_unconfirmed_account_and_does_not_complete_it(site):
+    payload={'tax_status':'IN_REVIEW','findings':['PAYEE_NAME_MISMATCH','POSTAL_STREET_MISSING','GOOGLE_PROFILE_SAVE_ERROR'],'confirmed':True}
+    with site[0].test_request_context():
+        with pytest.raises(ValueError,match='AUTHENTICATED'):ads.record_provider_observation('owner',payload)
+        session['zar_auth']=True
+        result=ads.record_provider_observation('owner',payload)
+        assert result['checklist']['TAX INFO']=='IN_REVIEW'
+        assert result['checklist']['ACCOUNT INFO']=='ACTION_REQUIRED' and not result['account_reviewed']
+        assert not result['ready_for_resubmission'] and result['ads']=='DISABLED' and result['submission']=='NOT_RESUBMITTED'
+        assert 'account_review' not in holdings.read('owner')['reposnews_adsense']
+        for extra in ({'tax_id':'SENSITIVE-NIF-NEVER-PERSIST'},{'address':'SENSITIVE-NIF-NEVER-PERSIST'},{'findings':['SENSITIVE-NIF-NEVER-PERSIST']}):
+            with pytest.raises(ValueError):ads.record_provider_observation('owner',{**payload,**extra})
+    actions=identity_center.ensure(holdings.read('owner'))['human_actions']
+    assert len(actions)==3
+    account=next(r for r in actions if r['notification_key']==ads.KEYS[0])
+    assert account['status']=='ACTION_REQUIRED' and 'Nombre y apellidos' in account['message'] and 'Dirección' in account['message']
+    assert 'SENSITIVE-NIF-NEVER-PERSIST' not in json.dumps(holdings.read('owner'))
+
+
+def test_accepted_tax_observation_alone_cannot_approve_account_or_resubmit(site):
+    with site[0].test_request_context():
+        session['zar_auth']=True
+        result=ads.record_provider_observation('owner',{'tax_status':'ACCEPTED','findings':[],'confirmed':True})
+    assert result['checklist']['TAX INFO']=='READY'
+    assert result['checklist']['ACCOUNT INFO']=='ACTION_REQUIRED' and not result['ready_for_resubmission']
+    d=holdings.read('owner');d['reposnews_adsense']['provider_observation']['checked_at']=(datetime.now(timezone.utc)-timedelta(days=4)).isoformat();holdings.write('owner',d)
+    assert ads.view('owner')['checklist']['TAX INFO']=='UNKNOWN'
+
+
+def test_new_findings_invalidate_earlier_account_confirmation_and_cannot_restore_stale_acceptance(site):
+    with site[0].test_request_context():
+        session['zar_auth']=True
+        ads.confirm_account_review('owner',{'checks':{k:True for k in ads.ACCOUNT_FIELDS},'tax_status':'ACCEPTED','confirmed':True})
+        result=ads.record_provider_observation('owner',{'tax_status':'IN_REVIEW','findings':['POSTAL_STREET_MISSING'],'confirmed':True})
+        assert result['checklist']['ACCOUNT INFO']=='ACTION_REQUIRED' and result['checklist']['TAX INFO']=='IN_REVIEW'
+    d=holdings.read('owner');state=d['reposnews_adsense'];state['account_review']['completed_at']=(datetime.now(timezone.utc)-timedelta(days=5)).isoformat();state['provider_observation']['checked_at']=(datetime.now(timezone.utc)-timedelta(days=4)).isoformat();holdings.write('owner',d)
+    assert ads.view('owner')['checklist']['TAX INFO']=='UNKNOWN'

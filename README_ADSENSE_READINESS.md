@@ -1,4 +1,4 @@
-# ReposNews AdSense readiness — 33.3.122
+# ReposNews AdSense readiness — 33.3.123
 
 Scope: consent compatibility and three existing owner actions. No Google account edits, resubmission, Auto Ads or ad slots.
 
@@ -20,3 +20,5 @@ References:
 - https://www.boe.es/buscar/act.php?id=BOE-A-2002-13758#a10
 
 Validation: focused pytest suites; offline TCF contract; browser desktop/mobile public pages, owner checklist and cross-origin reverify popup with mocked network. Production deployment and observed states are reported separately.
+
+33.3.123: an authenticated, CSRF-protected operator can record the observed Google Payments tax state and allowlisted finding codes separately from the full account checklist. IN_REVIEW is never accepted/ready. New findings invalidate an older account confirmation; stale tax observations do not restore older acceptance. No personal field values or documents are accepted. This observation does not change Google, assert account approval or complete the account action.
