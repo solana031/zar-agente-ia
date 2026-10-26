@@ -30,12 +30,17 @@ def view(scope):
     adsense={**d.get('adsense',{'state':'POR CONFIGURAR','metrics':None,'payments':[]})}
     capability=center['capabilities'].get('ADSENSE',{})
     adsense.update(account_state=capability.get('account_state','ERROR' if capability.get('status')=='ERROR' else 'NOT_VERIFIED'),oauth_capability=capability.get('status','NOT_CONNECTED'))
+    from .reposnews_adsense import view as adsense_readiness
+    adsense['readiness']=adsense_readiness(scope)
     return {'identity_center':center,'identity':identity_view(scope),'jev':d.get('jev_decisions',[])[-100:][::-1], 'media':media[-50:][::-1], 'commerce':commerce_view(scope),'agency':agency_view(scope),
         'sites':sites_company.list_sites(scope), 'adsense':adsense,
         'connectors':{k:{x:v.get(x) for x in ('state','checked_at','verification_scope')} for k,v in d.get('verified_connectors',{}).items()}}
 
 
 def operate(scope, action, data):
+    if action=='adsense_account_review':
+        from .reposnews_adsense import confirm_account_review
+        return confirm_account_review(scope,data)
     if action.startswith('reposnews_'):
         from . import reposnews
         return reposnews.operate(scope, action.removeprefix('reposnews_'), data)

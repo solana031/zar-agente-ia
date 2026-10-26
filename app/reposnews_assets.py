@@ -3,8 +3,34 @@ import hashlib
 import io
 import re
 from pathlib import Path
+from copy import deepcopy
+from functools import lru_cache
 from PIL import Image, ImageFilter, ImageStat
 from . import holdings, reposnews as rn
+
+FRAME_TYPES={'REEL_FRAME','USER_SELECTED_REEL_FRAME','VIDEO_FRAME'}
+PUBLIC_FRAME_PERMISSIONS={'RIGHTS_CLEARED','LICENSE_VERIFIED','OWNER_LICENSED'}
+
+def frame_cleared(asset):
+    return asset.get('permission') in PUBLIC_FRAME_PERMISSIONS
+
+def public_article(article):
+    """Presentation-only rights boundary; preserve stored snapshots and private evidence."""
+    result=deepcopy(article)
+    result['assets']=[a for a in result.get('assets',[]) if not ({a.get('source_type'),a.get('kind')} & FRAME_TYPES) or frame_cleared(a)]
+    if article.get('image_kind') in FRAME_TYPES:
+        cover=next((a for a in article.get('assets',[]) if a.get('role')=='COVER'),{})
+        if not frame_cleared(cover) and not frame_cleared(article.get('cover_provenance') or {}):
+            result.update(image_asset='editorial-'+article['id']+'.png',
+                cover_url='/media/reposnews/editorial-'+article['id']+'.png',cover_thumb='/media/reposnews/editorial-'+article['id']+'.png',
+                image_kind='GENERATED',image_attribution='ReposNews · ilustración editorial propia / original editorial illustration',
+                cover_provenance={'source_type':'GENERATED','generator':'ReposNews/internal-editorial-canvas-v1'})
+    return result
+
+@lru_cache(maxsize=64)
+def editorial_cover(repo,category,title,summary):
+    from .reposnews_cover_providers import editorial
+    return editorial({'repo':repo,'category':category,'title_en':title,'summary_en':summary})[0]
 
 
 def inspect_image(content):

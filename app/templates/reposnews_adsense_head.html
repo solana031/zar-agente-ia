@@ -1,0 +1,7 @@
+{% if not preview and adsense.client %}
+<meta name="google-adsense-account" content="{{adsense.client}}">
+{# The official meta tag/ads.txt verify ownership without serving ads. This prepared
+   ad tag is deliberately inert until a certified CMP and activation are verified. #}
+<script nonce="{{csp_nonce}}">window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments)}gtag('consent','default',{ad_storage:'denied',ad_user_data:'denied',ad_personalization:'denied',analytics_storage:'denied'});</script>
+<script nonce="{{csp_nonce}}" type="text/plain" data-adsense-prepared="consent-required" async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client={{adsense.client}}" crossorigin="anonymous"></script>
+{% endif %}

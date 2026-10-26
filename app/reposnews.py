@@ -4,6 +4,7 @@ import json
 import os
 import re
 import hashlib
+import secrets
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import quote
@@ -70,21 +71,13 @@ def article_defaults(article):
 
 
 def readiness(data):
-    checks={'DOMAIN':data.get('domain_status')=='ACTIVE','HTTPS':data.get('domain_status')=='ACTIVE',
-            'CONTENT':any(a.get('published') for a in data.get('articles',[])),
-            'ABOUT':True,'CONTACT':True,'PRIVACY':bool(data.get('legal_reviewed')),
-            'LEGAL':legal_status(data)['status']=='LEGAL_READY','COOKIES':True,'NAVIGATION':True,
-            'MOBILE':True,'SITEMAP':True,'ROBOTS':True,'ADS.TXT':data.get('domain_status')=='ACTIVE',
-            'ORIGINAL_CONTENT':bool(data.get('articles')),
-            'ADSENSE_ACCOUNT':data.get('adsense_verification',{}).get('web_enabled') is True,
-            'ADSENSE_SITE':data.get('adsense_verification',{}).get('site_status') in {'REQUIRES_REVIEW','REVIEW_REQUESTED','READY'}}
-    checks['PRIVACY']=checks['LEGAL'];checks['PUBLIC_CONTENT']=checks.pop('CONTENT')
-    return {'checks':checks,'status':'READY_TO_SUBMIT' if all(checks.values()) else 'ACTION_REQUIRED',
-            'blockers':[k for k,v in checks.items() if not v],
-            'submission':'UNDER_REVIEW' if data.get('adsense_verification',{}).get('submitted') and data.get('adsense_verification',{}).get('site_status')!='READY' else 'APPROVED' if data.get('adsense_verification',{}).get('site_status')=='READY' else 'NOT_SUBMITTED','cmp':'NOT_ACTIVE · Google-certified CMP required before serving ads',
-            'analytics':'NOT_CONNECTED','site_in_adsense':data.get('adsense_verification',{}).get('site_status','NOT_VERIFIED'),
-            'content_assessment':'Contenido original publicado; la decisión de aprobación corresponde a Google.',
-            'search_console':data.get('search_console_status','NOT_VERIFIED')}
+    from .reposnews_adsense import view
+    result=view(data.get('owner'),data)
+    checks={k:v=='READY' for k,v in result['checklist'].items()}
+    checks['PUBLIC_CONTENT']=any(a.get('published') for a in data.get('articles',[]))
+    return {**result,'checks':checks,'submission':'ACCOUNT_INFORMATION_REVIEW_REQUIRED',
+            'cmp':'NOT_ACTIVE · Google-certified CMP required before serving ads','analytics':'NOT_CONNECTED',
+            'site_in_adsense':'ACCOUNT_INFORMATION_REVIEW_REQUIRED','search_console':data.get('search_console_status','NOT_VERIFIED')}
 
 
 def summary():
@@ -449,9 +442,10 @@ def article_body_html(article,lang):
     return Markup(rendered)
 
 
-def render(lang='es', slug='', preview=False):
+def render(lang='es', slug='', preview=False, csp_nonce=None):
     data=read();all_rows=data.get('articles',[])
-    rows=all_rows if preview else [a.get('published_snapshot',a) for a in all_rows if a.get('published')]
+    from .reposnews_assets import public_article
+    rows=all_rows if preview else [public_article(a.get('published_snapshot',a)) for a in all_rows if a.get('published')]
     categories=sorted({a['category'] for a in rows})
     article=next((a for a in rows if a['id']==slug),None) if slug else None
     pages={'about','contact','privacy','cookies','legal','repositories','guides','trends'}
@@ -466,7 +460,8 @@ def render(lang='es', slug='', preview=False):
     title=article['title_'+lang] if article else {'es':'ReposNews · Repositorios, herramientas y guías','en':'ReposNews · Repositories, tools and guides'}[lang]
     description=article['summary_'+lang] if article else ('Análisis y guías sobre proyectos tecnológicos con fuentes verificadas.' if lang=='es' else 'Project analysis and practical guides backed by official sources.')
     if slug in pages: title={'about':('Sobre ReposNews','About ReposNews'),'contact':('Contacto','Contact'),'privacy':('Privacidad','Privacy'),'cookies':('Cookies','Cookies'),'legal':('Aviso legal','Legal notice'),'repositories':('Repositorios','Repositories'),'guides':('Guías','Guides'),'trends':('Actividad','Activity')}[slug][0 if lang=='es' else 1]+' · ReposNews'
-    return render_template('reposnews.html',lang=lang,rows=rows,article=article,body=article_body_html(article,lang) if article else None,slug=slug,preview=preview,base=base,title=title,description=description,origin=ORIGIN,path=path,official_covers={'uv':'uv-official.svg','fastapi':'fastapi-official.png','playwright':'playwright-official.svg','jev':'jev-editorial.svg','automaton':'automaton-editorial.svg','dramaclaw':'dramaclaw-official.png'},public_legal=public_legal_profile(data),query=query,category=category,categories=categories,legal_status={'status':legal_status(data)['status']})
+    from .reposnews_adsense import public_config
+    return render_template('reposnews.html',lang=lang,rows=rows,article=article,body=article_body_html(article,lang) if article else None,slug=slug,preview=preview,base=base,title=title,description=description,origin=ORIGIN,path=path,official_covers={'uv':'uv-official.svg','fastapi':'fastapi-official.png','playwright':'playwright-official.svg','jev':'jev-editorial.svg','automaton':'automaton-editorial.svg','dramaclaw':'dramaclaw-official.png'},public_legal=public_legal_profile(data),query=query,category=category,categories=categories,legal_status={'status':legal_status(data)['status']},adsense=public_config(data),csp_nonce=csp_nonce or secrets.token_urlsafe(24),utility_page=bool(query or category or slug=='trends'))
 
 
 def public_legal_profile(data):
@@ -488,9 +483,18 @@ def public_legal_profile(data):
 
 
 def media(asset):
+    editorial=re.fullmatch(r'editorial-([a-z0-9-]{1,80})\.png',asset)
+    if editorial:
+        article=next((a.get('published_snapshot',a) for a in read().get('articles',[]) if a.get('published') and a['id']==editorial[1]),None)
+        if not article:abort(404)
+        from .reposnews_assets import editorial_cover
+        blob=editorial_cover(article.get('repo',''),article.get('category',''),article.get('title_en',''),article.get('summary_en',''))
+        return Response(blob,mimetype='image/png',headers={'Cache-Control':'public, max-age=86400','X-Content-Type-Options':'nosniff'})
     if re.fullmatch(r'(?:source-[a-f0-9]{24}\.png|cover-[a-f0-9]{24}(?:\.png|-sm\.webp))',asset):
         data=read()
-        public=any(a.get('published') and (a.get('published_snapshot',a).get('image_asset')==asset or a.get('published_snapshot',a).get('cover_thumb')=='/media/reposnews/'+asset or any(x.get('asset')==asset for x in a.get('published_snapshot',a).get('assets',[]))) for a in data.get('articles',[]))
+        from .reposnews_assets import public_article
+        public_rows=[public_article(a.get('published_snapshot',a)) for a in data.get('articles',[]) if a.get('published')]
+        public=any(a.get('image_asset')==asset or a.get('cover_thumb')=='/media/reposnews/'+asset or any(x.get('asset')==asset for x in a.get('assets',[])) for a in public_rows)
         if not public:
             from .user_scope import get_current_user
             try:
@@ -519,11 +523,12 @@ def public_dispatch():
     if path.startswith('media/reposnews/'): return media(path.removeprefix('media/reposnews/'))
     if path in {'robots.txt','sitemap.xml','ads.txt'}:
         data=read()
-        if path=='robots.txt': return Response('User-agent: *\nAllow: /\nSitemap: '+ORIGIN+'/sitemap.xml\n',mimetype='text/plain')
+        if path=='robots.txt': return Response('User-agent: *\nAllow: /\nDisallow: /api/\nDisallow: /admin/\nDisallow: /reposnews-preview/\nDisallow: /reposnews-revision/\nDisallow: /private-assets/\nDisallow: /mirror/\nDisallow: /mirror-manifest.json\nSitemap: '+ORIGIN+'/sitemap.xml\n',mimetype='text/plain')
         if path=='ads.txt':
             if data.get('domain_status')!='ACTIVE': return Response('Domain verification pending',status=404,mimetype='text/plain')
+            if not re.fullmatch(r'pub-\d{16}',str(data.get('publisher') or '')):return Response('Publisher verification required\n',status=404,mimetype='text/plain')
             return Response('google.com, '+data['publisher']+', DIRECT, f08c47fec0942fa0\n',mimetype='text/plain')
-        urls=[ORIGIN+'/'+l+'/'+page for l in ['es','en'] for page in ['', 'about/','contact/','privacy/','cookies/','legal/','repositories/','guides/','trends/']]
+        urls=[ORIGIN+'/'+l+'/'+page for l in ['es','en'] for page in ['', 'about/','contact/','privacy/','cookies/','legal/','repositories/','guides/']]
         urls += [ORIGIN+'/'+l+'/'+('repositorios' if l=='es' else 'repositories')+'/'+a['id']+'/' for a in data.get('articles',[]) if a.get('published') for l in ['es','en']]
         return Response('<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'+''.join('<url><loc>'+html.escape(u)+'</loc></url>' for u in urls)+'</urlset>',mimetype='application/xml')
     if not path:
@@ -536,9 +541,11 @@ def public_dispatch():
     if any(a.get('published') and a['id']==slug for a in read().get('articles',[])):
         canonical='/'+match[1]+'/'+('repositorios/' if match[1]=='es' else 'repositories/')+slug+'/'
         if request.path!=canonical: return redirect(canonical,code=308)
-    response=Response(render(match[1],match[2] or ''),mimetype='text/html')
+    nonce=secrets.token_urlsafe(24)
+    response=Response(render(match[1],match[2] or '',csp_nonce=nonce),mimetype='text/html')
     response.headers['X-Content-Type-Options']='nosniff'
-    response.headers['Content-Security-Policy']="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-src 'none'; base-uri 'none'; object-src 'none'"
+    # Google supports nonce-based strict CSP, rather than a changing ad-domain list.
+    response.headers['Content-Security-Policy']="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'nonce-"+nonce+"' 'strict-dynamic' 'unsafe-eval' https:; img-src 'self' https: data:; connect-src 'self' https:; frame-src https:; base-uri 'none'; object-src 'none'; frame-ancestors 'self'; form-action 'self'"
     return response
 
 
