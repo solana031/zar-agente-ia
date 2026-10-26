@@ -1,109 +1,221 @@
-"""Readiness evidence and owner attestations; never submits to AdSense or serves ads."""
+"""Public readiness evidence and owner attestations. Never serves or submits ads."""
 import hashlib
 import json
 import re
-from datetime import datetime,timezone
+import secrets
+from datetime import datetime, timezone
 from pathlib import Path
 from flask import session
 from . import holdings
 
-LABELS=('SITE LIVE','CONTENT','NAVIGATION','PRIVACY','COOKIES','CMP','ADS.TXT','ADSENSE CODE','ROBOTS','SITEMAP','ACCOUNT INFO','TAX INFO')
+LABELS=('SITE','CONTENT','ADS.TXT','VERIFICATION','PRIVACY','COOKIES','CMP','LEGAL IDENTITY','ACCOUNT INFO','TAX INFO')
 ACCOUNT_FIELDS={
-    'legal_name':'Nombre legal exacto', 'address':'Dirección postal', 'postcode':'Código postal',
-    'country':'País', 'phone':'Teléfono', 'tax_details':'Datos fiscales aplicables',
-    'payment_profile':'Perfil de pagos', 'payee':'Beneficiario',
-    'w8ben':'W-8BEN, si corresponde', 'tax_id':'TIN/NIF, si corresponde',
-    'bank_match':'Coincidencia con datos bancarios, cuando corresponda'}
+ 'legal_name':'Nombre legal idéntico al documento fiscal', 'address':'Dirección completa y actual',
+ 'postcode':'Código postal correcto', 'country':'País correcto', 'phone':'Teléfono, solo si Google lo exige',
+ 'payment_profile':'Perfil de pagos correcto', 'payee':'Beneficiario correcto',
+ 'w8ben':'Formulario W-8BEN correcto y vigente, si corresponde', 'tax_id':'TIN extranjero/NIF correcto, si corresponde',
+ 'tax_residence':'Residencia fiscal: comprobar España o el país real acreditado; no darlo por supuesto',
+ 'treaty':'Tratado fiscal según el formulario presentado, sin presumir beneficios',
+ 'no_duplicates':'No existe otra cuenta AdSense duplicada',
+ 'consistency':'Nombre del beneficiario, perfil de pagos, formulario fiscal y dirección coherentes entre sí'}
 MESSAGE='Los datos de la cuenta que ha introducido son imprecisos o están incompletos.'
+PUBLIC_FIELDS={'controller':'Titular / denominación social','email':'Correo de contacto público','activity':'Actividad',
+ 'address':'Domicilio o establecimiento exigible','tax_id':'Identificación fiscal exigible',
+ 'registration':'Registro público, si corresponde','regulated':'Autorización o profesión regulada, si corresponde'}
+CMP_STEPS=[
+ 'Abrir la cuenta AdSense existente. En el onboarding observado no aparece Privacidad y mensajes: resolver primero el aviso de datos de cuenta; no crear otra cuenta.',
+ 'Cuando esté disponible: Privacidad y mensajes → Normativas europeas → Crear mensaje. Seleccionar reposnews.com y la CMP de Google; configurar consentir, rechazar y gestionar opciones.',
+ 'Guardar y publicar el mensaje. Activar la compatibilidad con Consent Mode en sus ajustes si está disponible.',
+ 'Con la etiqueta publicitaria inactiva, hace falta la etiqueta CMP independiente oficial. Si Google facilita esa etiqueta, guardar abajo únicamente su URL pública de Funding Choices para este publisher. No pegar HTML ni habilitar Auto Ads. Si no la facilita, mantener pendiente: publicar un mensaje por sí solo no carga una etiqueta inactiva.',
+ 'Volver a ZAR y pulsar REVERIFICAR ADSENSE / CMP. Debe detectar TCF cargado, estado legible, cadena presente y CMP Google 300; rechazar también es una decisión válida.']
+KEYS=('reposnews-adsense-account-information','reposnews-adsense-certified-cmp','reposnews-adsense-public-legal-review')
 
 def version():return Path(__file__).with_name('VERSION.txt').read_text(encoding='utf-8').strip()
+def _owned(scope):
+ from . import reposnews as rn
+ data=rn.read()
+ if not scope or data.get('owner')!=scope:raise ValueError('REPOSNEWS_OWNER_REQUIRED')
+ return data
+
+def _auth(scope):
+ data=_owned(scope)
+ if session.get('zar_auth') is not True:raise ValueError('AUTHENTICATED_OWNER_CONFIRMATION_REQUIRED')
+ return data
+
+def fingerprint(data,release=None):
+ public=[a.get('published_snapshot',a) for a in data.get('articles',[]) if a.get('published')]
+ value={'version':release or version(),'articles':public,'publisher':data.get('publisher'),'legal':data.get('legal'),'reviewed':data.get('legal_reviewed')}
+ return hashlib.sha256(json.dumps(value,sort_keys=True,ensure_ascii=False).encode()).hexdigest()
+
+def _fresh(value,seconds=3*86400):
+ try:return 0<=(datetime.now(timezone.utc)-datetime.fromisoformat(value)).total_seconds()<seconds
+ except (ValueError,TypeError):return False
+
+def _audit_valid(audit,data):
+ # Carry forward the actual 121 crawl only while fresh and its public inputs match.
+ return _fresh(audit.get('checked_at')) and audit.get('fingerprint')==fingerprint(data,audit.get('version'))
+
+def _state(scope):return holdings.read(scope).get('reposnews_adsense',{})
+def _store(scope,key,value):
+ with holdings.transaction(scope):
+  d=holdings.read(scope);d.setdefault('reposnews_adsense',{})[key]=value;holdings.write(scope,d)
 
 def public_config(data):
-    publisher=str(data.get('publisher') or '')
-    return {'client':'ca-'+publisher if re.fullmatch(r'pub-\d{16}',publisher) else '',
-            'ads_enabled':False,'cmp':'NOT_CONFIGURED'}
+ publisher=str(data.get('publisher') or '')
+ saved=_state(data['owner']) if data.get('owner') else {}
+ url=saved.get('cmp_loader','')
+ valid=bool(re.fullmatch(r'pub-\d{16}',publisher))
+ if url!='https://fundingchoicesmessages.google.com/i/'+publisher+'?ers=1':url=''
+ return {'client':'ca-'+publisher if valid else '', 'ads_enabled':False,'cmp_loader':url if valid else ''}
 
-def fingerprint(data):
-    public=[a.get('published_snapshot',a) for a in data.get('articles',[]) if a.get('published')]
-    value={'version':version(),'articles':public,'publisher':data.get('publisher'),'legal':data.get('legal'),'reviewed':data.get('legal_reviewed')}
-    return hashlib.sha256(json.dumps(value,sort_keys=True,ensure_ascii=False).encode()).hexdigest()
-
-def _owned(scope):
-    from . import reposnews as rn
-    data=rn.read()
-    if data.get('owner')!=scope:raise ValueError('REPOSNEWS_OWNER_REQUIRED')
-    return data
+def public_identity(data):
+ approved=_state(data['owner']).get('legal_review',{}) if data.get('owner') else {}
+ if approved.get('completed_by')!=data.get('owner') or not approved.get('confirmed'):return {}
+ return {k:v for k,v in approved.get('PUBLIC_REQUIRED',{}).items() if k in PUBLIC_FIELDS and isinstance(v,str) and v}
 
 def view(scope,data=None):
-    from . import reposnews as rn
-    data=data if data is not None else rn.read()
-    if not scope or data.get('owner')!=scope:return {'status':'UNKNOWN','checklist':{k:'UNKNOWN' for k in LABELS},'ready_for_resubmission':False}
-    saved=holdings.read(scope).get('reposnews_adsense',{});audit=saved.get('site_audit',{})
-    fresh=False
-    try:fresh=0<=(datetime.now(timezone.utc)-datetime.fromisoformat(audit['checked_at'])).total_seconds()<3*86400
-    except (KeyError,ValueError,TypeError):pass
-    valid=fresh and audit.get('fingerprint')==fingerprint(data)
-    checks={k:(audit.get('checks',{}).get(k,'UNKNOWN') if valid else 'UNKNOWN') for k in LABELS}
-    checks['CMP']='ACTION_REQUIRED'  # No certified message is available on the blocked account.
-    account=saved.get('account_review',{})
-    confirmed=account.get('completed_by')==scope and all(account.get('checks',{}).get(k) is True for k in ACCOUNT_FIELDS)
-    checks['ACCOUNT INFO']='READY' if confirmed else 'ACTION_REQUIRED'
-    checks['TAX INFO']='READY' if confirmed else 'ACTION_REQUIRED'
-    if valid and audit.get('summary',{}).get('privacy_legal_review_required'):checks['PRIVACY']='ACTION_REQUIRED'
-    ready=all(v=='READY' for v in checks.values())
-    return {'status':'ADSENSE_READY_FOR_RESUBMISSION' if ready else 'ACTION_REQUIRED','checklist':checks,
-        'ready_for_resubmission':ready,'blockers':[k for k,v in checks.items() if v!='READY'],
-        'checked_at':audit.get('checked_at'),'audit_current':valid,'account_message':saved.get('account_message',MESSAGE),
-        'account_fields':ACCOUNT_FIELDS,'account_checks':account.get('checks',{}),'account_reviewed':confirmed,
-        'cmp_note':'Configurar una CMP certificada TCF en la cuenta existente. Privacidad y mensajes no está disponible en el onboarding actual.',
-        'ads':'DISABLED','submission':'NOT_RESUBMITTED','audit_summary':audit.get('summary',{}) if valid else {}}
+ from . import reposnews as rn
+ data=data if data is not None else rn.read()
+ if not scope or data.get('owner')!=scope:return {'status':'UNKNOWN','checklist':{k:'UNKNOWN' for k in LABELS},'ready_for_resubmission':False}
+ saved=_state(scope);audit=saved.get('site_audit',{});valid=_audit_valid(audit,data)
+ old=audit.get('checks',{})
+ aliases={'SITE':'SITE LIVE','VERIFICATION':'ADSENSE CODE'}
+ checks={k:old.get(k,old.get(aliases.get(k),'UNKNOWN')) if valid else 'UNKNOWN' for k in LABELS}
+ # In 121 this flag described legal identification, not a broken privacy page.
+ if valid and checks['PRIVACY']=='ACTION_REQUIRED' and audit.get('summary',{}).get('privacy_legal_review_required'):checks['PRIVACY']='READY'
+ proof=saved.get('public_probe',{})
+ if proof.get('fingerprint')==fingerprint(data) and _fresh(proof.get('checked_at')):
+  checks.update(proof.get('checks',{}))
+ cmp=saved.get('cmp_probe',{})
+ cmp_current=_fresh(cmp.get('checked_at')) and cmp.get('publisher')==data.get('publisher') and cmp.get('loader')==public_config(data)['cmp_loader']
+ cmp_status=cmp.get('status','MISSING') if cmp_current else 'UNKNOWN' if cmp else 'MISSING'
+ checks['CMP']='READY' if cmp_status=='READY' else 'ACTION_REQUIRED'
+ account=saved.get('account_review',{})
+ confirmed=account.get('completed_by')==scope and all(account.get('checks',{}).get(k) is True for k in ACCOUNT_FIELDS)
+ checks['ACCOUNT INFO']='READY' if confirmed else 'ACTION_REQUIRED'
+ tax=account.get('tax_status','UNKNOWN') if confirmed else 'UNKNOWN'
+ checks['TAX INFO']='READY' if tax=='ACCEPTED' else 'NOT_APPLICABLE' if tax=='NOT_APPLICABLE' else 'ACTION_REQUIRED' if tax in {'PENDING','REJECTED'} else 'UNKNOWN'
+ legal=saved.get('legal_review',{})
+ legal_ready=bool(public_identity(data)) and legal.get('economic')=='YES' and (not proof or proof.get('legal_page_present') is True)
+ checks['LEGAL IDENTITY']='READY' if legal_ready else 'REVIEW_REQUIRED' if legal else 'ACTION_REQUIRED'
+ site_ready=all(checks[k]=='READY' for k in LABELS[:6])
+ ready=site_ready and checks['CMP']=='READY' and legal_ready and confirmed and tax in {'ACCEPTED','NOT_APPLICABLE'}
+ return {'status':'READY_FOR_RESUBMISSION' if ready else 'SITE_READY_FOR_ADSENSE' if site_ready else 'ACTION_REQUIRED',
+ 'site_ready_for_adsense':site_ready,'checklist':checks,'ready_for_resubmission':ready,
+ 'blockers':[k for k,v in checks.items() if v not in {'READY','NOT_APPLICABLE'}],
+ 'checked_at':proof.get('checked_at') or audit.get('checked_at'),'audit_current':valid,
+ 'account_message':saved.get('account_message',MESSAGE),'account_fields':ACCOUNT_FIELDS,'account_checks':account.get('checks',{}),
+ 'account_reviewed':confirmed,'account_confirmation':'CONFIRMED_BY_USER' if confirmed else 'ACTION_REQUIRED',
+ 'tax_status':tax,'tax_evidence':account.get('source','NO_CURRENT_W8_ACCEPTANCE_EVIDENCE'),
+ 'cmp_note':CMP_STEPS[0],'cmp_steps':CMP_STEPS,'cmp_status':cmp_status,'cmp_probe':{k:cmp.get(k) for k in ('api','loaded','readable','cmp_id','event_status','has_tc_string','checked_at')},
+ 'public_fields':PUBLIC_FIELDS,'legal_review':legal,'cmp_loader':public_config(data)['cmp_loader'],
+ 'ads':'DISABLED','account_approval':'NOT_VERIFIED','site_approval':'NOT_VERIFIED','submission':'NOT_RESUBMITTED',
+ 'audit_summary':audit.get('summary',{}) if valid else {}}
 
 def record_public_audit(scope,checks,summary):
-    """Operator records the completed public crawl; no financial/personal account values."""
-    data=_owned(scope)
-    if set(checks)-set(LABELS) or any(v not in {'READY','ACTION_REQUIRED','UNKNOWN'} for v in checks.values()):raise ValueError('INVALID_AUDIT_CHECKS')
-    allowed={'public_pages','articles','checked_urls','broken_internal','content_min_words','content_max_words','publisher_matches','mobile_verified','private_urls_excluded','privacy_legal_review_required'}
-    with holdings.transaction(scope):
-        saved=holdings.read(scope);state=saved.setdefault('reposnews_adsense',{})
-        state.update(account_message=MESSAGE,account_observed_at=holdings._now())
-        state['site_audit']={'checks':checks,'summary':{k:v for k,v in summary.items() if k in allowed},
-            'checked_at':holdings._now(),'fingerprint':fingerprint(data),'version':version()}
-        holdings.write(scope,saved)
-    ensure_actions(scope)
-    return view(scope)
+ data=_owned(scope)
+ allowed_labels=set(LABELS)|{'SITE LIVE','NAVIGATION','ADSENSE CODE','ROBOTS','SITEMAP'}
+ if set(checks)-allowed_labels or any(v not in {'READY','ACTION_REQUIRED','UNKNOWN'} for v in checks.values()):raise ValueError('INVALID_AUDIT_CHECKS')
+ allowed={'public_pages','articles','checked_urls','broken_internal','content_min_words','content_max_words','publisher_matches','mobile_verified','private_urls_excluded','privacy_legal_review_required'}
+ _store(scope,'site_audit',{'checks':checks,'summary':{k:v for k,v in summary.items() if k in allowed},'checked_at':holdings._now(),'fingerprint':fingerprint(data),'version':version()})
+ ensure_actions(scope);return view(scope)
 
 def ensure_actions(scope):
-    _owned(scope)
-    from .notification_center import emit
-    result=view(scope)
-    if not result['account_reviewed']:
-        emit(scope,'ACCOUNT_CONNECTION','reposnews-adsense-account-information',
-            'Revisar información de cuenta AdSense',MESSAGE+' Revisa los datos en Google; no los copies en ZAR.',
-            '/?zar_workspace=sites#reposnewsEditor',entity_id='adsense-account-review',entity_type='ADSENSE_ACCOUNT',
-            details={'checklist':list(ACCOUNT_FIELDS.values()),'provider_url':'https://adsense.google.com/',
-                'instructions':'Reutilizar la cuenta actual. Revisar cada dato y su aplicabilidad. No crear otra cuenta ni volver a enviar automáticamente.'})
-    emit(scope,'ACCOUNT_CONNECTION','reposnews-adsense-certified-cmp','Configurar consentimiento certificado para ReposNews',
-        result['cmp_note'],'https://adsense.google.com/',entity_id='adsense-cmp-review',entity_type='ADSENSE_ACCOUNT',
-        details={'instructions':'Usar Privacidad y mensajes de Google cuando esté disponible: consentir, rechazar y gestionar opciones con visibilidad equivalente. Verificar TCF antes de activar anuncios.'})
-    if result.get('audit_summary',{}).get('privacy_legal_review_required'):
-        emit(scope,'ACCOUNT_CONNECTION','reposnews-adsense-public-legal-review','Revisar el aviso legal antes de monetizar',
-            'Revisar las obligaciones de identificación del titular para la actividad económica. Los datos privados no se publican automáticamente.',
-            '/?zar_workspace=sites#reposnewsEditor',entity_id='reposnews-legal-review',entity_type='ADSENSE_ACCOUNT',
-            details={'instructions':'Confirmar qué información del titular debe hacerse pública y autorizar los datos exactos. No incluir documentos ni datos bancarios.',
-                'source':'https://www.boe.es/buscar/act.php?id=BOE-A-2002-13758#a10'})
+ _owned(scope)
+ from .notification_center import emit
+ result=view(scope)
+ descriptions=[('REVISAR DATOS DE CUENTA ADSENSE',MESSAGE,{'checklist':list(ACCOUNT_FIELDS.values()),'instructions':'Revisar en Google, resolver las diferencias entre beneficiario, pagos, formulario y dirección. Aquí solo se registran comprobaciones; no valores privados. No crear otra cuenta ni reenviar.'}),
+ ('CONFIGURAR CMP ADSENSE',result['cmp_note'],{'steps':CMP_STEPS}),
+ ('CONFIRMAR IDENTIFICACIÓN LEGAL PARA MONETIZACIÓN','Confirmar persona física o sociedad, actividad económica y la identificación pública legalmente exigible.',
+ {'PUBLIC_REQUIRED':PUBLIC_FIELDS,'PRIVATE_ADMINISTRATIVE':['documentos fiscales','datos bancarios','perfil de pagos','contactos privados'],
+ 'instructions':'LSSI art. 10 para actividad económica: titular, domicilio/establecimiento, contacto y NIF; registro/autorización/profesión regulada cuando proceda. Revisar aplicabilidad y autorizar expresamente cada dato público. No importar datos privados.',
+ 'source':'https://www.boe.es/buscar/act.php?id=BOE-A-2002-13758#a10'})]
+ for key,(title,message,details) in zip(KEYS,descriptions):
+  emit(scope,'ACCOUNT_CONNECTION',key,title,message,'/?zar_workspace=sites#zarAdsenseReadiness',entity_type='ADSENSE_ACCOUNT',details=details)
+ complete=(result['account_reviewed'] and result['tax_status'] in {'ACCEPTED','NOT_APPLICABLE'},result['checklist']['CMP']=='READY',result['checklist']['LEGAL IDENTITY']=='READY')
+ from . import identity_center
+ with holdings.transaction(scope):
+  d=holdings.read(scope);seen=set()
+  for row in identity_center.ensure(d)['human_actions']:
+   key=row.get('notification_key')
+   if key not in KEYS:continue
+   if key in seen:row.update(status='DONE',outcome='DUPLICATE');continue
+   seen.add(key);i=KEYS.index(key);title,message,details=descriptions[i]
+   row.update(title=title,message=message,details=details,priority='CRITICAL' if i==0 else 'P1',deep_link='/?zar_workspace=sites#zarAdsenseReadiness',
+    actions=[{'label':'REVISAR','url':'/?zar_workspace=sites#zarAdsenseReadiness'}],status='DONE' if complete[i] else 'ACTION_REQUIRED',
+    outcome='EVIDENCE_CONFIRMED' if complete[i] else None)
+  holdings.write(scope,d)
 
 def confirm_account_review(scope,payload):
-    _owned(scope)
-    if session.get('zar_auth') is not True:raise ValueError('AUTHENTICATED_OWNER_CONFIRMATION_REQUIRED')
-    if set(payload)-{'checks','confirmed'}:raise ValueError('PERSONAL_ACCOUNT_VALUES_NOT_ACCEPTED')
-    checks=payload.get('checks',{})
-    if payload.get('confirmed') is not True or set(checks)!=set(ACCOUNT_FIELDS) or any(v is not True for v in checks.values()):
-        raise ValueError('Revisa todos los puntos en Google y confirma los que correspondan; no introduzcas valores personales aquí.')
-    with holdings.transaction(scope):
-        data=holdings.read(scope);data.setdefault('reposnews_adsense',{})['account_review']={
-            'checks':dict(checks),'completed_by':scope,'completed_at':holdings._now(),'source':'OWNER_ATTESTATION_NOT_GOOGLE_APPROVAL'}
-        from . import identity_center
-        for item in identity_center.ensure(data)['human_actions']:
-            if item.get('notification_key')=='reposnews-adsense-account-information':item.update(status='DONE',outcome='OWNER_REVIEWED_ACCOUNT_INFORMATION')
-        holdings.write(scope,data)
-    return view(scope)
+ _auth(scope)
+ if set(payload)-{'checks','confirmed','tax_status'}:raise ValueError('PERSONAL_ACCOUNT_VALUES_NOT_ACCEPTED')
+ checks=payload.get('checks',{});tax=payload.get('tax_status','UNKNOWN')
+ if payload.get('confirmed') is not True or set(checks)!=set(ACCOUNT_FIELDS) or any(v is not True for v in checks.values()):raise ValueError('Revisa todos los puntos en Google; no introduzcas valores personales aquí.')
+ if tax not in {'UNKNOWN','ACCEPTED','PENDING','REJECTED','NOT_APPLICABLE'}:raise ValueError('INVALID_TAX_STATUS')
+ _store(scope,'account_review',{'checks':dict(checks),'tax_status':tax,'completed_by':scope,'completed_at':holdings._now(),'source':'OWNER_ATTESTATION_NOT_GOOGLE_APPROVAL'})
+ ensure_actions(scope);return view(scope)
+
+def confirm_legal_review(scope,payload):
+ _auth(scope)
+ if set(payload)-{'entity_type','economic','public','confirmed','applicability_reviewed'}:raise ValueError('PRIVATE_ADMINISTRATIVE_VALUES_NOT_ACCEPTED')
+ fields=payload.get('public',{})
+ if not isinstance(fields,dict) or set(fields)-set(PUBLIC_FIELDS):raise ValueError('INVALID_PUBLIC_FIELDS')
+ if payload.get('entity_type') not in {'PERSON','COMPANY'} or payload.get('economic') not in {'YES','NO'}:raise ValueError('CONFIRM_ENTITY_AND_ECONOMIC_ACTIVITY')
+ if payload.get('confirmed') is not True or payload.get('applicability_reviewed') is not True:raise ValueError('PUBLIC_DISCLOSURE_EXPLICIT_CONFIRMATION_REQUIRED')
+ clean={}
+ for k,v in fields.items():
+  if not isinstance(v,str) or len(v)>500 or re.search(r'[<>\x00-\x1f]',v):raise ValueError('INVALID_PUBLIC_VALUE')
+  if v.strip():clean[k]=v.strip()
+ required={'controller','email','activity'}|({'address','tax_id'} if payload['economic']=='YES' else set())
+ if not required<=set(clean) or not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+',clean.get('email','')):raise ValueError('MISSING_REQUIRED_PUBLIC_IDENTITY')
+ if any(v.lower() in {'pendiente','nif aquí','dirección aquí','test','placeholder'} for v in clean.values()):raise ValueError('PLACEHOLDERS_NOT_ACCEPTED')
+ _store(scope,'legal_review',{'entity_type':payload['entity_type'],'economic':payload['economic'],'PUBLIC_REQUIRED':clean,
+ 'PRIVATE_ADMINISTRATIVE':'NOT_IMPORTED','confirmed':True,'completed_by':scope,'completed_at':holdings._now()})
+ ensure_actions(scope);return view(scope)
+
+def configure_cmp(scope,payload):
+ data=_auth(scope)
+ url=payload.get('official_url','')
+ expected='https://fundingchoicesmessages.google.com/i/'+str(data.get('publisher',''))+'?ers=1'
+ if set(payload)!={'official_url','confirmed'} or payload.get('confirmed') is not True or url not in {'',expected}:raise ValueError('ONLY_OFFICIAL_GOOGLE_CMP_LOADER_FOR_CURRENT_PUBLISHER')
+ _store(scope,'cmp_loader',url);ensure_actions(scope);return view(scope)
+
+def start_probe(scope):
+ _auth(scope);nonce=secrets.token_urlsafe(32)
+ session['adsense_probe']={'nonce':nonce,'scope':scope,'created_at':holdings._now()}
+ return {'nonce':nonce,'url':'https://www.reposnews.com/es/#zar-cmp-probe='+nonce}
+
+def _check_public(data):
+ """Fixed public origin only. No Google private/tax requests and no redirects."""
+ import requests
+ from .reposnews import ORIGIN
+ checks={};errors=[]
+ for path,key in (('/es/','SITE'),('/ads.txt','ADS.TXT'),('/es/legal/','LEGAL_PAGE')):
+  try:
+   with requests.get(ORIGIN+path,timeout=(4,8),allow_redirects=False,stream=True) as response:
+    raw=bytearray()
+    for chunk in response.iter_content(16384):
+     raw.extend(chunk)
+     if len(raw)>1_000_000:raise ValueError('PUBLIC_RESPONSE_TOO_LARGE')
+    text=raw.decode('utf-8',errors='replace');ok=response.status_code==200
+   if key=='ADS.TXT':ok=ok and text.strip()=='google.com, '+data.get('publisher','')+', DIRECT, f08c47fec0942fa0'
+   checks[key]='READY' if ok else 'ACTION_REQUIRED'
+   if key=='SITE':
+    checks['VERIFICATION']='READY' if ok and re.search(r'<meta\s+name="google-adsense-account"\s+content="'+re.escape('ca-'+str(data.get('publisher','')))+'"',text) else 'ACTION_REQUIRED'
+  except (requests.RequestException,ValueError):checks[key]='UNKNOWN';errors.append(key)
+ return checks,errors
+
+def finish_probe(scope,payload):
+ data=_auth(scope);challenge=session.pop('adsense_probe',{})
+ if challenge.get('scope')!=scope or not _fresh(challenge.get('created_at'),180) or not secrets.compare_digest(str(payload.get('nonce','')),challenge.get('nonce','!')):raise ValueError('CMP_PROBE_EXPIRED_OR_INVALID')
+ fields={'api','loaded','readable','cmp_id','event_status','has_tc_string','cmp_status'}
+ probe=payload.get('probe',{})
+ if set(payload)!={'nonce','probe'} or not isinstance(probe,dict) or set(probe)!=fields:raise ValueError('ONLY_SANITIZED_CMP_METADATA_ACCEPTED')
+ if any(type(probe[k]) is not bool for k in ('api','loaded','readable','has_tc_string')) or type(probe['cmp_id']) is not int or not 0<=probe['cmp_id']<=65535:raise ValueError('INVALID_CMP_METADATA')
+ if probe['event_status'] not in {'','tcloaded','cmpuishown','useractioncomplete'} or probe['cmp_status'] not in {'','stub','loading','loaded','error'}:raise ValueError('INVALID_TCF_STATE')
+ ready=all(probe[k] for k in ('api','loaded','readable','has_tc_string')) and probe['cmp_id']==300 and probe['cmp_status']=='loaded' and probe['event_status'] in {'tcloaded','useractioncomplete'}
+ checks,errors=_check_public(data);legal_present=checks.pop('LEGAL_PAGE')=='READY'
+ _store(scope,'public_probe',{'checks':checks,'legal_page_present':legal_present,'errors':errors,'checked_at':holdings._now(),'fingerprint':fingerprint(data)})
+ _store(scope,'cmp_probe',{**probe,'status':'READY' if ready else 'MISSING' if not probe['api'] else 'REVIEW_REQUIRED',
+ 'publisher':data.get('publisher'),'loader':public_config(data)['cmp_loader'],'checked_at':holdings._now(),'source':'PUBLIC_BROWSER_TCF_PROBE'})
+ ensure_actions(scope);return view(scope)

@@ -75,9 +75,9 @@ def readiness(data):
     result=view(data.get('owner'),data)
     checks={k:v=='READY' for k,v in result['checklist'].items()}
     checks['PUBLIC_CONTENT']=any(a.get('published') for a in data.get('articles',[]))
-    return {**result,'checks':checks,'submission':'ACCOUNT_INFORMATION_REVIEW_REQUIRED',
-            'cmp':'NOT_ACTIVE · Google-certified CMP required before serving ads','analytics':'NOT_CONNECTED',
-            'site_in_adsense':'ACCOUNT_INFORMATION_REVIEW_REQUIRED','search_console':data.get('search_console_status','NOT_VERIFIED')}
+    return {**result,'checks':checks,
+            'cmp':result.get('cmp_status','UNKNOWN'),'analytics':'NOT_CONNECTED',
+            'site_in_adsense':result.get('site_approval','NOT_VERIFIED'),'search_console':data.get('search_console_status','NOT_VERIFIED')}
 
 
 def summary():
@@ -475,11 +475,14 @@ def public_legal_profile(data):
             if private: text=re.sub(re.escape(private),'',text,flags=re.IGNORECASE)
         text=re.sub(r'\b(?:[0-9]{8}[A-Za-z]|[XYZxyz][0-9]{7}[A-Za-z])\b','',text)
         return text.strip()
-    return {'controller':safe(legal.get('controller')) if approved else '',
-            'email':'zaragente031@gmail.com',
+    from .reposnews_adsense import public_identity
+    disclosure=public_identity(data)
+    return {'disclosures':{k:v for k,v in disclosure.items() if k not in {'controller','email'}},
+            'controller':disclosure.get('controller') or (safe(legal.get('controller')) if approved else ''),
+            'email':disclosure.get('email') or 'zaragente031@gmail.com',
             'processing_basis':safe(legal.get('processing_basis')) if approved else '',
             'retention':safe(legal.get('retention')) if approved else '',
-            'ready':approved}
+            'ready':approved or bool(disclosure)}
 
 
 def media(asset):
@@ -506,7 +509,7 @@ def media(asset):
         response=send_file(path,mimetype='image/webp' if asset.endswith('.webp') else 'image/png',max_age=86400)
         response.headers['X-Content-Type-Options']='nosniff'
         return response
-    if asset not in {'editorial.css','favicon.svg','home.png','uv.png','playwright.png','fastapi.png','uv-official.svg','fastapi-official.png','playwright-official.svg','jev-editorial.svg','automaton-editorial.svg','dramaclaw-official.png'}: abort(404)
+    if asset not in {'consent.js','editorial.css','favicon.svg','home.png','uv.png','playwright.png','fastapi.png','uv-official.svg','fastapi-official.png','playwright-official.svg','jev-editorial.svg','automaton-editorial.svg','dramaclaw-official.png'}: abort(404)
     response=send_file(Path(__file__).parent/'static'/'reposnews'/asset,max_age=86400)
     response.headers['X-Content-Type-Options']='nosniff'
     return response

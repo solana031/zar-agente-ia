@@ -74,9 +74,9 @@ def test_legal_pages_disclose_google_and_keep_real_privacy_options(site,lang):
 
 def test_readiness_requires_current_audit_and_human_data_review(site):
     assert ads.view('other')['status']=='UNKNOWN'
-    r=ads.view('owner');assert r['checklist']['SITE LIVE']=='UNKNOWN' and not r['ready_for_resubmission']
+    r=ads.view('owner');assert r['checklist']['SITE']=='UNKNOWN' and not r['ready_for_resubmission']
     ads.record_public_audit('owner',{k:'READY' for k in ads.LABELS},{'checked_urls':155,'secret':'not-kept'})
-    r=ads.view('owner');assert r['audit_current'] and r['checklist']['SITE LIVE']=='READY'
+    r=ads.view('owner');assert r['audit_current'] and r['checklist']['SITE']=='READY'
     assert r['checklist']['CMP']=='ACTION_REQUIRED' and r['checklist']['ACCOUNT INFO']=='ACTION_REQUIRED'
     stored=holdings.read('owner')['reposnews_adsense'];assert 'secret' not in stored['site_audit']['summary']
     actions=identity_center.ensure(holdings.read('owner'))['human_actions']
@@ -99,9 +99,9 @@ def test_account_attestation_accepts_only_owner_booleans_and_does_not_submit(sit
         with pytest.raises(ValueError,match='PERSONAL'):ads.confirm_account_review('owner',{**payload,'address':'private'})
         with pytest.raises(ValueError):ads.confirm_account_review('owner',{'checks':{},'confirmed':True})
         result=ads.confirm_account_review('owner',payload)
-    assert result['checklist']['ACCOUNT INFO']=='READY' and result['checklist']['TAX INFO']=='READY'
+    assert result['checklist']['ACCOUNT INFO']=='READY' and result['checklist']['TAX INFO']=='UNKNOWN'
     assert result['submission']=='NOT_RESUBMITTED' and not result['ready_for_resubmission']
-    assert set(holdings.read('owner')['reposnews_adsense']['account_review'])=={'checks','completed_by','completed_at','source'}
+    assert set(holdings.read('owner')['reposnews_adsense']['account_review'])=={'checks','tax_status','completed_by','completed_at','source'}
 
 
 def test_public_frame_rights_boundary_preserves_snapshot_and_private_asset(site):
@@ -135,7 +135,7 @@ def test_explicitly_cleared_frame_is_retained(site):
 
 def test_required_public_legal_review_blocks_readiness(site):
     result=ads.record_public_audit('owner',{k:'READY' for k in ads.LABELS},{'privacy_legal_review_required':True})
-    assert result['checklist']['PRIVACY']=='ACTION_REQUIRED'
+    assert result['checklist']['PRIVACY']=='READY' and result['checklist']['LEGAL IDENTITY']=='ACTION_REQUIRED'
     actions=identity_center.ensure(holdings.read('owner'))['human_actions']
     assert any(x.get('notification_key')=='reposnews-adsense-public-legal-review' for x in actions)
 
@@ -154,3 +154,114 @@ def test_existing_workflow_endpoint_keeps_csrf_auth_and_owner_gates(site):
     assert response.status_code==200 and response.json['result']['submission']=='NOT_RESUBMITTED'
     assert rn.read()['legal']==site[2]['legal']
     assert site[1].post(endpoint,json=payload,headers=headers,base_url=rn.ORIGIN).status_code==404
+
+
+def legal_payload():
+    return {'entity_type':'PERSON','economic':'YES','public':{'controller':'Public fixture','email':'public@example.test',
+      'activity':'Editorial fixture','address':'Professional establishment','tax_id':'PUBLIC-FIXTURE-ID'},
+      'confirmed':True,'applicability_reviewed':True}
+
+
+def cmp_payload():
+    return {'api':True,'loaded':True,'readable':True,'cmp_id':300,'event_status':'useractioncomplete','has_tc_string':True,'cmp_status':'loaded'}
+
+
+def test_legacy_crawl_survives_code_version_only_and_keeps_real_fingerprint(site,monkeypatch):
+    monkeypatch.setattr(ads,'version',lambda:'33.3.121')
+    ads.record_public_audit('owner',{'SITE LIVE':'READY','CONTENT':'READY','ADS.TXT':'READY','ADSENSE CODE':'READY','PRIVACY':'ACTION_REQUIRED','COOKIES':'READY'},{'privacy_legal_review_required':True})
+    monkeypatch.setattr(ads,'version',lambda:'33.3.122')
+    result=ads.view('owner')
+    assert result['audit_current'] and result['site_ready_for_adsense']
+    assert result['checklist']['PRIVACY']=='READY' and result['checklist']['LEGAL IDENTITY']=='ACTION_REQUIRED'
+    d=rn.read();d['publisher']='pub-0000000000000002';rn.write(d)
+    assert not ads.view('owner')['audit_current']
+
+
+def test_exact_three_actions_update_dedup_and_do_not_trust_manual_done(site):
+    ads.ensure_actions('owner');ads.ensure_actions('owner')
+    d=holdings.read('owner');rows=identity_center.ensure(d)['human_actions']
+    assert len(rows)==3 and rows[0]['priority']=='CRITICAL'
+    assert [r['title'] for r in rows]==['REVISAR DATOS DE CUENTA ADSENSE','CONFIGURAR CMP ADSENSE','CONFIRMAR IDENTIFICACIÓN LEGAL PARA MONETIZACIÓN']
+    for row in rows:row['status']='DONE'
+    holdings.write('owner',d);ads.ensure_actions('owner')
+    assert all(r['status']=='ACTION_REQUIRED' for r in identity_center.ensure(holdings.read('owner'))['human_actions'])
+    assert not ads.view('owner')['ready_for_resubmission']
+
+
+def test_public_identity_requires_explicit_authorization_never_imports_private(site):
+    d=rn.read();d['legal'].update(address='PRIVATE-ADDRESS',tax_id='PRIVATE-TAX',privacy_contact='private@example.test');rn.write(d)
+    with site[0].test_request_context():
+        session['zar_auth']=True
+        payload=legal_payload()
+        with pytest.raises(ValueError):ads.confirm_legal_review('owner',{**payload,'confirmed':False})
+        assert 'Professional establishment' not in get(site,'/es/legal/').text
+        with pytest.raises(ValueError):ads.confirm_legal_review('owner',{**payload,'public':{**payload['public'],'phone':'private'}})
+        with pytest.raises(ValueError):ads.confirm_legal_review('owner',{**payload,'public':{'controller':'Pending'}})
+        result=ads.confirm_legal_review('owner',payload)
+        assert result['checklist']['LEGAL IDENTITY']=='READY'
+    page=get(site,'/es/legal/').text
+    assert 'Professional establishment' in page and 'PUBLIC-FIXTURE-ID' in page
+    assert 'PRIVATE-ADDRESS' not in page and 'PRIVATE-TAX' not in page and 'private@example.test' not in page
+    assert rn.read()['legal']['address']=='PRIVATE-ADDRESS'
+
+
+@pytest.mark.parametrize('change',[{'api':False},{'loaded':False},{'readable':False},{'cmp_id':42},{'event_status':'cmpuishown'},{'has_tc_string':False},{'cmp_status':'stub'}])
+def test_cmp_incomplete_stub_unknown_certification_and_no_string_fail_closed(site,monkeypatch,change):
+    monkeypatch.setattr(ads,'_check_public',lambda d:({'SITE':'READY','ADS.TXT':'READY','VERIFICATION':'READY','LEGAL_PAGE':'READY'},[]))
+    with site[0].test_request_context():
+        session['zar_auth']=True;start=ads.start_probe('owner')
+        result=ads.finish_probe('owner',{'nonce':start['nonce'],'probe':{**cmp_payload(),**change}})
+    assert result['checklist']['CMP']=='ACTION_REQUIRED' and not result['ready_for_resubmission']
+
+
+def test_resubmission_only_three_actual_actions_plus_public_evidence_never_ads(site,monkeypatch):
+    ads.record_public_audit('owner',{k:'READY' for k in ads.LABELS},{})
+    monkeypatch.setattr(ads,'_check_public',lambda d:({'SITE':'READY','ADS.TXT':'READY','VERIFICATION':'READY','LEGAL_PAGE':'READY'},[]))
+    with site[0].test_request_context():
+        session['zar_auth']=True
+        ads.confirm_account_review('owner',{'checks':{k:True for k in ads.ACCOUNT_FIELDS},'confirmed':True,'tax_status':'ACCEPTED'})
+        ads.confirm_legal_review('owner',legal_payload());assert not ads.view('owner')['ready_for_resubmission']
+        start=ads.start_probe('owner')
+        result=ads.finish_probe('owner',{'nonce':start['nonce'],'probe':cmp_payload()})
+        assert result['ready_for_resubmission'] and result['checklist']['TAX INFO']=='READY'
+        assert result['ads']=='DISABLED' and result['submission']=='NOT_RESUBMITTED' and result['account_approval']=='NOT_VERIFIED'
+        with pytest.raises(ValueError,match='EXPIRED'):ads.finish_probe('owner',{'nonce':start['nonce'],'probe':cmp_payload()})
+        start=ads.start_probe('owner')
+        with pytest.raises(ValueError,match='METADATA'):ads.finish_probe('owner',{'nonce':start['nonce'],'probe':{**cmp_payload(),'tcString':'DO-NOT-STORE'}})
+    assert all(x['status']=='DONE' for x in identity_center.ensure(holdings.read('owner'))['human_actions'])
+    assert 'DO-NOT-STORE' not in json.dumps(holdings.read('owner'))
+    saved=holdings.read('owner');saved['reposnews_adsense']['cmp_probe']['checked_at']=(datetime.now(timezone.utc)-timedelta(days=4)).isoformat();holdings.write('owner',saved)
+    assert not ads.view('owner')['ready_for_resubmission']
+
+
+def test_cmp_loader_only_explicit_official_matching_publisher_no_ads(site):
+    with site[0].test_request_context():
+        session['zar_auth']=True
+        for url in ('https://evil.example/x','https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js','https://fundingchoicesmessages.google.com/i/pub-0000000000000002?ers=1'):
+            with pytest.raises(ValueError):ads.configure_cmp('owner',{'official_url':url,'confirmed':True})
+        url='https://fundingchoicesmessages.google.com/i/pub-0000000000000001?ers=1'
+        ads.configure_cmp('owner',{'official_url':url,'confirmed':True})
+    page=get(site,'/es/').text
+    assert 'data-google-cmp="official-loader"' in page and 'type="text/plain" data-adsense-prepared' in page
+    assert ads.public_config(rn.read())['ads_enabled'] is False
+
+
+def test_public_reverify_fixed_urls_failure_and_no_private_google_calls(site,monkeypatch):
+    import requests
+    calls=[]
+    class PublicResponse:
+        status_code=200
+        def __init__(self,url):self.url=url
+        def __enter__(self):return self
+        def __exit__(self,*args):pass
+        def iter_content(self,size):
+            yield (('google.com, pub-0000000000000001, DIRECT, f08c47fec0942fa0' if self.url.endswith('/ads.txt') else '<head><meta name="google-adsense-account" content="ca-pub-0000000000000001"></head>')).encode()
+    def fetch(url,**kw):
+        calls.append((url,kw));return PublicResponse(url)
+    monkeypatch.setattr(requests,'get',fetch)
+    checks,errors=ads._check_public(rn.read())
+    assert all(v=='READY' for v in checks.values()) and not errors
+    assert [u for u,_ in calls]==[rn.ORIGIN+'/es/',rn.ORIGIN+'/ads.txt',rn.ORIGIN+'/es/legal/']
+    assert all(k['allow_redirects'] is False for _,k in calls)
+    monkeypatch.setattr(requests,'get',lambda *a,**k:(_ for _ in ()).throw(requests.Timeout()))
+    checks,errors=ads._check_public(rn.read());assert len(errors)==3 and checks['SITE']=='UNKNOWN'

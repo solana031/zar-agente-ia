@@ -38,6 +38,12 @@ def view(scope):
 
 
 def operate(scope, action, data):
+    if action in {'adsense_legal_review','adsense_cmp_setup','adsense_probe_start','adsense_probe_finish'}:
+        from . import reposnews_adsense as ads
+        if action=='adsense_legal_review':return ads.confirm_legal_review(scope,data)
+        if action=='adsense_cmp_setup':return ads.configure_cmp(scope,data)
+        if action=='adsense_probe_start':return ads.start_probe(scope)
+        return ads.finish_probe(scope,data)
     if action=='adsense_account_review':
         from .reposnews_adsense import confirm_account_review
         return confirm_account_review(scope,data)

@@ -60,7 +60,9 @@
     try{
       const kind=f.dataset.form;
       if(kind==='site'){const fd=new FormData(f);for(const [key,value] of [...fd.entries()])if(value instanceof File&&!value.name)fd.delete(key);await post('site_upload',fd);}
-      else if(kind==='adsense-account-review'){const checks={};for(const el of f.querySelectorAll('input[type=checkbox][name]'))if(el.name!=='confirmed')checks[el.name]=el.checked;await post('adsense_account_review',{checks,confirmed:f.elements.confirmed.checked});}
+      else if(kind==='adsense-account-review'){const checks={};for(const el of f.querySelectorAll('input[type=checkbox][name]'))if(el.name!=='confirmed')checks[el.name]=el.checked;await post('adsense_account_review',{checks,confirmed:f.elements.confirmed.checked,tax_status:f.elements.tax_status.value});}
+      else if(kind==='adsense-cmp-setup')await post('adsense_cmp_setup',{official_url:f.elements.official_url.value.trim(),confirmed:f.elements.confirmed.checked});
+      else if(kind==='adsense-legal-review'){const publicFields={};for(const el of f.querySelectorAll('[name^=public_]'))publicFields[el.name.slice(7)]=el.value.trim();await post('adsense_legal_review',{entity_type:f.elements.entity_type.value,economic:f.elements.economic.value,public:publicFields,confirmed:f.elements.confirmed.checked,applicability_reviewed:f.elements.applicability_reviewed.checked});}
       else if(kind==='media'){data.duration=Number(data.duration);data.subtitles=f.elements.subtitles.checked;data.music=f.elements.music.checked;await post('media_create',data);}
       else if(kind==='jev'){for(const k of ['risk','urgency','expected_cost','expected_revenue'])data[k]=data[k]===''?null:Number(data[k]);data.resources=data.resources.split(',').map(x=>x.trim()).filter(Boolean);const remote=f.elements.remote.checked;delete data.remote;if(!data.suggested_provider)data.suggested_provider=null;if(remote&&!await ZarUI.confirm('Consultar TypeSafe con esta propuesta puede consumir cuota del proveedor. ¿Continuar?'))return;await post('jev',{proposal:data,use_provider:remote,confirmed:remote});}
       else if(kind==='adsense')await post('adsense_sync',data);
@@ -88,5 +90,6 @@
       else if(op==='site_analyze'){const result=await post(op,{id});notify(JSON.stringify(result));}
     }catch(error){notify(error.message);}
   });
+  window.addEventListener('zar-adsense-reverified',()=>{editing=false;lastRendered='';});
   window.zarWorkflowRefresh=refresh;
 })();

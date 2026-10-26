@@ -4,4 +4,6 @@
    ad tag is deliberately inert until a certified CMP and activation are verified. #}
 <script nonce="{{csp_nonce}}">window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments)}gtag('consent','default',{ad_storage:'denied',ad_user_data:'denied',ad_personalization:'denied',analytics_storage:'denied'});</script>
 <script nonce="{{csp_nonce}}" type="text/plain" data-adsense-prepared="consent-required" async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client={{adsense.client}}" crossorigin="anonymous"></script>
+<script nonce="{{csp_nonce}}" defer src="/media/reposnews/consent.js" data-probe-origin="https://web-production-a9565.up.railway.app"></script>
+{% if adsense.cmp_loader %}<script nonce="{{csp_nonce}}" async src="{{adsense.cmp_loader}}" data-google-cmp="official-loader"></script>{% endif %}
 {% endif %}
