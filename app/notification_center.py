@@ -27,7 +27,7 @@ def reconcile_actions(rows,editorial,connections=None):
         if item and kind in {'ARTICLE_FAILED','ARTICLE_NEEDS_DISAMBIGUATION'}:
             if item.get('status') in {'READY_PRIVATE','ARTICLE_UPDATE_DRAFT','NO_CHANGE','PUBLISHED','CANCELLED','DISCARDED'}:reason='SOURCE_RESOLVED'
             elif item['id'] in grouped_ids or item.get('source_url') and item.get('source_url') in grouped_sources:reason='GROUPED_IDENTIFICATION'
-        if kind=='ARTICLE_IDENTIFICATION_REQUIRED' and not any(inbox.get(i,{}).get('status')=='NEEDS_DISAMBIGUATION' for i in grouped_ids):reason='IDENTIFICATION_RESOLVED'
+        if kind=='ARTICLE_IDENTIFICATION_REQUIRED' and grouped_ids and not any(inbox.get(i,{}).get('status')=='NEEDS_DISAMBIGUATION' for i in grouped_ids):reason='IDENTIFICATION_RESOLVED'
         account=row.get('entity_id') if kind in {'ACCOUNT_CONNECTION','SOCIAL_ACCOUNT_BLOCKED'} else str(row.get('service','')).lower()
         cached=connections.get(account,{})
         if cached.get('status') in {'CONNECTED','UPLOAD_READY'} and not cached.get('human_action') and str(cached.get('last_verified') or '')>=str(row.get('created_at') or ''):

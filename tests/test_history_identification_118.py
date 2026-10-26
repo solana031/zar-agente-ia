@@ -49,6 +49,37 @@ def test_legacy_null_checkpoint_uses_recorded_cursor_without_reset(store):
     assert result['completion_state']=='PAGINATION_EXHAUSTED_BY_PROVIDER'
 
 
+def test_omitted_optional_reference_preserves_checkpoint_and_drains_shares(store):
+    original={'pagination_cursor':'end','last_successful_cursor':'good','messages_seen':91}
+    d=rn.read();d['instagram_conversation_sync']={'requested':True,'conversation_ids':['verified'],
+        'checkpoints':{'verified':dict(original)},'messages_scanned':91,
+        'pending_share_pages':{'share':{'sender':'sender','conversation_id':'verified','cursor':'share-end'}}};rn.write(d)
+    with patch.object(h,'_read',side_effect=[page([],'end'),ValueError('META_HISTORY_REFERENCE_OMITTED'),page([],'share-end')]):
+        result=h.sync('owner')
+    c=rn.read()['instagram_conversation_sync']['checkpoints']['verified']
+    assert all(c[k]==v for k,v in original.items())
+    assert c['provider_end_confirmed'] is None and c['provider_confirmation_status']=='REFERENCE_FIELD_OMITTED'
+    assert result['completion_state']=='PAGINATION_EXHAUSTED_BY_PROVIDER'
+    assert not result['history_exhausted'] and not result['share_pages_pending']
+
+
+@pytest.mark.parametrize('failure',[ValueError('META_HISTORY_INVALID_RESPONSE'),h.HistoryReadError('META_HISTORY_RATE_LIMITED',{'code':4},3600),h.HistoryReadError('META_HISTORY_HTTP_401',{'code':190})])
+def test_optional_reference_does_not_hide_invalid_auth_or_rate_errors(store,failure):
+    d=rn.read();d['instagram_conversation_sync']={'requested':True,'conversation_ids':['verified'],'checkpoints':{'verified':{'pagination_cursor':'end'}}};rn.write(d)
+    with patch.object(h,'_read',side_effect=[page([],'end'),failure]):result=h.sync('owner')
+    s=rn.read()['instagram_conversation_sync']
+    assert s['error']==str(failure) and not s['checkpoints']['verified'].get('provider_exhausted')
+    if isinstance(failure,h.HistoryReadError) and failure.retry_after:assert s['retry_after']>time.time()+3500
+
+
+@pytest.mark.parametrize('body,code',[({'id':'verified'},'META_HISTORY_REFERENCE_OMITTED'),({'id':'other'},'META_HISTORY_INVALID_RESPONSE'),({'id':'verified','messages':None},'META_HISTORY_INVALID_RESPONSE'),({'id':'verified','unexpected':True},'META_HISTORY_INVALID_RESPONSE')])
+def test_reference_omission_is_distinct_from_empty_or_malformed(body,code):
+    from types import SimpleNamespace
+    response=SimpleNamespace(ok=True,json=lambda:body)
+    with patch.object(h.requests,'get',return_value=response),pytest.raises(ValueError,match=code):
+        h._read('verified','fixture',{'fields':'messages.limit(25).after(end){id,created_time}'})
+
+
 def test_repeated_cursor_with_new_messages_continues_then_stops(store):
     progress={}
     with patch.object(h,'_read',side_effect=[page(['one'],'a'),page(['two'],'a'),page([],'a')]) as read:
@@ -144,3 +175,33 @@ def test_grouped_identification_retains_all_forty_items():
     details={'items':[{'id':str(i),'caption':'Public caption','candidates':[{'candidate':'Tool','confidence':.5}]} for i in range(40)]}
     assert len(clean(details,-3)['items'])==40
     assert len(clean({'generic':list(range(40))})['generic'])==15
+
+
+def test_running_identification_does_not_resolve_previous_group():
+    from app.notification_center import reconcile_actions
+    note={'id':'group','type':'ARTICLE_IDENTIFICATION_REQUIRED','status':'ACTION_REQUIRED'}
+    data={'ambiguous_reprocessing':{'ids':['reel'],'completed':[]},'instagram_inbox':[{'id':'reel','status':'NEEDS_DISAMBIGUATION'}]}
+    reconcile_actions([note],data)
+    assert note['status']=='ACTION_REQUIRED'
+    data['ambiguous_reprocessing']['completed']=['reel']
+    reconcile_actions([note],data)
+    assert note['status']=='ACTION_REQUIRED'
+    data['instagram_inbox'][0]['status']='NO_CHANGE'
+    reconcile_actions([note],data)
+    assert note['status']=='DONE' and note['outcome']=='IDENTIFICATION_RESOLVED'
+
+
+@pytest.mark.parametrize('dismissed',[None,'2026-10-25T00:00:00Z'])
+def test_group_reopens_automatic_resolution_but_preserves_user_archive(store,dismissed):
+    from app import identity_center,holdings,notification_center
+    data=rn.read();data.update(ambiguous_reprocessing={'ids':['reel'],'completed':['reel']},
+        instagram_inbox=[{'id':'reel','status':'NEEDS_DISAMBIGUATION'}])
+    with holdings.transaction('owner'):
+        saved=holdings.read('owner');center=identity_center.ensure(saved)
+        center['human_actions'].append({'id':'group','notification_key':'ambiguous-group:'+ambiguity.GROUP_KEY,
+            'type':'ARTICLE_IDENTIFICATION_REQUIRED','status':'DONE','outcome':'IDENTIFICATION_RESOLVED','dismissed_at':dismissed})
+        holdings.write('owner',saved)
+    ambiguity.grouped('owner',data)
+    note=next(x for x in identity_center.ensure(holdings.read('owner'))['human_actions'] if x['id']=='group')
+    assert note['status']==('DONE' if dismissed else 'ACTION_REQUIRED')
+    assert note['dismissed_at']==dismissed and len(note['details']['items'])==1

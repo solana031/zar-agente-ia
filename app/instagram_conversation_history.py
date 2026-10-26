@@ -41,6 +41,10 @@ def _read(path,token,params):
         if r.status_code in (429,500,502,503,504):raise ValueError('META_HISTORY_RETRYABLE_HTTP_'+str(r.status_code))
         raise HistoryReadError('META_HISTORY_HTTP_'+str(r.status_code),detail)
     b=r.json()
+    if (isinstance(b,dict) and set(b)=={'id'} and str(b['id'])==path
+            and str(params.get('fields','')).startswith('messages.')):
+        # An omitted reference field is not an empty messages collection.
+        raise ValueError('META_HISTORY_REFERENCE_OMITTED')
     if isinstance(b,dict) and isinstance(b.get('messages'),dict) and str(params.get('fields','')).startswith('messages.'):
         b=b['messages']
     if not isinstance(b,dict) or not isinstance(b.get('data'),list):raise ValueError('META_HISTORY_INVALID_RESPONSE')
@@ -289,12 +293,19 @@ def sync(scope,force=False):
                         share_cursor=_after(shared) if isinstance(shared,dict) else None
                         if share_cursor:share_pages[message['id']]={'cursor':share_cursor,'sender':str(message['from']['id']),'timestamp':message.get('created_time'),'conversation_id':cid}
                 end_confirmation=None
+                confirmation_status=None
                 if progress.get('provider_exhausted'):
                     # Meta documents the conversation node's messages field as
                     # the reference listing. Confirm the SAME cursor there; do
                     # not restart at the head or invent time-range parameters.
-                    reference=_read(cid,token,{'fields':'messages.limit(25).after('+str(progress['cursor_in'])+'){id,created_time}'})
-                    end_confirmation=not reference['data'] and not (reference.get('paging') or {}).get('next')
+                    try:
+                        reference=_read(cid,token,{'fields':'messages.limit(25).after('+str(progress['cursor_in'])+'){id,created_time}'})
+                    except ValueError as exc:
+                        if str(exc)!='META_HISTORY_REFERENCE_OMITTED':raise
+                        confirmation_status='REFERENCE_FIELD_OMITTED'
+                    else:
+                        end_confirmation=not reference['data'] and not (reference.get('paging') or {}).get('next')
+                        confirmation_status='EMPTY_REFERENCE_CONFIRMED' if end_confirmation else 'REFERENCE_NOT_EXHAUSTED'
                 with holdings.transaction('reposnews-editorial'):
                     data=rn.read();state=data['instagram_conversation_sync']
                     state['messages_scanned']=state.get('messages_scanned',0)+scanned
@@ -318,6 +329,7 @@ def sync(scope,force=False):
                     if repeated and not progressed:saved['cursor_recovery_required']=True
                     if progress.get('provider_exhausted'):
                         saved.update(provider_exhausted=True,provider_end_confirmed=end_confirmation,
+                            provider_confirmation_status=confirmation_status,
                             provider_limitation='EMPTY_PAGE_WITH_SELF_NEXT',head_check_after=now+DAY)
                     state['checkpoints'][cid]=saved
                     _page_audit(state,'messages:'+cid,progress)

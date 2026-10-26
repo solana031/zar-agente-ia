@@ -83,6 +83,8 @@ def grouped(scope,data):
     with holdings.transaction(scope):
         saved=holdings.read(scope)
         current=next(n for n in identity_center.ensure(saved)['human_actions'] if n['id']==note['id'])
+        if current.get('status')=='DONE' and current.get('outcome')=='IDENTIFICATION_RESOLVED' and not current.get('dismissed_at'):
+            current.update(status='ACTION_REQUIRED',read_at=None,outcome=None,completed_at=None)
         current.update(title=str(len(rows))+' Reels requieren identificación',details={'items':items})
         holdings.write(scope,saved)
     return note
