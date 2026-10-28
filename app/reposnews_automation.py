@@ -1,4 +1,4 @@
-"""Editorial decisions and notifications. Worker results never grant publication."""
+"""Editorial decisions: manual approvals or a narrowly scoped owner schedule grant."""
 import hashlib
 import json
 import secrets
@@ -37,11 +37,13 @@ def reviewable(article):
                 and (valid(article) or article.get('cover_status')=='COVER_GENERATION_FAILED'))
 
 
-def gate(article,scope):
+def gate(article,scope,data=None):
     approval=article.get('approval') or {}
     if (article.get('approval_status')!='APPROVED_BY_USER' or approval.get('owner')!=scope
             or approval.get('revision')!=revision(article) or not approval.get('at')):
-        raise ValueError('EXPLICIT_USER_APPROVAL_REQUIRED')
+        from .reposnews_autonomous import authorized
+        if not authorized(article,scope,data):
+            raise ValueError('EXPLICIT_USER_APPROVAL_REQUIRED')
     if article.get('state')=='CANCELLED':raise ValueError('ARTICLE_CANCELLED')
     from .reposnews_covers import valid as valid_cover
     if not valid_cover(article):raise ValueError('VALID_ARTICLE_COVER_REQUIRED')
@@ -49,6 +51,7 @@ def gate(article,scope):
 
 def revoke(article):
     article.update(approval_status='PENDING',approval={})
+    article.pop('autonomous_authorization',None)
 
 
 def decorate(scope,data):
@@ -115,17 +118,19 @@ def close_notification(scope,article_id,status):
 
 
 def publish_article(data,article,scope):
-    gate(article,scope)
+    gate(article,scope,data)
     if holdings.read(scope).get('global_stop'):raise ValueError('STOP GLOBAL activo.')
     if rn.legal_status(data)['status']!='LEGAL_READY':raise ValueError('Revisión legal pendiente.')
     if article.get('state') not in {'READY',READY,'AWAITING_APPROVAL'} or not complete(article):raise ValueError('COMPLETE_BILINGUAL_DRAFT_REQUIRED')
     from .reposnews_covers import valid as valid_cover
     if not valid_cover(article):raise ValueError('VALID_ARTICLE_COVER_REQUIRED')
     from . import jev_decision
-    proposal=jev_decision.proposal(scope,{'source_agent':'ReposNewsPublicationAction','task':'Publicación aprobada por el titular','action':'publish article','resources':[rn.ORIGIN],'expected_cost':0,'risk':.3,'urgency':.5})
+    scheduled=article.get('approval_status')=='OWNER_AUTHORIZED_SCHEDULE'
+    reason='OWNER_AUTHORIZED_AUTONOMOUS_EDITORIAL' if scheduled else 'APPROVED_BY_USER'
+    proposal=jev_decision.proposal(scope,{'source_agent':'ReposNewsPublicationAction','task':'Publicación mediante horario autorizado por el titular' if scheduled else 'Publicación aprobada por el titular','action':'publish article','resources':[rn.ORIGIN],'expected_cost':0,'risk':.3,'urgency':.5})
     if proposal['decision']=='REJECT':raise ValueError('JEV rechazó publicación.')
     article.update(state='PUBLISHING',status='PUBLISHING')
-    article['history']=(article.get('history',[])+[{'at':holdings._now(),'fields':['state'],'reason':'PUBLISHING · APPROVED_BY_USER · '+revision(article)}])[-60:]
+    article['history']=(article.get('history',[])+[{'at':holdings._now(),'fields':['state'],'reason':'PUBLISHING · '+reason+' · '+revision(article)}])[-60:]
     article.update(published=True,published_at=holdings._now(),state='PUBLISHED',status='PUBLISHED')
     article['published_snapshot']={k:v for k,v in article.items() if k not in {'published_snapshot','history','approval_request'}}
     if article.get('image_asset'):article['published_snapshot']['cover_url']='/media/reposnews/'+article['image_asset']
@@ -133,7 +138,7 @@ def publish_article(data,article,scope):
         if row.get('article_id')==article['id']:row.update(status='PUBLISHED',processing_state='PUBLISHED')
     for note in data.get('editorial_notifications',[]):
         if note.get('article_id')==article['id']:note['status']='PUBLISHED'
-    jev_decision.decision_state(scope,proposal['id'],'USER_CONFIRMED_EDITORIAL_CHANGE')
+    jev_decision.decision_state(scope,proposal['id'],reason if scheduled else 'USER_CONFIRMED_EDITORIAL_CHANGE')
 
 
 def decide(scope,payload):

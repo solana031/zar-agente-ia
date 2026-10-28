@@ -117,6 +117,8 @@ def state(scope):
     if data.get('owner') and data['owner']!=scope: raise ValueError('Este proyecto pertenece a otra sesión autorizada.')
     from . import reposnews_inbox, instagram_local_queue, reposnews_automation
     result={k:v for k,v in data.items() if k!='owner'}|{'instagram_integration':reposnews_inbox.integration(),'local_instagram_worker':instagram_local_queue.status(),'readiness':readiness(data),'legal_status':legal_status(data)}
+    from .reposnews_autonomous import view as autonomous_view
+    result['autonomous_editorial_status']=autonomous_view(data)
     return reposnews_automation.decorate(scope,result)
 
 
@@ -229,6 +231,9 @@ def metadata(row):
 
 
 def operate(scope, op, payload):
+    if op=='autonomous_configure':
+        from .reposnews_autonomous import configure
+        return configure(scope,payload)
     if op=='approve_batch':
         from .reposnews_automation import approve_batch
         return approve_batch(scope,payload)

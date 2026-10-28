@@ -1832,6 +1832,8 @@ def _start_reposnews_services():
     reposnews_mirror.start_worker()
     reposnews_inbox.human_action(reposnews_owner)
     reposnews_inbox.start_worker()
+    from . import reposnews_autonomous
+    reposnews_autonomous.start_worker()
     text_video.start_worker(reposnews_owner)
     workspace_creator.start_worker(reposnews_owner)
     def _verify_reposnews_after_start():
