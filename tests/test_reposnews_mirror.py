@@ -104,6 +104,18 @@ def test_manual_sync_authenticated_csrf_and_no_second_confirmation(editorial):
     assert rn.read() == editorial
 
 
+def test_another_browser_scope_returns_owner_error_without_500_or_state_change(editorial):
+    app=Flask(__name__);app.secret_key='offline-test-only'
+    mirror.register(app,lambda:'mobile-other-scope')
+    client=app.test_client()
+    with client.session_transaction() as session:
+        session['zar_auth']=True;session['business_csrf']='csrf'
+    for response in (client.get('/api/reposnews/mirror'),client.post('/api/reposnews/mirror/sync',headers={'X-ZAR-Business-CSRF':'csrf'})):
+        assert response.status_code==403
+        assert response.json=={'ok':False,'error':'OWNER_REQUIRED'}
+    assert rn.read()==editorial
+
+
 def test_mirror_build_noindex_retains_production_canonical(editorial, monkeypatch, tmp_path):
     source = mirror.public_manifest()
     source['articles'][0]['revision'] = source['articles'][0]['revision']

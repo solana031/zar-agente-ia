@@ -87,12 +87,17 @@ def complete(ident, status, scope=None):
 
 def prevent_embedded_oauth():
     from flask import request
-    if request.headers.get('Sec-Fetch-Dest')!='iframe':return None
+    ua=request.headers.get('User-Agent','')
+    import re
+    webview='Android' in ua and bool(re.search(r'; wv[);]|Version/4\.0.*Chrome',ua))
+    if request.headers.get('Sec-Fetch-Dest')!='iframe' and not webview:return None
     provider={'/connect/google':'Google','/connect/youtube':'YouTube','/api/reposnews/instagram/connect':'Instagram'}.get(request.path)
     if request.path.startswith('/oauth/accounts/start/'):provider='la cuenta'
     if not provider:return None
     # No state is issued and no one-use handoff is consumed inside an iframe.
-    response=make_response('<!doctype html><html lang="es"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/static/accounts.css"><body><main class="accounts"><h1>Autorizar '+provider+'</h1><p>'+provider+' requiere abrir una ventana externa para autorizar tu cuenta.</p><a href="'+escape(request.full_path.rstrip('?'),quote=True)+'" target="_blank" rel="noopener">ABRIR '+provider.upper()+'</a><p id="notice" role="status"></p></main><script src="/static/oauth-launcher.js?v=33.3.107"></script></body></html>')
+    url=origin()+request.full_path.rstrip('?')
+    response=make_response('<!doctype html><html lang="es"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/static/accounts.css"><body><main class="accounts"><h1>Autorizar '+provider+'</h1><p>'+provider+' requiere abrir una ventana externa en tu navegador. Copia este enlace HTTPS y ábrelo en Chrome; después vuelve a ZAR.</p><input aria-label="Enlace HTTPS de autorización" readonly value="'+escape(url,quote=True)+'"><a data-oauth-fallback="1" href="'+escape(url,quote=True)+'" target="_blank" rel="noopener noreferrer">ABRIR '+provider.upper()+'</a><p id="notice" role="status"></p></main></body></html>')
+    if not webview:response.set_data(response.get_data(as_text=True).replace('</body>', '<script src="/static/oauth-launcher.js?v=33.3.126"></script></body>'))
     response.headers['Cache-Control']='no-store';response.headers['Referrer-Policy']='no-referrer'
     return response
 

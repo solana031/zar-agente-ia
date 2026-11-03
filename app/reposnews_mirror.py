@@ -277,7 +277,10 @@ def register(app, scope_fn):
     def mirror_state():
         if session.get('zar_auth') is not True:
             return jsonify(ok=False, error='AUTH_REQUIRED'), 401
-        return jsonify(ok=True, csrf=session.setdefault('business_csrf', secrets.token_urlsafe(32)), mirror=view(scope_fn()))
+        try:state=view(scope_fn())
+        except ValueError as exc:
+            return jsonify(ok=False,error='OWNER_REQUIRED' if str(exc)=='OWNER_REQUIRED' else 'MIRROR_STATE_UNAVAILABLE'),403 if str(exc)=='OWNER_REQUIRED' else 409
+        return jsonify(ok=True, csrf=session.setdefault('business_csrf', secrets.token_urlsafe(32)), mirror=state)
 
     @app.post('/api/reposnews/mirror/sync')
     def mirror_sync():
@@ -286,4 +289,7 @@ def register(app, scope_fn):
         csrf = session.get('business_csrf', '')
         if not csrf or not secrets.compare_digest(csrf, request.headers.get('X-ZAR-Business-CSRF', '')):
             return jsonify(ok=False, error='CSRF_REQUIRED'), 403
-        return jsonify(ok=True, mirror=request_sync(scope_fn()))
+        try:state=request_sync(scope_fn())
+        except ValueError as exc:
+            return jsonify(ok=False,error='OWNER_REQUIRED' if str(exc)=='OWNER_REQUIRED' else 'MIRROR_STATE_UNAVAILABLE'),403 if str(exc)=='OWNER_REQUIRED' else 409
+        return jsonify(ok=True, mirror=state)

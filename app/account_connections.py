@@ -27,7 +27,10 @@ class Provider:
 def google(scope):
     from . import cloud_auth
     creds=cloud_auth.get_credentials(user_id=scope)
-    if not creds:return {'status':'AUTH_REQUIRED','human_action':'Autoriza tu cuenta Google en el flujo existente.'}
+    if not creds:
+        if cloud_auth._token_file(scope).exists():
+            return {'status':'ERROR','human_action':'Hay una autorización guardada, pero no se pudo leer o renovar. Pulsa REVERIFICAR; reconecta solo si Google confirma que debe autorizarse de nuevo.'}
+        return {'status':'AUTH_REQUIRED','human_action':'Esta sesión no tiene autorización Google. Conéctala o vincula el dispositivo que ya tiene tus cuentas.'}
     actual=cloud_auth.get_account_email(creds)
     if not actual:return {'status':'REAUTH_REQUIRED','human_action':'Google necesita volver a autorizarse.'}
     state=identity_center.verify_google(scope,services=['GMAIL','DRIVE','CALENDAR','CONTACTS','TASKS'])
@@ -151,7 +154,8 @@ class AccountConnectionRegistry:
         # Explicit whitelist: adapters may hold private credentials internally, never in observations.
         allowed={'status','connected','ready','upload_ready','account','account_id','channel','store','capabilities','permissions','human_action','diagnostic','blocker','identity_status','verified_cause','privacy_options','max_duration','max_video_post_duration_sec','publish_capability','required_permission','permission_check_http','provider_blocked','oauth_recovery_available','provider','reason','detected_at','retry_after','support_url','provider_url'}
         safe={k:v for k,v in result.items() if k in allowed}
-        safe.update(last_verified=holdings._now(),account_identity=result.get('account'),connect_url='/accounts#'+key,reconnect_url='/accounts#'+key)
+        previous=holdings.read(self.scope).get('account_connections',{}).get(key,{})
+        safe.update(last_verified=holdings._now(),account_identity=result.get('account') or previous.get('account_identity'),connect_url='/accounts#'+key,reconnect_url='/accounts#'+key)
         with holdings.transaction(self.scope):
             data=holdings.read(self.scope);data.setdefault('account_connections',{})[key]=safe;holdings.write(self.scope,data)
         self.notification(key,safe)
@@ -210,7 +214,36 @@ def register(app,scope_fn,csrf_owner):
     @app.get('/api/accounts/connections')
     def accounts_get():
         registry=AccountConnectionRegistry(owner())
-        return jsonify(ok=True,csrf=session.setdefault('business_csrf',secrets.token_urlsafe(32)),**registry.view())
+        return jsonify(ok=True,csrf=session.setdefault('business_csrf',secrets.token_urlsafe(32)),browser_session=registry.scope.startswith('s_'),**registry.view())
+
+    @app.post('/api/accounts/session-link')
+    def accounts_session_link():
+        """Explicit two-device proof. Never enumerate or auto-adopt another scope."""
+        import hashlib
+        from .user_scope import set_current_user
+        source=csrf_owner()
+        payload=request.get_json(silent=True) or {}
+        if payload.get('action')=='create':
+            proof=AccountConnectionRegistry(source).reverify('google')
+            if proof.get('status') not in GOOD:return jsonify(error='SOURCE_NOT_VERIFIED',message='Genera el código en el dispositivo con Google conectado y verificado.'),409
+            code=secrets.token_urlsafe(24)
+            transport.put('device:'+hashlib.sha256(code.encode()).hexdigest(),{'scope':source},ttl=300)
+            response=jsonify(code=code,expires_in=300)
+        elif payload.get('action')=='redeem':
+            code=payload.get('code','')
+            if not isinstance(code,str) or not 20<=len(code)<=100:return jsonify(error='INVALID_DEVICE_CODE'),400
+            record=transport.get('device:'+hashlib.sha256(code.strip().encode()).hexdigest(),consume=True)
+            if not record:return jsonify(error='EXPIRED_DEVICE_CODE',message='El código ha caducado o ya se utilizó. Genera otro en el dispositivo conectado.'),400
+            proof=AccountConnectionRegistry(record['scope']).reverify('google')
+            if proof.get('status') not in GOOD:return jsonify(error='SOURCE_NOT_VERIFIED',message='No se pudo verificar Google. No se ha cambiado tu sesión.'),409
+            session['zar_user_id']=record['scope'];set_current_user(record['scope'])
+            session['google_account_email']=proof.get('account_identity')
+            session['business_csrf']=secrets.token_urlsafe(32)
+            session.pop('accounts_oauth_receipts',None)
+            response=jsonify(ok=True,message='Dispositivo vinculado. Se conservan las conexiones y los documentos del espacio original.')
+        else:return jsonify(error='INVALID_ACTION'),400
+        response.headers['Cache-Control']='no-store';response.headers['Referrer-Policy']='no-referrer'
+        return response
 
     @app.get('/oauth/accounts/start/<ident>')
     def accounts_oauth_start(ident):

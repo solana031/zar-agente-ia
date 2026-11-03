@@ -80,9 +80,14 @@
     attempt.handoff=result.poll_id;sessionStorage.setItem('zar-accounts-oauth',JSON.stringify({id:attempt.handoff,provider,expires:attempt.expires}));
    }
    if(result.external&&webview){
-    const intent='intent://'+target.host+target.pathname+'#Intent;scheme=https;action=android.intent.action.VIEW;category=android.intent.category.BROWSABLE;package=com.android.chrome;S.browser_fallback_url='+encodeURIComponent(target.href)+';end';
-    const chrome=document.createElement('a');chrome.textContent='ABRIR NAVEGADOR SEGURO';chrome.href=intent;chrome.dataset.oauthFallback='1';attempt.box.append(' ',chrome);
-    state(attempt,'AUTHORIZING','Conectando… Esperando autorización en Chrome. Vuelve a ZAR al terminar.');location.assign(intent);
+    // An arbitrary Android WebView cannot launch intent://. Without native
+    // source/bridge support, never navigate it to an unsupported scheme or to
+    // Google's embedded login. Keep the original authenticated cookie here.
+    const field=document.createElement('input');field.readOnly=true;field.value=target.href;field.setAttribute('aria-label','Enlace HTTPS de autorización');field.style.width='100%';
+    const copy=document.createElement('button');copy.type='button';copy.textContent='COPIAR ENLACE PARA CHROME';
+    copy.onclick=async()=>{try{await navigator.clipboard.writeText(target.href);state(attempt,'AUTHORIZING','Enlace copiado. Pégalo en Chrome, termina la autorización y vuelve a ZAR.');}catch{field.focus();field.select();state(attempt,'AUTHORIZING','Mantén pulsado el enlace para copiarlo y ábrelo en Chrome.');}};
+    attempt.box.append(field,copy);attempt.fallback.textContent='ABRIR EN NAVEGADOR EXTERNO';
+    state(attempt,'AUTHORIZING','Abre este enlace HTTPS en Chrome. Si la app no abre ventanas externas, copia el enlace y pégalo en Chrome; después vuelve a ZAR.');
    }else if(attempt.popup){attempt.popup.location.replace(target.href);attempt.started=true;}
    else state(attempt,'AUTHORIZING','Tu navegador ha bloqueado la ventana de autorización.');
    watch(attempt);

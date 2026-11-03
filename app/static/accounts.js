@@ -22,7 +22,18 @@
   }).join('')+'</div></section>').join('')||'<p>No hay cuentas en este filtro.</p>';
   if(location.hash){const card=document.getElementById(decodeURIComponent(location.hash.slice(1)));card?.scrollIntoView({block:'start'});}
  }
- async function load(){const r=await fetch('/api/accounts/connections',{cache:'no-store'});if(!r.ok)throw Error(r.status===401?'Inicia sesión en ZAR para ver tus cuentas.':'No se pudo leer el estado de las cuentas.');const j=await r.json();csrf=j.csrf;providers=j.providers;render();}
+ async function load(){const r=await fetch('/api/accounts/connections',{cache:'no-store'});if(!r.ok)throw Error(r.status===401?'Inicia sesión en ZAR para ver tus cuentas.':'No se pudo leer el estado de las cuentas.');const j=await r.json();csrf=j.csrf;providers=j.providers;render();const note=document.getElementById('sessionScopeNote');if(note)note.textContent=j.browser_session&&!providers.some(c=>c.id==='google'&&good(c))?'Este navegador aún no está vinculado a tu cuenta Google. Las conexiones de otro dispositivo no se han eliminado. Puedes vincularlo abajo o conectar Google.':'';}
+ let pairBusy=false,pairTimer=null;
+ async function sessionLink(action){
+  if(pairBusy)return;pairBusy=true;const result=document.getElementById('sessionLinkResult'),generated=document.getElementById('sessionLinkCode');result.textContent='Comprobando la sesión y Google…';
+  try{const r=await fetch('/api/accounts/session-link',{method:'POST',headers:{'Content-Type':'application/json','X-ZAR-Business-CSRF':csrf},body:JSON.stringify({action,code:document.getElementById('redeemSessionCode').value.trim()})});const j=await r.json();if(!r.ok)throw Error(j.message||'No se pudo vincular. Revisa el código o inicia sesión en ZAR.');
+   if(action==='create'){generated.hidden=false;generated.value=j.code;result.textContent='Copia este código únicamente a tu otro dispositivo. Caduca en cinco minutos.';clearTimeout(pairTimer);pairTimer=setTimeout(()=>{generated.value='';generated.hidden=true;},j.expires_in*1000);}
+   else{sessionStorage.removeItem('zar-accounts-oauth');result.textContent=j.message;window.top.location.assign('/accounts');}
+  }catch(e){result.textContent=e.message;}finally{pairBusy=false;}
+ }
+ document.getElementById('createSessionLink')?.addEventListener('click',()=>sessionLink('create'));
+ document.getElementById('redeemSessionLink')?.addEventListener('click',()=>sessionLink('redeem'));
+ window.addEventListener('pagehide',()=>{clearTimeout(pairTimer);const field=document.getElementById('sessionLinkCode');if(field)field.value='';});
  async function action(id,operation){
   if(operation==='history-sync'){const r=await fetch('/api/reposnews/history/sync',{method:'POST',headers:{'X-ZAR-Business-CSRF':csrf,'Content-Type':'application/json'},body:'{}'});const j=await r.json();if(!r.ok||!j.ok)throw Error(j.error||'No se pudo solicitar la sincronización.');notice.textContent='Sincronización del historial encolada. No publica contenido.';return;}
   if(operation!=='reverify'&&['google','youtube','instagram','adsense'].includes(id))return window.launchExternalOAuth(id,null,{csrf,operation});

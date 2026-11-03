@@ -6,7 +6,7 @@ from flask import jsonify, request
 
 
 def install(app):
-    payload = {'status': 'ok', 'version': (Path(__file__).parent / 'VERSION.txt').read_text().strip()}
+    payload = {'ok': True, 'status': 'ok', 'version': (Path(__file__).parent / 'VERSION.txt').read_text().strip()}
     commit = os.environ.get('RAILWAY_GIT_COMMIT_SHA', '')
     if commit:
         payload['commit'] = commit
