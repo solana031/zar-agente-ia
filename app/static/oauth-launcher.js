@@ -3,7 +3,9 @@
  if(window.launchExternalOAuth)return;
  const providers=new Set(['google','youtube','instagram','adsense','tiktok','shopify']);
  const oauth=new Set(['google','youtube','instagram','adsense']);
- const webview=/Android/i.test(navigator.userAgent)&&(/; wv[);]/i.test(navigator.userAgent)||/Version\/4\.0.*Chrome/i.test(navigator.userAgent));
+ // Installed Chrome apps use normal browser OAuth. Version/4.0 alone is
+ // not proof of an embedded browser; require Android's explicit wv marker.
+ const webview=/Android/i.test(navigator.userAgent)&&/; wv[);]/i.test(navigator.userAgent);
  let active=null;
  const label=p=>({google:'Google',youtube:'YouTube',instagram:'Instagram',adsense:'Google',tiktok:'TikTok',shopify:'Shopify'}[p]||'la cuenta');
  function identify(raw){try{
@@ -24,12 +26,17 @@
  function panel(attempt){
   document.getElementById('zarOAuthNotice')?.remove();
   const box=document.createElement('section');box.id='zarOAuthNotice';box.setAttribute('role','status');
-  Object.assign(box.style,{position:'fixed',bottom:'18px',left:'16px',right:'16px',maxWidth:'620px',margin:'auto',zIndex:'2147483000',padding:'18px',border:'1px solid #9d8048',borderRadius:'12px',background:'#17150f',color:'#ead9b5',boxShadow:'0 10px 40px #0009'});
+  Object.assign(box.style,{position:'fixed',bottom:'max(12px, env(safe-area-inset-bottom))',left:'12px',right:'12px',maxWidth:'440px',maxHeight:'min(420px, 65dvh)',overflowY:'auto',boxSizing:'border-box',margin:'auto',zIndex:'2147483000',padding:'16px',border:'1px solid #78613e',borderRadius:'16px',background:'#191710',color:'#ead9b5',boxShadow:'0 12px 40px #0009',fontSize:'14px',lineHeight:'1.5'});
+  const heading=document.createElement('h2');heading.textContent='Conectar '+label(attempt.provider);Object.assign(heading.style,{fontSize:'16px',letterSpacing:'0',margin:'0 0 6px'});
   const text=document.createElement('p');attempt.notice=text;
+  text.style.margin='6px 0 14px';
   const link=document.createElement('a');link.textContent='ABRIR AUTORIZACIÓN';link.target='_blank';link.rel='noopener noreferrer';link.dataset.oauthFallback='1';link.hidden=true;
   link.onclick=()=>{attempt.started=true;state(attempt,'AUTHORIZING','Esperando autorización… Vuelve a ZAR al terminar.');};
   const cancel=document.createElement('button');attempt.cancel=cancel;cancel.type='button';cancel.textContent='CANCELAR';cancel.style.marginLeft='16px';cancel.onclick=()=>{try{attempt.popup?.close();}catch{}finish(attempt,'cancel');};
-  box.append(text,link,cancel);document.body.append(box);attempt.box=box;attempt.fallback=link;
+  for(const control of [link,cancel])Object.assign(control.style,{display:'inline-flex',alignItems:'center',justifyContent:'center',minHeight:'44px',boxSizing:'border-box',padding:'10px 12px',margin:'4px 6px 4px 0',border:'1px solid #78613e',borderRadius:'9px',fontSize:'12px',fontWeight:'650',textDecoration:'none',color:'#ead9b5',background:'#2a251b',maxWidth:'100%',whiteSpace:'normal'});
+  // Respect the hidden property despite explicit inline display styling.
+  link.style.removeProperty('display');
+  box.append(heading,text,link,cancel);document.body.append(box);attempt.box=box;attempt.fallback=link;
  }
  function notify(provider){
   window.dispatchEvent(new CustomEvent('zar-accounts-changed',{detail:{provider}}));
@@ -41,6 +48,7 @@
   if(oauth.has(provider)){
    const check=await fetch('/api/accounts/connections/'+provider+'/reverify',{method:'POST',headers:{'Content-Type':'application/json','X-ZAR-Business-CSRF':j.csrf},body:'{}'});
    if(!check.ok)throw Error('No se pudo reverificar la cuenta.');
+   const proof=await check.json();if(!['CONNECTED','UPLOAD_READY','PARTIAL'].includes(proof.result?.status))throw Error('La cuenta no confirmó su conexión.');
   }
   await fetch('/api/accounts/connections',{cache:'no-store'});notify(provider);
  }
@@ -86,10 +94,12 @@
     const field=document.createElement('input');field.readOnly=true;field.value=target.href;field.setAttribute('aria-label','Enlace HTTPS de autorización');field.style.width='100%';
     const copy=document.createElement('button');copy.type='button';copy.textContent='COPIAR ENLACE PARA CHROME';
     copy.onclick=async()=>{try{await navigator.clipboard.writeText(target.href);state(attempt,'AUTHORIZING','Enlace copiado. Pégalo en Chrome, termina la autorización y vuelve a ZAR.');}catch{field.focus();field.select();state(attempt,'AUTHORIZING','Mantén pulsado el enlace para copiarlo y ábrelo en Chrome.');}};
-    attempt.box.append(field,copy);attempt.fallback.textContent='ABRIR EN NAVEGADOR EXTERNO';
-    state(attempt,'AUTHORIZING','Abre este enlace HTTPS en Chrome. Si la app no abre ventanas externas, copia el enlace y pégalo en Chrome; después vuelve a ZAR.');
-   }else if(attempt.popup){attempt.popup.location.replace(target.href);attempt.started=true;}
-   else state(attempt,'AUTHORIZING','Tu navegador ha bloqueado la ventana de autorización.');
+    Object.assign(copy.style,{minHeight:'44px',fontSize:'12px',padding:'10px 12px',borderRadius:'9px',whiteSpace:'normal'});
+    const details=document.createElement('details'),summary=document.createElement('summary');summary.textContent='Ver enlace seguro';details.append(summary,field);
+    attempt.box.append(copy,details);attempt.fallback.hidden=true;
+    state(attempt,'AUTHORIZING','Este navegador está integrado en otra app. Abre ZAR en Chrome para autorizar Google. Puedes copiar el enlace seguro; tu conexión se conservará al volver.');
+   }else if(attempt.popup){attempt.fallback.hidden=true;attempt.popup.location.replace(target.href);attempt.started=true;}
+   else {attempt.started=true;window.top.location.assign(target.href);return;}
    watch(attempt);
   }catch{try{attempt.popup?.close();}catch{}active=null;attempt.fallback.hidden=true;attempt.cancel.textContent='CERRAR';attempt.cancel.onclick=()=>attempt.box.remove();state(attempt,'ERROR','No se pudo abrir la autorización. Vuelve a intentarlo desde CUENTAS.');}
  };
@@ -105,6 +115,7 @@
  window.addEventListener('focus',()=>{if(active?.started&&!active.popup&&!active.handoff)finish(active,'return');});
  document.addEventListener('visibilitychange',()=>{if(!document.hidden&&active){if(active.handoff)watch(active);else if(active.started&&!active.popup)finish(active,'return');}});
  window.addEventListener('pagehide',()=>clearTimeout(active?.timer));
+ window.addEventListener('keydown',e=>{if(e.key==='Escape'&&active?.cancel){e.preventDefault();active.cancel.click();}});
  document.addEventListener('click',e=>{
   const a=e.target.closest('a[href]');if(!a||a.dataset.oauthFallback)return;
   const u=new URL(a.href,location.origin);let provider=identify(u.href);

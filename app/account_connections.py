@@ -33,10 +33,22 @@ def google(scope):
         return {'status':'AUTH_REQUIRED','human_action':'Esta sesión no tiene autorización Google. Conéctala o vincula el dispositivo que ya tiene tus cuentas.'}
     actual=cloud_auth.get_account_email(creds)
     if not actual:return {'status':'REAUTH_REQUIRED','human_action':'Google necesita volver a autorizarse.'}
-    state=identity_center.verify_google(scope,services=['GMAIL','DRIVE','CALENDAR','CONTACTS','TASKS'])
+    from .google_accounts import read as linked_accounts
+    linked=linked_accounts(scope)
+    personal=bool(linked.get('active') and linked['active']!='legacy')
+    if personal:
+        # Operational identity policies remain intact. A personal account is
+        # verified on its own merits, not against the ZAR provisioning email.
+        from concurrent.futures import ThreadPoolExecutor
+        names=('GMAIL','DRIVE','CALENDAR','CONTACTS','TASKS')
+        with ThreadPoolExecutor(max_workers=4) as pool:caps=dict(zip(names,pool.map(lambda name:identity_center._probe(name,creds),names)))
+        for name,permission in identity_center.EXTRA.items():
+            caps[name]={'status':'AVAILABLE' if identity_center.PREFIX+permission in (creds.scopes or []) else 'NOT_CONNECTED'}
+        state={'capabilities':caps}
+    else:state=identity_center.verify_google(scope,services=['GMAIL','DRIVE','CALENDAR','CONTACTS','TASKS'])
     # This adapter reuses existing proofs; it never creates documents to test access.
     caps=state.get('capabilities',{})
-    proof=holdings.read(scope).get('workspace_tests',{}).get('FORMS',{})
+    proof={} if personal else holdings.read(scope).get('workspace_tests',{}).get('FORMS',{})
     caps=dict(caps,FORMS=proof)
     capabilities={name:('READY' if caps.get(name,{}).get('status')=='CONNECTED' else 'PERMISSION_REQUIRED' if caps.get(name,{}).get('status')=='NOT_CONNECTED' else 'UNKNOWN') for name in ('GMAIL','DRIVE','DOCS','SHEETS','SLIDES','FORMS','CALENDAR','CONTACTS','TASKS')}
     complete=all(v=='READY' for v in capabilities.values())
@@ -115,7 +127,7 @@ class AccountConnectionRegistry:
 
     def connect_url(self,key):
         email=holdings.read(self.scope).get('identity_center',{}).get('google',{}).get('email') or 'zaragente031@gmail.com'
-        urls={'google':identity_center.connect_url(email),'youtube':identity_center.connect_url(email,'youtube'),
+        urls={'google':'/connect/google?force=1&purpose=accounts&service=core','youtube':identity_center.connect_url(email,'youtube'),
               'instagram':'/api/reposnews/instagram/connect?publishing=1&return_to=/accounts',
               'adsense':identity_center.connect_url(email,'adsense')}
         return urls.get(key,'/accounts#'+key)
@@ -198,6 +210,8 @@ def social_connections(scope,only=None):
 
 
 def register(app,scope_fn,csrf_owner):
+    from datetime import timedelta
+    app.config['PERMANENT_SESSION_LIFETIME']=timedelta(days=7)
     from . import oauth_transport as transport
     if not getattr(app,'_zar_oauth_frame_guard',False):
         app.before_request(transport.prevent_embedded_oauth)
@@ -214,7 +228,17 @@ def register(app,scope_fn,csrf_owner):
     @app.get('/api/accounts/connections')
     def accounts_get():
         registry=AccountConnectionRegistry(owner())
-        return jsonify(ok=True,csrf=session.setdefault('business_csrf',secrets.token_urlsafe(32)),browser_session=registry.scope.startswith('s_'),**registry.view())
+        from .google_accounts import view as google_accounts
+        return jsonify(ok=True,csrf=session.setdefault('business_csrf',secrets.token_urlsafe(32)),google_accounts=google_accounts(registry.scope),browser_session=registry.scope.startswith('s_'),**registry.view())
+
+    @app.post('/api/accounts/google/select')
+    def accounts_google_select():
+        scope=csrf_owner()
+        from .google_accounts import select
+        try:select(scope,(request.get_json(silent=True) or {}).get('account_id'))
+        except ValueError:return jsonify(error='GOOGLE_ACCOUNT_NOT_LINKED'),400
+        # Selection is not verification. The adapter returns the real current state.
+        return jsonify(ok=True,result=AccountConnectionRegistry(scope).reverify('google'))
 
     @app.post('/api/accounts/session-link')
     def accounts_session_link():
@@ -237,6 +261,7 @@ def register(app,scope_fn,csrf_owner):
             proof=AccountConnectionRegistry(record['scope']).reverify('google')
             if proof.get('status') not in GOOD:return jsonify(error='SOURCE_NOT_VERIFIED',message='No se pudo verificar Google. No se ha cambiado tu sesión.'),409
             session['zar_user_id']=record['scope'];set_current_user(record['scope'])
+            session.permanent=True
             session['google_account_email']=proof.get('account_identity')
             session['business_csrf']=secrets.token_urlsafe(32)
             session.pop('accounts_oauth_receipts',None)
@@ -310,7 +335,12 @@ def register(app,scope_fn,csrf_owner):
                     # Preserve expected-email/service validation in the existing
                     # provider route; never accept a caller-supplied redirect host.
                     path=target.path+('?' + target.query if target.query else '')
+                    if provider=='google' and parse_qs(target.query).get('purpose',[''])[0]!='zar':
+                        path=registry.connect_url('google')
                 ident=transport.begin(registry.scope,provider,path)
+                # Persist only the already authenticated initiating ZAR session.
+                # A fresh external browser still receives no ZAR login grant.
+                session.permanent=True
                 receipts=dict(list(session.get('accounts_oauth_receipts',{}).items())[-3:])
                 receipts[ident]=registry.scope;session['accounts_oauth_receipts']=receipts
                 return jsonify(ok=True,url=transport.origin()+'/oauth/accounts/start/'+ident,poll_id=ident,external=True)

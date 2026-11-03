@@ -169,7 +169,8 @@ class OAuthTests(unittest.TestCase):
         self.assertTrue(r.json['external']);ident=r.json['poll_id']
         blocked=self.owner.get('/oauth/accounts/start/'+ident,base_url=BASE,headers={'Sec-Fetch-Dest':'iframe'})
         self.assertEqual(blocked.status_code,200);self.assertIn('ventana externa',blocked.text)
-        self.assertIn('target="_blank"',blocked.text)
+        self.assertIn('target="_top"',blocked.text)
+        self.assertIn('CONTINUAR EN EL NAVEGADOR',blocked.text)
         self.assertTrue(transport.get('launch:'+ident))
         self.assertEqual(self.owner.get('/oauth/accounts/start/'+ident,base_url=BASE,headers={'Sec-Fetch-Dest':'document'}).status_code,302)
 

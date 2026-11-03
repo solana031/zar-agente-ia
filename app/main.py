@@ -541,6 +541,22 @@ def oauth2callback():
         return _oauth_error_page('Estado OAuth inválido o caducado. Vuelve a Zar e inicia la conexión de Google de nuevo.') , 400
     session['accounts_oauth_handoff'] = pending.get('handoff')
     try:
+        from .google_accounts import read as linked_google_accounts
+        linked=bool(linked_google_accounts(pending['user_id'])['accounts']) if pending.get('purpose')=='zar' and pending.get('service')!='youtube' else False
+        if pending.get('purpose')=='accounts' or linked:
+            from .cloud_auth import get_account_email
+            from .google_accounts import attach
+            source=pending['user_id']
+            creds=finish_oauth(state,code,verifier,pending.get('redirect_uri'),user_id=source,expected_email=pending.get('expected_email'),persist=False)
+            address=get_account_email(creds)
+            if not address:raise ValueError('Google no confirmó la identidad de la cuenta seleccionada.')
+            attach(source,creds,address)
+            # Google account selection must not switch the authenticated ZAR owner.
+            session['zar_user_id']=source;set_current_user(source)
+            session['google_account_email']=address
+            _clear_oauth_pending('google',state)
+            for key in ('oauth_provider','oauth_state','oauth_code_verifier'):session.pop(key,None)
+            return _oauth_success_page('google')
         if provider == "youtube":
             finish_youtube_oauth(state, code, verifier)
             _clear_oauth_pending('youtube', state)
@@ -3692,13 +3708,14 @@ def connect_google():
     try:
         force = request.args.get("force", "0") == "1"
         purpose=request.args.get('purpose')
-        service=request.args.get('service','core') if purpose=='zar' else None
+        service=request.args.get('service','core') if purpose in {'zar','accounts'} else None
         expected_email=request.args.get('email','').strip().lower() if purpose=='zar' else None
-        if purpose=='zar':
+        if purpose in {'zar','accounts'}:
             import re
             from .cloud_auth import SERVICE_SCOPES
-            if service not in SERVICE_SCOPES or not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+',expected_email or ''):
+            if service not in SERVICE_SCOPES or (purpose=='zar' and not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+',expected_email or '')):
                 return 'Selecciona servicio y correo real de ZAR.',400
+            if purpose=='accounts' and service!='core':return 'Servicio de cuenta no válido.',400
         if not force and connected():
             return "<script>window.close();</script><h2>Google ya está conectado</h2><p>Zar ha conservado tus credenciales. No necesitas volver a autorizarlo.</p>"
         session.pop("oauth_provider", None)

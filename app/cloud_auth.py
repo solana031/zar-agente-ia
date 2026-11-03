@@ -20,6 +20,9 @@ TOKEN_FILE = DATA_DIR / 'google_token.json'
 
 def _token_file(user_id=None):
     uid = safe_slug(user_id or get_current_user())
+    if not uid.endswith('__youtube_oauth'):
+        from .google_accounts import active_path
+        if (DATA_DIR/'users'/uid/'google_accounts.json').exists():return active_path(uid)
     return DATA_DIR / 'users' / uid / 'google_token.json'
 
 def youtube_user_id(user_id=None):
@@ -70,9 +73,9 @@ def _redirect_uri():
     from .oauth_transport import callback
     return callback('google')
 
-def _save_credentials(creds, user_id=None):
+def _save_credentials(creds, user_id=None, path=None):
     global _LAST_ERROR
-    path = _token_file(user_id)
+    path = path or _token_file(user_id)
     from .oauth_vault import persist
     persist(path,creds.to_json(),DATA_DIR)
     _LAST_ERROR = ''
@@ -99,7 +102,7 @@ def get_credentials(auto_refresh=True, user_id=None):
             if json.loads(raw).get('format')!='ZAR_OAUTH_ENCRYPTED_V1':
                 from .oauth_vault import persist
                 persist(path,creds.to_json(),DATA_DIR)
-                _save_credentials(creds,user_id=user_id)
+                _save_credentials(creds,user_id=user_id,path=path)
         except Exception as exc:
             _LAST_ERROR = redact_credential_error(exc,creds)
             return None
@@ -110,7 +113,7 @@ def get_credentials(auto_refresh=True, user_id=None):
         if auto_refresh and creds and creds.expired and creds.refresh_token:
             try:
                 creds.refresh(Request())
-                _save_credentials(creds, user_id=user_id)
+                _save_credentials(creds, user_id=user_id, path=path)
             except RefreshError as exc:
                 _LAST_ERROR = redact_credential_error(exc,creds)
                 return None
@@ -224,7 +227,7 @@ def authorization_url(force=False, redirect_uri=None, service=None, expected_ema
     return url, state, code_verifier
 
 
-def finish_oauth(state, code, code_verifier, redirect_uri=None, user_id=None, expected_email=None):
+def finish_oauth(state, code, code_verifier, redirect_uri=None, user_id=None, expected_email=None, persist=True):
     """Exchange the authorization code for Google user credentials."""
     if not code_verifier:
         raise ValueError('Falta el verificador PKCE de la sesión OAuth.')
@@ -278,7 +281,7 @@ def finish_oauth(state, code, code_verifier, redirect_uri=None, user_id=None, ex
             if new_email and get_account_email(previous)==new_email:
                 creds=Credentials(token=creds.token,refresh_token=previous.refresh_token,token_uri=creds.token_uri,
                     client_id=creds.client_id,client_secret=creds.client_secret,scopes=creds.scopes,expiry=creds.expiry)
-    _save_credentials(creds, user_id=user_id)
+    if persist:_save_credentials(creds, user_id=user_id)
     return creds
 
 

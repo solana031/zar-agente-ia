@@ -67,7 +67,15 @@ class DeviceSessionTests(unittest.TestCase):
         response=external.get(url,base_url=BASE,headers={'User-Agent':'Mozilla/5.0 (Linux; Android 14; Pixel; wv) Version/4.0 Chrome/130 Mobile'})
         self.assertEqual(response.status_code,200);self.assertNotIn('intent://',response.text)
         self.assertIn('Chrome',response.text)
+        self.assertIn('copyOAuthLink',response.text)
+        self.assertNotIn('data-oauth-fallback',response.text)
+        self.assertEqual(transport.get('launch:'+ident)['scope'],'owner')
         self.assertEqual(external.get(url,base_url=BASE).status_code,302)
+
+    def test_chrome_installed_browser_is_not_mistaken_for_webview(self):
+        ident=transport.begin('owner','google','/connect/google?force=1')
+        response=self.app.test_client().get('/oauth/accounts/start/'+ident,base_url=BASE,headers={'User-Agent':'Mozilla/5.0 (Linux; Android 14) Version/4.0 Chrome/130 Mobile Safari/537.36'})
+        self.assertEqual(response.status_code,302)
 
     def test_saved_credential_failure_is_not_reported_as_missing(self):
         from app import cloud_auth

@@ -8,14 +8,15 @@ from app.oauth_transport import page as callback_page
 
 ROOT=Path(__file__).resolve().parents[1]
 app=Flask(__name__)
+app.secret_key='TEST-only-callback-session'
 with app.test_request_context():
     callbacks={p:callback_page(p.title(),'CONNECTED',200).get_data(as_text=True) for p in ('instagram','google','youtube')}
 
 with sync_playwright() as pw:
     browser=pw.chromium.launch(executable_path=os.environ.get('ZAR_TEST_BROWSER'))
-    for width in (1440,390):
-        for provider,blocked in [('instagram',False),('google',False),('youtube',False),('instagram',True)]:
-            context=browser.new_context(viewport={'width':width,'height':844})
+    for width in (1440,390,393,412):
+        for provider,blocked in [('instagram',False),('google',False),('youtube',False)]:
+            context=browser.new_context(viewport={'width':width,'height':844},user_agent='Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Version/4.0 Chrome/130.0 Mobile Safari/537.36' if width<600 else None)
             state={'completed':False,'verified':False,'checks':0,'starts':0}
             errors=[]
             row={'id':provider,'name':provider.title(),'category':'SOCIAL','icon':'I','status':'REAUTH_REQUIRED','used_by':['Workspace'],'capabilities':{}}
@@ -92,5 +93,25 @@ with sync_playwright() as pw:
             expect(parent.locator('.status')).to_have_text('REQUIERE RECONEXIÓN')
             assert not errors,errors
             context.close()
+    for width in (1440,390,393,412):
+        context=browser.new_context(viewport={'width':width,'height':844},user_agent='Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Version/4.0 Chrome/130.0 Mobile Safari/537.36' if width<600 else None)
+        state={'completed':False,'verified':False,'checks':0,'starts':0}
+        provider='google'
+        row={'id':provider,'name':'Google','category':'GOOGLE','icon':'G','status':'REAUTH_REQUIRED','used_by':['Workspace'],'capabilities':{}}
+        with app.test_request_context():
+            from flask import session
+            session['zar_auth']=True
+            callbacks['google']=callback_page('Google','CONNECTED',200).get_data(as_text=True)
+        context.route('**/*',route)
+        page=context.new_page();page.goto('https://zar.test/shell')
+        page.frames[1].evaluate('window.open=()=>null')
+        page.frame_locator('iframe').locator('.primary').click()
+        page.wait_for_url('https://oauth.google.test/**')
+        assert len(context.pages)==1 and len(page.frames)==1
+        page.get_by_role('link',name='ACEPTAR PRUEBA').click()
+        page.wait_for_url('https://zar.test/accounts')
+        expect(page.locator('.status')).to_contain_text('CONECTADA',timeout=12000)
+        assert state['starts']==1 and state['checks']==1
+        context.close()
     browser.close()
-print(json.dumps({'desktop':'PASS','mobile':'PASS','iframe_unchanged':'PASS','instagram_google_youtube':'PASS','blocked_popup_new_tab':'PASS','callback_refresh':'PASS','origin_and_source':'PASS','deep_links':'PASS','real_grants':0,'publications':0}))
+print(json.dumps({'desktop':'PASS','mobile':'PASS','iframe_unchanged':'PASS','instagram_google_youtube':'PASS','blocked_popup_automatic_top_navigation':'PASS','callback_refresh':'PASS','origin_and_source':'PASS','deep_links':'PASS','real_grants':0,'publications':0}))

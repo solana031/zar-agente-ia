@@ -89,20 +89,23 @@ def prevent_embedded_oauth():
     from flask import request
     ua=request.headers.get('User-Agent','')
     import re
-    webview='Android' in ua and bool(re.search(r'; wv[);]|Version/4\.0.*Chrome',ua))
+    webview='Android' in ua and bool(re.search(r'; wv[);]',ua))
     if request.headers.get('Sec-Fetch-Dest')!='iframe' and not webview:return None
     provider={'/connect/google':'Google','/connect/youtube':'YouTube','/api/reposnews/instagram/connect':'Instagram'}.get(request.path)
     if request.path.startswith('/oauth/accounts/start/'):provider='la cuenta'
     if not provider:return None
     # No state is issued and no one-use handoff is consumed inside an iframe.
     url=origin()+request.full_path.rstrip('?')
-    response=make_response('<!doctype html><html lang="es"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/static/accounts.css"><body><main class="accounts"><h1>Autorizar '+provider+'</h1><p>'+provider+' requiere abrir una ventana externa en tu navegador. Copia este enlace HTTPS y ábrelo en Chrome; después vuelve a ZAR.</p><input aria-label="Enlace HTTPS de autorización" readonly value="'+escape(url,quote=True)+'"><a data-oauth-fallback="1" href="'+escape(url,quote=True)+'" target="_blank" rel="noopener noreferrer">ABRIR '+provider.upper()+'</a><p id="notice" role="status"></p></main></body></html>')
-    if not webview:response.set_data(response.get_data(as_text=True).replace('</body>', '<script src="/static/oauth-launcher.js?v=33.3.126"></script></body>'))
+    message='Este enlace se ha abierto dentro de una app. Usa su menú para abrirlo en Chrome. No vuelvas a pulsar el enlace dentro de esta misma pantalla.' if webview else 'La autorización debe abrirse en una ventana externa al panel de CUENTAS. Continúa en tu navegador para seleccionar la cuenta.'
+    action='<button type="button" id="copyOAuthLink">COPIAR ENLACE SEGURO</button>' if webview else '<a class="oauthPrimary" data-oauth-fallback="1" href="'+escape(url,quote=True)+'" target="_top">CONTINUAR EN EL NAVEGADOR</a>'
+    response=make_response('<!doctype html><html lang="es"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Conectar cuenta · ZAR</title><link rel="stylesheet" href="/static/accounts.css?v=33.3.127"><body><main class="accounts oauthHelp"><a class="brand" href="/accounts" target="_top">ZAR / CONEXIONES</a><section class="card"><span class="oauthBadge">AUTORIZACIÓN SEGURA</span><h1>Continúa en Chrome</h1><p>'+message+'</p>'+action+'<details><summary>Ver enlace seguro</summary><input id="oauthSafeLink" aria-label="Enlace HTTPS de autorización" readonly value="'+escape(url,quote=True)+'"></details><p id="notice" role="status"></p><a href="/accounts" target="_top">Volver a CUENTAS</a></section></main><script src="/static/oauth-help.js?v=33.3.127"></script></body></html>')
+    if not webview:response.set_data(response.get_data(as_text=True).replace('</body>', '<script src="/static/oauth-launcher.js?v=33.3.127"></script></body>'))
     response.headers['Cache-Control']='no-store';response.headers['Referrer-Policy']='no-referrer'
     return response
 
 
 def page(provider, category, status=400):
+    from flask import session
     # No provider error text, OAuth code, state, session or token is reflected.
     logging.getLogger(__name__).info('oauth provider=%s category=%s http=%s correlation=%s', provider, category, status, secrets.token_hex(6))
     messages = {'PROVIDER_BLOCKED':'Meta bloquea el acceso a su API. Revisa la confirmación de tu cuenta en Meta Developers; no repitas OAuth mientras siga bloqueada.',
@@ -111,7 +114,9 @@ def page(provider, category, status=400):
                 'OWNER_SESSION_REQUIRED':'Abre CUENTAS en la sesión propietaria de ReposNews antes de conectar Instagram.',
                 'OAUTH_STATE_INVALID':'La conexión ha caducado o ya se utilizó. Iníciala otra vez desde CUENTAS.'}
     success='<p>Cuenta conectada correctamente.</p>' if category=='CONNECTED' else ''
-    response = make_response('<!doctype html><html lang="es"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ZAR · Conexión</title><link rel="stylesheet" href="/static/accounts.css"><body data-oauth-provider="'+escape(provider.lower(),quote=True)+'" data-oauth-status="'+escape(category,quote=True)+'"><main class="accounts"><h1>Conexión '+escape(provider)+'</h1>'+success+'<p>'+messages.get(category,'No se pudo completar la conexión. Vuelve a CUENTAS y reintenta.')+'</p><a href="/accounts" target="_top">Volver a CUENTAS</a></main><script src="/static/oauth-callback.js?v=33.3.107"></script></body></html>', status)
+    response = make_response('<!doctype html><html lang="es"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ZAR · Conexión</title><link rel="stylesheet" href="/static/accounts.css"><body data-oauth-provider="'+escape(provider.lower(),quote=True)+'" data-oauth-status="'+escape(category,quote=True)+'"><main class="accounts"><h1>Conexión '+escape(provider)+'</h1>'+success+'<p>'+messages.get(category,'No se pudo completar la conexión. Vuelve a CUENTAS y reintenta.')+'</p><a href="/accounts" target="_top">Volver a CUENTAS</a></main><script src="/static/oauth-callback.js?v=33.3.127"></script></body></html>', status)
     response.headers['Cache-Control'] = 'no-store'
     response.headers['Referrer-Policy'] = 'no-referrer'
+    if session.get('zar_auth') is True:
+        response.set_data(response.get_data(as_text=True).replace('data-oauth-provider=', 'data-oauth-return="1" data-oauth-provider=',1))
     return response
