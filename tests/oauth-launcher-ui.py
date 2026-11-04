@@ -10,12 +10,12 @@ ROOT=Path(__file__).resolve().parents[1]
 app=Flask(__name__)
 app.secret_key='TEST-only-callback-session'
 with app.test_request_context():
-    callbacks={p:callback_page(p.title(),'CONNECTED',200).get_data(as_text=True) for p in ('instagram','google','youtube')}
+    callbacks={p:callback_page(p.title(),'CONNECTED',200).get_data(as_text=True) for p in ('instagram','google','youtube','tiktok')}
 
 with sync_playwright() as pw:
     browser=pw.chromium.launch(executable_path=os.environ.get('ZAR_TEST_BROWSER'))
     for width in (1440,390,393,412):
-        for provider,blocked in [('instagram',False),('google',False),('youtube',False)]:
+        for provider,blocked in [('instagram',False),('google',False),('youtube',False),('tiktok',False)]:
             context=browser.new_context(viewport={'width':width,'height':844},user_agent='Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Version/4.0 Chrome/130.0 Mobile Safari/537.36' if width<600 else None)
             state={'completed':False,'verified':False,'checks':0,'starts':0}
             errors=[]
@@ -114,4 +114,56 @@ with sync_playwright() as pw:
         assert state['starts']==1 and state['checks']==1
         context.close()
     browser.close()
-print(json.dumps({'desktop':'PASS','mobile':'PASS','iframe_unchanged':'PASS','instagram_google_youtube':'PASS','blocked_popup_automatic_top_navigation':'PASS','callback_refresh':'PASS','origin_and_source':'PASS','deep_links':'PASS','real_grants':0,'publications':0}))
+print(json.dumps({'desktop':'PASS','mobile':'PASS','iframe_unchanged':'PASS','instagram_google_youtube_tiktok':'PASS','blocked_popup_automatic_top_navigation':'PASS','callback_refresh':'PASS','origin_and_source':'PASS','deep_links':'PASS','real_grants':0,'publications':0}))
+
+# Recovery and layout: no initialization probes, no success on cancellation,
+# provider-specific setup errors, and the rest of the batch survives a failure.
+with sync_playwright() as pw:
+    browser=pw.chromium.launch(executable_path=os.environ.get('ZAR_TEST_BROWSER'))
+    for width in (320,390,1440):
+        context=browser.new_context(viewport={'width':width,'height':900},user_agent='Mozilla/5.0 (Linux; Android 14; Pixel Build/TEST; wv) Chrome/130.0 Mobile Safari/537.36')
+        errors=[];checks=[];reads={'accounts':0}
+        rows=[dict(id=p,name=n,icon=i,category=c,status=s,used_by=['Workspace'],capabilities={'publishing':'READY' if s=='CONNECTED' else 'PERMISSION_REQUIRED'},account_identity='cuenta de demostración') for p,n,i,c,s in [
+            ('google','Google','G','GOOGLE / PRODUCTIVIDAD','PARTIAL'),('youtube','YouTube','▶','GOOGLE / PRODUCTIVIDAD','CONNECTED'),
+            ('instagram','Instagram','◎','SOCIAL','REAUTH_REQUIRED'),('tiktok','TikTok','♪','SOCIAL','DISCONNECTED'),('shopify','Shopify','S','COMERCIO','UNKNOWN')]]
+        def recovery_route(r):
+            path=urlsplit(r.request.url).path
+            if path.startswith('/static/'):return r.fulfill(path=str(ROOT/'app'/path.lstrip('/')))
+            if path=='/accounts':return r.fulfill(content_type='text/html',body=(ROOT/'app/templates/accounts.html').read_text(encoding='utf-8'))
+            if path=='/api/accounts/connections':
+                reads['accounts']+=1
+                return r.fulfill(json={'csrf':'fixture' if reads['accounts']==1 else 'rotated-fixture','providers':rows})
+            if path.endswith('/instagram/reconnect'):
+                assert r.request.headers['x-zar-business-csrf']=='rotated-fixture'
+                return r.fulfill(json={'external':True,'poll_id':'recovery','url':'/oauth/accounts/start/recovery'})
+            if path.endswith('/tiktok/connect'):return r.fulfill(status=409,json={'message':'Configura Login Kit de la app TikTok existente.'})
+            if path=='/api/accounts/oauth/status/recovery':return r.fulfill(json={'status':'PENDING'})
+            if path.endswith('/reverify'):
+                provider=path.split('/')[-2];checks.append(provider)
+                if provider=='google':return r.fulfill(status=503,json={'message':'Proveedor temporalmente no disponible'})
+                return r.fulfill(json={'result':next(row for row in rows if row['id']==provider)})
+            r.abort();raise AssertionError('Unexpected network: '+path)
+        context.route('**/*',recovery_route)
+        page=context.new_page();page.on('pageerror',lambda e:errors.append(str(e)))
+        page.goto('https://zar.test/accounts');expect(page.locator('.card')).to_have_count(5)
+        assert checks==[], 'Opening accounts must not block buttons on provider calls'
+        assert page.evaluate('document.documentElement.scrollWidth<=innerWidth')
+        output=ROOT/'artifacts'/'connections';output.mkdir(parents=True,exist_ok=True)
+        page.screenshot(path=str(output/('accounts-'+str(width)+'.png')),full_page=True)
+        page.locator('#instagram .actions .primary').click()
+        expect(page.get_by_role('button',name='COPIAR ENLACE PARA CHROME')).to_be_visible()
+        page.get_by_role('button',name='CANCELAR',exact=True).click()
+        expect(page.locator('#zarOAuthNotice')).to_contain_text('Autorización cancelada')
+        assert checks==[], 'Cancellation cannot reverify an old token and claim success'
+        expect(page.locator('#instagram .status')).to_have_text('REQUIERE RECONEXIÓN')
+        page.get_by_role('button',name='CERRAR',exact=True).click()
+        page.locator('#tiktok .actions .primary').click()
+        expect(page.locator('#zarOAuthNotice')).to_contain_text('Configura Login Kit')
+        page.get_by_role('button',name='CERRAR',exact=True).click()
+        page.get_by_role('button',name='REVERIFICAR TODAS',exact=True).click()
+        expect(page.locator('#notice')).to_contain_text('No se pudo comprobar: Google')
+        assert checks==['google','youtube','instagram','tiktok','shopify']
+        assert not errors,errors
+        context.close()
+    browser.close()
+print(json.dumps({'cancel_without_false_success':'PASS','provider_error_message':'PASS','batch_continues_on_failure':'PASS','layout_320_390_1440':'PASS','webview':'PASS'}))

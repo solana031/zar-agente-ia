@@ -2,19 +2,20 @@
 (()=>{
  if(window.launchExternalOAuth)return;
  const providers=new Set(['google','youtube','instagram','adsense','tiktok','shopify']);
- const oauth=new Set(['google','youtube','instagram','adsense']);
+ const oauth=new Set(['google','youtube','instagram','adsense','tiktok']);
  // Installed Chrome apps use normal browser OAuth. Version/4.0 alone is
  // not proof of an embedded browser; require Android's explicit wv marker.
  const webview=/Android/i.test(navigator.userAgent)&&/; wv[);]/i.test(navigator.userAgent);
  let active=null;
+ const remember=value=>{try{if(value)sessionStorage.setItem('zar-accounts-oauth',JSON.stringify(value));else sessionStorage.removeItem('zar-accounts-oauth');}catch{}};
  const label=p=>({google:'Google',youtube:'YouTube',instagram:'Instagram',adsense:'Google',tiktok:'TikTok',shopify:'Shopify'}[p]||'la cuenta');
  function identify(raw){try{
   const u=new URL(raw,location.origin),h=u.hostname.toLowerCase();
-  if(u.origin===location.origin){if(u.pathname==='/connect/google')return u.searchParams.get('service')==='youtube'?'youtube':u.searchParams.get('service')==='adsense'?'adsense':'google';if(u.pathname==='/connect/youtube')return 'youtube';if(u.pathname==='/api/reposnews/instagram/connect')return 'instagram';return null;}
+  if(u.origin===location.origin){if(u.pathname==='/connect/google')return u.searchParams.get('service')==='youtube'?'youtube':u.searchParams.get('service')==='adsense'?'adsense':'google';if(u.pathname==='/connect/tiktok')return 'tiktok';if(u.pathname==='/connect/youtube')return 'youtube';if(u.pathname==='/api/reposnews/instagram/connect')return 'instagram';return null;}
   if(u.protocol!=='https:')return null;
   if(h==='accounts.google.com')return 'google';
   if(['instagram.com','www.instagram.com','facebook.com','www.facebook.com','auth.meta.com'].includes(h)&&/\/(?:oauth|dialog|accounts\/login|login)/.test(u.pathname))return 'instagram';
-  if(['www.tiktok.com','open.tiktokapis.com'].includes(h)&&/\/oauth/.test(u.pathname))return 'tiktok';
+  if(['www.tiktok.com','open.tiktokapis.com'].includes(h)&&/\/(?:oauth|v2\/auth)/.test(u.pathname))return 'tiktok';
   if((h==='accounts.shopify.com'||h.endsWith('.myshopify.com'))&&/\/(?:oauth|auth)/.test(u.pathname))return 'shopify';
  }catch{}return null;}
  function safeURL(provider,raw){const u=new URL(raw,location.origin);if(u.username||u.password||!['https:','http:'].includes(u.protocol))throw Error('Dirección de autorización no válida.');
@@ -54,16 +55,21 @@
  }
  async function finish(attempt,reason){
   if(active!==attempt||attempt.finishing)return;attempt.finishing=true;clearTimeout(attempt.timer);
-  if(attempt.handoff)sessionStorage.removeItem('zar-accounts-oauth');
+  if(attempt.handoff)remember(null);
+  if(['cancel','closed','OAUTH_CANCELLED','expired','EXPIRED','ERROR','OAUTH_STATE_INVALID','PROVIDER_BLOCKED'].includes(reason)){
+   const cancelled=['cancel','closed','OAUTH_CANCELLED'].includes(reason);
+   state(attempt,cancelled?'CANCELLED':'ERROR',cancelled?'Autorización cancelada. Puedes volver a conectar cuando quieras.':reason==='PROVIDER_BLOCKED'?'El proveedor ha bloqueado la autorización. Revisa los detalles de la cuenta.':'La autorización no se completó o ha caducado. Vuelve a conectar la cuenta.');
+   active=null;attempt.fallback.hidden=true;attempt.cancel.textContent='CERRAR';attempt.cancel.onclick=()=>attempt.box.remove();notify(attempt.provider);return;
+  }
   try{await reverify(attempt.provider);state(attempt,'DONE',reason==='CONNECTED'?'Cuenta conectada correctamente.':'Estado de la cuenta actualizado.');}
   catch{state(attempt,'ERROR','No se pudo comprobar la conexión. Pulsa REVERIFICAR.');attempt.failed=true;}
   active=null;if(attempt.failed){attempt.fallback.hidden=true;attempt.cancel.textContent='CERRAR';attempt.cancel.onclick=()=>attempt.box.remove();}else attempt.box?.remove();
  }
  async function watch(attempt){
-  if(active!==attempt||attempt.finishing)return;
+  if(active!==attempt||attempt.finishing||attempt.polling)return;
   if(Date.now()>attempt.expires){finish(attempt,'expired');return;}
-  if(attempt.handoff&&!document.hidden){try{const r=await fetch('/api/accounts/oauth/status/'+encodeURIComponent(attempt.handoff),{cache:'no-store'}),j=await r.json();if(j.status!=='PENDING'){finish(attempt,j.status);return;}}catch{}}
-  else if(attempt.started&&attempt.popup?.closed){finish(attempt,'closed');return;}
+  if(attempt.handoff&&!document.hidden){attempt.polling=true;try{const r=await fetch('/api/accounts/oauth/status/'+encodeURIComponent(attempt.handoff),{cache:'no-store'}),j=await r.json();if((r.ok||r.status===404)&&j.status&&j.status!=='PENDING'){finish(attempt,j.status);return;}}catch{}finally{attempt.polling=false;}}
+  else if(!attempt.handoff&&attempt.started&&attempt.popup?.closed){finish(attempt,'closed');return;}
   clearTimeout(attempt.timer);attempt.timer=setTimeout(()=>watch(attempt),attempt.handoff?3000:650);
  }
  window.launchExternalOAuth=async function(provider,url,options={}){
@@ -76,16 +82,19 @@
   try{
    let result={url};const local=url&&new URL(url,location.origin);
    if(!url||(local.origin===location.origin&&identify(local.href))){
-    let csrf=options.csrf;if(!csrf){const r=await fetch('/api/accounts/connections',{cache:'no-store'});if(!r.ok)throw Error();csrf=(await r.json()).csrf;}
+    // Another tab or a completed Google login can rotate the session CSRF token.
+    const accountResponse=await fetch('/api/accounts/connections',{cache:'no-store'});
+    if(!accountResponse.ok)throw Error(accountResponse.status===401?'Tu sesión ha caducado. Inicia sesión en ZAR y vuelve a conectar.':'No se pudo leer la cuenta. Comprueba tu conexión y vuelve a intentarlo.');
+    const csrf=(await accountResponse.json()).csrf;
     const payload={external:true};if(local)payload.authorization_path=local.pathname+local.search;
-    const r=await fetch('/api/accounts/connections/'+provider+'/'+(options.operation==='connect'?'connect':'reconnect'),{method:'POST',headers:{'Content-Type':'application/json','X-ZAR-Business-CSRF':csrf},body:JSON.stringify(payload)});result=await r.json();if(!r.ok||!result.url||result.assistant)throw Error();
+    const r=await fetch('/api/accounts/connections/'+provider+'/'+(options.operation==='connect'?'connect':'reconnect'),{method:'POST',headers:{'Content-Type':'application/json','X-ZAR-Business-CSRF':csrf},body:JSON.stringify(payload)});result=await r.json().catch(()=>({}));if(!r.ok||!result.url||result.assistant)throw Error(result.message||(r.status===401?'Tu sesión ha caducado. Inicia sesión en ZAR y vuelve a conectar.':'No se pudo abrir la autorización. Vuelve a intentarlo desde CUENTAS.'));
    }
    const target=safeURL(provider,result.url);
    if(!result.external&&target.origin===location.origin)target.searchParams.set('oauth_popup','1');
    attempt.url=target.href;attempt.fallback.href=target.href;attempt.fallback.hidden=false;
    if(result.external){
     if(target.origin!==location.origin||!result.poll_id)throw Error();
-    attempt.handoff=result.poll_id;sessionStorage.setItem('zar-accounts-oauth',JSON.stringify({id:attempt.handoff,provider,expires:attempt.expires}));
+    attempt.handoff=result.poll_id;remember({id:attempt.handoff,provider,expires:attempt.expires});
    }
    if(result.external&&webview){
     // An arbitrary Android WebView cannot launch intent://. Without native
@@ -97,15 +106,15 @@
     Object.assign(copy.style,{minHeight:'44px',fontSize:'12px',padding:'10px 12px',borderRadius:'9px',whiteSpace:'normal'});
     const details=document.createElement('details'),summary=document.createElement('summary');summary.textContent='Ver enlace seguro';details.append(summary,field);
     attempt.box.append(copy,details);attempt.fallback.hidden=true;
-    state(attempt,'AUTHORIZING','Este navegador está integrado en otra app. Abre ZAR en Chrome para autorizar Google. Puedes copiar el enlace seguro; tu conexión se conservará al volver.');
+    state(attempt,'AUTHORIZING','Este navegador está integrado en otra app. Abre ZAR en Chrome para autorizar la cuenta. Puedes copiar el enlace seguro; tu conexión se conservará al volver.');
    }else if(attempt.popup){attempt.fallback.hidden=true;attempt.popup.location.replace(target.href);attempt.started=true;}
    else {attempt.started=true;window.top.location.assign(target.href);return;}
    watch(attempt);
-  }catch{try{attempt.popup?.close();}catch{}active=null;attempt.fallback.hidden=true;attempt.cancel.textContent='CERRAR';attempt.cancel.onclick=()=>attempt.box.remove();state(attempt,'ERROR','No se pudo abrir la autorización. Vuelve a intentarlo desde CUENTAS.');}
+  }catch(error){try{attempt.popup?.close();}catch{}remember(null);active=null;attempt.fallback.hidden=true;attempt.cancel.textContent='CERRAR';attempt.cancel.onclick=()=>attempt.box.remove();state(attempt,'ERROR',error.message||'No se pudo abrir la autorización. Vuelve a intentarlo desde CUENTAS.');}
  };
  window.addEventListener('message',e=>{
   if(e.origin!==location.origin)return;
-  if(e.data?.type==='zar-oauth-result'&&active&&e.source===active.popup&&e.data.provider===active.provider)finish(active,e.data.status);
+  if(e.data?.type==='zar-oauth-result'&&active&&e.source===active.popup&&e.data.provider===active.provider){if(active.handoff)watch(active);else finish(active,e.data.status);}
   if(e.data?.type!=='zar-accounts-changed'||!providers.has(e.data.provider))return;
   if(parent!==window&&e.source===parent){window.dispatchEvent(new CustomEvent('zar-accounts-changed',{detail:{provider:e.data.provider}}));return;}
   if(![...document.querySelectorAll('iframe')].some(f=>f.contentWindow===e.source))return;
@@ -115,6 +124,7 @@
  window.addEventListener('focus',()=>{if(active?.started&&!active.popup&&!active.handoff)finish(active,'return');});
  document.addEventListener('visibilitychange',()=>{if(!document.hidden&&active){if(active.handoff)watch(active);else if(active.started&&!active.popup)finish(active,'return');}});
  window.addEventListener('pagehide',()=>clearTimeout(active?.timer));
+ window.addEventListener('pageshow',()=>{if(active)watch(active);});
  window.addEventListener('keydown',e=>{if(e.key==='Escape'&&active?.cancel){e.preventDefault();active.cancel.click();}});
  document.addEventListener('click',e=>{
   const a=e.target.closest('a[href]');if(!a||a.dataset.oauthFallback)return;
@@ -124,5 +134,5 @@
  },true);
  try{const saved=JSON.parse(sessionStorage.getItem('zar-accounts-oauth')||'null');if(saved&&providers.has(saved.provider||'google')&&saved.expires>Date.now()){
   active={provider:saved.provider||'google',handoff:saved.id,expires:saved.expires,started:true};panel(active);state(active,'AUTHORIZING','Esperando autorización…');watch(active);
- }}catch{sessionStorage.removeItem('zar-accounts-oauth');}
+ }}catch{remember(null);}
 })();

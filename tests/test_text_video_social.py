@@ -210,7 +210,9 @@ def test_instagram_publish_preflight_uses_documented_read_when_permissions_field
         if url.endswith('/permissions'):return Mock(ok=False,status_code=400,json=lambda:{'error':{'code':100,'message':'Tried accessing nonexisting field (permissions)'}})
         if url.endswith('/content_publishing_limit'):return Mock(ok=quota_http==200,status_code=quota_http,json=lambda:quota_body)
         return Mock(ok=True,status_code=200,json=lambda:{'data':[]})
-    with patch.object(social.social,'instagram_context',return_value=context),patch.object(social.social.requests,'get',side_effect=get) as read,patch.object(social.social.requests,'post') as write:
+    # This test exercises permission probing with a valid saved authorization.
+    # Token expiry has its own lifecycle tests; do not accidentally load a missing credential.
+    with patch('app.reposnews_inbox.credentials',return_value={'access_token':'canonical-fixture'}),patch.object(social.social,'instagram_context',return_value=context),patch.object(social.social.requests,'get',side_effect=get) as read,patch.object(social.social.requests,'post') as write:
         result=social.social.scoped_instagram_readiness('owner')
     write.assert_not_called()
     assert result['connected'] is True

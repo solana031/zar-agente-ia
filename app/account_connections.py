@@ -76,7 +76,7 @@ def social(scope,provider):
         result['capabilities']={'publishing':'READY' if result.get('ready') else 'PERMISSION_REQUIRED','channel':'READY' if result.get('channel') else 'UNKNOWN'}
     if provider=='tiktok':
         result['capabilities']={'publishing':'READY' if result.get('ready') else 'PERMISSION_REQUIRED'}
-        if not result.get('connected'):result['human_action']='Conecta la cuenta ZAR desde la app existente de TikTok Developers. Abre el asistente para ver el paso pendiente.'
+        if not result.get('connected'):result['human_action']='Pulsa conectar para autorizar TikTok. Si falta la configuración de la app existente, abre Opciones → Configurar conexión.'
         if not result.get('connected') and holdings.read(scope).get('tiktok_setup_observation',{}).get('existing_app_access_required') is True:
             result.update(status='PERMISSION_REQUIRED',blocker='TIKTOK_EXISTING_APP_ACCESS_REQUIRED',
                 human_action='TikTok Developers no muestra la app existente de ZAR. Recupera su acceso o vincúlala a la organización ZAR desde la cuenta propietaria. Después autoriza @zaragente031 con video.publish y guarda la credencial en el servicio web principal. No crees otra app.')
@@ -127,7 +127,8 @@ class AccountConnectionRegistry:
 
     def connect_url(self,key):
         email=holdings.read(self.scope).get('identity_center',{}).get('google',{}).get('email') or 'zaragente031@gmail.com'
-        urls={'google':'/connect/google?force=1&purpose=accounts&service=core','youtube':identity_center.connect_url(email,'youtube'),
+        urls={'google':'/connect/google?force=1&purpose=accounts&service=core','youtube':identity_center.connect_url('zaragente031@gmail.com','youtube'),
+              'tiktok':'/connect/tiktok',
               'instagram':'/api/reposnews/instagram/connect?publishing=1&return_to=/accounts',
               'adsense':identity_center.connect_url(email,'adsense')}
         return urls.get(key,'/accounts#'+key)
@@ -213,6 +214,8 @@ def register(app,scope_fn,csrf_owner):
     from datetime import timedelta
     app.config['PERMANENT_SESSION_LIFETIME']=timedelta(days=7)
     from . import oauth_transport as transport
+    from . import tiktok_oauth
+    tiktok_oauth.register(app, scope_fn)
     if not getattr(app,'_zar_oauth_frame_guard',False):
         app.before_request(transport.prevent_embedded_oauth)
         app._zar_oauth_frame_guard=True
@@ -314,11 +317,13 @@ def register(app,scope_fn,csrf_owner):
         if not registry.provider(provider):abort(404)
         if action=='reverify':return jsonify(ok=True,result=registry.reverify(provider,manual=True))
         if action in {'connect','reconnect'}:
+            if provider=='tiktok' and not tiktok_oauth.configured():
+                return jsonify(error='TIKTOK_SETUP_REQUIRED',assistant='tiktok',message='Falta configurar Login Kit de la app TikTok existente: TIKTOK_CLIENT_KEY, TIKTOK_CLIENT_SECRET y su dirección de retorno. Abre los detalles de TikTok para completar la configuración.'),409
             if provider=='instagram':
                 from . import meta_provider
                 if (blocked:=meta_provider.blocked_view(registry.scope)) and not blocked.get('oauth_recovery_available'):
                     return jsonify(error='PROVIDER_BLOCKED',message=blocked['human_action']),423
-            if (request.get_json(silent=True) or {}).get('external') is True and provider in {'google','youtube','adsense','instagram'}:
+            if (request.get_json(silent=True) or {}).get('external') is True and provider in {'google','youtube','adsense','instagram','tiktok'}:
                 from . import oauth_transport as transport
                 if provider=='instagram':
                     from . import reposnews
@@ -330,19 +335,25 @@ def register(app,scope_fn,csrf_owner):
                     from urllib.parse import urlsplit,parse_qs
                     target=urlsplit(requested)
                     service=parse_qs(target.query).get('service',['core'])[0]
-                    requested_provider=('youtube' if service=='youtube' else 'adsense' if service=='adsense' else 'google') if target.path=='/connect/google' else {'/connect/youtube':'youtube','/api/reposnews/instagram/connect':'instagram'}.get(target.path)
+                    requested_provider=('youtube' if service=='youtube' else 'adsense' if service=='adsense' else 'google') if target.path=='/connect/google' else {'/connect/youtube':'youtube','/connect/tiktok':'tiktok','/api/reposnews/instagram/connect':'instagram'}.get(target.path)
                     if target.scheme or target.netloc or target.fragment or requested_provider!=provider:abort(400)
                     # Preserve expected-email/service validation in the existing
                     # provider route; never accept a caller-supplied redirect host.
                     path=target.path+('?' + target.query if target.query else '')
                     if provider=='google' and parse_qs(target.query).get('purpose',[''])[0]!='zar':
                         path=registry.connect_url('google')
+                try:
+                    transport.callback(provider if provider in {'instagram','tiktok'} else 'google')
+                except ValueError:
+                    return jsonify(error='OAUTH_CONFIGURATION_REQUIRED',message='La dirección de retorno de esta conexión no coincide con la configuración del servidor. Revisa PUBLIC_BASE_URL y la URL de retorno del proveedor.'),409
                 ident=transport.begin(registry.scope,provider,path)
                 # Persist only the already authenticated initiating ZAR session.
                 # A fresh external browser still receives no ZAR login grant.
                 session.permanent=True
                 receipts=dict(list(session.get('accounts_oauth_receipts',{}).items())[-3:])
                 receipts[ident]=registry.scope;session['accounts_oauth_receipts']=receipts
-                return jsonify(ok=True,url=transport.origin()+'/oauth/accounts/start/'+ident,poll_id=ident,external=True)
-            return jsonify(ok=True,url=registry.connect_url(provider),assistant=provider if provider in {'tiktok','shopify','stripe'} else None)
+                # Start on the initiating origin (custom domain, mobile or PWA).
+                # The provider callback still uses its registered canonical URL.
+                return jsonify(ok=True,url='/oauth/accounts/start/'+ident,poll_id=ident,external=True)
+            return jsonify(ok=True,url=registry.connect_url(provider),assistant=provider if provider in {'shopify','stripe'} else None)
         abort(404)

@@ -122,7 +122,7 @@ class OAuthTests(unittest.TestCase):
         with patch.object(account_connections.AccountConnectionRegistry,'connect_url',return_value='/connect/google?force=1'):
             r=self.owner.post('/api/accounts/connections/google/connect',json={'external':True},headers={'X-ZAR-Business-CSRF':'TEST'},base_url=BASE)
         self.assertEqual(r.status_code,200)
-        self.assertTrue(r.json['url'].startswith(BASE+'/oauth/accounts/start/'))
+        self.assertEqual(r.json['url'],'/oauth/accounts/start/'+r.json['poll_id'])
         ident=transport.begin('owner','instagram','/api/reposnews/instagram/connect')
         transport.put('state:instagram:success',dict(value='success',user_id='owner',expires=time.time()+60,permissions=[],handoff=ident,redirect_uri=transport.callback('instagram')))
         token_response=Mock(ok=True,json=lambda:{'access_token':'TEST-only-token','user_id':'123'})

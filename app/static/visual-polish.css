@@ -1,4 +1,10 @@
-/* 33.3.16: presentation only; trading surfaces retain their own styles. */
+/* Presentation only; trading surfaces retain their own styles. */
+.zarPanelHero h2{letter-spacing:-.5px;line-height:1.2}
+#panel:not(.zsFloatingWindow) .zarPanelHero{gap:16px}
+#panel:not(.zsFloatingWindow) .zarMemoryCard,.zarKnowledgeResult,.zarConversationItem{box-shadow:0 6px 20px #00000014}
+#panel:not(.zsFloatingWindow) :is(.btnSmall,.btn){border-radius:11px}
+@media(hover:hover) and (prefers-reduced-motion:no-preference){#panel:not(.zsFloatingWindow) :is(.btnSmall,.btn){transition:background-color .16s,border-color .16s,box-shadow .16s}}
+@media(max-width:600px){#panel:not(.zsFloatingWindow) :is(.btnSmall,.btn){min-height:44px}.zarPanelHero h2{letter-spacing:-.3px}}
 :root{--zar-ui-muted:#b5a698;--zar-ui-line:#54402e;--zar-ui-radius:12px}
 #panel:not(.zsFloatingWindow),.zarSkillsShell,.zarDialog,.zarArtifactViewer{box-sizing:border-box;scrollbar-width:thin;scrollbar-color:#725333 #15100d;overscroll-behavior:contain}
 #panel:not(.zsFloatingWindow) .zarPanelHero{padding-bottom:12px;border-bottom:1px solid var(--zar-ui-line);margin-bottom:12px;align-items:flex-start}

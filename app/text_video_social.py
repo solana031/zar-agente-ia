@@ -28,13 +28,13 @@ def _provider_connections(scope,only=None):
                 item['status']=check.get('status') or ('CONNECTED' if item['ready'] else 'AUTH_REQUIRED')
                 item.update(connect_url='/api/reposnews/instagram/connect?publishing=1',human_action='Reconectar Instagram @zaragente031')
             elif platform=='tiktok':
-                # The existing connector is backend-token based; there is no TikTok OAuth route.
-                check=social.publishing_readiness('tiktok')
+                # Use scoped OAuth credentials, with the existing server token as a legacy fallback.
+                check=social.publishing_readiness('tiktok', scope_id=scope)
                 item.update(check,permissions=['video.publish'] if check.get('connected') else [],
                             status=check.get('status') or ('CONNECTED' if check.get('connected') else 'DISCONNECTED'),
                             ready=bool(check.get('connected') and check.get('privacy_options') and float(check.get('max_video_post_duration_sec') or 0)>0),
-                            connect_url='https://developers.tiktok.com/apps/',
-                            human_action='Conectar cuenta operacional ZAR en la app TikTok existente y guardar TIKTOK_ACCESS_TOKEN en Railway principal; autorizar video.publish. No existe OAuth TikTok en ZAR.')
+                            connect_url='/accounts#tiktok',
+                            human_action='Reconecta TikTok desde CUENTAS y autoriza video.publish con la cuenta operacional ZAR.')
                 if check.get('connected') and check.get('account_id')!='zaragente031':
                     item.update(status='ERROR',ready=False,blocker='TIKTOK_OPERATIONAL_IDENTITY_NOT_VERIFIED')
                 elif check.get('connected') and not item['ready']:
@@ -63,8 +63,9 @@ def _provider_connections(scope,only=None):
                                 item.update(channel=channels[0] if channels else None,ready=ready,
                                             status='CONNECTED' if ready else 'CHANNEL_REQUIRED' if not channels else 'PERMISSION_REQUIRED')
                                 if not channels:item.update(connect_url='https://www.youtube.com/account',human_action='Crear/verificar personalmente el canal operacional de '+OPERATIONAL_EMAIL+' y volver a verificar.')
-        except Exception:
-            item.update(status='ERROR',ready=False,blocker=platform.upper()+'_READ_ONLY_VERIFICATION_FAILED')
+        except Exception as exc:
+            reauth=platform=='tiktok' and isinstance(exc,ValueError) and str(exc)=='TIKTOK_AUTHORIZATION_REQUIRED'
+            item.update(status='REAUTH_REQUIRED' if reauth else 'ERROR',ready=False,blocker='TIKTOK_AUTHORIZATION_REQUIRED' if reauth else platform.upper()+'_READ_ONLY_VERIFICATION_FAILED')
         item['upload_ready']=item['ready']
         if item['ready']:item['human_action']=None
         results[platform]=item
@@ -226,7 +227,7 @@ def advance(scope,task,record):
                     check=PublishingAdapter().prepare_youtube(scope,post['options']['title'],post['options']['caption'],privacy=post['options']['youtube_privacy'])
                     if not check.get('upload_capability') or (check.get('channel') or {}).get('id')!=(post.get('account') or {}).get('id'):raise ValueError('YOUTUBE_TARGET_ACCOUNT_OR_PERMISSION_CHANGED')
                 if platform=='tiktok':
-                    check=social.publishing_readiness('tiktok')
+                    check=social.publishing_readiness('tiktok', scope_id=scope)
                     if not check.get('connected') or check.get('account_id')!=post.get('account'):raise ValueError('TIKTOK_TARGET_ACCOUNT_CHANGED')
                 post['status']='REQUESTED';post['attempt_count']=post.get('attempt_count',0)+1;media._save(scope,task['id'],record)
                 options=post['options']
@@ -236,7 +237,7 @@ def advance(scope,task,record):
                     if not result.get('id'):raise ValueError('YOUTUBE_UPLOAD_ID_UNVERIFIED')
                     post.update(status='PENDING',external_id=result['id'],url=result.get('url'))
                 elif platform=='tiktok':
-                    result=social.tiktok_direct_post(post['public_video_url'],options['caption'],privacy=options['tiktok_privacy'],confirmed=True)
+                    result=social.tiktok_direct_post(post['public_video_url'],options['caption'],privacy=options['tiktok_privacy'],confirmed=True,scope_id=scope)
                     publish_id=(result.get('data') or {}).get('publish_id')
                     if not publish_id:raise ValueError('TIKTOK_PUBLISH_ID_UNVERIFIED')
                     post.update(status='PENDING',publish_id=publish_id,external_id=publish_id)
@@ -274,7 +275,7 @@ def poll(scope,task,record,post):
             if privacy in {'private','unlisted','public'}:post.update(status='PUBLISHED' if privacy=='public' else 'UPLOADED_'+privacy.upper(),published_at=holdings._now())
         return
     if platform=='tiktok':
-        response=requests.post('https://open.tiktokapis.com/v2/post/publish/status/fetch/',headers={'Authorization':'Bearer '+os.environ.get('TIKTOK_ACCESS_TOKEN','')},json={'publish_id':post['publish_id']},timeout=20,allow_redirects=False)
+        response=requests.post('https://open.tiktokapis.com/v2/post/publish/status/fetch/',headers={'Authorization':'Bearer '+social.tiktok_access_token(scope)},json={'publish_id':post['publish_id']},timeout=20,allow_redirects=False)
         if not response.ok:return
         data=response.json().get('data') or {}
         if data.get('status')=='FAILED':post.update(status='FAILED',error='TIKTOK_PROVIDER_REPORTED_FAILURE')

@@ -12,3 +12,33 @@
 }
 
 body:has(#zarOAuthNotice) #notice{display:none}
+
+/* Connection workspace: preserve ZAR's charcoal, gold and verified green. */
+body{background:radial-gradient(ellipse at 12% 0%,#b6985012,transparent 52%),#0b0d11}
+.accounts{padding-top:clamp(22px,4vw,52px);padding-bottom:max(32px,env(safe-area-inset-bottom))}
+.accounts header{padding-bottom:24px;border-bottom:1px solid #b6985029}
+.accounts h1{font-size:clamp(26px,3.2vw,42px);letter-spacing:-1.4px;font-weight:650;line-height:1.15}
+.accounts header p{max-width:52ch;margin-bottom:0}
+.brand{color:#dfc078;letter-spacing:2px}
+#summary{padding:14px 0;margin-bottom:0;font-variant-numeric:tabular-nums}
+nav{gap:8px;margin-top:12px}nav button{border-radius:999px;min-height:44px;padding:10px 16px}
+nav button[aria-pressed=true]{background:#b698501a;box-shadow:inset 0 0 0 1px #ab8d4820}
+.category{color:#b5becc;margin:30px 0 14px}
+.grid{grid-template-columns:repeat(auto-fit,minmax(min(100%,310px),1fr));gap:18px;align-items:start}
+.card{position:relative;border-radius:20px;padding:24px;background:linear-gradient(145deg,#1b1e26,#11151c 75%);box-shadow:0 12px 32px #0002,inset 0 1px #ffffff05}
+.card[data-state=REAUTH_REQUIRED],.card[data-state=ERROR],.card[data-state=PROVIDER_BLOCKED]{border-color:#9d7d426b}
+.card[data-state=AUTHORIZING]{border-color:#dfc078;box-shadow:0 0 0 3px #dfc07813}
+.cardHead{gap:14px}.icon{width:46px;height:46px;border-radius:14px;background:linear-gradient(135deg,#b79b4e2b,#b79b4e08);flex-shrink:0}
+.cardHead h2{letter-spacing:-.5px;font-weight:650}.menu{min-width:44px;min-height:44px;border-radius:10px}
+.status{display:inline-flex;padding:7px 10px;border-radius:999px;background:#e5bd7310;line-height:1.4;margin:6px 0}
+.status.good{background:#90d4ab0c}.card[data-state=PARTIAL] .status{color:#e5bd73;background:#e5bd7310}
+.capability{border-radius:8px;line-height:1.4;background:#ffffff02}.identity{margin:16px 0 10px;line-height:1.5}
+.actions{gap:10px;margin:20px 0}.actions button,.actions a{min-height:46px;flex:1 1 120px;text-align:center;display:inline-flex;align-items:center;justify-content:center;border-radius:11px}
+.actions .primary{background:linear-gradient(130deg,#d1b36c,#b69850);border-color:#d1b36c;color:#11151b;box-shadow:0 4px 16px #b6985015}
+.actions .primary:hover{background:#dfc078;color:#11151b}.actions button:not(.primary){background:#ffffff03;color:#c5cdd9;border-color:#3b414b}
+.verified{font-variant-numeric:tabular-nums}.reelHistory{margin:18px 0;padding:14px;border:1px solid #303744;border-radius:12px;background:#0b0d1133}.reelHistory p{font-size:12px;line-height:1.6;color:#abb2bf}
+.accounts>.details{padding:14px 16px;border:1px solid #303744;border-radius:12px;background:#ffffff02;line-height:1.7}
+input[hidden]{display:none!important}#notice:not(:empty){padding:12px 14px;border:1px solid #b6985050;border-radius:12px;background:#b698500a;line-height:1.6}
+button,a,summary,input,select{-webkit-tap-highlight-color:transparent}select:focus-visible,input:focus-visible{outline:2px solid #eacb83;outline-offset:3px}
+@media(hover:hover) and (prefers-reduced-motion:no-preference){button,a{transition:background .16s,border-color .16s,box-shadow .16s}.card{transition:border-color .2s}.card:hover{border-color:#71613f}}
+@media(max-width:600px){.accounts header{padding-bottom:18px}.accounts h1{letter-spacing:-.8px;font-size:29px}header>button{width:100%;min-height:44px;margin-top:10px}.card{padding:18px;border-radius:17px}.icon{width:42px;height:42px}.grid{gap:14px}nav button{min-height:44px;padding:9px 12px}.accounts>.details{padding:12px}dialog input{font-size:16px}#googleActiveAccount,.details input{font-size:16px}}

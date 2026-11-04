@@ -133,7 +133,8 @@ def test_account_routes_require_session_and_csrf(isolated):
     assert client.post('/api/accounts/connections/instagram/reverify').status_code==403
     headers={'X-ZAR-Business-CSRF':data['csrf']}
     result=client.post('/api/accounts/connections/tiktok/connect',headers=headers).json
-    assert result['assistant']=='tiktok' and result['url']=='/accounts#tiktok'
+    assert result['assistant']=='tiktok' and result['error']=='TIKTOK_SETUP_REQUIRED'
+    assert 'TIKTOK_CLIENT_KEY' in result['message']
     assert client.post('/api/accounts/connections/instagram/publish',headers=headers).status_code==404
     assert client.post('/api/accounts/connections/no-such-provider/reverify',headers=headers).status_code==404
 

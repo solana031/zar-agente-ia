@@ -4,18 +4,20 @@ Posting remains disabled until the platform tokens are explicitly configured.
 """
 from __future__ import annotations
 import os, requests
+from .tiktok_oauth import access_token as tiktok_access_token
 
 
 def status():
+    from .tiktok_oauth import has_credentials
     return {
-        "tiktok": bool(os.environ.get("TIKTOK_ACCESS_TOKEN", "").strip()),
+        "tiktok": has_credentials(),
         "instagram": bool(os.environ.get("INSTAGRAM_ACCESS_TOKEN", "").strip() and os.environ.get("INSTAGRAM_IG_USER_ID", "").strip()),
         "instagram_graph_version": os.environ.get("META_GRAPH_VERSION", "v24.0"),
     }
 
 
-def tiktok_direct_post(video_url, caption, privacy="SELF_ONLY", confirmed=False):
-    token=os.environ.get("TIKTOK_ACCESS_TOKEN","").strip()
+def tiktok_direct_post(video_url, caption, privacy="SELF_ONLY", confirmed=False, scope_id=None):
+    token=tiktok_access_token(scope_id)
     if not token: return {"ok":False,"configured":False,"error":"Falta TIKTOK_ACCESS_TOKEN."}
     if not confirmed: return {"ok":False,"requires_review":True,"message":"Confirma la publicación antes de enviarla a TikTok."}
     headers={"Authorization":"Bearer "+token,"Content-Type":"application/json; charset=UTF-8"}
@@ -61,6 +63,8 @@ def scoped_instagram_readiness(scope_id):
         # HTTP 401 alone cannot distinguish expiry from revocation/invalid token.
         from .instagram_tokens import classify
         cause=classify(diagnostic)
+        if diagnostic.get('code')==190 and diagnostic.get('subcode') is None and cause=='INVALID_TOKEN':
+            cause='PROVIDER_AUTH_ERROR_UNCLASSIFIED'
         return {'connected':False,'status':'REAUTH_REQUIRED' if response.status_code==401 or diagnostic.get('code')==190 else 'ERROR',
                 'publish_capability':'BLOCKED','blocker':'INSTAGRAM_IDENTITY_HTTP_'+str(response.status_code),'diagnostic':diagnostic,'verified_cause':cause,'credential_source':context.get('source')}
     data=response.json()
@@ -123,9 +127,10 @@ def instagram_permalink(scope_id,identifier):
     except (ValueError,requests.RequestException):return None
 
 
-def publishing_readiness(platform):
+def publishing_readiness(platform, scope_id=None):
     if platform not in {'tiktok','instagram'}: raise ValueError('Plataforma no admitida.')
-    connected=status()[platform]
+    token=tiktok_access_token(scope_id) if platform=='tiktok' else None
+    connected=bool(token) if platform=='tiktok' else status()[platform]
     result={'ok':True,'connected':connected,'privacy_options':[],'account':None}
     if not connected:return result
     if platform=='instagram':
@@ -136,7 +141,7 @@ def publishing_readiness(platform):
         if data.get('id')!=user:raise ValueError('Instagram devolvió otra identidad.')
         result.update(account=data.get('username'),account_id=data['id'],capabilities=['IDENTITY_VERIFIED'],publish_capability='UNVERIFIED')
         return result
-    response=requests.post('https://open.tiktokapis.com/v2/post/publish/creator_info/query/',headers={'Authorization':'Bearer '+os.environ['TIKTOK_ACCESS_TOKEN']},json={},timeout=25,allow_redirects=False)
+    response=requests.post('https://open.tiktokapis.com/v2/post/publish/creator_info/query/',headers={'Authorization':'Bearer '+token},json={},timeout=25,allow_redirects=False)
     payload=response.json()
     code=(payload.get('error') or {}).get('code')
     if not response.ok or code!='ok':
