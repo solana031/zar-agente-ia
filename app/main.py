@@ -3715,7 +3715,7 @@ def connect_google():
             from .cloud_auth import SERVICE_SCOPES
             if service not in SERVICE_SCOPES or (purpose=='zar' and not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+',expected_email or '')):
                 return 'Selecciona servicio y correo real de ZAR.',400
-            if purpose=='accounts' and service!='core':return 'Servicio de cuenta no válido.',400
+            if purpose=='accounts' and service not in {'core','site_metrics'}:return 'Servicio de cuenta no válido.',400
         if not force and connected():
             return "<script>window.close();</script><h2>Google ya está conectado</h2><p>Zar ha conservado tus credenciales. No necesitas volver a autorizarlo.</p>"
         session.pop("oauth_provider", None)

@@ -231,6 +231,9 @@ def metadata(row):
 
 
 def operate(scope, op, payload):
+    if op in {'metrics_view','metrics_refresh'}:
+        from . import reposnews_metrics
+        return reposnews_metrics.view(scope) if op=='metrics_view' else reposnews_metrics.refresh(scope,payload)
     if op=='autonomous_configure':
         from .reposnews_autonomous import configure
         return configure(scope,payload)

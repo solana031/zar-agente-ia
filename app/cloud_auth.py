@@ -53,7 +53,9 @@ SERVICE_SCOPES={'core':CORE_SCOPES,'docs':['https://www.googleapis.com/auth/docu
  'sheets':['https://www.googleapis.com/auth/spreadsheets'],'slides':['https://www.googleapis.com/auth/presentations'],
  'tasks':['https://www.googleapis.com/auth/tasks.readonly'],
  'youtube':['https://www.googleapis.com/auth/youtube.readonly','https://www.googleapis.com/auth/youtube.upload'],
- 'adsense':['https://www.googleapis.com/auth/adsense.readonly']}
+ 'adsense':['https://www.googleapis.com/auth/adsense.readonly'],
+ 'site_metrics':['https://www.googleapis.com/auth/webmasters.readonly',
+                 'https://www.googleapis.com/auth/adsense.readonly']}
 
 _LOCK = threading.RLock()
 _LAST_ERROR = ''
@@ -81,16 +83,23 @@ def _save_credentials(creds, user_id=None, path=None):
     _LAST_ERROR = ''
 
 
-def get_credentials(auto_refresh=True, user_id=None):
+def get_credentials(auto_refresh=True, user_id=None, account_id=None):
     """Load persisted Google credentials and refresh expired access tokens automatically."""
     global _LAST_ERROR
     from .secret_safety import redact_credential_error
     creds=None
     with _LOCK:
-        path = _token_file(user_id)
+        if account_id:
+            from . import google_accounts
+            account_scope=user_id or get_current_user()
+            if account_id not in google_accounts.read(account_scope)['accounts']:
+                raise ValueError('GOOGLE_ACCOUNT_NOT_LINKED')
+            path = google_accounts._path(account_scope,account_id)
+        else:
+            path = _token_file(user_id)
         if not path.exists():
             # Backward compatibility: only the first/default workspace may adopt the old token.
-            if (user_id or get_current_user()) in ('anonymous', '') and TOKEN_FILE.exists():
+            if not account_id and (user_id or get_current_user()) in ('anonymous', '') and TOKEN_FILE.exists():
                 path = TOKEN_FILE
             else:
                 return None

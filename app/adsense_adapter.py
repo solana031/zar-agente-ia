@@ -27,15 +27,16 @@ def parse_amount(value):
 
 
 class AdSenseAdapter:
-    def __init__(self, session=None):
+    def __init__(self, session=None, credentials=None):
         self.session = session or requests.Session()
+        self.credentials = credentials
 
     def get(self, path, params=None):
-        token = os.environ.get('GOOGLE_ADSENSE_ACCESS_TOKEN', '').strip()
+        token = self.credentials.token if self.credentials is not None else os.environ.get('GOOGLE_ADSENSE_ACCESS_TOKEN', '').strip()
         from .user_scope import get_current_user
         principal=holdings.read(get_current_user()).get('identity_center',{}).get('google',{}).get('email')
-        if principal:token=''
-        if not token:
+        if principal and self.credentials is None:token=''
+        if not token and self.credentials is None:
             from .cloud_auth import get_credentials
             creds=get_credentials()
             if creds and 'https://www.googleapis.com/auth/adsense.readonly' in set(creds.scopes or []):token=creds.token
