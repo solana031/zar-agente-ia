@@ -140,10 +140,11 @@ def test_authorized_backlog_publishes_only_the_current_finite_set(state, monkeyp
     assert [a['id'] for a in state()['articles'] if a.get('published')] == [article['id']]
 
 
-def test_owner_can_clarify_an_exact_repository_without_broad_name_search(state, monkeypatch):
+@pytest.mark.parametrize('status', ['NEEDS_DISAMBIGUATION', 'FAILED_SOURCE', 'FAILED_PERMANENT'])
+def test_owner_can_clarify_an_exact_repository_without_broad_name_search(state, monkeypatch, status):
     monkeypatch.setattr(rn, 'state', lambda scope: rn.read())
     data = state(); item = 'a' * 24
-    data['instagram_inbox'] = [{'id': item, 'status': 'NEEDS_DISAMBIGUATION'}]
+    data['instagram_inbox'] = [{'id': item, 'status': status}]
     rn.write(data)
     rn.operate('fixture-owner', 'inbox_resolve', {'id': item, 'name': 'https://github.com/moorcheh-ai/memanto'})
     row = state()['instagram_inbox'][0]

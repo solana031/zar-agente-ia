@@ -271,7 +271,9 @@ def operate(scope, op, payload):
             if not repository and not re.fullmatch(r'[\w .+-]{2,80}',name):
                 raise ValueError('Indica el nombre del proyecto o su repositorio oficial de GitHub.')
             row=next((x for x in read().get('instagram_inbox',[]) if x['id']==item_id),None)
-            if not row or row.get('status')!='NEEDS_DISAMBIGUATION':raise ValueError('Este item no requiere aclaración.')
+            if not row or not (row.get('status')=='NEEDS_DISAMBIGUATION' or
+                    repository and row.get('status') in {'FAILED_SOURCE','FAILED_PERMANENT','FAILED_RETRYABLE'}):
+                raise ValueError('Este item no requiere aclaración o necesita un repositorio exacto.')
             reposnews_inbox.update(item_id,status='RECEIVED',caption=reposnews_inbox.safe_caption(row.get('caption','')+'\nProyecto aclarado: '+name),
                 clarified_project=repository[1].split('/')[-1] if repository else name,
                 clarified_repository=repository[1] if repository else None,attempt_limit=row.get('attempts',0)+8,retry_after=0)
