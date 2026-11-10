@@ -36,6 +36,8 @@
       const r=await fetch('/api/holdings/workflows',{cache:'no-store'}),j=await r.json();if(!r.ok||!j.ok)throw Error(j.error||'No disponible');csrf=j.csrf;state=j;window.dispatchEvent(new CustomEvent('zar-workflow-state',{detail:j}));if(editing)return;const signature=JSON.stringify([j,selectedMedia,filter]);if(signature===lastRendered)return;lastRendered=signature;
       const rows=(j.jev||[]).filter(x=>!filter||x.decision===filter);
       const retainedMedia=host.querySelector("[data-zar-media]");
+      const retainedReposNews=['zarReposNewsSiteSummary','reposnewsEditor']
+        .map(id=>document.getElementById(id)).filter(node=>node&&host.contains(node));
       host.innerHTML=`<h2>JEV · DramaClaw · Sites</h2><nav><a href="#zwJev">JEV</a> · <a href="#zarMediaWorkflowMount">Media</a> · <a href="#zwSites">Sites / AdSense</a> ${button('refresh','','Actualizar')}</nav><p id="zwNotice" role="status"></p>
       <section data-jev-card></section><details id="zwJev"><summary>JEV · herramientas avanzadas</summary><div><p>Política local siempre disponible. TypeSafe solo se marca LISTO tras respuesta válida. Costes desconocidos: null; ninguna decisión autoriza pagos.</p>
       <form data-form="jev"><input name="source_agent" value="ZAR Supervisor" required><input name="task" placeholder="Tarea" required><textarea name="action" placeholder="Acción propuesta" required></textarea><input name="expected_cost" type="number" min="0" step="0.01" placeholder="Coste conocido"><input name="expected_revenue" type="number" min="0" step="0.01" placeholder="Ingreso esperado conocido"><input name="currency" value="EUR"><input name="risk" type="number" min="0" max="1" step="0.1" placeholder="Riesgo 0–1"><input name="urgency" type="number" min="0" max="1" step="0.1" placeholder="Urgencia 0–1"><input name="resources" placeholder="Capacidades, separadas por coma"><input name="suggested_provider" placeholder="Proveedor sugerido"><label><input name="remote" type="checkbox">Consultar TypeSafe (puede consumir cuota)</label><button class="zoBtn">Probar decisión</button></form>
@@ -49,6 +51,7 @@
       <form data-form="adsense"><input name="account" placeholder="accounts/pub-… (opcional si solo hay una)"><input name="domain" placeholder="Filtrar sitio (opcional)"><button class="zoBtn">Conectar / sincronizar métricas reales</button></form>${pre(j.adsense)}
       ${(j.adsense?.payments||[]).filter(p=>p.classification==='FINALIZED'&&p.provider_status==='CREDITED_BY_GOOGLE').map(p=>button('received',p.reference,'Confirmar RECEIVED '+esc(p.amount)+' '+esc(p.currency))).join('')}<p>ESTIMATED/FINALIZED no suman saldo disponible. RECEIVED requiere referencia bancaria y confirmación.</p></details>`;
       if(retainedMedia)host.querySelector("#zarMediaWorkflowMount").replaceWith(retainedMedia);
+      host.querySelector('#zwSites')?.prepend(...retainedReposNews);
       window.ZarMedia?.mount();
     }catch(e){notify(e.message);}
   }
