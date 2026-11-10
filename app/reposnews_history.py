@@ -66,7 +66,11 @@ def summary(data):
     return dict(counts,active=active,mode='BATCH_LIMITED',concurrency=1,enabled=data.get('historical_backfill',{}).get('enabled',False))
 
 
-def start(scope,reprocess_unresolved=False,reuse_media=False):
+def start(scope,reprocess_unresolved=False,reuse_media=False,authorize_publication=False):
+    if authorize_publication:
+        from flask import has_request_context,session
+        if not has_request_context() or session.get('zar_auth') is not True:
+            raise ValueError('AUTHENTICATED_OWNER_REQUIRED')
     with holdings.transaction('reposnews-editorial'):
         rn.state(scope);data=rn.read();entries=index(data)
         round_id=holdings._now()
@@ -75,6 +79,14 @@ def start(scope,reprocess_unresolved=False,reuse_media=False):
                 if entry.get('decision') not in {'NEEDS_DISAMBIGUATION','FAILED'}:continue
                 entry.update(state='PENDING',previous_decision=entry.get('decision'),decision=None,reprocess_round=round_id,reprocess_reuse_media=reuse_media)
         data['historical_backfill']={'enabled':True,'mode':'BATCH_LIMITED','concurrency':1,'started_at':holdings._now()}
+        if authorize_publication:
+            import secrets
+            grant=secrets.token_hex(16)
+            rows=[r for r in data.get('instagram_inbox',[]) if r.get('status') not in {'PUBLISHED','CANCELLED','DISCARDED'}]
+            data['backlog_publication']={'owner':scope,'grant':grant,'item_ids':[r['id'] for r in rows],
+                'permalinks':[entry['permalink'] for entry in entries],
+                'authorized_at':holdings._now(),'enabled':True}
+            for row in rows:row['auto_publish_grant']=grant
         rn.write(data)
     from .reposnews_inbox import start_worker
     start_worker()
@@ -137,6 +149,11 @@ def tick():
             rows.append(row);entry['item_ids']=[row['id']]
         if row.get('status') in {'CANCELLED','DISCARDED'}:
             entry.update(state='COMPLETED',decision='NO_CHANGE');rn.write(data);return
+        backlog=data.get('backlog_publication',{})
+        if (backlog.get('enabled') and backlog.get('owner')==data.get('owner')
+                and entry['permalink'] in backlog.get('permalinks',[])):
+            if row['id'] not in backlog['item_ids']:backlog['item_ids'].append(row['id'])
+            row['auto_publish_grant']=backlog['grant']
         # Preserve prior evidence and manuscripts; reacquire visuals only if they are missing.
         row.update(backfill=True,backfill_decision='UPDATE_EXISTING' if entry.get('linked_article_ids') else 'CREATE_NEW',attempt_limit=row.get('attempts',0)+4,run_attempts=0,retry_after=0)
         if row.get('provenance_recovery_budget'):
@@ -184,5 +201,6 @@ def register(app,scope_fn):
         if not csrf or not secrets.compare_digest(csrf,request.headers.get('X-ZAR-Business-CSRF','')):return jsonify(ok=False,error='CSRF_REQUIRED'),403
         try:
             payload=request.get_json(silent=True) or {}
-            return jsonify(ok=True,result=start(scope_fn(),reprocess_unresolved=payload.get('reprocess_unresolved') is True,reuse_media=payload.get('reuse_media') is True))
+            return jsonify(ok=True,result=start(scope_fn(),reprocess_unresolved=payload.get('reprocess_unresolved') is True,
+                reuse_media=payload.get('reuse_media') is True,authorize_publication=payload.get('authorize_publication') is True))
         except ValueError as e:return jsonify(ok=False,error=str(e)),403

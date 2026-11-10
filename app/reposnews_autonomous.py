@@ -64,9 +64,15 @@ def reel_grant(data, row):
     from .reposnews_inbox import sender_ids
     from .instagram_local_queue import reel_url
     policy = data.get('autonomous_editorial', {})
-    if (not daily_policy(data) or not policy.get('enabled') or not data.get('owner')
-            or policy.get('owner') != data['owner'] or row.get('backfill')
+    if (not data.get('owner')
             or not row.get('external_id') or row.get('sender') not in sender_ids()):
+        return None
+    backlog = data.get('backlog_publication', {})
+    if (backlog.get('enabled') and backlog.get('owner') == data['owner']
+            and row.get('id') in backlog.get('item_ids', [])):
+        return backlog.get('grant')
+    if (not daily_policy(data) or not policy.get('enabled')
+            or policy.get('owner') != data['owner'] or row.get('backfill')):
         return None
     try:
         permalink = reel_url(row.get('source_url', ''))
@@ -96,7 +102,7 @@ def publish_ready_reels():
     with holdings.transaction('reposnews-editorial'):
         data = rn.read()
         scope = data.get('owner')
-        if (not scope or not daily_policy(data) or not data['autonomous_editorial'].get('enabled')
+        if (not scope
                 or holdings.read(scope).get('global_stop') or rn.legal_status(data)['status'] != 'LEGAL_READY'):
             return
         articles = {a['id']: i for i, a in enumerate(data.get('articles', []))}

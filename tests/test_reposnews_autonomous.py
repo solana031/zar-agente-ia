@@ -109,6 +109,48 @@ def test_ready_reels_publish_only_with_current_ingress_grant(state, monkeypatch)
     assert state()['instagram_inbox'][0]['status'] == 'PUBLISHED'
 
 
+def test_authorized_backlog_publishes_only_the_current_finite_set(state, monkeypatch):
+    from app import reposnews_history as history
+    monkeypatch.setattr('app.reposnews_inbox.sender_ids', lambda: {'fixture-sender'})
+    monkeypatch.setattr('app.reposnews_inbox.start_worker', lambda: None)
+    monkeypatch.setattr(rn, 'state', lambda scope: rn.read())
+    data = state()
+    data['autonomous_editorial']['enabled'] = False
+    article = draft(candidate(0))
+    article['inbox_item_id'] = 'old-reel'
+    row = {'id': 'old-reel', 'article_id': article['id'], 'status': 'READY_PRIVATE',
+           'sender': 'fixture-sender', 'external_id': 'old', 'backfill': True,
+           'source_url': 'https://www.instagram.com/reel/existing/'}
+    data.update(articles=[article], instagram_inbox=[row])
+    rn.write(data)
+    with pytest.raises(ValueError, match='AUTHENTICATED_OWNER_REQUIRED'):
+        history.start('fixture-owner', authorize_publication=True)
+    app = Flask(__name__); app.secret_key = 'TEST'
+    with app.test_request_context():
+        session['zar_auth'] = True
+        history.start('fixture-owner', authorize_publication=True)
+    data = state()
+    assert data['backlog_publication']['item_ids'] == ['old-reel']
+    future = draft(candidate(1)); future['inbox_item_id'] = 'future-reel'
+    data['articles'].append(future)
+    data['instagram_inbox'].append(dict(row, id='future-reel', article_id=future['id'], external_id='future',
+                                       source_url='https://www.instagram.com/reel/future/'))
+    rn.write(data)
+    scheduled.publish_ready_reels(); scheduled.publish_ready_reels()
+    assert [a['id'] for a in state()['articles'] if a.get('published')] == [article['id']]
+
+
+def test_owner_can_clarify_an_exact_repository_without_broad_name_search(state, monkeypatch):
+    monkeypatch.setattr(rn, 'state', lambda scope: rn.read())
+    data = state(); item = 'a' * 24
+    data['instagram_inbox'] = [{'id': item, 'status': 'NEEDS_DISAMBIGUATION'}]
+    rn.write(data)
+    rn.operate('fixture-owner', 'inbox_resolve', {'id': item, 'name': 'https://github.com/moorcheh-ai/memanto'})
+    row = state()['instagram_inbox'][0]
+    assert row['clarified_repository'] == 'moorcheh-ai/memanto'
+    assert row['clarified_project'] == 'memanto' and row['status'] == 'RECEIVED'
+
+
 def test_today_new_reel_article_skips_fallback(state):
     data = state(); article = draft(candidate(99)); data['articles'].append(article)
     data['instagram_inbox'] = [{'received_at': NOW.isoformat(), 'article_id': article['id']}]

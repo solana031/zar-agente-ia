@@ -803,6 +803,7 @@ def process(item_id):
         update(item_id,discovery_evidence=discover.sanitize(evid))
         matches+=re.findall(r'https://github\.com/([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)',evid['text'])
         if row.get('clarified_project'):matches=[]
+        if row.get('clarified_repository'):matches=[row['clarified_repository']]
         if not matches:
             update(item_id,status='IDENTIFYING',processing_state='IDENTIFYING')
             try:resolution=discover.service_resolution(evid)
@@ -841,7 +842,7 @@ def process(item_id):
                     notify(item_id,'FAILED_RETRYABLE');return
                 update(item_id,status='NEEDS_DISAMBIGUATION',processing_state='IDENTIFYING',error=resolution['reason'],error_diagnostic={'component':'IDENTIFYING','provider':'PUBLIC_SOURCE','endpoint_class':'discovery','http':None,'retryable':False,'timestamp':holdings._now()});return
             matches=[resolution['repo']]
-        if row.get('expanded_identification',{}).get('status')=='AUTO_IDENTIFIED' and row.get('automatic_repo'):
+        if row.get('expanded_identification',{}).get('status')=='AUTO_IDENTIFIED' and row.get('automatic_repo') and not row.get('clarified_repository'):
             matches=[row['automatic_repo']]
         unique=list(dict.fromkeys(x.removesuffix('.git').lower() for x in matches))
         if len(unique)!=1:

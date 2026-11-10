@@ -267,10 +267,14 @@ def operate(scope, op, payload):
         if not re.fullmatch('[a-f0-9]{24}',item_id): raise ValueError('Item inválido.')
         if op=='inbox_resolve':
             name=str(payload.get('name') or '').strip()
-            if not re.fullmatch(r'[\w .+-]{2,80}',name):raise ValueError('Indica un nombre de proyecto válido.')
+            repository=re.fullmatch(r'(?:https://github\.com/)?([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)/?',name)
+            if not repository and not re.fullmatch(r'[\w .+-]{2,80}',name):
+                raise ValueError('Indica el nombre del proyecto o su repositorio oficial de GitHub.')
             row=next((x for x in read().get('instagram_inbox',[]) if x['id']==item_id),None)
             if not row or row.get('status')!='NEEDS_DISAMBIGUATION':raise ValueError('Este item no requiere aclaración.')
-            reposnews_inbox.update(item_id,status='RECEIVED',caption=reposnews_inbox.safe_caption(row.get('caption','')+'\nProyecto aclarado: '+name),clarified_project=name,attempt_limit=row.get('attempts',0)+8,retry_after=0)
+            reposnews_inbox.update(item_id,status='RECEIVED',caption=reposnews_inbox.safe_caption(row.get('caption','')+'\nProyecto aclarado: '+name),
+                clarified_project=repository[1].split('/')[-1] if repository else name,
+                clarified_repository=repository[1] if repository else None,attempt_limit=row.get('attempts',0)+8,retry_after=0)
         elif op=='inbox_metadata_recover':
             reposnews_inbox.recover_metadata_once(item_id)
         elif op=='inbox_recover':
