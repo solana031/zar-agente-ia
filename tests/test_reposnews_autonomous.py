@@ -71,6 +71,44 @@ def test_four_publications_and_repeat_ticks_are_idempotent(state):
     assert 'OWNER_AUTHORIZED_AUTONOMOUS_EDITORIAL' in data['articles'][0]['history'][-1]['reason']
 
 
+def test_daily_policy_fills_six_on_weekend_counting_only_published(state, monkeypatch):
+    saturday = datetime(2026, 10, 31, 17, tzinfo=timezone.utc)
+    monkeypatch.setattr(scheduled, 'utcnow', lambda: saturday)
+    monkeypatch.setattr(scheduled.holdings, '_now', lambda: saturday.isoformat())
+    monkeypatch.setattr(scheduled, 'monthly_candidates', lambda: [
+        dict(candidate(i), observed_at=saturday.isoformat()) for i in range(12)])
+    data = state()
+    data['autonomous_editorial']['purpose'] = 'DAILY_GUIDES_AND_INBOUND_REELS'
+    data['articles'] = [dict(draft(candidate(90)), published=True, published_at=saturday.isoformat()), draft(candidate(91))]
+    data['instagram_inbox'] = [{'received_at': saturday.isoformat(), 'article_id': data['articles'][1]['id']}]
+    rn.write(data)
+    scheduled.tick(); scheduled.tick()
+    assert len(scheduled.published_today(state(), saturday)) == 6
+    assert len(state()['autonomous_editorial_jobs']['2026-10-31']['published']) == 5
+
+
+def test_ready_reels_publish_only_with_current_ingress_grant(state, monkeypatch):
+    monkeypatch.setattr('app.reposnews_inbox.sender_ids', lambda: {'fixture-sender'})
+    data = state()
+    data['autonomous_editorial']['purpose'] = 'DAILY_GUIDES_AND_INBOUND_REELS'
+    for i in range(4):
+        row = {'id': str(i), 'external_id': str(i), 'received_at': f'2026-10-28T0{i}:00:00Z',
+               'source_url': f'https://www.instagram.com/reel/fixture{i}/', 'sender': 'fixture-sender',
+               'status': 'READY_PRIVATE', 'auto_publish_grant': 'fixture-grant'}
+        article = draft(candidate(i))
+        article['inbox_item_id'] = row['id']
+        row['article_id'] = article['id']
+        if i == 1: row['backfill'] = True
+        if i == 2: row['auto_publish_grant'] = 'previous-grant'
+        if i == 3: row['sender'] = 'unknown'
+        data.setdefault('instagram_inbox', []).append(row)
+        data['articles'].append(article)
+    rn.write(data)
+    scheduled.publish_ready_reels(); scheduled.publish_ready_reels()
+    assert [a['id'] for a in state()['articles'] if a['published']] == ['owner-tool0']
+    assert state()['instagram_inbox'][0]['status'] == 'PUBLISHED'
+
+
 def test_today_new_reel_article_skips_fallback(state):
     data = state(); article = draft(candidate(99)); data['articles'].append(article)
     data['instagram_inbox'] = [{'received_at': NOW.isoformat(), 'article_id': article['id']}]

@@ -41,8 +41,8 @@ def gate(article,scope,data=None):
     approval=article.get('approval') or {}
     if (article.get('approval_status')!='APPROVED_BY_USER' or approval.get('owner')!=scope
             or approval.get('revision')!=revision(article) or not approval.get('at')):
-        from .reposnews_autonomous import authorized
-        if not authorized(article,scope,data):
+        from .reposnews_autonomous import authorized, reel_authorized
+        if not authorized(article,scope,data) and not reel_authorized(article,scope,data if data is not None else rn.read()):
             raise ValueError('EXPLICIT_USER_APPROVAL_REQUIRED')
     if article.get('state')=='CANCELLED':raise ValueError('ARTICLE_CANCELLED')
     from .reposnews_covers import valid as valid_cover
@@ -52,6 +52,7 @@ def gate(article,scope,data=None):
 def revoke(article):
     article.update(approval_status='PENDING',approval={})
     article.pop('autonomous_authorization',None)
+    article.pop('reel_authorization',None)
 
 
 def decorate(scope,data):
@@ -71,6 +72,9 @@ def notify(item_id,kind='READY_PRIVATE'):
         if row.get('backfill') and kind!=READY:return
         article=next((a for a in data.get('articles',[]) if a['id']==row.get('article_id')),None)
         if kind==READY and (not article or not reviewable(article)):return
+        if kind==READY and row.get('auto_publish_grant'):
+            from .reposnews_autonomous import reel_grant
+            if row['auto_publish_grant']==reel_grant(data,row):return
         if kind!=READY:article=None
         scope=data['owner'];key='article:'+article['id'] if article else 'reel:'+item_id
         name=article.get('title_es') if article else 'Proyecto sin identificar'
@@ -126,8 +130,9 @@ def publish_article(data,article,scope):
     if not valid_cover(article):raise ValueError('VALID_ARTICLE_COVER_REQUIRED')
     from . import jev_decision
     scheduled=article.get('approval_status')=='OWNER_AUTHORIZED_SCHEDULE'
-    reason='OWNER_AUTHORIZED_AUTONOMOUS_EDITORIAL' if scheduled else 'APPROVED_BY_USER'
-    proposal=jev_decision.proposal(scope,{'source_agent':'ReposNewsPublicationAction','task':'Publicación mediante horario autorizado por el titular' if scheduled else 'Publicación aprobada por el titular','action':'publish article','resources':[rn.ORIGIN],'expected_cost':0,'risk':.3,'urgency':.5})
+    reel=article.get('approval_status')=='OWNER_AUTHORIZED_REEL'
+    reason='OWNER_AUTHORIZED_AUTONOMOUS_EDITORIAL' if scheduled else 'OWNER_AUTHORIZED_REEL' if reel else 'APPROVED_BY_USER'
+    proposal=jev_decision.proposal(scope,{'source_agent':'ReposNewsPublicationAction','task':'Publicación automática autorizada por el titular' if scheduled or reel else 'Publicación aprobada por el titular','action':'publish article','resources':[rn.ORIGIN],'expected_cost':0,'risk':.3,'urgency':.5})
     if proposal['decision']=='REJECT':raise ValueError('JEV rechazó publicación.')
     article.update(state='PUBLISHING',status='PUBLISHING')
     article['history']=(article.get('history',[])+[{'at':holdings._now(),'fields':['state'],'reason':'PUBLISHING · '+reason+' · '+revision(article)}])[-60:]
@@ -138,7 +143,7 @@ def publish_article(data,article,scope):
         if row.get('article_id')==article['id']:row.update(status='PUBLISHED',processing_state='PUBLISHED')
     for note in data.get('editorial_notifications',[]):
         if note.get('article_id')==article['id']:note['status']='PUBLISHED'
-    jev_decision.decision_state(scope,proposal['id'],reason if scheduled else 'USER_CONFIRMED_EDITORIAL_CHANGE')
+    jev_decision.decision_state(scope,proposal['id'],reason if scheduled or reel else 'USER_CONFIRMED_EDITORIAL_CHANGE')
 
 
 def decide(scope,payload):
@@ -158,9 +163,10 @@ def decide(scope,payload):
         else:
             revoke(article)
             article.update(state='MODIFYING' if decision=='MODIFICAR' else 'CANCELLED',status='MODIFYING' if decision=='MODIFICAR' else 'CANCELLED')
-            if decision=='CANCELAR':
-                for row in data.get('instagram_inbox',[]):
-                    if row.get('article_id')==article['id']:row.update(status='CANCELLED',processing_state='CANCELLED')
+            for row in data.get('instagram_inbox',[]):
+                if row.get('article_id')==article['id']:
+                    row.pop('auto_publish_grant',None)
+                    if decision=='CANCELAR':row.update(status='CANCELLED',processing_state='CANCELLED')
             for note in data.get('editorial_notifications',[]):
                 if note.get('article_id')==article['id']:note['status']=article['state']
         article['history']=(article.get('history',[])+[{'at':holdings._now(),'fields':['state','approval_status'],'reason':'Decisión del titular: '+decision}])[-60:]

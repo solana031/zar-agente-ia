@@ -10,6 +10,7 @@ from . import holdings, reposnews as rn
 
 FRAME_TYPES={'REEL_FRAME','USER_SELECTED_REEL_FRAME','VIDEO_FRAME'}
 PUBLIC_FRAME_PERMISSIONS={'RIGHTS_CLEARED','LICENSE_VERIFIED','OWNER_LICENSED'}
+CURATED_ARTICLES={'uv','fastapi','playwright','jev','automaton','dramaclaw'}
 
 def frame_cleared(asset):
     return asset.get('permission') in PUBLIC_FRAME_PERMISSIONS
@@ -18,13 +19,15 @@ def public_article(article):
     """Presentation-only rights boundary; preserve stored snapshots and private evidence."""
     result=deepcopy(article)
     result['assets']=[a for a in result.get('assets',[]) if not ({a.get('source_type'),a.get('kind')} & FRAME_TYPES) or frame_cleared(a)]
-    if article.get('image_kind') in FRAME_TYPES:
-        cover=next((a for a in article.get('assets',[]) if a.get('role')=='COVER'),{})
-        if not frame_cleared(cover) and not frame_cleared(article.get('cover_provenance') or {}):
-            result.update(image_asset='editorial-'+article['id']+'.png',
-                cover_url='/media/reposnews/editorial-'+article['id']+'.png',cover_thumb='/media/reposnews/editorial-'+article['id']+'.png',
-                image_kind='GENERATED',image_attribution='ReposNews · ilustración editorial propia / original editorial illustration',
-                cover_provenance={'source_type':'GENERATED','generator':'ReposNews/internal-editorial-canvas-v1'})
+    cover=next((a for a in article.get('assets',[]) if a.get('role')=='COVER'),{})
+    restricted=article.get('image_kind') in FRAME_TYPES and not (frame_cleared(cover) or frame_cleared(article.get('cover_provenance') or {}))
+    missing=(article.get('id') not in CURATED_ARTICLES and
+             (not article.get('image_asset') or article.get('image_asset')=='home.png'))
+    if restricted or missing:
+        result.update(image_asset='editorial-'+article['id']+'.png',
+            cover_url='/media/reposnews/editorial-'+article['id']+'.png',cover_thumb=None,
+            image_kind='GENERATED',image_attribution='ReposNews · ilustración editorial propia / original editorial illustration',
+            cover_provenance={'source_type':'GENERATED','generator':'ReposNews/internal-editorial-canvas-v1'})
     return result
 
 @lru_cache(maxsize=64)

@@ -14,6 +14,7 @@ from . import holdings, reposnews as rn
 
 MADRID = ZoneInfo('Europe/Madrid')
 TRENDING = 'https://github.com/trending?since=monthly'
+DAILY_TARGET = 6
 TERMINAL = {'COMPLETED', 'PARTIAL', 'SKIPPED_REELS', 'NO_VERIFIED_CANDIDATES'}
 _worker = None
 _worker_lock = threading.Lock()
@@ -31,12 +32,12 @@ def timestamp(value):
         return None
 
 
-def next_slot(now):
+def next_slot(now, daily=False):
     local = now.astimezone(MADRID)
     slot = local.replace(hour=18, minute=0, second=0, microsecond=0)
     if slot <= local:
         slot += timedelta(days=1)
-    while slot.weekday() > 4:
+    while not daily and slot.weekday() > 4:
         slot += timedelta(days=1)
     return slot
 
@@ -55,6 +56,87 @@ def reel_article_today(data, now):
     return False
 
 
+def daily_policy(data):
+    return data.get('autonomous_editorial', {}).get('purpose') == 'DAILY_GUIDES_AND_INBOUND_REELS'
+
+
+def reel_grant(data, row):
+    from .reposnews_inbox import sender_ids
+    from .instagram_local_queue import reel_url
+    policy = data.get('autonomous_editorial', {})
+    if (not daily_policy(data) or not policy.get('enabled') or not data.get('owner')
+            or policy.get('owner') != data['owner'] or row.get('backfill')
+            or not row.get('external_id') or row.get('sender') not in sender_ids()):
+        return None
+    try:
+        permalink = reel_url(row.get('source_url', ''))
+    except ValueError:
+        permalink = ''
+    if '/reel/' not in permalink and not {'video', 'ig_reel', 'reel'}.intersection(row.get('media_type') or []):
+        return None
+    return policy.get('grant')
+
+
+def reel_authorized(article, scope, data):
+    from .reposnews_automation import revision
+    proof = article.get('reel_authorization', {})
+    row = next((r for r in data.get('instagram_inbox', []) if r['id'] == article.get('inbox_item_id')), {})
+    grant = reel_grant(data, row)
+    return bool(grant and scope == data.get('owner') and row.get('auto_publish_grant') == proof.get('grant') == grant
+                and row.get('status') == 'READY_PRIVATE' and row.get('article_id') == article['id']
+                and proof.get('revision') == revision(article) and article.get('approval_status') == 'OWNER_AUTHORIZED_REEL'
+                and article.get('review_kind') == 'AUTOMATED_SOURCE_REVIEW'
+                and all(article.get('review', {}).get(k) is True for k in ('supported', 'commands_supported', 'privacy_safe')))
+
+
+def publish_ready_reels():
+    from copy import deepcopy
+    from . import reposnews_automation as automation
+    from .reposnews_covers import valid
+    with holdings.transaction('reposnews-editorial'):
+        data = rn.read()
+        scope = data.get('owner')
+        if (not scope or not daily_policy(data) or not data['autonomous_editorial'].get('enabled')
+                or holdings.read(scope).get('global_stop') or rn.legal_status(data)['status'] != 'LEGAL_READY'):
+            return
+        articles = {a['id']: i for i, a in enumerate(data.get('articles', []))}
+        for row in sorted(data.get('instagram_inbox', []), key=lambda r: r.get('received_at', '')):
+            index = articles.get(row.get('article_id'))
+            if index is None or row.get('status') != 'READY_PRIVATE':
+                continue
+            grant = reel_grant(data, row)
+            if not grant or row.get('auto_publish_grant') != grant:
+                continue
+            article = deepcopy(data['articles'][index])
+            if (article.get('published') or article.get('inbox_item_id') != row['id']
+                    or article.get('state') != 'READY_PRIVATE' or not automation.complete(article) or not valid(article)):
+                continue
+            article.update(approval_status='OWNER_AUTHORIZED_REEL',
+                           reel_authorization={'grant': grant, 'revision': automation.revision(article)})
+            try:
+                automation.publish_article(data, article, scope)
+            except ValueError:
+                if row.get('error') != 'AUTO_PUBLICATION_BLOCKED':
+                    row['error'] = 'AUTO_PUBLICATION_BLOCKED'
+                    rn.write(data)
+                continue
+            row.pop('error', None)
+            data['articles'][index] = article
+            rn.write(data)
+
+
+def published_today(data, now):
+    day = now.astimezone(MADRID).date()
+    return {a['id'] for a in data.get('articles', []) if a.get('published')
+            and (stamp := timestamp(a.get('published_at'))) and stamp.astimezone(MADRID).date() == day}
+
+
+def quota_filled(data, job, now):
+    if daily_policy(data):
+        return len(published_today(data, now) | set(job.get('published', []))) >= DAILY_TARGET
+    return len(job.get('published', [])) >= 4 or reel_article_today(data, now)
+
+
 def configure(scope, payload):
     if not has_request_context() or session.get('zar_auth') is not True:
         raise ValueError('AUTHENTICATED_OWNER_REQUIRED')
@@ -67,15 +149,15 @@ def configure(scope, payload):
         if not data.get('owner') or data['owner'] != scope:
             raise ValueError('OWNER_REQUIRED')
         previous = data.get('autonomous_editorial', {})
-        if payload['enabled'] and previous.get('enabled'):
+        if payload['enabled'] and previous.get('enabled') and daily_policy(data):
             return rn.state(scope)
         now = utcnow()
         data['autonomous_editorial'] = {
             'enabled': payload['enabled'], 'owner': scope, 'grant': secrets.token_hex(16),
-            'authorized_at': now.isoformat(), 'first_slot': next_slot(now).isoformat(),
-            'timezone': 'Europe/Madrid', 'weekdays': [0, 1, 2, 3, 4], 'hour': 18,
-            'maximum_articles': 4, 'source': TRENDING,
-            'purpose': 'PUBLISH_MONTHLY_TRENDING_IF_NO_NEW_REEL_ARTICLE',
+            'authorized_at': now.isoformat(), 'first_slot': next_slot(now, daily=True).isoformat(),
+            'timezone': 'Europe/Madrid', 'weekdays': list(range(7)), 'hour': 18,
+            'maximum_articles': DAILY_TARGET, 'source': TRENDING,
+            'purpose': 'DAILY_GUIDES_AND_INBOUND_REELS',
         }
         rn.write(data)
     return rn.state(scope)
@@ -86,11 +168,17 @@ def view(data, now=None):
     policy = data.get('autonomous_editorial', {})
     jobs = data.get('autonomous_editorial_jobs', {})
     latest = jobs[sorted(jobs)[-1]] if jobs else {}
+    blocker = None
+    if policy.get('enabled') and rn.legal_status(data)['status'] != 'LEGAL_READY':
+        blocker = 'Revisión legal pendiente'
+    elif policy.get('enabled') and data.get('owner') and holdings.read(data['owner']).get('global_stop'):
+        blocker = 'Stop global activo'
     return {'enabled': policy.get('enabled', False), 'timezone': 'Europe/Madrid',
-            'next_run': next_slot(now).isoformat() if policy.get('enabled') else None,
+            'daily_policy': daily_policy(data), 'today': len(published_today(data, now)), 'blocker': blocker,
+            'next_run': next_slot(now, daily=daily_policy(data)).isoformat() if policy.get('enabled') else None,
             'last_status': latest.get('status', 'NOT_RUN'), 'last_day': latest.get('day'),
             'published': len(latest.get('published', [])), 'last_error': latest.get('error'),
-            'source': TRENDING, 'maximum_articles': 4}
+            'source': TRENDING, 'maximum_articles': DAILY_TARGET if daily_policy(data) else 4}
 
 
 class MonthlyParser(HTMLParser):
@@ -151,7 +239,7 @@ def due(data, now):
     first = timestamp(policy.get('first_slot'))
     local = now.astimezone(MADRID)
     return bool(data.get('owner') and policy.get('enabled') and policy.get('owner') == data['owner']
-                and first and now >= first and local.weekday() < 5 and local.hour >= 18)
+                and first and now >= first and (daily_policy(data) or local.weekday() < 5) and local.hour >= 18)
 
 
 def authorized(article, scope, data=None, now=None):
@@ -176,7 +264,7 @@ def authorized(article, scope, data=None, now=None):
                 and trend.get('source') == TRENDING and trend.get('repo') == article.get('repo')
                 and isinstance(trend.get('monthly_stars'), int) and trend['monthly_stars'] > 0
                 and observed and observed.astimezone(MADRID).date() == now.astimezone(MADRID).date()
-                and len(job.get('published', [])) < 4 and not reel_article_today(data, now))
+                and not quota_filled(data, job, now))
 
 
 def prepare(candidate):
@@ -187,7 +275,7 @@ def prepare(candidate):
     if package['repo'].casefold() != candidate['repo'].casefold():
         raise ValueError('MONTHLY_REPOSITORY_CHANGED')
     package['monthly_trend'] = candidate
-    article = inbox.build(package, 'GITHUB_MONTHLY_TRENDING')
+    article = inbox.build(package, '')
     blob, provider = editorial(article)
     covers.persist(article, blob, 'GENERATED', generator=provider)
     article['monthly_trend'] = candidate
@@ -212,8 +300,8 @@ def tick(now=None):
             return
         if job.get('retry_after', 0) > now.timestamp():
             return
-        if reel_article_today(data, now):
-            job['status'] = 'SKIPPED_REELS'
+        if quota_filled(data, job, now):
+            job['status'] = 'COMPLETED' if daily_policy(data) else 'SKIPPED_REELS'
             rn.write(data)
             return
         job.update(status='RUNNING', token=token, grant=data['autonomous_editorial']['grant'],
@@ -231,11 +319,11 @@ def tick(now=None):
                     return
                 if not due(data, current) or current.astimezone(MADRID).date().isoformat() != day:
                     break
-                if holdings.read(data['owner']).get('global_stop') or reel_article_today(data, current):
-                    job['status'] = 'SKIPPED_REELS' if reel_article_today(data, current) else 'PAUSED'
+                if holdings.read(data['owner']).get('global_stop'):
+                    job['status'] = 'PAUSED'
                     rn.write(data)
                     break
-                if len(job['published']) >= 4 or len(job['tried']) >= 8:
+                if quota_filled(data, job, current) or len(job['tried']) >= (14 if daily_policy(data) else 8):
                     break
                 repo = candidate['repo'].casefold()
                 if repo in job['tried'] or any(str(a.get('repo', '')).casefold() == repo for a in data.get('articles', [])):
@@ -266,7 +354,10 @@ def tick(now=None):
             data = rn.read(); job = data['autonomous_editorial_jobs'][day]
             if job.get('token') == token:
                 if job['status'] == 'RUNNING':
-                    job['status'] = 'COMPLETED' if len(job['published']) >= 3 else 'PARTIAL' if job['published'] else 'NO_VERIFIED_CANDIDATES'
+                    if daily_policy(data):
+                        job['status'] = 'COMPLETED' if quota_filled(data, job, utcnow()) else 'PARTIAL' if job['published'] or published_today(data, utcnow()) else 'NO_VERIFIED_CANDIDATES'
+                    else:
+                        job['status'] = 'SKIPPED_REELS' if reel_article_today(data, utcnow()) else 'COMPLETED' if len(job['published']) >= 3 else 'PARTIAL' if job['published'] else 'NO_VERIFIED_CANDIDATES'
                 job.update(lease_until=0, finished_at=utcnow().isoformat())
                 rn.write(data)
     except Exception:

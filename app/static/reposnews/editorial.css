@@ -10,3 +10,23 @@
 
 /* Canonical cover crop; the pipeline fits logos on a 16:9 canvas. */
 .card-visual{aspect-ratio:16/9}.card .card-visual .official-cover,.card .card-visual-source .official-cover{object-fit:cover;padding:0}.article .article-cover.official-cover{aspect-ratio:16/9;object-fit:cover;padding:0}
+
+/* Terminal-inspired editorial layout, using the existing green and cream palette. */
+.hero{background-color:#132a24;background-image:radial-gradient(ellipse at 80% 0%,#315c46,transparent 65%),linear-gradient(145deg,#18362b,#132a24);gap:clamp(20px,4vw,60px)}
+.hero .hero-art{display:block;align-self:center;min-width:0;padding:0;border:1px solid #62846d;border-radius:14px;background:#132a24;overflow:hidden;box-shadow:0 20px 50px #0b21199c;text-align:left}
+.terminal-top{display:flex;align-items:center;gap:6px;background:#294a3d;padding:12px 14px;color:#e3f4dc;font:12px ui-monospace,monospace}
+.terminal-top i{display:block;width:8px;height:8px;border-radius:50%;background:#a6c99c}
+.terminal-top i:nth-child(2){opacity:.7}.terminal-top i:nth-child(3){opacity:.45}.terminal-top span{margin-left:6px}
+.hero .terminal-body{padding:clamp(14px,3vw,28px);font-family:ui-monospace,monospace}
+.hero .terminal-body p{margin:0 0 9px;color:#e3f4dc;font-size:clamp(12px,1.5vw,15px);overflow-wrap:anywhere}
+.terminal-body p:first-child{padding-bottom:12px;border-bottom:1px solid #395b4b}.terminal-body b,.terminal-body span,.hero .terminal-body .terminal-ready{color:#b4d8a7}.terminal-body span{margin-right:.5em}
+.hero .terminal-body .terminal-ready{margin:15px 0 0}
+.hero .btn:not(.secondary){background:#d7edc9;color:#132a24;border-color:#d7edc9}
+.hero .btn.secondary{color:#edf6e8;background:#203c30;border-color:#6e9076}
+.hero .btn:hover,.article-tools .btn:hover,.card .btn:hover{box-shadow:0 0 0 2px currentColor}
+.card{border-top:3px solid #749d7d}.card-content .repo,.eyebrow{font-family:ui-monospace,monospace}
+.article-tools{margin:24px 0 34px}.article-body{scroll-margin-top:24px}
+.article-body h2{border-bottom:1px solid var(--line);padding-bottom:.45em}
+.related .grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+@media(max-width:900px){.related .grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:600px){.related .grid{grid-template-columns:1fr}.hero .hero-art{width:100%}.terminal-body p:not(:first-child):not(.terminal-ready){display:none}}

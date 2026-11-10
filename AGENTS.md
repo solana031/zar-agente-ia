@@ -23,7 +23,7 @@ Estas reglas se aplican a todo el repositorio. Las instrucciones explícitas de 
 ## 3. Versionado
 
 - `VERSION`, `VERSION.txt` y `app/VERSION.txt` deben coincidir siempre.
-- Cada cambio de producto publicado debe incrementar la versión conforme a la versión indicada en la tarea. Si falta la versión objetivo, aclararla antes de publicar, sin inventarla.
+- Antes de cada push, comprobar la versión actual en la referencia remota correspondiente. Para cambios de producto, determinar la siguiente versión según la secuencia vigente y el alcance del cambio. Comunicar la versión actual y la propuesta a Pablo y pedir una confirmación de sí o no.
 - La interfaz debe mostrar la versión correcta: revisar etiquetas, información lateral y registros de inicialización, además de los archivos VERSION.
 - Una tarea explícitamente documental que ordene mantener la versión no la incrementa ni modifica código funcional. La incorporación de este archivo conserva 31.3.19.
 - Al incrementar versión, actualizar las expectativas de versión de los tests cuando corresponda, sin debilitar sus comprobaciones. El test de Stonks original contiene una expectativa explícita de 31.3.19.
@@ -79,10 +79,10 @@ Cuando la tarea indique explícitamente «publicar», «desplegar» o autorice c
 
 1. Trabajar sobre main actualizado y preservar cualquier trabajo del usuario.
 2. Implementar únicamente lo solicitado.
-3. Actualizar la versión indicada, salvo excepción documental explícita, y validar el estado final.
+3. Preparar la versión objetivo calculada, salvo excepción documental explícita, y validar el estado final.
 4. Revisar diff y añadir solo los archivos de la tarea.
 5. Hacer commit con el mensaje solicitado o uno descriptivo si no se especifica.
-6. Hacer `git push origin main` sin pedir confirmación intermedia si las validaciones pasan.
+6. Una vez superadas las validaciones y revisado el commit, pedir a Pablo una única confirmación de sí o no para publicar la versión propuesta. Hacer `git push origin main` tras recibir el sí. Si cambia la base remota y hay que revisar la propuesta, confirmar la nueva versión antes del push.
 7. Confirmar el SHA remoto y que origin/main contiene los cambios y la versión esperada.
 
 No hacer force push. No borrar stashes. No descartar cambios del usuario sin autorización. `stash@{0}` con el trabajo local de 29.3.6 debe permanecer intacto: no recuperarlo, aplicarlo ni eliminarlo salvo nueva orden explícita. Si el push es rechazado por cambios remotos, estudiar esos cambios y volver a validar la integración; nunca forzar el remoto.

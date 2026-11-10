@@ -359,6 +359,8 @@ def operate(scope, op, payload):
             if op=='save':
                 from .reposnews_automation import revoke, reviewable
                 revoke(article)
+                for row in data.get('instagram_inbox',[]):
+                    if row.get('article_id')==article['id']:row.pop('auto_publish_grant',None)
                 before=dict(article)
                 for key,limit in [('title_es',180),('title_en',180),('summary_es',500),('summary_en',500),('body_es',24000),('body_en',24000)]:
                     value=str(payload.get(key,article[key])).strip()
@@ -453,6 +455,10 @@ def render(lang='es', slug='', preview=False, csp_nonce=None):
     rows=all_rows if preview else [public_article(a.get('published_snapshot',a)) for a in all_rows if a.get('published')]
     categories=sorted({a['category'] for a in rows})
     article=next((a for a in rows if a['id']==slug),None) if slug else None
+    if article:
+        rows=related_guides(article, rows, lang, preview=preview)
+    else:
+        rows.sort(key=lambda a:a.get('published_at') or '', reverse=True)
     pages={'about','contact','privacy','cookies','legal','repositories','guides','trends'}
     if slug and not article and slug not in pages: abort(404)
     query=str(request.args.get('q',''))[:120].casefold()
@@ -467,6 +473,21 @@ def render(lang='es', slug='', preview=False, csp_nonce=None):
     if slug in pages: title={'about':('Sobre ReposNews','About ReposNews'),'contact':('Contacto','Contact'),'privacy':('Privacidad','Privacy'),'cookies':('Cookies','Cookies'),'legal':('Aviso legal','Legal notice'),'repositories':('Repositorios','Repositories'),'guides':('Guías','Guides'),'trends':('Actividad','Activity')}[slug][0 if lang=='es' else 1]+' · ReposNews'
     from .reposnews_adsense import public_config
     return render_template('reposnews.html',lang=lang,rows=rows,article=article,body=article_body_html(article,lang) if article else None,slug=slug,preview=preview,base=base,title=title,description=description,origin=ORIGIN,path=path,official_covers={'uv':'uv-official.svg','fastapi':'fastapi-official.png','playwright':'playwright-official.svg','jev':'jev-editorial.svg','automaton':'automaton-editorial.svg','dramaclaw':'dramaclaw-official.png'},public_legal=public_legal_profile(data),query=query,category=category,categories=categories,legal_status={'status':legal_status(data)['status']},adsense=public_config(data),csp_nonce=csp_nonce or secrets.token_urlsafe(24),utility_page=bool(query or category or slug=='trends'))
+
+
+def related_guides(article, rows, lang, preview=False):
+    def terms(row):
+        return set(re.findall(r'[^\W\d_]{5,}', ' '.join(str(row.get(k) or '') for k in
+            ('repo','title_'+lang,'summary_'+lang)).casefold()))
+    subject=terms(article)
+    def rank(other):
+        return (len(subject & terms(other)), other.get('category')==article.get('category'),
+                other.get('language')==article.get('language') and article.get('language') not in {None,'—'},
+                other.get('published_at') or '')
+    stamp=article.get('published_at') or ''
+    candidates=[a for a in rows if a['id']!=article['id'] and (preview or a.get('published'))
+                and (not stamp or (a.get('published_at') or '')<=stamp)]
+    return sorted((a for a in candidates if any(rank(a)[:3])), key=rank, reverse=True)[:3]
 
 
 def public_legal_profile(data):
