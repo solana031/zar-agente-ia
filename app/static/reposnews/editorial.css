@@ -30,3 +30,21 @@
 .related .grid{grid-template-columns:repeat(3,minmax(0,1fr))}
 @media(max-width:900px){.related .grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:600px){.related .grid{grid-template-columns:1fr}.hero .hero-art{width:100%}.terminal-body p:not(:first-child):not(.terminal-ready){display:none}}
+/* Sorting + swipeable pages */
+.sortbar{display:flex;flex-wrap:nowrap!important;gap:8px;overflow-x:auto;scrollbar-width:none;margin:6px 0 18px;padding:2px}
+.sortbar::-webkit-scrollbar{display:none}
+.sortbar a{flex:none;padding:8px 14px;border-radius:999px;border:1px solid var(--line);font-size:.92rem;font-weight:600;text-decoration:none;color:inherit;white-space:nowrap}
+.sortbar a:hover{border-color:currentColor}
+.sortbar a[aria-current=true]{background:var(--accent);border-color:var(--accent);color:#fff}
+.pager{position:relative}
+.pager-track{display:flex;overflow-x:auto;overflow-y:hidden;scroll-snap-type:x mandatory;scroll-behavior:smooth;scrollbar-width:none;transition:height .25s ease;outline:none;overscroll-behavior-x:contain}
+.pager-track::-webkit-scrollbar{display:none}
+.pager-page{flex:0 0 100%;min-width:100%;scroll-snap-align:start;align-self:flex-start;box-sizing:border-box;padding:2px}
+.pager-arrow{position:absolute;top:120px;z-index:2;width:44px;height:44px;border-radius:50%;border:1px solid var(--line);background:#fff;font-size:26px;line-height:1;cursor:pointer;box-shadow:0 6px 18px #0002;display:grid;place-items:center;color:var(--ink);padding:0 0 3px;font-family:system-ui,sans-serif}
+.pager-arrow.prev{left:-22px}.pager-arrow.next{right:-22px}
+.pager-arrow[hidden]{display:none}
+.pager-tabs{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:8px;margin:22px 0 8px}
+.pager-tabs a{min-width:40px;height:40px;display:grid;place-items:center;border-radius:12px;border:1px solid var(--line);text-decoration:none;color:inherit;font-weight:700}
+.pager-tabs a[aria-current]{background:var(--accent);border-color:var(--accent);color:#fff}
+.pager-count{margin-left:8px;font-size:.9rem;opacity:.7}
+@media(max-width:900px){.pager-arrow{display:none!important}}

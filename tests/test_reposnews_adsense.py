@@ -130,7 +130,8 @@ def test_explicitly_cleared_frame_is_retained(site):
     a=site[2]['articles'][0];a.update(image_kind='REEL_FRAME',image_asset='source-licensed.png',
         cover_provenance={'permission':'LICENSE_VERIFIED'},assets=[{'kind':'REEL_FRAME','permission':'RIGHTS_CLEARED','role':'ARTICLE_USAGE'}])
     safe=public_article(a)
-    assert safe['image_asset']==a['image_asset'] and safe['assets']==a['assets']
+    # The cleared frame stays available and becomes the reference inside ZAR's own cover.
+    assert safe['assets']==a['assets'] and safe['cover_url']=='/media/reposnews/editorial-'+a['id']+'.png?v=3'
 
 
 def test_required_public_legal_review_blocks_readiness(site):

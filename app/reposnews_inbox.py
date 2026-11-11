@@ -940,6 +940,8 @@ def start_worker():
                 cover_spec_tick()
                 from .zar_notify import tick as notify_tick
                 notify_tick()
+                from .reposnews_rankings import tick as rankings_tick
+                rankings_tick()
                 from .site_stats import flush as visits_flush
                 visits_flush()
                 from .instagram_local_queue import fallback_stalled

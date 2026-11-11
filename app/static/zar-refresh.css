@@ -1,0 +1,78 @@
+/* ZAR visual refresh 33.3.136 — one calm layer over the existing palette.
+   Same colours (gold / warm brown / near-black), softer surfaces, consistent radii,
+   lighter borders, clear hover/focus states. Loaded last; layout is not changed. */
+:root{
+ --zr-gold:var(--zar-gold,#d8ad70);--zr-gold-soft:var(--zar-gold-soft,#b88b55);--zr-text:var(--zar-text,#f3eadf);--zr-muted:var(--zar-muted,#968a7e);
+ --zr-bg:#0a0807;--zr-surface:rgba(255,236,205,.035);--zr-surface-2:rgba(255,236,205,.06);--zr-surface-3:rgba(255,236,205,.09);
+ --zr-line:rgba(216,173,112,.14);--zr-line-2:rgba(216,173,112,.28);--zr-line-3:rgba(216,173,112,.5);
+ --zr-r-sm:10px;--zr-r:14px;--zr-r-lg:20px;--zr-shadow:0 10px 30px rgba(0,0,0,.35);--zr-glow:0 0 0 1px rgba(216,173,112,.35),0 10px 34px rgba(216,173,112,.12);
+ --zr-ease:cubic-bezier(.2,.7,.2,1)}
+body{-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;text-rendering:optimizeLegibility}
+::selection{background:rgba(216,173,112,.35);color:#fff}
+*{scrollbar-width:thin;scrollbar-color:rgba(216,173,112,.28) transparent}
+*::-webkit-scrollbar{width:9px;height:9px}*::-webkit-scrollbar-thumb{background:rgba(216,173,112,.22);border-radius:9px;border:2px solid transparent;background-clip:padding-box}
+*::-webkit-scrollbar-thumb:hover{background:rgba(216,173,112,.4);background-clip:padding-box}*::-webkit-scrollbar-track{background:transparent}
+
+/* ---------- focus & motion ---------- */
+.app :is(button,a,input,select,textarea,summary):focus-visible,#zarWorkspaceTabs button:focus-visible{outline:2px solid var(--zr-gold)!important;outline-offset:2px!important}
+@media (prefers-reduced-motion:no-preference){
+ .app :is(button,.zarDockItem,.controlSection,.zwtTab){transition:background-color .18s var(--zr-ease),border-color .18s var(--zr-ease),box-shadow .18s var(--zr-ease),transform .18s var(--zr-ease),color .18s var(--zr-ease)}}
+
+/* ---------- left sidebar ---------- */
+.app>.side{background:linear-gradient(180deg,#0d0a08 0%,#0a0807 60%,#090706 100%)!important;border-right:1px solid var(--zr-line)!important}
+.side .sec{color:var(--zr-muted)!important;font-size:10.5px!important;letter-spacing:.16em!important;font-weight:700!important;opacity:.85}
+.side .nav button,.side .zwtLaunchers button{background:transparent!important;border:1px solid transparent!important;border-radius:var(--zr-r-sm)!important;box-shadow:none!important;color:var(--zr-text)!important;
+ min-height:40px!important;padding:9px 12px!important;text-align:left!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important;font-weight:550!important;font-size:13.5px!important;letter-spacing:0!important;position:relative}
+.side .nav button:hover,.side .zwtLaunchers button:hover{background:var(--zr-surface-2)!important;border-color:var(--zr-line)!important}
+.side .nav button.active,.side .zwtLaunchers button.active,.side .nav button[aria-current="true"]{background:linear-gradient(90deg,rgba(216,173,112,.16),rgba(216,173,112,.04))!important;border-color:var(--zr-line-2)!important}
+.side .nav button.active::before,.side .zwtLaunchers button.active::before{content:'';position:absolute;left:-1px;top:9px;bottom:9px;width:3px;border-radius:3px;background:var(--zr-gold)}
+.side .zwtLaunchers{gap:2px!important}
+.side .zwtLaunchers button{margin:0!important}
+.side .status{background:var(--zr-surface)!important;border:1px solid var(--zr-line)!important;border-radius:var(--zr-r)!important}
+
+/* ---------- top bar & workspace tabs ---------- */
+.main>.top{background:rgba(10,8,7,.72)!important;backdrop-filter:blur(14px) saturate(1.2);-webkit-backdrop-filter:blur(14px) saturate(1.2);border-bottom:1px solid var(--zr-line)!important}
+.top .topIconBtn,.top .mobileMenu,#zarNotificationBell{border-radius:12px!important;border:1px solid var(--zr-line)!important;background:var(--zr-surface)!important;box-shadow:none!important}
+.top .topIconBtn:hover,.top .mobileMenu:hover{background:var(--zr-surface-3)!important;border-color:var(--zr-line-2)!important}
+#zarNotificationBell{border-color:transparent!important;background:transparent!important}
+.top .pill{border-radius:999px!important;border:1px solid var(--zr-line-2)!important;background:rgba(216,173,112,.07)!important}
+#zarWorkspaceTabs{border-bottom:1px solid var(--zr-line)!important;background:transparent!important;gap:6px!important}
+#zarWorkspaceTabs .zwtTab{border:1px solid var(--zr-line)!important;border-radius:12px!important;background:var(--zr-surface)!important;box-shadow:none!important}
+#zarWorkspaceTabs .zwtTab:hover{background:var(--zr-surface-2)!important;border-color:var(--zr-line-2)!important}
+#zarWorkspaceTabs .zwtTab.active{background:linear-gradient(180deg,rgba(216,173,112,.18),rgba(216,173,112,.06))!important;border-color:var(--zr-line-3)!important}
+#zarWorkspaceTabs .zwtTab button{background:transparent!important;border:0!important;box-shadow:none!important}
+
+/* ---------- home dock ---------- */
+.zarHomeDock{border:0!important;background:transparent!important;box-shadow:none!important}
+.zarDockItem{border-radius:16px!important;border:1px solid var(--zr-line)!important;background:linear-gradient(180deg,rgba(255,236,205,.05),rgba(255,236,205,.015))!important;box-shadow:none!important}
+.zarDockItem:hover{border-color:var(--zr-line-3)!important;box-shadow:var(--zr-glow)!important;transform:translateY(-2px)}
+.zarDockItem b{letter-spacing:.005em}
+
+/* ---------- composer & quick actions ---------- */
+.composer .quick button{border-radius:999px!important;border:1px solid var(--zr-line)!important;background:var(--zr-surface)!important;box-shadow:none!important;min-height:38px!important}
+.composer .quick button:hover{background:var(--zr-surface-3)!important;border-color:var(--zr-line-2)!important;transform:translateY(-1px)}
+.composer .composerMain,.composer>.composerMain{border-radius:20px!important;border:1px solid var(--zr-line-2)!important;background:rgba(16,12,9,.85)!important;box-shadow:0 12px 40px rgba(0,0,0,.35)!important}
+.composer .composerMain:focus-within{border-color:var(--zr-line-3)!important;box-shadow:0 0 0 3px rgba(216,173,112,.12),0 12px 40px rgba(0,0,0,.35)!important}
+.composer textarea#input{background:transparent!important;border:0!important;box-shadow:none!important}
+.composer .composerMain button{border-radius:14px!important}
+
+/* ---------- right control rail ---------- */
+.app>.right{background:linear-gradient(180deg,#0c0a08,#090706)!important;border-left:1px solid var(--zr-line)!important}
+.rightRailToggle{border-radius:12px!important;border:1px solid var(--zr-line)!important;background:var(--zr-surface)!important}
+.rightRailContent .railHint{border-radius:var(--zr-r)!important;border:1px dashed var(--zr-line)!important;background:transparent!important;color:var(--zr-muted)!important}
+.rightRailContent .controlHeader{border-radius:var(--zr-r-lg)!important;border:1px solid var(--zr-line)!important;background:radial-gradient(120% 120% at 0% 0%,rgba(216,173,112,.10),rgba(255,255,255,.015))!important}
+.rightRailContent .controlSection{border:0!important;background:transparent!important;box-shadow:none!important}
+.rightRailContent .controlSection>details{border-radius:var(--zr-r)!important;border:1px solid var(--zr-line)!important;background:var(--zr-surface)!important;box-shadow:none!important}
+.rightRailContent .controlSection>details:hover{border-color:var(--zr-line-2)!important;background:var(--zr-surface-2)!important}
+.rightRailContent .statePill{border-radius:999px!important;border-color:var(--zr-line-2)!important;background:rgba(216,173,112,.06)!important}
+
+/* ---------- shared component families (cards, buttons, inputs) ---------- */
+.app :is(.workspaceCard,.zwtPreview,.zhCard,.zsCard,.zoPanel,.zwtMetric,.zwtProjectCard,.panelCard,.card):not(.znCard){border-radius:var(--zr-r-lg)!important;border-color:var(--zr-line)!important;box-shadow:none}
+.app :is(.zhBtn,.zsBtn,.zoBtn,.btn,.zwtPreview button,.zwtSubappHeader nav button,.workspaceBack,.workspaceCard button){border-radius:12px!important;border:1px solid var(--zr-line-2)!important;background:var(--zr-surface-2)!important;box-shadow:none!important;color:var(--zr-text)!important;font-weight:600!important}
+.app :is(.zhBtn,.zsBtn,.zoBtn,.btn,.zwtPreview button,.zwtSubappHeader nav button,.workspaceBack,.workspaceCard button):hover:not(:disabled){background:var(--zr-surface-3)!important;border-color:var(--zr-line-3)!important;transform:translateY(-1px)}
+.app :is(.zhBtn.gold,.zsBtn.gold,.btn.primary,.editorPrimary){background:linear-gradient(180deg,#e7c287,#c99a5a)!important;border-color:#e2bd73!important;color:#1b130a!important}
+.app :is(.zhBtn.danger,.zsBtn.danger){background:rgba(216,117,104,.12)!important;border-color:rgba(216,117,104,.45)!important;color:#f3b4aa!important}
+.app :is(input[type=text],input[type=email],input[type=tel],input[type=number],input[type=search],input[type=url],input[type=date],input[type=time],input:not([type]),select,textarea):not(#input){border-radius:12px!important;border:1px solid var(--zr-line-2)!important;background:rgba(10,8,6,.7)!important;color:var(--zr-text)!important;box-shadow:none!important}
+.app :is(input,select,textarea):not(#input):focus{border-color:var(--zr-line-3)!important;box-shadow:0 0 0 3px rgba(216,173,112,.12)!important;outline:none!important}
+.app details>summary{cursor:pointer}
+.app :is(.zwtSubappHeader h1){letter-spacing:-.01em}

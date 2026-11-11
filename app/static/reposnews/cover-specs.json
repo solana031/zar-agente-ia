@@ -1,37 +1,1037 @@
 {
-  "harry0703-moneyprinterturbo": {"name": "MoneyPrinterTurbo", "tagline": "Un tema se convierte en un vídeo corto HD con guion, voz y subtítulos", "hero": "video", "steps": [{"icon": "text", "label": "Tema o idea"}, {"icon": "ai", "label": "Guion con LLM"}, {"icon": "voice", "label": "Voz y subtítulos"}, {"icon": "video", "label": "Vídeo corto"}]},
-  "morluto-rea": {"name": "REA", "tagline": "Ingeniería inversa de binarios y apps Electron guiada por agentes IA", "hero": "search", "steps": [{"icon": "folder", "label": "Binario o app"}, {"icon": "terminal", "label": "Servidor MCP"}, {"icon": "agent", "label": "Agente analiza"}, {"icon": "text", "label": "Informe"}]},
-  "calesthio-openmontage": {"name": "OpenMontage", "tagline": "Un estudio de producción de vídeo dirigido por agentes desde tu asistente", "hero": "clip", "steps": [{"icon": "chat", "label": "Petición"}, {"icon": "agent", "label": "Agentes"}, {"icon": "gear", "label": "Pipelines"}, {"icon": "video", "label": "Montaje final"}]},
-  "kaomei-stickman-video-director": {"name": "Stickman Video Director", "tagline": "Estilos de monigotes y prompts para generar vídeos animados con IA", "hero": "animation", "steps": [{"icon": "text", "label": "Guion"}, {"icon": "image", "label": "Estilo stickman"}, {"icon": "ai", "label": "Prompt de vídeo"}, {"icon": "video", "label": "Animación"}]},
-  "world-monitor-free-geopolitical-intelligence-dashboard": {"name": "World Monitor", "tagline": "Panel gratuito con conflictos, envíos, mercados y ciberamenazas en vivo", "hero": "map", "steps": [{"icon": "web", "label": "Fuentes abiertas"}, {"icon": "database", "label": "Agrega datos"}, {"icon": "map", "label": "Mapa en vivo"}, {"icon": "chart", "label": "Panel"}]},
-  "immortaldemongod-money-agent": {"name": "Money Agent", "tagline": "Un agente autónomo que intenta ganar dinero real con un verificador externo", "hero": "money", "steps": [{"icon": "agent", "label": "Agente IA"}, {"icon": "rocket", "label": "Ejecuta ideas"}, {"icon": "shield", "label": "Verificador"}, {"icon": "money", "label": "Ingreso real"}]},
-  "jakeschincariol-youtube-agent-skill": {"name": "YouTube Agent Skill", "tagline": "Once habilidades de Claude para guiones, retención y empaquetado en YouTube", "hero": "video", "steps": [{"icon": "chart", "label": "Datos canal"}, {"icon": "agent", "label": "11 skills"}, {"icon": "text", "label": "Guion y título"}, {"icon": "video", "label": "Vídeo mejor"}]},
-  "fujiwarachoki-supoclip": {"name": "SupoClip", "tagline": "Extrae con IA los momentos virales de vídeos largos y podcasts", "hero": "clip", "steps": [{"icon": "video", "label": "Vídeo largo"}, {"icon": "voice", "label": "Transcribe"}, {"icon": "ai", "label": "Detecta momentos"}, {"icon": "social", "label": "Clips cortos"}]},
-  "yihui-dev-awesome-opus5-5-videos": {"name": "Awesome Opus 5.5 Videos", "tagline": "Cientos de vídeos virales hechos con código y sus prompts originales", "hero": "animation", "steps": [{"icon": "text", "label": "Prompt"}, {"icon": "ai", "label": "Opus 5.5"}, {"icon": "code", "label": "Código web"}, {"icon": "video", "label": "Vídeo viral"}]},
-  "gitroomhq-postiz-app": {"name": "Postiz", "tagline": "Programa y automatiza publicaciones en redes sociales con agentes", "hero": "social", "steps": [{"icon": "text", "label": "Contenido"}, {"icon": "agent", "label": "Agente"}, {"icon": "calendar", "label": "Programación"}, {"icon": "social", "label": "Redes"}]},
-  "digitalplatdev-freedomain": {"name": "DigitalPlat FreeDomain", "tagline": "Registra dominios gratis y aprende DNS de forma práctica", "hero": "web", "steps": [{"icon": "search", "label": "Elige nombre"}, {"icon": "text", "label": "Solicitud"}, {"icon": "gear", "label": "Configura DNS"}, {"icon": "web", "label": "Dominio activo"}]},
-  "clone-any-viral-video-with-ai-agents-open-source": {"name": "Hypit", "tagline": "Clona vídeos virales y genera variantes a escala con agentes de IA", "hero": "video", "steps": [{"icon": "video", "label": "Vídeo viral"}, {"icon": "search", "label": "Analiza"}, {"icon": "agent", "label": "Agentes editan"}, {"icon": "clip", "label": "Variantes"}]},
-  "anomalyco-opencode": {"name": "OpenCode", "tagline": "Agente de programación open source para terminal y escritorio", "hero": "terminal", "steps": [{"icon": "chat", "label": "Tarea"}, {"icon": "agent", "label": "Multiagente"}, {"icon": "code", "label": "Edita código"}, {"icon": "terminal", "label": "Ejecuta"}]},
-  "edenfunf-reelmimic": {"name": "ReelMimic", "tagline": "Analiza un vídeo de referencia y crea otro nuevo con el mismo estilo", "hero": "clip", "steps": [{"icon": "video", "label": "Referencia"}, {"icon": "search", "label": "Analiza estilo"}, {"icon": "agent", "label": "Planifica"}, {"icon": "video", "label": "Vídeo nuevo"}]},
-  "hkuds-ai-trader": {"name": "AI-Trader", "tagline": "Plataforma de trading para agentes con señales y paper trading real", "hero": "trade", "steps": [{"icon": "chart", "label": "Datos mercado"}, {"icon": "agent", "label": "Agentes IA"}, {"icon": "chat", "label": "Señales"}, {"icon": "trade", "label": "Operaciones"}]},
-  "genex-games-genex-desktop": {"name": "Genex Desktop", "tagline": "Crea videojuegos con IA desde una app para macOS, Windows y Linux", "hero": "game", "steps": [{"icon": "chat", "label": "Describe"}, {"icon": "ai", "label": "IA genera"}, {"icon": "code", "label": "Lógica"}, {"icon": "game", "label": "Juego"}]},
-  "affaan-m-ecc": {"name": "ECC", "tagline": "Planifica, prueba y verifica antes de construir con tu agente de código", "hero": "gear", "steps": [{"icon": "text", "label": "Plan"}, {"icon": "agent", "label": "Harness"}, {"icon": "shield", "label": "Pruebas"}, {"icon": "code", "label": "Código"}]},
-  "deepseek-ai-deepseek-harness": {"name": "DeepSeek Harness", "tagline": "Arnés de agentes modular basado en plugins de DeepSeek AI", "hero": "agent", "steps": [{"icon": "chat", "label": "Tarea"}, {"icon": "gear", "label": "Plugins"}, {"icon": "ai", "label": "DeepSeek"}, {"icon": "terminal", "label": "Acciones"}]},
-  "debpalash-voicestudio": {"name": "VoiceStudio", "tagline": "Clonación de voz, doblaje y audiolibros 100 % local en 646 idiomas", "hero": "voice", "steps": [{"icon": "voice", "label": "Muestra voz"}, {"icon": "ai", "label": "Clona local"}, {"icon": "text", "label": "Texto"}, {"icon": "audio", "label": "Audio final"}]},
-  "chatcut-inc-agent-plugin": {"name": "ChatCut Agent Plugins", "tagline": "Conecta Codex, Claude Code o Cursor para editar vídeo con IA", "hero": "clip", "steps": [{"icon": "agent", "label": "Tu agente"}, {"icon": "gear", "label": "Plugin"}, {"icon": "clip", "label": "ChatCut"}, {"icon": "video", "label": "Vídeo editado"}]},
-  "blixvip-html-anime": {"name": "html-anime", "tagline": "Escenas convertidas en animación dibujada solo con HTML por agentes", "hero": "animation", "steps": [{"icon": "text", "label": "Prompt escena"}, {"icon": "image", "label": "Hoja de planos"}, {"icon": "code", "label": "HTML"}, {"icon": "animation", "label": "Animación"}]},
-  "openclaw-openclaw": {"name": "OpenClaw", "tagline": "Asistente de IA en tus chats con memoria y datos en tu propio equipo", "hero": "robot", "steps": [{"icon": "chat", "label": "Tus chats"}, {"icon": "robot", "label": "Asistente"}, {"icon": "database", "label": "Memoria local"}, {"icon": "phone", "label": "Dispositivos"}]},
-  "ndolestudio-httpsms": {"name": "httpSMS", "tagline": "Envía y recibe SMS por API HTTP usando tu móvil Android", "hero": "phone", "steps": [{"icon": "code", "label": "Tu app"}, {"icon": "web", "label": "API HTTP"}, {"icon": "phone", "label": "Android"}, {"icon": "chat", "label": "SMS"}]},
-  "heygen-com-hyperframes": {"name": "HyperFrames", "tagline": "Escribe HTML y CSS y renderízalo como vídeo MP4 determinista", "hero": "video", "steps": [{"icon": "code", "label": "HTML y CSS"}, {"icon": "agent", "label": "Agente IA"}, {"icon": "terminal", "label": "CLI render"}, {"icon": "video", "label": "MP4"}]},
-  "hypit-ai-hypit": {"name": "Hypit", "tagline": "Agentes que editan vídeos virales por palabras en vez de segundos", "hero": "clip", "steps": [{"icon": "video", "label": "Metraje"}, {"icon": "text", "label": "Transcripción"}, {"icon": "agent", "label": "Edita palabras"}, {"icon": "video", "label": "Vídeo clonado"}]},
-  "gamedev-skills-awesome-gamedev-agent-skills": {"name": "Gamedev Agent Skills", "tagline": "Habilidades para Godot, Unity y Unreal con enrutador de contexto", "hero": "game", "steps": [{"icon": "chat", "label": "Petición"}, {"icon": "search", "label": "Enrutador"}, {"icon": "agent", "label": "Skill motor"}, {"icon": "game", "label": "Juego"}]},
-  "letuandat131-whiteboard-animation-vi": {"name": "Whiteboard Animation VI", "tagline": "Convierte ilustraciones en animaciones de pizarra con mano real", "hero": "animation", "steps": [{"icon": "image", "label": "Ilustración"}, {"icon": "gear", "label": "Grupos color"}, {"icon": "animation", "label": "Mano dibuja"}, {"icon": "video", "label": "Vídeo pizarra"}]},
-  "bangtutorial-bang-motion": {"name": "Bang Motion", "tagline": "Tu agente diseña motion graphics profesionales en un index.html", "hero": "animation", "steps": [{"icon": "text", "label": "Prompt"}, {"icon": "agent", "label": "Skill agente"}, {"icon": "code", "label": "index.html"}, {"icon": "animation", "label": "Motion"}]},
-  "cth9191-animate": {"name": "animate", "tagline": "Animación procedural en canvas exportada a MP4 desde Claude Code", "hero": "animation", "steps": [{"icon": "agent", "label": "Claude Code"}, {"icon": "code", "label": "Canvas"}, {"icon": "terminal", "label": "Playwright"}, {"icon": "video", "label": "MP4"}]},
-  "mromidev-claude-animated-shorts": {"name": "Claude Animated Shorts", "tagline": "Cortos verticales con personajes 2D y escenarios 3D en tu equipo", "hero": "animation", "steps": [{"icon": "text", "label": "Historia"}, {"icon": "agent", "label": "Claude Code"}, {"icon": "image", "label": "Three.js"}, {"icon": "video", "label": "Remotion"}]},
-  "hkuds-cli-anything": {"name": "CLI-Anything", "tagline": "Convierte cualquier software en comandos que un agente puede usar", "hero": "terminal", "steps": [{"icon": "folder", "label": "Software"}, {"icon": "gear", "label": "Genera CLI"}, {"icon": "terminal", "label": "Comandos"}, {"icon": "agent", "label": "Agente IA"}]},
-  "every-app-open-seo": {"name": "OpenSEO", "tagline": "Herramienta SEO open source con IA para analizar y mejorar tu web", "hero": "search", "steps": [{"icon": "web", "label": "Tu web"}, {"icon": "search", "label": "Auditoría"}, {"icon": "ai", "label": "IA sugiere"}, {"icon": "chart", "label": "Ranking"}]},
-  "mukul975-anthropic-cybersecurity-skills": {"name": "Cybersecurity Skills", "tagline": "818 habilidades de ciberseguridad para agentes, instalables con npx", "hero": "shield", "steps": [{"icon": "terminal", "label": "npx install"}, {"icon": "folder", "label": "818 skills"}, {"icon": "agent", "label": "Agente IA"}, {"icon": "shield", "label": "Seguridad"}]},
-  "slavingia-skills": {"name": "Minimalist Entrepreneur", "tagline": "Diez skills de Claude Code basadas en The Minimalist Entrepreneur", "hero": "rocket", "steps": [{"icon": "terminal", "label": "Instala"}, {"icon": "agent", "label": "10 skills"}, {"icon": "text", "label": "Plan negocio"}, {"icon": "rocket", "label": "Lanza"}]},
-  "666ghj-mirofish": {"name": "MiroFish", "tagline": "Motor de inteligencia de enjambre para simular escenarios y tendencias", "hero": "agent", "steps": [{"icon": "database", "label": "Datos"}, {"icon": "agent", "label": "Enjambre"}, {"icon": "gear", "label": "Simulación"}, {"icon": "chart", "label": "Predicción"}]}
+ "harry0703-moneyprinterturbo": {
+  "name": "MoneyPrinterTurbo",
+  "tagline": "Un tema se convierte en un vídeo corto HD con guion, voz y subtítulos",
+  "hero": "video",
+  "steps": [
+   {
+    "icon": "text",
+    "label": "Tema o idea"
+   },
+   {
+    "icon": "ai",
+    "label": "Guion con LLM"
+   },
+   {
+    "icon": "voice",
+    "label": "Voz y subtítulos"
+   },
+   {
+    "icon": "video",
+    "label": "Vídeo corto"
+   }
+  ]
+ },
+ "morluto-rea": {
+  "name": "REA",
+  "tagline": "Ingeniería inversa de binarios y apps Electron guiada por agentes IA",
+  "hero": "search",
+  "steps": [
+   {
+    "icon": "folder",
+    "label": "Binario o app"
+   },
+   {
+    "icon": "terminal",
+    "label": "Servidor MCP"
+   },
+   {
+    "icon": "agent",
+    "label": "Agente analiza"
+   },
+   {
+    "icon": "text",
+    "label": "Informe"
+   }
+  ]
+ },
+ "calesthio-openmontage": {
+  "name": "OpenMontage",
+  "tagline": "Un estudio de producción de vídeo dirigido por agentes desde tu asistente",
+  "hero": "clip",
+  "steps": [
+   {
+    "icon": "chat",
+    "label": "Petición"
+   },
+   {
+    "icon": "agent",
+    "label": "Agentes"
+   },
+   {
+    "icon": "gear",
+    "label": "Pipelines"
+   },
+   {
+    "icon": "video",
+    "label": "Montaje final"
+   }
+  ]
+ },
+ "kaomei-stickman-video-director": {
+  "name": "Stickman Video Director",
+  "tagline": "Estilos de monigotes y prompts para generar vídeos animados con IA",
+  "hero": "animation",
+  "steps": [
+   {
+    "icon": "text",
+    "label": "Guion"
+   },
+   {
+    "icon": "image",
+    "label": "Estilo stickman"
+   },
+   {
+    "icon": "ai",
+    "label": "Prompt de vídeo"
+   },
+   {
+    "icon": "video",
+    "label": "Animación"
+   }
+  ]
+ },
+ "world-monitor-free-geopolitical-intelligence-dashboard": {
+  "name": "World Monitor",
+  "tagline": "Panel gratuito con conflictos, envíos, mercados y ciberamenazas en vivo",
+  "hero": "map",
+  "steps": [
+   {
+    "icon": "web",
+    "label": "Fuentes abiertas"
+   },
+   {
+    "icon": "database",
+    "label": "Agrega datos"
+   },
+   {
+    "icon": "map",
+    "label": "Mapa en vivo"
+   },
+   {
+    "icon": "chart",
+    "label": "Panel"
+   }
+  ]
+ },
+ "immortaldemongod-money-agent": {
+  "name": "Money Agent",
+  "tagline": "Un agente autónomo que intenta ganar dinero real con un verificador externo",
+  "hero": "money",
+  "steps": [
+   {
+    "icon": "agent",
+    "label": "Agente IA"
+   },
+   {
+    "icon": "rocket",
+    "label": "Ejecuta ideas"
+   },
+   {
+    "icon": "shield",
+    "label": "Verificador"
+   },
+   {
+    "icon": "money",
+    "label": "Ingreso real"
+   }
+  ]
+ },
+ "jakeschincariol-youtube-agent-skill": {
+  "name": "YouTube Agent Skill",
+  "tagline": "Once habilidades de Claude para guiones, retención y empaquetado en YouTube",
+  "hero": "video",
+  "steps": [
+   {
+    "icon": "chart",
+    "label": "Datos canal"
+   },
+   {
+    "icon": "agent",
+    "label": "11 skills"
+   },
+   {
+    "icon": "text",
+    "label": "Guion y título"
+   },
+   {
+    "icon": "video",
+    "label": "Vídeo mejor"
+   }
+  ]
+ },
+ "fujiwarachoki-supoclip": {
+  "name": "SupoClip",
+  "tagline": "Extrae con IA los momentos virales de vídeos largos y podcasts",
+  "hero": "clip",
+  "steps": [
+   {
+    "icon": "video",
+    "label": "Vídeo largo"
+   },
+   {
+    "icon": "voice",
+    "label": "Transcribe"
+   },
+   {
+    "icon": "ai",
+    "label": "Detecta momentos"
+   },
+   {
+    "icon": "social",
+    "label": "Clips cortos"
+   }
+  ]
+ },
+ "yihui-dev-awesome-opus5-5-videos": {
+  "name": "Awesome Opus 5.5 Videos",
+  "tagline": "Cientos de vídeos virales hechos con código y sus prompts originales",
+  "hero": "animation",
+  "steps": [
+   {
+    "icon": "text",
+    "label": "Prompt"
+   },
+   {
+    "icon": "ai",
+    "label": "Opus 5.5"
+   },
+   {
+    "icon": "code",
+    "label": "Código web"
+   },
+   {
+    "icon": "video",
+    "label": "Vídeo viral"
+   }
+  ]
+ },
+ "gitroomhq-postiz-app": {
+  "name": "Postiz",
+  "tagline": "Programa y automatiza publicaciones en redes sociales con agentes",
+  "hero": "social",
+  "steps": [
+   {
+    "icon": "text",
+    "label": "Contenido"
+   },
+   {
+    "icon": "agent",
+    "label": "Agente"
+   },
+   {
+    "icon": "calendar",
+    "label": "Programación"
+   },
+   {
+    "icon": "social",
+    "label": "Redes"
+   }
+  ]
+ },
+ "digitalplatdev-freedomain": {
+  "name": "DigitalPlat FreeDomain",
+  "tagline": "Registra dominios gratis y aprende DNS de forma práctica",
+  "hero": "web",
+  "steps": [
+   {
+    "icon": "search",
+    "label": "Elige nombre"
+   },
+   {
+    "icon": "text",
+    "label": "Solicitud"
+   },
+   {
+    "icon": "gear",
+    "label": "Configura DNS"
+   },
+   {
+    "icon": "web",
+    "label": "Dominio activo"
+   }
+  ]
+ },
+ "clone-any-viral-video-with-ai-agents-open-source": {
+  "name": "Hypit",
+  "tagline": "Clona vídeos virales y genera variantes a escala con agentes de IA",
+  "hero": "video",
+  "steps": [
+   {
+    "icon": "video",
+    "label": "Vídeo viral"
+   },
+   {
+    "icon": "search",
+    "label": "Analiza"
+   },
+   {
+    "icon": "agent",
+    "label": "Agentes editan"
+   },
+   {
+    "icon": "clip",
+    "label": "Variantes"
+   }
+  ]
+ },
+ "anomalyco-opencode": {
+  "name": "OpenCode",
+  "tagline": "Agente de programación open source para terminal y escritorio",
+  "hero": "terminal",
+  "steps": [
+   {
+    "icon": "chat",
+    "label": "Tarea"
+   },
+   {
+    "icon": "agent",
+    "label": "Multiagente"
+   },
+   {
+    "icon": "code",
+    "label": "Edita código"
+   },
+   {
+    "icon": "terminal",
+    "label": "Ejecuta"
+   }
+  ]
+ },
+ "edenfunf-reelmimic": {
+  "name": "ReelMimic",
+  "tagline": "Analiza un vídeo de referencia y crea otro nuevo con el mismo estilo",
+  "hero": "clip",
+  "steps": [
+   {
+    "icon": "video",
+    "label": "Referencia"
+   },
+   {
+    "icon": "search",
+    "label": "Analiza estilo"
+   },
+   {
+    "icon": "agent",
+    "label": "Planifica"
+   },
+   {
+    "icon": "video",
+    "label": "Vídeo nuevo"
+   }
+  ]
+ },
+ "hkuds-ai-trader": {
+  "name": "AI-Trader",
+  "tagline": "Plataforma de trading para agentes con señales y paper trading real",
+  "hero": "trade",
+  "steps": [
+   {
+    "icon": "chart",
+    "label": "Datos mercado"
+   },
+   {
+    "icon": "agent",
+    "label": "Agentes IA"
+   },
+   {
+    "icon": "chat",
+    "label": "Señales"
+   },
+   {
+    "icon": "trade",
+    "label": "Operaciones"
+   }
+  ]
+ },
+ "genex-games-genex-desktop": {
+  "name": "Genex Desktop",
+  "tagline": "Crea videojuegos con IA desde una app para macOS, Windows y Linux",
+  "hero": "game",
+  "steps": [
+   {
+    "icon": "chat",
+    "label": "Describe"
+   },
+   {
+    "icon": "ai",
+    "label": "IA genera"
+   },
+   {
+    "icon": "code",
+    "label": "Lógica"
+   },
+   {
+    "icon": "game",
+    "label": "Juego"
+   }
+  ]
+ },
+ "affaan-m-ecc": {
+  "name": "ECC",
+  "tagline": "Planifica, prueba y verifica antes de construir con tu agente de código",
+  "hero": "gear",
+  "steps": [
+   {
+    "icon": "text",
+    "label": "Plan"
+   },
+   {
+    "icon": "agent",
+    "label": "Harness"
+   },
+   {
+    "icon": "shield",
+    "label": "Pruebas"
+   },
+   {
+    "icon": "code",
+    "label": "Código"
+   }
+  ]
+ },
+ "deepseek-ai-deepseek-harness": {
+  "name": "DeepSeek Harness",
+  "tagline": "Arnés de agentes modular basado en plugins de DeepSeek AI",
+  "hero": "agent",
+  "steps": [
+   {
+    "icon": "chat",
+    "label": "Tarea"
+   },
+   {
+    "icon": "gear",
+    "label": "Plugins"
+   },
+   {
+    "icon": "ai",
+    "label": "DeepSeek"
+   },
+   {
+    "icon": "terminal",
+    "label": "Acciones"
+   }
+  ]
+ },
+ "debpalash-voicestudio": {
+  "name": "VoiceStudio",
+  "tagline": "Clonación de voz, doblaje y audiolibros 100 % local en 646 idiomas",
+  "hero": "voice",
+  "steps": [
+   {
+    "icon": "voice",
+    "label": "Muestra voz"
+   },
+   {
+    "icon": "ai",
+    "label": "Clona local"
+   },
+   {
+    "icon": "text",
+    "label": "Texto"
+   },
+   {
+    "icon": "audio",
+    "label": "Audio final"
+   }
+  ]
+ },
+ "chatcut-inc-agent-plugin": {
+  "name": "ChatCut Agent Plugins",
+  "tagline": "Conecta Codex, Claude Code o Cursor para editar vídeo con IA",
+  "hero": "clip",
+  "steps": [
+   {
+    "icon": "agent",
+    "label": "Tu agente"
+   },
+   {
+    "icon": "gear",
+    "label": "Plugin"
+   },
+   {
+    "icon": "clip",
+    "label": "ChatCut"
+   },
+   {
+    "icon": "video",
+    "label": "Vídeo editado"
+   }
+  ]
+ },
+ "blixvip-html-anime": {
+  "name": "html-anime",
+  "tagline": "Escenas convertidas en animación dibujada solo con HTML por agentes",
+  "hero": "animation",
+  "steps": [
+   {
+    "icon": "text",
+    "label": "Prompt escena"
+   },
+   {
+    "icon": "image",
+    "label": "Hoja de planos"
+   },
+   {
+    "icon": "code",
+    "label": "HTML"
+   },
+   {
+    "icon": "animation",
+    "label": "Animación"
+   }
+  ]
+ },
+ "openclaw-openclaw": {
+  "name": "OpenClaw",
+  "tagline": "Asistente de IA en tus chats con memoria y datos en tu propio equipo",
+  "hero": "robot",
+  "steps": [
+   {
+    "icon": "chat",
+    "label": "Tus chats"
+   },
+   {
+    "icon": "robot",
+    "label": "Asistente"
+   },
+   {
+    "icon": "database",
+    "label": "Memoria local"
+   },
+   {
+    "icon": "phone",
+    "label": "Dispositivos"
+   }
+  ]
+ },
+ "ndolestudio-httpsms": {
+  "name": "httpSMS",
+  "tagline": "Envía y recibe SMS por API HTTP usando tu móvil Android",
+  "hero": "phone",
+  "steps": [
+   {
+    "icon": "code",
+    "label": "Tu app"
+   },
+   {
+    "icon": "web",
+    "label": "API HTTP"
+   },
+   {
+    "icon": "phone",
+    "label": "Android"
+   },
+   {
+    "icon": "chat",
+    "label": "SMS"
+   }
+  ]
+ },
+ "heygen-com-hyperframes": {
+  "name": "HyperFrames",
+  "tagline": "Escribe HTML y CSS y renderízalo como vídeo MP4 determinista",
+  "hero": "video",
+  "steps": [
+   {
+    "icon": "code",
+    "label": "HTML y CSS"
+   },
+   {
+    "icon": "agent",
+    "label": "Agente IA"
+   },
+   {
+    "icon": "terminal",
+    "label": "CLI render"
+   },
+   {
+    "icon": "video",
+    "label": "MP4"
+   }
+  ]
+ },
+ "hypit-ai-hypit": {
+  "name": "Hypit",
+  "tagline": "Agentes que editan vídeos virales por palabras en vez de segundos",
+  "hero": "clip",
+  "steps": [
+   {
+    "icon": "video",
+    "label": "Metraje"
+   },
+   {
+    "icon": "text",
+    "label": "Transcripción"
+   },
+   {
+    "icon": "agent",
+    "label": "Edita palabras"
+   },
+   {
+    "icon": "video",
+    "label": "Vídeo clonado"
+   }
+  ]
+ },
+ "gamedev-skills-awesome-gamedev-agent-skills": {
+  "name": "Gamedev Agent Skills",
+  "tagline": "Habilidades para Godot, Unity y Unreal con enrutador de contexto",
+  "hero": "game",
+  "steps": [
+   {
+    "icon": "chat",
+    "label": "Petición"
+   },
+   {
+    "icon": "search",
+    "label": "Enrutador"
+   },
+   {
+    "icon": "agent",
+    "label": "Skill motor"
+   },
+   {
+    "icon": "game",
+    "label": "Juego"
+   }
+  ]
+ },
+ "letuandat131-whiteboard-animation-vi": {
+  "name": "Whiteboard Animation VI",
+  "tagline": "Convierte ilustraciones en animaciones de pizarra con mano real",
+  "hero": "animation",
+  "steps": [
+   {
+    "icon": "image",
+    "label": "Ilustración"
+   },
+   {
+    "icon": "gear",
+    "label": "Grupos color"
+   },
+   {
+    "icon": "animation",
+    "label": "Mano dibuja"
+   },
+   {
+    "icon": "video",
+    "label": "Vídeo pizarra"
+   }
+  ]
+ },
+ "bangtutorial-bang-motion": {
+  "name": "Bang Motion",
+  "tagline": "Tu agente diseña motion graphics profesionales en un index.html",
+  "hero": "animation",
+  "steps": [
+   {
+    "icon": "text",
+    "label": "Prompt"
+   },
+   {
+    "icon": "agent",
+    "label": "Skill agente"
+   },
+   {
+    "icon": "code",
+    "label": "index.html"
+   },
+   {
+    "icon": "animation",
+    "label": "Motion"
+   }
+  ]
+ },
+ "cth9191-animate": {
+  "name": "animate",
+  "tagline": "Animación procedural en canvas exportada a MP4 desde Claude Code",
+  "hero": "animation",
+  "steps": [
+   {
+    "icon": "agent",
+    "label": "Claude Code"
+   },
+   {
+    "icon": "code",
+    "label": "Canvas"
+   },
+   {
+    "icon": "terminal",
+    "label": "Playwright"
+   },
+   {
+    "icon": "video",
+    "label": "MP4"
+   }
+  ]
+ },
+ "mromidev-claude-animated-shorts": {
+  "name": "Claude Animated Shorts",
+  "tagline": "Cortos verticales con personajes 2D y escenarios 3D en tu equipo",
+  "hero": "animation",
+  "steps": [
+   {
+    "icon": "text",
+    "label": "Historia"
+   },
+   {
+    "icon": "agent",
+    "label": "Claude Code"
+   },
+   {
+    "icon": "image",
+    "label": "Three.js"
+   },
+   {
+    "icon": "video",
+    "label": "Remotion"
+   }
+  ]
+ },
+ "hkuds-cli-anything": {
+  "name": "CLI-Anything",
+  "tagline": "Convierte cualquier software en comandos que un agente puede usar",
+  "hero": "terminal",
+  "steps": [
+   {
+    "icon": "folder",
+    "label": "Software"
+   },
+   {
+    "icon": "gear",
+    "label": "Genera CLI"
+   },
+   {
+    "icon": "terminal",
+    "label": "Comandos"
+   },
+   {
+    "icon": "agent",
+    "label": "Agente IA"
+   }
+  ]
+ },
+ "every-app-open-seo": {
+  "name": "OpenSEO",
+  "tagline": "Herramienta SEO open source con IA para analizar y mejorar tu web",
+  "hero": "search",
+  "steps": [
+   {
+    "icon": "web",
+    "label": "Tu web"
+   },
+   {
+    "icon": "search",
+    "label": "Auditoría"
+   },
+   {
+    "icon": "ai",
+    "label": "IA sugiere"
+   },
+   {
+    "icon": "chart",
+    "label": "Ranking"
+   }
+  ]
+ },
+ "mukul975-anthropic-cybersecurity-skills": {
+  "name": "Cybersecurity Skills",
+  "tagline": "818 habilidades de ciberseguridad para agentes, instalables con npx",
+  "hero": "shield",
+  "steps": [
+   {
+    "icon": "terminal",
+    "label": "npx install"
+   },
+   {
+    "icon": "folder",
+    "label": "818 skills"
+   },
+   {
+    "icon": "agent",
+    "label": "Agente IA"
+   },
+   {
+    "icon": "shield",
+    "label": "Seguridad"
+   }
+  ]
+ },
+ "slavingia-skills": {
+  "name": "Minimalist Entrepreneur",
+  "tagline": "Diez skills de Claude Code basadas en The Minimalist Entrepreneur",
+  "hero": "rocket",
+  "steps": [
+   {
+    "icon": "terminal",
+    "label": "Instala"
+   },
+   {
+    "icon": "agent",
+    "label": "10 skills"
+   },
+   {
+    "icon": "text",
+    "label": "Plan negocio"
+   },
+   {
+    "icon": "rocket",
+    "label": "Lanza"
+   }
+  ]
+ },
+ "666ghj-mirofish": {
+  "name": "MiroFish",
+  "tagline": "Motor de inteligencia de enjambre para simular escenarios y tendencias",
+  "hero": "agent",
+  "steps": [
+   {
+    "icon": "database",
+    "label": "Datos"
+   },
+   {
+    "icon": "agent",
+    "label": "Enjambre"
+   },
+   {
+    "icon": "gear",
+    "label": "Simulación"
+   },
+   {
+    "icon": "chart",
+    "label": "Predicción"
+   }
+  ]
+ },
+ "uv": {
+  "name": "uv",
+  "tagline": "Entornos Python reproducibles con dependencias y lockfile en segundos",
+  "hero": "terminal",
+  "steps": [
+   {
+    "icon": "folder",
+    "label": "Proyecto"
+   },
+   {
+    "icon": "terminal",
+    "label": "uv sync"
+   },
+   {
+    "icon": "database",
+    "label": "Lockfile"
+   },
+   {
+    "icon": "code",
+    "label": "Entorno listo"
+   }
+  ]
+ },
+ "playwright": {
+  "name": "Playwright",
+  "tagline": "Pruebas de navegador que comprueban el comportamiento real de tu web",
+  "hero": "web",
+  "steps": [
+   {
+    "icon": "code",
+    "label": "Escribe test"
+   },
+   {
+    "icon": "web",
+    "label": "Abre navegador"
+   },
+   {
+    "icon": "search",
+    "label": "Comprueba"
+   },
+   {
+    "icon": "chart",
+    "label": "Informe"
+   }
+  ]
+ },
+ "fastapi": {
+  "name": "FastAPI",
+  "tagline": "Tu primera API en Python con documentación interactiva automática",
+  "hero": "code",
+  "steps": [
+   {
+    "icon": "code",
+    "label": "Define ruta"
+   },
+   {
+    "icon": "terminal",
+    "label": "Servidor"
+   },
+   {
+    "icon": "web",
+    "label": "Docs /docs"
+   },
+   {
+    "icon": "shield",
+    "label": "Producción"
+   }
+  ]
+ },
+ "jev": {
+  "name": "Jev",
+  "tagline": "Decisiones tipadas con el SDK de TypeSafe separadas de la IA generativa",
+  "hero": "shield",
+  "steps": [
+   {
+    "icon": "text",
+    "label": "Petición"
+   },
+   {
+    "icon": "code",
+    "label": "SDK Python"
+   },
+   {
+    "icon": "gear",
+    "label": "Decisión tipada"
+   },
+   {
+    "icon": "agent",
+    "label": "Acción"
+   }
+  ]
+ },
+ "automaton": {
+  "name": "Conway Automaton",
+  "tagline": "Un agente de IA soberano que se gestiona, replica y evoluciona solo",
+  "hero": "robot",
+  "steps": [
+   {
+    "icon": "agent",
+    "label": "Agente"
+   },
+   {
+    "icon": "cloud",
+    "label": "Conway Cloud"
+   },
+   {
+    "icon": "money",
+    "label": "Ethereum"
+   },
+   {
+    "icon": "rocket",
+    "label": "Se replica"
+   }
+  ]
+ },
+ "dramaclaw": {
+  "name": "DramaClaw",
+  "tagline": "Del guion al vídeo con un motor público, límites y licencia claros",
+  "hero": "clip",
+  "steps": [
+   {
+    "icon": "text",
+    "label": "Guion"
+   },
+   {
+    "icon": "voice",
+    "label": "Voces"
+   },
+   {
+    "icon": "image",
+    "label": "Escenas"
+   },
+   {
+    "icon": "video",
+    "label": "Vídeo"
+   }
+  ]
+ },
+ "bland-ai-claude-code-agent-phone-plan": {
+  "name": "Bland AI + Claude Code",
+  "tagline": "Un número de teléfono para tu agente vía MCP y API",
+  "hero": "phone",
+  "steps": [
+   {
+    "icon": "agent",
+    "label": "Claude Code"
+   },
+   {
+    "icon": "gear",
+    "label": "MCP Bland"
+   },
+   {
+    "icon": "phone",
+    "label": "Número"
+   },
+   {
+    "icon": "voice",
+    "label": "Llamadas"
+   }
+  ]
+ },
+ "remotion": {
+  "name": "Remotion",
+  "tagline": "Crea vídeos y motion graphics programando con React",
+  "hero": "video",
+  "steps": [
+   {
+    "icon": "code",
+    "label": "Componentes"
+   },
+   {
+    "icon": "gear",
+    "label": "Parámetros"
+   },
+   {
+    "icon": "terminal",
+    "label": "Render"
+   },
+   {
+    "icon": "video",
+    "label": "MP4"
+   }
+  ]
+ },
+ "granola-the-ai-notepad-for-back-to-back-meetings": {
+  "name": "Granola",
+  "tagline": "Notas de reuniones con IA sin meter ningún bot en la llamada",
+  "hero": "calendar",
+  "steps": [
+   {
+    "icon": "voice",
+    "label": "Audio local"
+   },
+   {
+    "icon": "ai",
+    "label": "Transcribe"
+   },
+   {
+    "icon": "text",
+    "label": "Tus notas"
+   },
+   {
+    "icon": "calendar",
+    "label": "Resumen"
+   }
+  ]
+ },
+ "generative-ai-api-platform": {
+  "name": "Muapi",
+  "tagline": "Más de 100 modelos de IA generativa con una sola clave de API",
+  "hero": "cloud",
+  "steps": [
+   {
+    "icon": "code",
+    "label": "Tu app"
+   },
+   {
+    "icon": "cloud",
+    "label": "API única"
+   },
+   {
+    "icon": "ai",
+    "label": "100+ modelos"
+   },
+   {
+    "icon": "image",
+    "label": "Imagen/vídeo"
+   }
+  ]
+ }
 }

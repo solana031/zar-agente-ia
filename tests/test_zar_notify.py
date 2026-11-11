@@ -128,3 +128,31 @@ def test_whatsapp_webhook_is_reachable_without_session_but_signed(owner, monkeyp
     sig = 'sha256=' + hmac.new(b'secret', raw, hashlib.sha256).hexdigest()
     assert client.post('/api/whatsapp/webhook', data=raw, headers={'X-Hub-Signature-256': sig, 'Content-Type': 'application/json'}).status_code == 200
     assert client.get('/api/notify/settings').status_code == 401
+
+
+def test_push_call_rings_devices_and_drops_gone_ones(owner, monkeypatch):
+    from app import webpush
+    monkeypatch.setenv('VAPID_PRIVATE_KEY', 'x'); monkeypatch.setenv('VAPID_PUBLIC_KEY', 'y')
+    with holdings.transaction(SCOPE):
+        data = holdings.read(SCOPE); s = notify.settings(data)
+        s['push_subs'] = [{'id': 'd1', 'subscription': {'endpoint': 'https://push/1', 'keys': {}}}, {'id': 'd2', 'subscription': {'endpoint': 'https://push/2', 'keys': {}}}]
+        holdings.write(SCOPE, data)
+    sent = []
+    def fake(sub, payload, ttl=600, urgency='high'):
+        if sub['endpoint'].endswith('2'):
+            raise webpush.PushGone()
+        sent.append(payload)
+    monkeypatch.setattr(webpush, 'send', fake)
+    notify.enqueue(SCOPE, 'call', 'Cuenta caducada', 'texto', key='c1', spoken='TikTok necesita reconectarse')
+    notify.flush(SCOPE)
+    assert sent[0]['type'] == 'call' and sent[0]['title'] == 'Cuenta caducada'
+    view = notify.public_view(SCOPE)
+    assert [d['id'] for d in view['call']['devices']] == ['d1']
+    call = notify.settings(holdings.read(SCOPE))['calls'][sent[0]['id']]
+    assert call['text'] == 'TikTok necesita reconectarse' and call['status'] == 'RINGING'
+
+
+def test_call_without_devices_falls_back_to_email(owner):
+    notify.enqueue(SCOPE, 'call', 'Urgente', 'texto', key='c2')
+    notify.flush(SCOPE)
+    assert owner[-1][1] == 'Urgente'

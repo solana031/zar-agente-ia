@@ -43,7 +43,7 @@ with sync_playwright() as p:
         page.get_by_role('button',name='TODAS',exact=True).click()
         page.locator('#tiktok .primary').click()
         expect(page.get_by_role('dialog')).to_be_visible()
-        expect(page.get_by_role('dialog')).to_contain_text('Todavía no hay OAuth')
+        expect(page.get_by_role('dialog')).to_contain_text('Login Kit')
         page.get_by_role('button',name='CERRAR',exact=True).click()
         page.locator('#shopify .primary').click()
         expect(page.get_by_role('dialog')).to_contain_text('tienda y su integración Admin API existentes')

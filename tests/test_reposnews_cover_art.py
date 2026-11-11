@@ -50,9 +50,21 @@ def test_legacy_generic_canvas_is_replaced_publicly():
     legacy = dict(article('demo', 'x'), image_asset='cover-' + 'a' * 24 + '.png',
                   cover_provenance={'source_type': 'GENERATED', 'generator': 'ReposNews/internal-editorial-canvas-v1'})
     shown = public_article(legacy)
-    assert shown['cover_url'] == '/media/reposnews/editorial-demo.png'
+    assert shown['cover_url'] == '/media/reposnews/editorial-demo.png?v=3'
     official = dict(legacy, cover_provenance={'source_type': 'OFFICIAL'})
-    assert public_article(official)['image_asset'] == legacy['image_asset']
+    assert public_article(official)['cover_url'] == '/media/reposnews/editorial-demo.png?v=3'  # logo becomes a reference
+    ai = dict(legacy, cover_provenance={'source_type': 'GENERATED', 'generator': 'Gemini/model'})
+    assert public_article(ai)['image_asset'] == legacy['image_asset']  # unique AI cover kept
+
+
+def test_reference_visual_is_composed_into_a_distinct_cover():
+    import io
+    from PIL import Image as I
+    logo = io.BytesIO(); I.new('RGB', (400, 200), 'white').save(logo, 'PNG')
+    canvas = I.new('RGB', (400, 200), 'white'); canvas.paste(I.new('RGB', (200, 80), 'navy'), (100, 60))
+    logo = io.BytesIO(); canvas.save(logo, 'PNG')
+    a = article('logo-tool', 'Herramienta de vídeo')
+    assert art.render(a, None, logo.getvalue()) != art.render(a)
 
 
 def test_editorial_fallback_uses_ai_spec_when_available(monkeypatch):

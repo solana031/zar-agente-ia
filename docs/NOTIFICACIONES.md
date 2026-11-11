@@ -35,6 +35,11 @@ Webhook en Meta: `https://<dominio de ZAR>/api/whatsapp/webhook`, campo `message
 Solo se aceptan mensajes firmados y del número configurado en Ajustes. Desde WhatsApp puedes pedir avisos,
 consultar los activos y publicar un artículo listo con el botón «Publicar» (ligado a la revisión exacta del borrador).
 
-## Llamadas (preparado, desactivado)
-Variables `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN` y `TWILIO_FROM_NUMBER`. Cuando existan, «Llamada» se puede
-marcar como canal de avisos importantes y ZAR leerá el aviso por voz.
+## Llamadas de ZAR (gratis, sin operador)
+ZAR "llama" con notificaciones Web Push estándar (sin coste): el móvil o PC suena con «📞 ZAR te llama»,
+al contestar ZAR lee el aviso con voz y entiende «sí»/«no» (o botones).
+- Claves `VAPID_PRIVATE_KEY` y `VAPID_PUBLIC_KEY` ya configuradas en Railway.
+- Activar en cada dispositivo: Notificaciones → Ajustes → Llamadas de ZAR → «Activar en este dispositivo».
+  En iPhone hay que añadir ZAR a la pantalla de inicio y abrirlo desde ahí (requisito de Apple).
+- Elegir «Llamada» como canal de avisos importantes o pedirlo en el chat: «llámame si falla una publicación…».
+- Twilio (llamada telefónica real, de pago) sigue disponible con `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER`.

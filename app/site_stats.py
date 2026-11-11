@@ -72,7 +72,7 @@ def flush():
         temp.replace(path)
 
 
-def summary(days=7):
+def summary(days=7, top=10):
     flush()
     data = _read()
     today = datetime.now(timezone.utc).date()
@@ -83,5 +83,5 @@ def summary(days=7):
         for path, count in data.get(day, {}).items():
             pages[path] = pages.get(path, 0) + count
     return {'total': sum(pages.values()), 'previous': sum(sum(data.get(day, {}).values()) for day in previous),
-            'top': sorted(pages.items(), key=lambda item: -item[1])[:10],
+            'top': sorted(pages.items(), key=lambda item: -item[1])[:top],
             'daily': [(day, sum(data.get(day, {}).values())) for day in reversed(current)]}

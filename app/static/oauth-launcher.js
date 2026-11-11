@@ -87,7 +87,7 @@
     if(!accountResponse.ok)throw Error(accountResponse.status===401?'Tu sesión ha caducado. Inicia sesión en ZAR y vuelve a conectar.':'No se pudo leer la cuenta. Comprueba tu conexión y vuelve a intentarlo.');
     const csrf=(await accountResponse.json()).csrf;
     const payload={external:true};if(local)payload.authorization_path=local.pathname+local.search;
-    const r=await fetch('/api/accounts/connections/'+provider+'/'+(options.operation==='connect'?'connect':'reconnect'),{method:'POST',headers:{'Content-Type':'application/json','X-ZAR-Business-CSRF':csrf},body:JSON.stringify(payload)});result=await r.json().catch(()=>({}));if(!r.ok||!result.url||result.assistant)throw Error(result.message||(r.status===401?'Tu sesión ha caducado. Inicia sesión en ZAR y vuelve a conectar.':'No se pudo abrir la autorización. Vuelve a intentarlo desde CUENTAS.'));
+    const r=await fetch('/api/accounts/connections/'+provider+'/'+(options.operation==='connect'?'connect':'reconnect'),{method:'POST',headers:{'Content-Type':'application/json','X-ZAR-Business-CSRF':csrf},body:JSON.stringify(payload)});result=await r.json().catch(()=>({}));if(result.assistant){const setup=Error(result.message||'');setup.assistant=result.assistant;throw setup;}if(!r.ok||!result.url)throw Error(result.message||(r.status===401?'Tu sesión ha caducado. Inicia sesión en ZAR y vuelve a conectar.':'No se pudo abrir la autorización. Vuelve a intentarlo desde CUENTAS.'));
    }
    const target=safeURL(provider,result.url);
    if(!result.external&&target.origin===location.origin)target.searchParams.set('oauth_popup','1');
@@ -110,7 +110,7 @@
    }else if(attempt.popup){attempt.fallback.hidden=true;attempt.popup.location.replace(target.href);attempt.started=true;}
    else {attempt.started=true;window.top.location.assign(target.href);return;}
    watch(attempt);
-  }catch(error){try{attempt.popup?.close();}catch{}remember(null);active=null;attempt.fallback.hidden=true;attempt.cancel.textContent='CERRAR';attempt.cancel.onclick=()=>attempt.box.remove();state(attempt,'ERROR',error.message||'No se pudo abrir la autorización. Vuelve a intentarlo desde CUENTAS.');}
+  }catch(error){try{attempt.popup?.close();}catch{}remember(null);active=null;if(error.assistant){attempt.box.remove();window.dispatchEvent(new CustomEvent('zar-oauth-assistant',{detail:{provider:error.assistant,message:error.message}}));return;}attempt.fallback.hidden=true;attempt.cancel.textContent='CERRAR';attempt.cancel.onclick=()=>attempt.box.remove();state(attempt,'ERROR',error.message||'No se pudo abrir la autorización. Vuelve a intentarlo desde CUENTAS.');}
  };
  window.addEventListener('message',e=>{
   if(e.origin!==location.origin)return;

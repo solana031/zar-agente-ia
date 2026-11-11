@@ -489,8 +489,15 @@ def render(lang='es', slug='', preview=False, csp_nonce=None):
     title=article['title_'+lang] if article else {'es':'ReposNews · Repositorios, herramientas y guías','en':'ReposNews · Repositories, tools and guides'}[lang]
     description=article['summary_'+lang] if article else ('Análisis y guías sobre proyectos tecnológicos con fuentes verificadas.' if lang=='es' else 'Project analysis and practical guides backed by official sources.')
     if slug in pages: title={'about':('Sobre ReposNews','About ReposNews'),'contact':('Contacto','Contact'),'privacy':('Privacidad','Privacy'),'cookies':('Cookies','Cookies'),'legal':('Aviso legal','Legal notice'),'repositories':('Repositorios','Repositories'),'guides':('Guías','Guides'),'trends':('Actividad','Activity')}[slug][0 if lang=='es' else 1]+' · ReposNews'
+    order=str(request.args.get('orden','recientes'))[:20]
+    pages=[]
+    if not article:
+        from .reposnews_rankings import SORTS,sort_rows
+        if order not in SORTS:order='recientes'
+        if not query:rows=sort_rows(rows,order)
+        pages=[rows[i:i+12] for i in range(0,len(rows),12)]
     from .reposnews_adsense import public_config
-    return render_template('reposnews.html',lang=lang,rows=rows,article=article,body=article_body_html(article,lang) if article else None,slug=slug,preview=preview,base=base,title=title,description=description,origin=ORIGIN,path=path,official_covers={'uv':'uv-official.svg','fastapi':'fastapi-official.png','playwright':'playwright-official.svg','jev':'jev-editorial.svg','automaton':'automaton-editorial.svg','dramaclaw':'dramaclaw-official.png'},public_legal=public_legal_profile(data),query=query,category=category,categories=categories,legal_status={'status':legal_status(data)['status']},adsense=public_config(data),csp_nonce=csp_nonce or secrets.token_urlsafe(24),utility_page=bool(query or category or slug=='trends'))
+    return render_template('reposnews.html',order=order,pages=pages,lang=lang,rows=rows,article=article,body=article_body_html(article,lang) if article else None,slug=slug,preview=preview,base=base,title=title,description=description,origin=ORIGIN,path=path,official_covers={'uv':'uv-official.svg','fastapi':'fastapi-official.png','playwright':'playwright-official.svg','jev':'jev-editorial.svg','automaton':'automaton-editorial.svg','dramaclaw':'dramaclaw-official.png'},public_legal=public_legal_profile(data),query=query,category=category,categories=categories,legal_status={'status':legal_status(data)['status']},adsense=public_config(data),csp_nonce=csp_nonce or secrets.token_urlsafe(24),utility_page=bool(query or category or slug=='trends' or request.args.get('orden')))
 
 
 def related_guides(article, rows, lang, preview=False):
@@ -536,7 +543,14 @@ def media(asset):
         if not article:abort(404)
         from .reposnews_assets import editorial_cover
         source=next((a for a in read().get('articles',[]) if a['id']==editorial[1]),{})
-        blob=editorial_cover(dict(article,cover_spec=article.get('cover_spec') or source.get('cover_spec')))
+        prov=article.get('cover_provenance') or {}
+        from .reposnews_covers import CURATED
+        original=article.get('image_asset') or CURATED.get(article.get('id'))
+        from .reposnews_assets import FRAME_TYPES,frame_cleared
+        frame=article.get('image_kind') in FRAME_TYPES
+        cleared=frame_cleared(prov) or any(frame_cleared(x) for x in article.get('assets',[]) if x.get('role')=='COVER' or x.get('asset')==original)
+        reference=None if prov.get('source_type')=='GENERATED' or str(original or '').startswith('editorial-') or (frame and not cleared) else original
+        blob=editorial_cover(dict(article,cover_spec=article.get('cover_spec') or source.get('cover_spec')),reference)
         return Response(blob,mimetype='image/png',headers={'Cache-Control':'public, max-age=86400','X-Content-Type-Options':'nosniff'})
     if re.fullmatch(r'(?:source-[a-f0-9]{24}\.png|cover-[a-f0-9]{24}(?:\.png|-sm\.webp))',asset):
         data=read()

@@ -353,8 +353,9 @@ def _icon(d, name, cx, cy, s, fg, bg, accent):
         d.ellipse((cx - s * .4, cy - s * .4, cx + s * .4, cy + s * .4), fill=accent)
 
 
-def render(article, spec=None):
+def render(article, spec=None, reference=None):
     spec = spec or spec_for(article)
+    ref = _reference(reference)
     seed = _seed(article.get('id') or article.get('repo'), spec.get('name'), spec.get('tagline'))
     accent, second = PALETTES[seed[0] % len(PALETTES)]
     top = (10 + seed[1] % 8, 30 + seed[2] % 12, 26 + seed[3] % 10)
@@ -380,24 +381,47 @@ def render(article, spec=None):
         d.ellipse((x - r, y - r, x + r, y + r), fill=dot)
     # Hero illustration.
     base_dark = tuple(max(0, c - 6) for c in top)
-    d.ellipse((gx - 150, gy - 150, gx + 150, gy + 150), fill=base_dark, outline=accent, width=6)
-    d.ellipse((gx - 185, gy - 185, gx + 185, gy + 185), outline=tuple(int(c * .45) for c in accent), width=2)
-    _icon(d, spec['hero'], gx, gy, 82, IVORY, base_dark, accent)
-    # Title block.
+    if ref is not None:
+        # Official project visual as a framed reference card, tilted slightly, with the
+        # topic icon as a badge: still a ReposNews composition, not a copied cover.
+        cw, ch = 400, 236
+        card = Image.new('RGBA', (cw + 24, ch + 24), (0, 0, 0, 0))
+        cd = ImageDraw.Draw(card)
+        cd.rounded_rectangle((12, 12, cw + 12, ch + 12), radius=26, fill=(250, 248, 240, 255), outline=accent + (255,), width=5)
+        fitted = ref.copy()
+        fitted.thumbnail((cw - 40, ch - 40), Image.Resampling.LANCZOS)
+        card.paste(fitted, (12 + (cw - fitted.width) // 2, 12 + (ch - fitted.height) // 2), fitted if fitted.mode == 'RGBA' else None)
+        card = card.rotate(-4 + seed[9] % 8, resample=Image.Resampling.BICUBIC, expand=True)
+        shadow = Image.new('L', card.size, 0)
+        shadow.paste(card.split()[3].point(lambda v: 120 if v else 0), (0, 0))
+        shadow = shadow.filter(ImageFilter.GaussianBlur(18))
+        px, py = gx - card.width // 2, gy - card.height // 2
+        im.paste(Image.new('RGB', card.size, (0, 0, 0)), (px + 10, py + 16), shadow)
+        im.paste(card, (px, py), card)
+        d = ImageDraw.Draw(im)
+        bx, by = px + card.width - 46, py + card.height - 46
+        d.ellipse((bx - 46, by - 46, bx + 46, by + 46), fill=base_dark, outline=accent, width=5)
+        _icon(d, spec['hero'], bx, by, 26, IVORY, base_dark, accent)
+    else:
+        d.ellipse((gx - 150, gy - 150, gx + 150, gy + 150), fill=base_dark, outline=accent, width=6)
+        d.ellipse((gx - 185, gy - 185, gx + 185, gy + 185), outline=tuple(int(c * .45) for c in accent), width=2)
+        _icon(d, spec['hero'], gx, gy, 82, IVORY, base_dark, accent)
+    # Title block (narrower when a reference card occupies the right side).
+    text_w = 640 if ref is not None else 720
     d.text((72, 70), 'REPOSNEWS  ·  CÓMO FUNCIONA', fill=accent, font=_font(22))
     d.line((72, 106, 140, 106), fill=accent, width=4)
     name_font = _font(78)
-    lines = _wrap(d, spec['name'], name_font, 720, 2)
-    if len(lines) > 1 or d.textlength(lines[0], font=name_font) > 720:
+    lines = _wrap(d, spec['name'], name_font, text_w, 2)
+    if len(lines) > 1 or d.textlength(lines[0], font=name_font) > text_w:
         name_font = _font(62)
-        lines = _wrap(d, spec['name'], name_font, 720, 2)
+        lines = _wrap(d, spec['name'], name_font, text_w, 2)
     y = 130
     for line in lines:
         d.text((70, y), line, fill=IVORY, font=name_font)
         y += int(name_font.size * 1.12)
     if spec.get('tagline'):
         tag_font = _font(30, bold=False)
-        for line in _wrap(d, spec['tagline'], tag_font, 720, 2):
+        for line in _wrap(d, spec['tagline'], tag_font, text_w, 2):
             d.text((72, y + 10), line, fill=(200, 214, 196), font=tag_font)
             y += 40
     # How-it-works pipeline.
@@ -434,17 +458,54 @@ def render(article, spec=None):
     return out.getvalue()
 
 
+def _reference(blob):
+    if not blob:
+        return None
+    try:
+        with Image.open(io.BytesIO(blob)) as image:
+            image.load()
+            ref = image.convert('RGBA')
+    except (OSError, ValueError, Image.DecompressionBombError):
+        return None
+    # Trim flat padding (ZAR pads official images onto a light canvas).
+    from PIL import ImageChops
+    for _ in range(3):  # nested paddings (ZAR canvas + provider letterbox)
+        background = Image.new('RGBA', ref.size, ref.getpixel((0, 0)))
+        box = ImageChops.difference(ref, background).convert('L').point(lambda v: 255 if v > 18 else 0).getbbox()
+        if not box or box == (0, 0, ref.width, ref.height) or (box[2] - box[0]) * (box[3] - box[1]) < ref.width * ref.height * .04:
+            break
+        ref = ref.crop(box)
+    return ref if ref.width >= 40 and ref.height >= 20 else None
+
+
+def reference_for(asset):
+    """Raster official visual already published for the article (logo/og image), if any."""
+    from .reposnews_covers import asset_path
+    path = asset_path(asset) if asset else None
+    if not path or path.suffix.lower() not in {'.png', '.jpg', '.jpeg', '.webp'} or not path.is_file():
+        return None
+    try:
+        return path.read_bytes() if path.stat().st_size < 12_000_000 else None
+    except OSError:
+        return None
+
+
 @lru_cache(maxsize=96)
-def cached_render(key):
+def cached_render(key, reference_key=None):
     article = json.loads(key)
-    return render(article, article.get('cover_spec') if isinstance(article.get('cover_spec'), dict) else None)
+    reference = reference_for(article.get('_reference_asset')) if reference_key else None
+    return render(article, article.get('cover_spec') if isinstance(article.get('cover_spec'), dict) else None, reference)
 
 
-def render_public(article):
+def render_public(article, reference_asset=None):
     """Request-path render: never calls an AI provider, cached per article content."""
     fields = {k: article.get(k) for k in ('id', 'repo', 'project_name', 'category', 'title_en', 'summary_en', 'title_es', 'summary_es')}
     fields['cover_spec'] = spec_for(article)
-    return cached_render(json.dumps(fields, sort_keys=True, ensure_ascii=False))
+    reference_key = None
+    if reference_asset and reference_for(reference_asset):
+        fields['_reference_asset'] = reference_asset
+        reference_key = reference_asset
+    return cached_render(json.dumps(fields, sort_keys=True, ensure_ascii=False), reference_key)
 
 
 def _public_cover_is_generated(article):

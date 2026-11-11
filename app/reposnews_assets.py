@@ -21,23 +21,24 @@ def public_article(article):
     result['assets']=[a for a in result.get('assets',[]) if not ({a.get('source_type'),a.get('kind')} & FRAME_TYPES) or frame_cleared(a)]
     cover=next((a for a in article.get('assets',[]) if a.get('role')=='COVER'),{})
     restricted=article.get('image_kind') in FRAME_TYPES and not (frame_cleared(cover) or frame_cleared(article.get('cover_provenance') or {}))
-    missing=(article.get('id') not in CURATED_ARTICLES and
-             (not article.get('image_asset') or article.get('image_asset')=='home.png'))
-    # Legacy generic canvas covers ("</>" art) are replaced by the per-article
-    # "how it works" illustration rendered from the article's cover spec.
-    generic=(article.get('id') not in CURATED_ARTICLES and
-             (article.get('cover_provenance') or {}).get('generator') in ('ReposNews/internal-editorial-canvas-v1','ReposNews/internal-editorial-canvas-v2'))
+    prov=article.get('cover_provenance') or {}
+    # Every published article shows its own ZAR-made cover. Only covers already
+    # generated uniquely for the article by an image model are kept as they are;
+    # official logos/screenshots become a reference inside the ZAR composition.
+    ai_made=prov.get('source_type')=='GENERATED' and not str(prov.get('generator','')).startswith('ReposNews/internal')
+    generic=not ai_made
+    missing=False
     if restricted or missing or generic:
         result.update(image_asset='editorial-'+article['id']+'.png',
-            cover_url='/media/reposnews/editorial-'+article['id']+'.png',cover_thumb=None,
+            cover_url='/media/reposnews/editorial-'+article['id']+'.png?v=3',cover_thumb=None,
             image_kind='GENERATED',image_attribution='ReposNews · ilustración editorial propia / original editorial illustration',
             cover_provenance={'source_type':'GENERATED','generator':'ReposNews/internal-editorial-canvas-v2'})
     return result
 
-def editorial_cover(article):
+def editorial_cover(article, reference_asset=None):
     """Request-path render of the article's unique cover; never calls a provider."""
     from .reposnews_cover_art import render_public
-    return render_public(article)
+    return render_public(article, reference_asset)
 
 
 def inspect_image(content):

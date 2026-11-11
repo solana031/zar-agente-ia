@@ -75,10 +75,17 @@ def settings(data):
     s.setdefault('subscriptions', [])
     s.setdefault('outbox', [])
     s.setdefault('questions', {})
+    s.setdefault('push_subs', [])
+    s.setdefault('calls', {})
     if not s.get('defaults_v1'):
         s['subscriptions'].append(_subscription('resumen_semanal', {'unit': 'week', 'every': 1, 'weekday': 0, 'hour': 9}, 'email', 'default'))
         s['defaults_v1'] = True
     return s
+
+
+def _vapid_public():
+    from . import webpush
+    return webpush.public_key()
 
 
 def public_view(scope):
@@ -87,7 +94,9 @@ def public_view(scope):
     return {
         'email': {**s['email'], 'from': ZAR_EMAIL},
         'whatsapp': {**s['whatsapp'], 'configured': whatsapp_configured()},
-        'call': {**s['call'], 'configured': call_configured()},
+        'call': {**s['call'], 'configured': call_configured(), 'push_ready': push_ready(), 'devices': [
+            {'id': d['id'], 'label': d.get('label'), 'created_at': d.get('created_at')} for d in s['push_subs']],
+            'vapid_public_key': _vapid_public()},
         'important': s['important'],
         'subscriptions': [{k: v for k, v in sub.items() if k != 'last_error_detail'} for sub in s['subscriptions'] if sub.get('active', True)],
         'outbox': [{k: row.get(k) for k in ('id', 'channel', 'subject', 'status', 'created_at', 'sent_at', 'error')} for row in s['outbox'][-15:]][::-1],
@@ -489,8 +498,52 @@ def whatsapp_configured():
     return bool(os.environ.get('WHATSAPP_TOKEN') and os.environ.get('WHATSAPP_PHONE_NUMBER_ID'))
 
 
-def call_configured():
+def twilio_configured():
     return bool(os.environ.get('TWILIO_ACCOUNT_SID') and os.environ.get('TWILIO_AUTH_TOKEN') and os.environ.get('TWILIO_FROM_NUMBER'))
+
+
+def push_ready():
+    from . import webpush
+    return webpush.configured()
+
+
+def call_configured():
+    return push_ready() or twilio_configured()
+
+
+def push_call(scope, title, text, question=None):
+    """Free 'phone call' from ZAR: rings the owner's devices through Web Push."""
+    from . import webpush
+    call_id = secrets.token_hex(6)
+    with holdings.transaction(scope):
+        data = holdings.read(scope)
+        s = settings(data)
+        devices = list(s['push_subs'])
+        s['calls'][call_id] = {'id': call_id, 'title': title[:160], 'text': text[:1500], 'question': question,
+                               'created_at': _now(), 'status': 'RINGING'}
+        for key in [k for k, v in s['calls'].items() if _now() - v.get('created_at', 0) > 7 * 86400]:
+            s['calls'].pop(key, None)
+        holdings.write(scope, data)
+    if not devices:
+        raise ChannelError('PUSH_NO_DEVICE')
+    delivered, gone = 0, []
+    for device in devices:
+        try:
+            webpush.send(device['subscription'], {'type': 'call', 'id': call_id, 'title': title[:120], 'body': text[:200]}, ttl=900)
+            delivered += 1
+        except webpush.PushGone:
+            gone.append(device['id'])
+        except (ValueError, requests.RequestException):
+            pass
+    if gone:
+        with holdings.transaction(scope):
+            data = holdings.read(scope)
+            s = settings(data)
+            s['push_subs'] = [d for d in s['push_subs'] if d['id'] not in gone]
+            holdings.write(scope, data)
+    if not delivered:
+        raise ChannelError('PUSH_NOT_DELIVERED')
+    return call_id
 
 
 class ChannelError(ValueError):
@@ -580,7 +633,7 @@ def place_call(to, text):
 
 # ------------------------------------------------------------------ outbox
 
-def enqueue(scope, channel, subject, text, key=None, body_html=None, buttons=None, question=None):
+def enqueue(scope, channel, subject, text, key=None, body_html=None, buttons=None, question=None, spoken=None):
     key = key or secrets.token_hex(8)
     with holdings.transaction(scope):
         data = holdings.read(scope)
@@ -588,7 +641,7 @@ def enqueue(scope, channel, subject, text, key=None, body_html=None, buttons=Non
         if any(row.get('key') == key for row in s['outbox']):
             return None
         row = {'id': secrets.token_hex(6), 'key': key, 'channel': channel, 'subject': subject[:200], 'text': text[:20000],
-               'html': body_html, 'buttons': buttons, 'question': question, 'status': 'PENDING', 'attempts': 0,
+               'html': body_html, 'buttons': buttons, 'question': question, 'spoken': spoken, 'status': 'PENDING', 'attempts': 0,
                'created_at': datetime.now(timezone.utc).isoformat(), 'next_try': 0}
         s['outbox'].append(row)
         if len(s['outbox']) > 300:
@@ -603,7 +656,7 @@ def _deliver(scope, s, row):
     channel = row['channel']
     if channel == 'whatsapp' and (not s['whatsapp'].get('to') or not whatsapp_configured()):
         channel = 'email'
-    if channel == 'call' and (not s['call'].get('to') or not call_configured()):
+    if channel == 'call' and not s.get('push_subs') and (not s['call'].get('to') or not twilio_configured()):
         channel = 'email'
     if channel == 'email':
         if not s['email'].get('enabled', True):
@@ -612,6 +665,8 @@ def _deliver(scope, s, row):
     if channel == 'whatsapp':
         body = row['subject'] + '\n\n' + row['text'] if row['subject'] not in row['text'][:200] else row['text']
         return 'SENT', send_whatsapp(s['whatsapp']['to'], body[:4000], row.get('buttons'))
+    if s.get('push_subs'):
+        return 'SENT', push_call(scope, row['subject'], row.get('spoken') or row['text'][:1200], row.get('question'))
     return 'SENT', place_call(s['call']['to'], row['subject'] + '. ' + row['text'][:400])
 
 
@@ -621,6 +676,7 @@ def flush(scope, limit=5):
         s = settings(data)
         due = [dict(r) for r in s['outbox'] if r['status'] == 'PENDING' and r.get('next_try', 0) <= _now()][:limit]
         snapshot = {k: dict(s[k]) for k in ('email', 'whatsapp', 'call')}
+        snapshot['push_subs'] = list(s['push_subs'])
         holdings.write(scope, data)
     for row in due:
         try:
@@ -688,13 +744,14 @@ def on_event(scope, row):
     for channel in s['important'].get('channels', ['email']):
         question = None
         buttons = None
-        if channel == 'whatsapp' and row.get('type') == 'ARTICLE_READY' and row.get('entity_id'):
+        if channel in ('whatsapp', 'call') and row.get('type') == 'ARTICLE_READY' and row.get('entity_id'):
             qid = secrets.token_hex(5)
             question = {'id': qid, 'kind': 'ARTICLE_PUBLISH', 'article_id': row.get('entity_id')}
             buttons = [{'id': 'q:%s:yes' % qid, 'title': 'Publicar'}, {'id': 'q:%s:no' % qid, 'title': 'Más tarde'}]
             _remember_question(scope, question)
+        spoken = message + (' ¿Quieres que lo publique?' if question else '')
         enqueue(scope, channel, title, text if channel == 'email' else title + '\n' + message + '\n' + url,
-                key='event:%s:%s' % (channel, row.get('notification_key') or row.get('id')), body_html=body, buttons=buttons, question=question)
+                key='event:%s:%s' % (channel, row.get('notification_key') or row.get('id')), body_html=body, buttons=buttons, question=question, spoken=spoken)
 
 
 # ------------------------------------------------------------------ questions over WhatsApp
@@ -867,6 +924,74 @@ def register(app, scope_fn, csrf_owner):
         enqueue(scope, 'email', title, text, key='manual:%d' % int(_now()), body_html=body)
         flush(scope)
         return jsonify(ok=True, settings=public_view(scope))
+
+    @app.get('/zar-sw.js')
+    def zar_service_worker():
+        from flask import send_file
+        from pathlib import Path
+        response = send_file(Path(__file__).parent / 'static' / 'zar-sw.js', mimetype='text/javascript', max_age=0)
+        response.headers['Service-Worker-Allowed'] = '/'
+        response.headers['Cache-Control'] = 'no-cache'
+        return response
+
+    @app.post('/api/notify/push/subscribe')
+    def notify_push_subscribe():
+        scope = csrf_owner()
+        payload = request.get_json(silent=True) or {}
+        sub = payload.get('subscription') or {}
+        endpoint = str(sub.get('endpoint') or '')
+        keys = sub.get('keys') or {}
+        if not endpoint.startswith('https://') or len(endpoint) > 1000 or not keys.get('p256dh') or not keys.get('auth'):
+            return jsonify(ok=False, error='SUBSCRIPTION_INVALID'), 400
+        clean = {'endpoint': endpoint, 'keys': {'p256dh': str(keys['p256dh'])[:200], 'auth': str(keys['auth'])[:100]}}
+        with holdings.transaction(scope):
+            data = holdings.read(scope)
+            s = settings(data)
+            s['push_subs'] = [d for d in s['push_subs'] if d['subscription']['endpoint'] != endpoint]
+            s['push_subs'].append({'id': secrets.token_hex(5), 'label': str(payload.get('label') or 'Dispositivo')[:60],
+                                   'subscription': clean, 'created_at': datetime.now(timezone.utc).isoformat()})
+            s['push_subs'] = s['push_subs'][-8:]
+            holdings.write(scope, data)
+        return jsonify(ok=True, settings=public_view(scope))
+
+    @app.post('/api/notify/push/<device>/remove')
+    def notify_push_remove(device):
+        scope = csrf_owner()
+        with holdings.transaction(scope):
+            data = holdings.read(scope)
+            s = settings(data)
+            s['push_subs'] = [d for d in s['push_subs'] if d['id'] != device]
+            holdings.write(scope, data)
+        return jsonify(ok=True, settings=public_view(scope))
+
+    @app.get('/api/calls/<call_id>')
+    def call_read(call_id):
+        call = settings(holdings.read(owner())).get('calls', {}).get(call_id)
+        if not call:
+            return jsonify(ok=False, error='CALL_NOT_FOUND'), 404
+        question = call.get('question') or {}
+        return jsonify(ok=True, csrf=session.setdefault('business_csrf', secrets.token_urlsafe(32)), call={
+            'id': call['id'], 'title': call['title'], 'text': call['text'], 'status': call.get('status'),
+            'options': [{'id': 'yes', 'label': 'Sí, publícalo'}, {'id': 'no', 'label': 'Más tarde'}] if question.get('kind') == 'ARTICLE_PUBLISH' else []})
+
+    @app.post('/api/calls/<call_id>/answer')
+    def call_answer(call_id):
+        scope = csrf_owner()
+        answer = str((request.get_json(silent=True) or {}).get('answer') or '')
+        if answer not in {'yes', 'no', 'heard', 'declined'}:
+            return jsonify(ok=False, error='ANSWER_INVALID'), 400
+        with holdings.transaction(scope):
+            data = holdings.read(scope)
+            call = settings(data)['calls'].get(call_id)
+            if not call:
+                return jsonify(ok=False, error='CALL_NOT_FOUND'), 404
+            call.update(status='ANSWERED' if answer != 'declined' else 'DECLINED', answer=answer, answered_at=_now())
+            question = call.get('question') or {}
+            holdings.write(scope, data)
+        reply = 'Gracias, queda anotado.'
+        if question.get('id') and answer in {'yes', 'no'}:
+            reply = answer_question(scope, question['id'], answer)
+        return jsonify(ok=True, reply=reply)
 
     @app.get('/api/whatsapp/webhook')
     def whatsapp_verify():

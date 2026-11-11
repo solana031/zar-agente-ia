@@ -58,6 +58,7 @@
  };
  function assistant(id){const data=instructions[id];if(!data)return;const dialog=document.getElementById('assistant');dialog.querySelector('h2').textContent=data.title;dialog.querySelector('p').textContent=data.text;dialog.querySelector('ol').innerHTML=data.steps.map(s=>'<li>'+esc(s)+'</li>').join('');dialog.querySelector('a').href=data.url;dialog.showModal();}
  document.getElementById('assistant').querySelector('button').onclick=()=>document.getElementById('assistant').close();
+ window.addEventListener('zar-oauth-assistant',e=>{notice.textContent=e.detail.message||'';assistant(e.detail.provider);});
  document.addEventListener('click',async e=>{
   const b=e.target.closest('button');if(!b)return;
   if(b.dataset.filter){filter=b.dataset.filter;document.querySelectorAll('[data-filter]').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));render();return;}
