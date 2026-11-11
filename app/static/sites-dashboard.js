@@ -22,7 +22,7 @@
 
  function organise(){const h=host();if(!h)return;let shell=document.getElementById('zsd');
   if(!shell){shell=document.createElement('section');shell.id='zsd';shell.className='zsd';h.insertBefore(shell,h.querySelector(':scope > summary')?.nextSibling||h.firstChild);}
-  else if(shell.parentElement!==h||shell.previousElementSibling&&shell.previousElementSibling.tagName!=='SUMMARY'){h.insertBefore(shell,h.querySelector(':scope > summary')?.nextSibling||h.firstChild);}
+  else{const first=[...h.children].find(c=>c.tagName!=='SUMMARY');if(shell.parentElement!==h||first!==shell)h.insertBefore(shell,first||null);}
   let group='herramientas';
   for(const el of h.children){if(el===shell||el.tagName==='SUMMARY')continue;
    if(GROUPS[el.id])group=GROUPS[el.id];else if(/^AdSense/.test(el.textContent.trim())&&el.tagName==='H3')group='adsense';else if(el.matches('form[data-form=site], .zarSubappGuide, .zarSubappEmpty, .zwtOptions'))group='herramientas';
@@ -61,9 +61,20 @@
   <div class="zsdList">${rows.map(r=>{const a=arts[r.article_id];const st=r.status||'RECEIVED';return `<div class="zsdItem"><span class="zsdDot ${DONE.has(st)?'ok':BAD.has(st)?'bad':'run'}"></span><div class="zsdItemMain"><b>${esc(a?.title_es||r.repo||'Reel recibido')}</b><small>${when(r.received_at)}${r.backfill?' · historial':''}${r.source_url?` · <a href="${esc(r.source_url)}" target="_blank" rel="noopener">ver reel</a>`:''}</small></div><span class="zsdChip s-${esc(st)}">${esc(REEL_LABEL[st]||st)}</span>${a?`<a class="zsdBtn ghost sm" href="${esc(publicUrl(a))}" target="_blank" rel="noopener">Artículo</a>`:''}</div>`}).join('')||'<p class="zsdMuted">Todavía no hay reels. Envía un reel por mensaje a @zaragente031 desde @solana031.</p>'}</div>
   <p class="zsdMuted">Los casos marcados como "Necesita tu ayuda" pueden resolverse indicando el repositorio en Mesa editorial → Diagnóstico de Reels.</p></section>`;}
 
+ function adsense(){const e=data.enrichment||{},legal=data.legal_status?.status,rows=[
+  ['bad','Datos de la cuenta de AdSense','Google avisó: «Los datos de la cuenta son imprecisos o están incompletos». Revisa en AdSense → Cuenta → Información de la cuenta y Pagos: nombre del beneficiario idéntico al de tu DNI y cuenta bancaria, dirección completa (calle, número, piso, código postal), teléfono verificado y que no exista otra cuenta AdSense con tus datos.','https://adsense.google.com/adsense/u/0/pub-4119869448727531/settings/account/info','Abrir datos de la cuenta'],
+  [e.short?'warn':'ok','Calidad y extensión del contenido',e.published?`${e.published} guías publicadas · mediana ${e.median_words} palabras · ${e.short} por debajo de ${e.target_words}. ZAR las está ampliando con fuentes oficiales (casos de uso, errores comunes, alternativas, FAQ).${e.pending?` ${e.pending} ampliaciones listas para aprobar.`:''}`:'Sin datos todavía.',null,null],
+  [legal==='LEGAL_READY'?'ok':'bad','Identidad legal y páginas obligatorias',legal==='LEGAL_READY'?'Aviso legal, privacidad, cookies, contacto y «Acerca de» publicados.':'Falta aprobar los datos legales en Mesa editorial.',null,null],
+  ['ok','Verificación del sitio y ads.txt','Etiqueta google-adsense-account y ads.txt con pub-4119869448727531 publicados en www.reposnews.com.',null,null],
+  ['ok','Contenido duplicado','Las páginas de listado ya no se envían al índice (noindex) y el sitemap solo incluye guías y páginas legales.',null,null]];
+  return `<section class="zsdPanel"><header><h3>Por qué AdSense rechazó ReposNews</h3><a class="zsdBtn ghost" href="https://adsense.google.com/adsense/u/0/pub-4119869448727531/sites/my-sites" target="_blank" rel="noopener">Abrir Sitios en AdSense ↗</a></header>
+  <div class="zsdDiag">${rows.map(([tone,title,text,url,label])=>`<div class="zsdDiagRow" data-tone="${tone}"><span class="zsdDot ${tone==='ok'?'ok':tone==='bad'?'bad':'run'}"></span><div><b>${esc(title)}</b><p>${esc(text)}</p>${url?`<a class="zsdLink" href="${esc(url)}" target="_blank" rel="noopener">${esc(label)} ↗</a>`:''}</div></div>`).join('')}</div>
+  ${e.pending?`<div class="zsdActions"><button class="zsdBtn primary" data-zsd-enrich>Aprobar ${e.pending} guía${e.pending>1?'s':''} ampliada${e.pending>1?'s':''}</button><span class="zsdMuted">Puedes revisar cada una antes en la campana de notificaciones.</span></div>`:''}
+  <p class="zsdMuted">Cuando lo anterior esté corregido, solicita una nueva revisión desde AdSense → Sitios. Google tarda de unos días a 2-4 semanas; si el botón no está disponible, indica la fecha a partir de la cual se puede volver a pedir.</p></section>`;}
  function render(){organise();const shell=document.getElementById('zsd');if(!shell)return;
   const nav=`<nav class="zsdTabs" role="tablist">${TABS.map(([k,l])=>`<button role="tab" aria-selected="${tab===k}" class="zsdTab ${tab===k?'on':''}" data-zsd-tab="${k}">${l}</button>`).join('')}</nav>`;
   let body='';
+  if(tab==='adsense'&&data?.project_id)body=adsense();
   if(['resumen','articulos','instagram'].includes(tab))body=!data?`<p class="zsdMuted">${esc(notice||'Cargando ReposNews…')}</p>`:!data.project_id?`<section class="zsdPanel"><p>Proyecto ReposNews sin inicializar.</p><button class="zsdBtn primary" data-zsd-tab="editorial">Abrir mesa editorial</button></section>`:tab==='resumen'?overview():tab==='articulos'?articles():instagram();
   const focus=document.activeElement?.matches?.('[data-zsd-search]');
   shell.innerHTML=`<header class="zsdHead"><div><h2>ReposNews</h2><p>www.reposnews.com · reels de Instagram convertidos en guías ES/EN</p></div><a class="zsdBtn ghost" href="https://www.reposnews.com/es/" target="_blank" rel="noopener">Ver web ↗</a></header>${nav}<div class="zsdNotice" role="status">${esc(notice)}</div><div class="zsdBody">${body}</div>`;
@@ -71,7 +82,7 @@
 
  function setTab(t){tab=t;try{sessionStorage.setItem('zsd_tab',t)}catch{}render();document.getElementById('zsd')?.scrollIntoView({block:'start',behavior:'smooth'});}
  function editorButton(sel){return document.querySelector('#reposnewsEditor '+sel)}
- document.addEventListener('click',async e=>{const t=e.target.closest('[data-zsd-tab],[data-zsd-filter],[data-zsd-edit],[data-zsd-publish],[data-zsd-auto],[data-zsd-sync],[data-zsd-backfill]');
+ document.addEventListener('click',async e=>{const t=e.target.closest('[data-zsd-tab],[data-zsd-filter],[data-zsd-edit],[data-zsd-publish],[data-zsd-auto],[data-zsd-sync],[data-zsd-backfill],[data-zsd-enrich]');
   if(!t||!t.closest('#zsd'))return;e.preventDefault();e.stopPropagation();
   if(t.dataset.zsdTab)return setTab(t.dataset.zsdTab);
   if(t.dataset.zsdFilter){filter=t.dataset.zsdFilter;return render();}
@@ -81,6 +92,7 @@
    if(t.dataset.zsdAuto){const enable=t.dataset.zsdAuto==='enable';if(enable&&!await ZarUI.confirm('¿Activar el piloto automático? ZAR publicará en reposnews.com los artículos de reels (nuevos y antiguos) y hasta 6 guías diarias, siempre con fuentes oficiales y portada propia.'))return;
     data=await api('/api/holdings/workflows/reposnews_autonomous_configure',{enabled:enable,authorize_publication:enable});notice=enable?'Piloto automático activado.':'Piloto automático pausado.';}
    if(t.hasAttribute('data-zsd-sync')){await api('/api/reposnews/history/sync',{});notice='Revisión de Instagram solicitada. Los reels nuevos aparecerán en unos minutos.';}
+   if(t.hasAttribute('data-zsd-enrich')){if(!await ZarUI.confirm('¿Publicar las guías ampliadas? Sustituyen el texto de las versiones cortas en reposnews.com (mismas URLs y portadas).'))return;data=await api('/api/holdings/workflows/reposnews_enrich_approve_all',{});notice='Guías ampliadas publicadas: '+(data.enrich_result?.applied??0)+'.';}
    if(t.hasAttribute('data-zsd-backfill')){if(!await ZarUI.confirm('ZAR volverá a revisar todos los reels de la conversación, analizará los que falten o fallaron y publicará los artículos de forma escalonada (uno cada 20 minutos). ¿Continuar?'))return;
     await api('/api/reposnews/history/start',{reprocess_unresolved:true,reuse_media:true,authorize_publication:true});notice='Procesamiento de reels antiguos en marcha.';}
    await load();}catch(x){notice='No se pudo completar: '+x.message;render();}finally{t.disabled=false;}},true);
@@ -88,7 +100,7 @@
  // Header shortcuts of the Sites workspace point at tools now grouped in tabs.
  document.addEventListener('click',e=>{const j=e.target.closest('[data-zwt-jump]');if(!j||!host())return;const map={create:'herramientas',import:'herramientas',preview:'herramientas',projects:'herramientas',publish:'resumen'};if(map[j.dataset.zwtJump]){tab=map[j.dataset.zwtJump];render();}},true);
  window.addEventListener('zar-workflow-state',e=>{csrf=e.detail?.csrf||csrf;organise();if(!data)load();});
- const observer=new MutationObserver(()=>{const h=host();if(h&&[...h.children].some(el=>el.id!=='zsd'&&el.tagName!=='SUMMARY'&&!el.dataset.zsdGroup))organise();});
+ const observer=new MutationObserver(()=>{const h=host();if(h&&([...h.children].some(el=>el.id!=='zsd'&&el.tagName!=='SUMMARY'&&!el.dataset.zsdGroup)||[...h.children].find(c=>c.tagName!=='SUMMARY')?.id!=='zsd'))organise();});
  function boot(){const h=host();if(!h)return setTimeout(boot,500);observer.observe(h,{childList:true});render();}
  boot();setInterval(()=>{if(host()&&!document.hidden&&['resumen','instagram'].includes(tab))load();},30000);
 })();

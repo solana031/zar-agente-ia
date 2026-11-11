@@ -121,6 +121,8 @@ def state(scope):
     result['autonomous_editorial_status']=autonomous_view(data)
     from .instagram_conversation_history import summary as conversation_summary
     result['instagram_history_summary']=conversation_summary(data)
+    from .reposnews_enrich import status as enrich_status
+    result['enrichment']=enrich_status(data)
     from .reposnews_assets import public_article
     def display_cover(a):
         shown=public_article(a.get('published_snapshot',a)) if a.get('published') else a
@@ -245,6 +247,13 @@ def operate(scope, op, payload):
     if op=='autonomous_configure':
         from .reposnews_autonomous import configure
         return configure(scope,payload)
+    if op=='enrich_approve_all':
+        from flask import has_request_context, session as flask_session
+        if not has_request_context() or flask_session.get('zar_auth') is not True:raise ValueError('AUTHENTICATED_OWNER_REQUIRED')
+        if read().get('owner')!=scope:raise ValueError('OWNER_REQUIRED')
+        from .reposnews_enrich import approve_all
+        result=approve_all(scope)
+        return state(scope)|{'enrich_result':result}
     if op=='approve_batch':
         from .reposnews_automation import approve_batch
         return approve_batch(scope,payload)
@@ -497,7 +506,7 @@ def render(lang='es', slug='', preview=False, csp_nonce=None):
         if not query:rows=sort_rows(rows,order)
         pages=[rows[i:i+12] for i in range(0,len(rows),12)]
     from .reposnews_adsense import public_config
-    return render_template('reposnews.html',order=order,pages=pages,lang=lang,rows=rows,article=article,body=article_body_html(article,lang) if article else None,slug=slug,preview=preview,base=base,title=title,description=description,origin=ORIGIN,path=path,official_covers={'uv':'uv-official.svg','fastapi':'fastapi-official.png','playwright':'playwright-official.svg','jev':'jev-editorial.svg','automaton':'automaton-editorial.svg','dramaclaw':'dramaclaw-official.png'},public_legal=public_legal_profile(data),query=query,category=category,categories=categories,legal_status={'status':legal_status(data)['status']},adsense=public_config(data),csp_nonce=csp_nonce or secrets.token_urlsafe(24),utility_page=bool(query or category or slug=='trends' or request.args.get('orden')))
+    return render_template('reposnews.html',order=order,pages=pages,lang=lang,rows=rows,article=article,body=article_body_html(article,lang) if article else None,slug=slug,preview=preview,base=base,title=title,description=description,origin=ORIGIN,path=path,official_covers={'uv':'uv-official.svg','fastapi':'fastapi-official.png','playwright':'playwright-official.svg','jev':'jev-editorial.svg','automaton':'automaton-editorial.svg','dramaclaw':'dramaclaw-official.png'},public_legal=public_legal_profile(data),query=query,category=category,categories=categories,legal_status={'status':legal_status(data)['status']},adsense=public_config(data),csp_nonce=csp_nonce or secrets.token_urlsafe(24),utility_page=bool(query or category or slug in {'trends','guides','repositories'} or request.args.get('orden')))
 
 
 def related_guides(article, rows, lang, preview=False):
@@ -590,9 +599,13 @@ def public_dispatch():
             if data.get('domain_status')!='ACTIVE': return Response('Domain verification pending',status=404,mimetype='text/plain')
             if not re.fullmatch(r'pub-\d{16}',str(data.get('publisher') or '')):return Response('Publisher verification required\n',status=404,mimetype='text/plain')
             return Response('google.com, '+data['publisher']+', DIRECT, f08c47fec0942fa0\n',mimetype='text/plain')
-        urls=[ORIGIN+'/'+l+'/'+page for l in ['es','en'] for page in ['', 'about/','contact/','privacy/','cookies/','legal/','repositories/','guides/']]
-        urls += [ORIGIN+'/'+l+'/'+('repositorios' if l=='es' else 'repositories')+'/'+a['id']+'/' for a in data.get('articles',[]) if a.get('published') for l in ['es','en']]
-        return Response('<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'+''.join('<url><loc>'+html.escape(u)+'</loc></url>' for u in urls)+'</urlset>',mimetype='application/xml')
+        # Listing pages duplicate the home grid; they stay crawlable but are not submitted.
+        urls=[(ORIGIN+'/'+l+'/'+page,None) for l in ['es','en'] for page in ['', 'about/','contact/','privacy/','cookies/','legal/']]
+        for a in data.get('articles',[]):
+            if not a.get('published'):continue
+            stamp=str(a.get('updated_at') or a.get('published_at') or '')[:10]
+            urls+=[(ORIGIN+'/'+l+'/'+('repositorios' if l=='es' else 'repositories')+'/'+a['id']+'/',stamp if re.fullmatch(r'\d{4}-\d{2}-\d{2}',stamp) else None) for l in ['es','en']]
+        return Response('<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'+''.join('<url><loc>'+html.escape(u)+'</loc>'+('<lastmod>'+m+'</lastmod>' if m else '')+'</url>' for u,m in urls)+'</urlset>',mimetype='application/xml')
     if not path:
         lang=request.cookies.get('reposnews_lang')
         if lang not in {'es','en'}: lang=request.accept_languages.best_match(['es','en']) or 'es'

@@ -304,7 +304,7 @@ class InstagramInboxTest(unittest.TestCase):
    self.assertEqual(research.call_count,8)
   row=rn.read()['instagram_inbox'][0];self.assertEqual(row['status'],'FAILED_RETRYABLE');self.assertEqual(row['attempts'],8)
  def test_builder_rejects_invented_installation(self):
-  generated={k:('word '*260 if k.startswith('body') else 'Fixture title') for k in ('title_es','title_en','summary_es','summary_en','body_es','body_en')};generated['commands']=['pip install invented']
+  generated={k:('word '*600 if k.startswith('body') else 'Fixture title') for k in ('title_es','title_en','summary_es','summary_en','body_es','body_en')};generated['commands']=['pip install invented']
   with patch.object(inbox,'generate_json',return_value=generated):
    with self.assertRaisesRegex(ValueError,'UNVERIFIED_COMMAND'):inbox.build({'readme':'no install command'},'discovery')
 

@@ -75,7 +75,7 @@ async def check():
                 payload=posts[-1]['data'];assert set(payload)=={'checks','confirmed','tax_status'}
                 assert set(payload['checks'])==set(ads.ACCOUNT_FIELDS) and all(x is True for x in payload['checks'].values())
                 assert payload['tax_status']=='UNKNOWN'
-                await panel.get_by_text('Estado observado en Google · UNKNOWN',exact=True).click()
+                await panel.locator('summary',has_text='Estado observado en Google').click()
                 observed=panel.locator('form[data-form=adsense-provider-observation]')
                 await observed.locator('[name=tax_status]').select_option('IN_REVIEW')
                 await observed.locator('[name=PAYEE_NAME_MISMATCH]').check()
@@ -85,7 +85,7 @@ async def check():
                 await page.wait_for_timeout(100)
                 assert posts[-1]['path'].endswith('/adsense_provider_observation')
                 assert posts[-1]['data']=={'tax_status':'IN_REVIEW','findings':['PAYEE_NAME_MISMATCH','POSTAL_STREET_MISSING'],'confirmed':True}
-                await panel.get_by_text('Disponibilidad de la CMP en AdSense · ACTION_REQUIRED',exact=True).click()
+                await panel.locator('summary',has_text='Disponibilidad de la CMP en AdSense').click()
                 availability=panel.locator('form[data-form=adsense-provider-availability]')
                 await availability.locator('[name=cmp]').select_option('WAITING_FOR_ADSENSE_AVAILABILITY')
                 await availability.locator('[name=account_not_approved]').check()

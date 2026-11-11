@@ -99,3 +99,40 @@
  .zsdItem{flex-wrap:wrap}.zsdItem .zsdChip{order:3}
 }
 @media (max-width:420px){.zsdGrid{grid-template-columns:1fr}}
+
+/* AdSense readiness (ZAR Sites › AdSense y legal) */
+#zarAdsenseReadiness{border:1px solid var(--zsd-line)!important;border-radius:18px!important;background:var(--zsd-card);padding:20px!important;font-size:13.5px;line-height:1.55;color:var(--zsd-text)}
+#zarAdsenseReadiness .zaHead{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}
+#zarAdsenseReadiness h3{margin:0;font-size:17px}
+#zarAdsenseReadiness .zaChecks{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px;margin:0 0 14px}
+#zarAdsenseReadiness .zaChecks>div{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:9px 12px;border:1px solid var(--zsd-line);border-radius:12px;background:#15120f}
+#zarAdsenseReadiness .zaChecks dt{font-weight:600;font-size:13px}#zarAdsenseReadiness .zaChecks dd{margin:0}
+#zarAdsenseReadiness .zaChip{display:inline-block;font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px;background:#2a2219;color:#d9c49e;border:1px solid #4d3a28;white-space:nowrap}
+#zarAdsenseReadiness .zaChip[data-s=READY],#zarAdsenseReadiness .zaChip[data-s=ACCEPTED],#zarAdsenseReadiness .zaChip[data-s=NOT_APPLICABLE],#zarAdsenseReadiness .zaChip[data-s=SITE_READY_FOR_ADSENSE]{background:#163021;color:#a9e6b6;border-color:#2e5a3c}
+#zarAdsenseReadiness .zaChip[data-s=ACTION_REQUIRED],#zarAdsenseReadiness .zaChip[data-s=REJECTED],#zarAdsenseReadiness .zaChip[data-s=BLOCKED]{background:#3a1d17;color:#ffb3a3;border-color:#6e3428}
+#zarAdsenseReadiness .zaChip[data-s=PENDING],#zarAdsenseReadiness .zaChip[data-s=IN_REVIEW],#zarAdsenseReadiness .zaChip[data-s=WAITING_FOR_ADSENSE_AVAILABILITY]{background:#33290f;color:#f6d47f;border-color:#6b5520}
+#zarAdsenseReadiness>p{color:#bfae93;max-width:90ch}
+#zarAdsenseReadiness .zaNotice{border:1px solid #6e3428;background:#2a1612;border-radius:14px;padding:12px 14px;margin:12px 0}
+#zarAdsenseReadiness .zaNotice b{color:#ffb3a3}#zarAdsenseReadiness .zaNotice p{margin:4px 0 8px;color:#f3d6cc}
+#zarAdsenseReadiness .zaLink{color:var(--zsd-gold);font-weight:600;margin-right:12px}
+#zarAdsenseReadiness details{border:1px solid var(--zsd-line);border-radius:14px;background:#15120f;padding:0 14px;margin:10px 0}
+#zarAdsenseReadiness details[open]{padding-bottom:14px}
+#zarAdsenseReadiness summary{padding:12px 0;font-weight:700;font-size:13.5px;display:flex;align-items:center;gap:8px;list-style:none;cursor:pointer}
+#zarAdsenseReadiness summary::-webkit-details-marker{display:none}
+#zarAdsenseReadiness summary::before{content:'›';display:inline-block;transition:transform .15s;color:var(--zsd-gold);font-size:18px;line-height:1}
+#zarAdsenseReadiness details[open]>summary::before{transform:rotate(90deg)}
+#zarAdsenseReadiness .zaForm{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:6px 14px;align-items:start}
+#zarAdsenseReadiness form label{display:flex!important;align-items:flex-start;gap:9px;margin:0!important;padding:8px 10px;border-radius:10px;font-size:13px;color:var(--zsd-text);cursor:pointer}
+#zarAdsenseReadiness form label:hover{background:#1d1914}
+#zarAdsenseReadiness input[type=checkbox]{appearance:auto!important;width:18px!important;height:18px!important;min-width:18px!important;min-height:18px!important;margin:1px 0 0!important;padding:0!important;accent-color:#e2bd73;flex:none;border-radius:4px!important;box-shadow:none!important}
+#zarAdsenseReadiness form label:has(select),#zarAdsenseReadiness form label:has(input[type=url]){flex-direction:column;grid-column:1/-1}
+#zarAdsenseReadiness form label:has(input[name=confirmed]){grid-column:1/-1;border-top:1px solid var(--zsd-line);border-radius:0;padding-top:12px;margin-top:6px!important}
+#zarAdsenseReadiness select,#zarAdsenseReadiness input[type=url]{width:100%;max-width:520px}
+#zarAdsenseReadiness form button{grid-column:1/-1;justify-self:start}
+.zsdDiag{display:grid;gap:8px;margin:4px 0 14px}
+.zsdDiagRow{display:flex;gap:12px;align-items:flex-start;padding:12px 14px;border:1px solid var(--zsd-line);border-radius:14px;background:#15120f}
+.zsdDiagRow .zsdDot{margin-top:6px}
+.zsdDiagRow b{font-size:14px}.zsdDiagRow p{margin:3px 0 6px!important;font-size:13px!important}
+.zsdDiagRow[data-tone=bad]{border-color:#6e3428;background:#22130f}
+.zsdDiagRow[data-tone=warn]{border-color:#6b5520}
+.zsdLink{color:var(--zsd-gold);font-weight:600;font-size:13px}
