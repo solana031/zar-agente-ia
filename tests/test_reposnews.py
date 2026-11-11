@@ -10,6 +10,15 @@ class ReposNewsTest(unittest.TestCase):
   self.app=Flask(__name__,template_folder=str(Path('app/templates').resolve()));self.app.before_request(rn.public_dispatch);rn.register(self.app,lambda:'owner');self.c=self.app.test_client()
  def tearDown(self): self.env.stop();self.tmp.cleanup()
  def get(self,path):return self.c.get(path,base_url=rn.ORIGIN)
+ def test_root_redirect_is_permanent_and_x_default_never_points_to_a_redirect(self):
+  root=self.get('/');self.assertEqual(root.status_code,301);self.assertTrue(root.location.endswith('/es/'))
+  en=self.c.get('/',base_url=rn.ORIGIN,headers={'Accept-Language':'en-US,en;q=0.9'})
+  self.assertEqual(en.status_code,302);self.assertTrue(en.location.endswith('/en/'));self.assertIn('no-store',en.headers['Cache-Control'])
+  data=rn.read();data['articles'][0]['published']=True;rn.write(data);slug=data['articles'][0]['id']
+  for path,expected in (('/es/','/es/'),('/en/','/es/'),('/en/repositories/'+slug+'/','/es/repositorios/'+slug+'/'),('/en/about/','/es/about/')):
+   html=self.get(path).get_data(as_text=True)
+   self.assertIn('hreflang="x-default" href="'+rn.ORIGIN+expected+'"',html)
+   self.assertNotIn('hreflang="x-default" href="'+rn.ORIGIN+'/"',html)
  def test_instagram_privacy_and_deletion_instructions_are_public(self):
   for lang in ('es','en'):
    response=self.get('/'+lang+'/privacy/');self.assertEqual(response.status_code,200)

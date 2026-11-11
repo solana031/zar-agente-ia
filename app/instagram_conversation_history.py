@@ -13,7 +13,7 @@ from .instagram_local_queue import reel_url,same_reel
 
 BASE='https://graph.instagram.com/v26.0/'
 DAY=86400
-SYNC_INTERVAL=1200  # Incremental head check; stops at the newest already-seen message.
+SYNC_INTERVAL=3600  # Safety-net head check only; webhooks trigger an immediate one (no AI tokens).
 
 
 class HistoryReadError(ValueError):

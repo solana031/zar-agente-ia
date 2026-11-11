@@ -86,7 +86,7 @@ def enqueue_pending(data):
             row.update(status='WAITING_LOCAL_WORKER', processing_state='WAITING_LOCAL_WORKER', local_job=True, local_fallback=False)
 
 
-LOCAL_GRACE = 900  # Seconds a Reel waits for the local worker before the server analyses it.
+LOCAL_GRACE = 60  # Seconds a Reel waits for an OFFLINE local worker before the server analyses it.
 
 
 def fallback_stalled(now=None):

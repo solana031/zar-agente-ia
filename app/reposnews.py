@@ -607,9 +607,15 @@ def public_dispatch():
             urls+=[(ORIGIN+'/'+l+'/'+('repositorios' if l=='es' else 'repositories')+'/'+a['id']+'/',stamp if re.fullmatch(r'\d{4}-\d{2}-\d{2}',stamp) else None) for l in ['es','en']]
         return Response('<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'+''.join('<url><loc>'+html.escape(u)+'</loc>'+('<lastmod>'+m+'</lastmod>' if m else '')+'</url>' for u,m in urls)+'</urlset>',mimetype='application/xml')
     if not path:
+        # Spanish is the canonical edition: a permanent redirect lets Google consolidate "/" into /es/
+        # (a 302 kept "/" as the chosen canonical and flagged /es/ as a duplicate). Readers who
+        # explicitly prefer English get a temporary, non-cacheable redirect to /en/.
         lang=request.cookies.get('reposnews_lang')
-        if lang not in {'es','en'}: lang=request.accept_languages.best_match(['es','en']) or 'es'
-        return redirect('/'+lang+'/',code=302)
+        if lang not in {'es','en'}: lang=request.accept_languages.best_match(['es','en']) if request.accept_languages else 'es'
+        if lang=='en':
+            response=redirect('/en/',code=302);response.headers['Cache-Control']='private, no-store';response.headers['Vary']='Accept-Language, Cookie'
+            return response
+        return redirect('/es/',code=301)
     match=re.fullmatch(r'(es|en)(?:/(?:(?:repositorios|repositories)/)?([a-z0-9-]{1,80}))?/?',path)
     if not match: abort(404) # Never exposes ZAR APIs, login, files or private static assets on this host.
     slug=match[2] or ''

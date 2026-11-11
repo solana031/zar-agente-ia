@@ -16,6 +16,16 @@ class InstagramInboxTest(unittest.TestCase):
   self.assertEqual(inbox.receive(self.event(text='hola2')),[])
   self.assertTrue(rn.read().get('instagram_last_authorized_message'))
   self.assertFalse(rn.read().get('instagram_inbox'))
+ def test_authorized_webhook_wakes_worker_and_requests_head_check_without_ai(self):
+  inbox._wake.clear()
+  self.assertEqual(inbox.receive(self.event(text='hola',sender='unknown')),[])
+  self.assertFalse(inbox._wake.is_set())
+  self.assertEqual(len(inbox.receive(self.event(mid='reel1'))),1)
+  self.assertTrue(inbox._wake.is_set());inbox._wake.clear()
+  self.assertFalse(rn.read().get('instagram_conversation_sync',{}).get('requested'))
+  self.assertEqual(inbox.receive(self.event(text='mira esto',mid='share-without-link')),[])
+  self.assertTrue(inbox._wake.is_set())
+  self.assertTrue(rn.read()['instagram_conversation_sync']['requested'])
  def test_changes_messages_envelope_keeps_authorization_checks(self):
   payload=self.event();entry=payload['entry'][0];event=entry.pop('messaging')[0]
   entry['changes']=[{'field':'messages','value':event}]

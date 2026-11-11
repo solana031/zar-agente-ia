@@ -22,6 +22,11 @@ DOCS='https://developers.facebook.com/documentation/instagram-platform/instagram
 PERMISSIONS=('instagram_business_basic','instagram_business_manage_messages')
 _started=False
 _lock=threading.Lock()
+_wake=threading.Event()  # Set by the signed webhook: process a new Reel now, not on the next tick.
+
+
+def wake():
+    _wake.set()
 MAX_BYTES=25*1024*1024
 
 def safe_meta_error(response, token=''):
@@ -267,7 +272,7 @@ def receive(payload):
     """Ignore unrelated/private conversations before storing anything. One item per mid."""
     account=str(credentials().get('user_id') or '')
     senders=sender_ids()
-    accepted=[]
+    accepted=[];authorized=False
     if payload.get('object')!='instagram' or not account or not senders:return accepted
     with holdings.transaction('reposnews-editorial'):
         data=rn.read()
@@ -285,7 +290,7 @@ def receive(payload):
                 if not isinstance(event.get('sender'),dict) or not isinstance(event.get('recipient'),dict):continue
                 msg=event.get('message') or {};sender=str((event.get('sender') or {}).get('id',''))
                 if sender not in senders or str((event.get('recipient') or {}).get('id',''))!=account or msg.get('is_echo') or msg.get('is_deleted'):continue
-                data['instagram_last_authorized_message']=holdings._now()
+                data['instagram_last_authorized_message']=holdings._now();authorized=True
                 mid=str(msg.get('mid') or '')[:200]
                 if not mid or len(rows)>=500 or any(x['external_id']==mid for x in rows):continue
                 text=safe_caption(msg.get('text'))
@@ -319,7 +324,12 @@ def receive(payload):
                 if private_refs and not old:oauth_vault.persist(rn._path().parent/'inbound'/key,json.dumps(private_refs),rn._path().parent)
                 rows.append(row);accepted.append(key)
                 data['instagram_last_event']=holdings._now()
+        if authorized and not accepted:
+            # A share without a usable attachment/link in the webhook: one cheap head check of the
+            # conversation (Graph API only, no AI tokens) instead of waiting for the periodic sweep.
+            data.setdefault('instagram_conversation_sync',{})['requested']=True
         rn.write(data)
+    if authorized:wake()
     return accepted
 
 def update(item_id,**values):
@@ -959,7 +969,8 @@ def start_worker():
                         update(item['id'],status='FAILED_RETRYABLE',retry_after=time.time()+5,error='INTERRUPTED_RESUMING_AUTOMATICALLY')
                     if item.get('status') in {'RECEIVED','FAILED_RETRYABLE'}:publish_ready_reels()
             except Exception:pass # No provider payload, tokens or private message enters logs.
-            time.sleep(20)
+            # Event-driven: a signed webhook wakes the loop at once; otherwise a light idle tick.
+            _wake.wait(20);_wake.clear()
     threading.Thread(target=loop,name='reposnews-inbox',daemon=True).start()
 
 def register(app,scope_fn=None):

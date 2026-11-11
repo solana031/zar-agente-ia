@@ -1,0 +1,5 @@
+# ZAR 33.3.139
+
+- ReposNews · Search Console «Duplicada: Google ha elegido una versión canónica diferente»: la portada `/` pasa de redirección temporal (302) a permanente (301) hacia `/es/` (los lectores que piden inglés siguen yendo a `/en/` con 302 no cacheable), y `hreflang="x-default"` apunta ya a la versión española de cada página en vez de a `/`, que redirigía.
+- Reels de Instagram: el webhook firmado despierta el pipeline al instante (sin esperar al siguiente ciclo de 20 s). Si el webhook llega sin enlace utilizable, se pide una única comprobación de la conversación (API de Instagram, sin tokens de IA). La sincronización periódica queda como red de seguridad cada hora. Si el worker del PC está desconectado, el servidor analiza el reel tras 60 s en lugar de 15 min.
+- Automaton (Conway): `scripts/restore-automaton-constitution.ps1` restaura la constitución original de Conway-Research/automaton en `~/.automaton` del PC, con copia de seguridad. El Automaton de ZAR Stonks mantiene sus bloqueos Paper/Risk.
