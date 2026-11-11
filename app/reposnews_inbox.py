@@ -938,6 +938,10 @@ def start_worker():
                 cover_tick()
                 from .reposnews_cover_art import tick as cover_spec_tick
                 cover_spec_tick()
+                from .zar_notify import tick as notify_tick
+                notify_tick()
+                from .site_stats import flush as visits_flush
+                visits_flush()
                 from .instagram_local_queue import fallback_stalled
                 fallback_stalled()
                 from .reposnews_autonomous import publish_ready_reels

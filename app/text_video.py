@@ -383,3 +383,5 @@ def register(app,scope_fn):
     register_accounts(app,scope_fn,csrf_owner)
     from .instagram_conversation_history import register as register_conversation_history
     register_conversation_history(app,scope_fn,csrf_owner)
+    from .zar_notify import register as register_notify
+    register_notify(app,scope_fn,csrf_owner)

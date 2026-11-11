@@ -85,7 +85,7 @@ def reconcile_ready(scope,data):
             details={'revision':stamp})
 
 
-def emit(scope,kind,key,title,message,deep_link,entity_id='',entity_type='',actions=None,details=None,status='ACTION_REQUIRED',priority='P1'):
+def emit(scope,kind,key,title,message,deep_link,entity_id='',entity_type='',actions=None,details=None,status='ACTION_REQUIRED',priority='P1',forward=True):
     if kind not in TYPES:raise ValueError('INVALID_NOTIFICATION_TYPE')
     with holdings.transaction(scope):
         data=holdings.read(scope);center=identity_center.ensure(data)
@@ -94,7 +94,14 @@ def emit(scope,kind,key,title,message,deep_link,entity_id='',entity_type='',acti
         row=identity_center.queue(center,'REPOSNEWS' if kind.startswith('ARTICLE') else 'WORKSPACE' if kind.endswith('_READY') else 'ZAR',kind,message,deep_link,[],plan_id=key)
         row.update(notification_key=key,type=kind,title=title,message=message,read_at=None,status=status,priority=priority,
                    entity_type=entity_type,entity_id=entity_id,actions=actions or [{'label':'VER','url':deep_link}],deep_link=deep_link,details=details or {})
-        holdings.write(scope,data);return row
+        holdings.write(scope,data)
+    if forward:
+        # Important events also reach the owner by email/WhatsApp; never blocks the app.
+        try:
+            from .zar_notify import on_event
+            on_event(scope,dict(row))
+        except Exception:pass
+    return row
 
 
 def view(scope):

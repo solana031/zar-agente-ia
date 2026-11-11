@@ -73,7 +73,7 @@ def test_registry_get_has_no_network_and_no_false_connected(isolated):
     with patch.object(inbox.requests,'get') as read:
         data=registry.view()
     read.assert_not_called()
-    assert {x['id'] for x in data['providers']}=={'google','youtube','instagram','tiktok','shopify'}
+    assert {x['id'] for x in data['providers']}=={'google','youtube','instagram','tiktok','shopify','adsense'}
     assert all(x['status']=='UNKNOWN' for x in data['providers'])
     assert data['summary']['connected']==0
     assert 'expired-legacy-fixture' not in json.dumps(data)

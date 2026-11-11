@@ -49,7 +49,7 @@ def check(width,height,standalone=False):
         assert not page.locator('#zarNotificationCenter').is_visible()
         bell.focus();bell.press('Enter')
         panel=page.locator('#zarNotificationCenter');expect(panel).to_be_visible()
-        expect(panel.locator('.znCard')).to_have_count(8)
+        expect(panel.locator('.znCard')).to_have_count(12)
         assert panel.locator('.znCard').nth(0).get_attribute('data-note')=='ready'
         assert panel.locator('.znCard').nth(1).get_attribute('data-note')=='update'
         panel.locator('[data-sort]').select_option('RECIENTES')
@@ -85,6 +85,7 @@ def check(width,height,standalone=False):
         panel.locator('[data-action=retry][data-id=failed]').click()
         expect(panel.locator('[data-action=retry][data-id=failed]')).to_be_enabled()
         assert any(u.endswith('inbox_recover') and b.get('id')=='b'*24 for u,b in posts)
+        panel.locator('[data-toggle=doc]').click()
         panel.locator('[data-action=dismiss][data-id=doc]').click()
         expect(panel.locator('[data-note=doc]')).to_have_count(0)
         panel.locator('[data-action=archive]').click();expect(panel.locator('[data-note=doc]')).to_be_visible()

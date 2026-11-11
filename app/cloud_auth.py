@@ -52,7 +52,7 @@ CORE_SCOPES=['openid','email','https://www.googleapis.com/auth/gmail.modify',
 SERVICE_SCOPES={'core':CORE_SCOPES,'docs':['https://www.googleapis.com/auth/documents'],
  'sheets':['https://www.googleapis.com/auth/spreadsheets'],'slides':['https://www.googleapis.com/auth/presentations'],
  'tasks':['https://www.googleapis.com/auth/tasks.readonly'],
- 'youtube':['https://www.googleapis.com/auth/youtube.readonly','https://www.googleapis.com/auth/youtube.upload'],
+ 'youtube':['https://www.googleapis.com/auth/youtube.readonly','https://www.googleapis.com/auth/youtube.upload','https://www.googleapis.com/auth/yt-analytics.readonly','https://www.googleapis.com/auth/yt-analytics-monetary.readonly'],
  'adsense':['https://www.googleapis.com/auth/adsense.readonly'],
  'site_metrics':['https://www.googleapis.com/auth/webmasters.readonly',
                  'https://www.googleapis.com/auth/adsense.readonly']}

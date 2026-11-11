@@ -1,55 +1,129 @@
 #zarEditorialBadge{display:none!important}
 #zarNotificationBell{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:5px;min-width:44px;min-height:44px;color:#e4c58f}
-#zarNotificationBell svg,.znType svg{width:20px;height:20px;flex:none}
-#zarNotificationBell [data-unread]{font:600 10px system-ui;border:1px solid #8a7047;border-radius:12px;padding:2px 5px;background:#44331e;color:#f6dfb8}
+#zarNotificationBell svg{width:20px;height:20px;flex:none}
+#zarNotificationBell [data-unread]{font:700 10px system-ui;border:0;border-radius:10px;padding:2px 5px;background:#e2bd73;color:#1b140b}
 body.zarEmbedded>#zarNotificationBell{position:fixed;top:12px;right:18px;z-index:100001}
-#zarNotificationCenter{position:fixed;inset:70px 16px auto auto;margin:0;width:440px;max-width:calc(100vw - 32px);height:min(800px,calc(100dvh - 88px));max-height:calc(100dvh - 88px);padding:0;background:#171512;color:#e8ddc9;border:1px solid #746044;border-radius:16px;box-shadow:0 24px 80px #0009;overflow:hidden;box-sizing:border-box;font:13px/1.5 system-ui}
-#zarNotificationCenter[open]{display:flex;flex-direction:column}
-#zarNotificationCenter::backdrop{background:#0003}
+
+/* Panel */
+#zarNotificationCenter{--zn-bg:#151310;--zn-card:#1c1915;--zn-hover:#231f1a;--zn-line:#332b22;--zn-text:#efe4d0;--zn-muted:#a39379;--zn-gold:#e2bd73;--zn-ok:#8fd19e;--zn-warn:#f0c46a;--zn-bad:#f08a76;--zn-info:#8ab8f0;
+ position:fixed;inset:64px 16px auto auto;margin:0;width:420px;max-width:calc(100vw - 32px);height:min(720px,calc(100dvh - 80px));max-height:calc(100dvh - 80px);padding:0;background:var(--zn-bg);color:var(--zn-text);border:1px solid #4a3d2d;border-radius:18px;box-shadow:0 30px 80px #000b,0 0 0 1px #0004;overflow:hidden;box-sizing:border-box;font:13px/1.45 system-ui,-apple-system,Segoe UI,sans-serif}
+#zarNotificationCenter[open]{display:flex;flex-direction:column;animation:znIn .16s ease-out}
+@keyframes znIn{from{opacity:0}to{opacity:1}}
+#zarNotificationCenter::backdrop{background:#0004}
 #zarNotificationCenter *{box-sizing:border-box}
-#zarNotificationCenter button,#zarNotificationCenter a{font:inherit;min-height:36px;display:inline-flex;align-items:center;justify-content:center;gap:6px;border-radius:8px;padding:7px 10px;text-decoration:none;cursor:pointer}
-#zarNotificationCenter button{color:#e8d9bb;border:1px solid #66543a;background:#27221b}
-#zarNotificationCenter button:hover,#zarNotificationCenter a:hover{background:#3a3022}
-#zarNotificationCenter button:focus-visible,#zarNotificationCenter a:focus-visible,#zarNotificationCenter input:focus-visible,#zarNotificationCenter textarea:focus-visible,#zarNotificationCenter summary:focus-visible{outline:2px solid #d5b77b;outline-offset:2px}
+#zarNotificationCenter button,#zarNotificationCenter a{font:inherit;display:inline-flex;align-items:center;justify-content:center;gap:6px;text-decoration:none;cursor:pointer}
+#zarNotificationCenter .znActions a,#zarNotificationCenter .znActions button,#zarNotificationCenter .znUtility button,#zarNotificationCenter form button,#zarNotificationCenter .znConfirm button,#zarNotificationCenter .znMore>a{min-height:32px;padding:5px 11px;border-radius:9px;border:1px solid #5a4a36;background:#221d17;color:var(--zn-text);font-size:12.5px;font-weight:600}
+#zarNotificationCenter .znActions a:hover,#zarNotificationCenter .znActions button:hover,#zarNotificationCenter .znUtility button:hover,#zarNotificationCenter form button:hover{background:#2e261d;border-color:#7a6147}
+#zarNotificationCenter .znActions>:first-child,#zarNotificationCenter form button,#zarNotificationCenter [data-action=confirm]{background:var(--zn-gold);border-color:var(--zn-gold);color:#1b140b}
+#zarNotificationCenter button:focus-visible,#zarNotificationCenter a:focus-visible,#zarNotificationCenter input:focus-visible,#zarNotificationCenter textarea:focus-visible,#zarNotificationCenter summary:focus-visible,#zarNotificationCenter [data-toggle]:focus-visible,#zarNotificationCenter select:focus-visible{outline:2px solid var(--zn-gold);outline-offset:2px}
 #zarNotificationCenter button:disabled{opacity:.4;cursor:default}
-#zarNotificationCenter a{color:#e3c38c;border:1px solid #66543a}
-#zarNotificationCenter .znHeader{display:flex;align-items:center;justify-content:space-between;padding:18px 18px 12px;flex:none}
-#zarNotificationCenter .znHeader h2{font-size:20px;line-height:1.3;margin:3px 0}
-#zarNotificationCenter .znEyebrow{font-size:9px;letter-spacing:.15em;color:#ae9a77}
-#zarNotificationCenter [data-close]{min-width:44px;min-height:44px;padding:8px;font-size:0;border-color:transparent;background:transparent}
-#zarNotificationCenter [data-close]::after{content:'\00d7';font-size:28px}
-#zarNotificationCenter .znTabs{display:grid;grid-template-columns:repeat(4,1fr);gap:5px;padding:0 14px 10px;flex:none}
-#zarNotificationCenter .znTabs button{font-size:10px;letter-spacing:.03em;padding:7px 4px;background:transparent}
-#zarNotificationCenter [aria-pressed=true]{background:#413523!important;border-color:#b39765!important;color:#f6dfb8}
-#zarNotificationCenter .znToolbar{display:flex;justify-content:space-between;gap:6px;padding:0 14px 6px}
-#zarNotificationCenter .znToolbar button,#zarNotificationCenter .znUtility button{font-size:11px;background:transparent;border-color:transparent;color:#bfae91}
-#zarNotificationCenter .znFeedback{margin:0;padding:0 18px;color:#e1cda7;font-size:12px}
-#zarNotificationCenter .znFeedback:not(:empty){padding-bottom:10px}
-#zarNotificationCenter .znList{min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:0 14px 10px;scrollbar-color:#706043 transparent}
-#zarNotificationCenter .znCard{border:1px solid #4e4435;border-left:3px solid #8f7851;border-radius:10px;padding:13px;margin:0 0 10px;background:#201c16;overflow-wrap:anywhere}
-#zarNotificationCenter .znCard[data-priority=ERROR]{border-left-color:#ad806e}
-#zarNotificationCenter .znCard[data-priority=SUCCESS]{border-left-color:#8c9a76}
-#zarNotificationCenter .znCard[data-priority=READY]{border-left-color:#cfb17a}
-#zarNotificationCenter .znMeta{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;color:#b8a27d;font-size:10px}
-#zarNotificationCenter .znType{display:flex;gap:6px;align-items:center}
-#zarNotificationCenter .znType svg{width:14px;height:14px}
-#zarNotificationCenter time{white-space:nowrap;color:#9f927c;font-size:10px}
-#zarNotificationCenter h3{font-size:14px;line-height:1.4;margin:9px 0 5px;font-weight:600;color:#f1e3c9}
-#zarNotificationCenter .znMessage{margin:0 0 7px;color:#c9bea9;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
-#zarNotificationCenter .znStatus{font-size:10px;color:#b9a88a}
-#zarNotificationCenter .znActions{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
-#zarNotificationCenter .znActions button:first-of-type{border-color:#a08859}
-#zarNotificationCenter details{margin-top:10px;font-size:11px}
-#zarNotificationCenter summary{cursor:pointer;padding:6px 0;color:#bba47e}
-#zarNotificationCenter pre{white-space:pre-wrap;overflow-wrap:anywhere;font:11px/1.5 ui-monospace,monospace;background:#151310;border-radius:6px;padding:10px}
-#zarNotificationCenter img{display:block;max-width:100%;max-height:200px;object-fit:contain;margin:8px auto;border-radius:7px}
-#zarNotificationCenter label{display:block;font-size:12px;margin:10px 0}
-#zarNotificationCenter input,#zarNotificationCenter textarea{display:block;width:100%;padding:10px;margin-top:6px;background:#151310;border:1px solid #77603d;border-radius:7px;color:#f1e3c9;font:inherit}
-#zarNotificationCenter textarea{min-height:90px;resize:vertical}
-#zarNotificationCenter .znUtility{display:flex;gap:4px;justify-content:space-between;margin-top:7px}
-#zarNotificationCenter .znFooter{display:flex;align-items:center;justify-content:space-between;flex:none;padding:9px 14px;border-top:1px solid #4e4435;font-size:11px;color:#bba98b}
-#zarNotificationCenter .znEmpty{padding:30px 12px;text-align:center;color:#bdad91}
-@media(max-width:600px){#zarNotificationCenter{inset:0;margin:0;width:100vw;max-width:100vw;height:100dvh;max-height:100dvh;border-radius:0;border:0;padding-bottom:env(safe-area-inset-bottom)}#zarNotificationCenter button,#zarNotificationCenter a{min-height:44px}.znCard{scroll-margin:15px}}
+
+#zarNotificationCenter .znHeader{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:16px 14px 10px 18px;flex:none}
+#zarNotificationCenter .znHeader h2{font-size:18px;line-height:1.2;margin:0;font-weight:700}
+#zarNotificationCenter .znHeader small{color:var(--zn-muted);font-size:12px}
+#zarNotificationCenter .znHeadActions{display:flex;gap:2px}
+#zarNotificationCenter .znIconBtn{width:36px;height:36px;padding:0;border:0;border-radius:10px;background:transparent;color:var(--zn-muted)}
+#zarNotificationCenter .znIconBtn:hover{background:#262019;color:var(--zn-text)}
+#zarNotificationCenter .znIconBtn[aria-pressed=true]{background:#2e261c;color:var(--zn-gold)}
+#zarNotificationCenter .znIconBtn svg{width:19px;height:19px}
+#zarNotificationCenter .znArchivedNote{margin:0 18px 6px;color:var(--zn-gold);font-size:12px;font-weight:600}
+
+#zarNotificationCenter .znTabs{display:flex!important;flex-wrap:nowrap!important;gap:6px;overflow-x:auto;padding:2px 14px 10px;flex:none;scrollbar-width:none}
+#zarNotificationCenter .znTabs::-webkit-scrollbar{display:none}
+#zarNotificationCenter .znTabs button{flex:none;min-height:30px;padding:4px 11px;border-radius:999px;border:1px solid #3d3329;background:transparent;color:var(--zn-muted);font-size:12px;font-weight:600}
+#zarNotificationCenter .znTabs button:hover{color:var(--zn-text);border-color:#5a4a36}
+#zarNotificationCenter .znTabs button[aria-pressed=true]{background:var(--zn-gold);border-color:var(--zn-gold);color:#1b140b}
+#zarNotificationCenter .znTabs small{font-size:10.5px;opacity:.75;margin-left:2px}
+#zarNotificationCenter .znSubTabs{padding-top:0}
+#zarNotificationCenter .znSubTabs button{font-size:11px;min-height:26px;padding:2px 9px}
+#zarNotificationCenter .znToolbar{display:flex;justify-content:flex-end;padding:0 16px 8px;flex:none;border-bottom:1px solid var(--zn-line)}
+#zarNotificationCenter .znToolbar label{display:flex;align-items:center;gap:6px;color:var(--zn-muted);font-size:12px}
+#zarNotificationCenter .znToolbar select{width:auto!important;min-height:0!important;box-shadow:none!important;background:transparent!important;border:0!important;color:var(--zn-text);font:inherit;font-size:12px;font-weight:600;padding:4px;cursor:pointer}
+#zarNotificationCenter .znToolbar option{background:#1c1915}
+#zarNotificationCenter .znFeedback{margin:0;padding:0 18px;color:var(--zn-gold);font-size:12px}
+#zarNotificationCenter .znFeedback:not(:empty){padding:8px 18px}
+
+#zarNotificationCenter .znList{flex:1;overflow:auto;padding:4px 8px 12px;overscroll-behavior:contain}
+#zarNotificationCenter .znDay{margin:12px 10px 4px;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--zn-muted);font-weight:700}
+#zarNotificationCenter .znCard{border:0!important;box-shadow:none!important;padding:0!important;background:transparent;border-radius:14px;margin:2px 0;position:relative}
+#zarNotificationCenter .znCard:hover,#zarNotificationCenter .znCard.znOpen{background:var(--zn-hover)}
+#zarNotificationCenter .znCard[data-unread=true] h3{color:#fff6e6}
+#zarNotificationCenter .znRow{display:flex;gap:11px;align-items:flex-start;padding:10px 10px;cursor:pointer;border-radius:14px}
+#zarNotificationCenter .znIcon{flex:none;width:34px;height:34px;border-radius:11px;display:grid;place-items:center;background:#2a2219;color:var(--zn-gold)}
+#zarNotificationCenter .znIcon svg{width:18px;height:18px}
+#zarNotificationCenter [data-priority=ERROR] .znIcon{background:#3a1d17;color:var(--zn-bad)}
+#zarNotificationCenter [data-priority=ACTION_REQUIRED] .znIcon{background:#3a2c12;color:var(--zn-warn)}
+#zarNotificationCenter [data-priority=SUCCESS] .znIcon{background:#16291c;color:var(--zn-ok)}
+#zarNotificationCenter [data-priority=READY] .znIcon{background:#352a12;color:var(--zn-gold)}
+#zarNotificationCenter [data-priority=INFO] .znIcon{background:#18222f;color:var(--zn-info)}
+#zarNotificationCenter .znText{flex:1;min-width:0}
+#zarNotificationCenter .znLine{padding-right:14px;display:flex;justify-content:space-between;gap:8px;font-size:11.5px;color:var(--zn-muted)}
+#zarNotificationCenter .znKind{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#zarNotificationCenter .znLine time{flex:none}
+#zarNotificationCenter .znText h3{margin:1px 0 1px;font-size:13.5px;line-height:1.35;font-weight:650;color:#e6dac4;overflow-wrap:anywhere}
+#zarNotificationCenter .znMessage{margin:0;color:#bfae93;font-size:12.5px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+#zarNotificationCenter .znOpen .znMessage{-webkit-line-clamp:unset;display:block}
+#zarNotificationCenter .znStatus{display:inline-block;margin-top:5px;font-size:10.5px;font-weight:700;padding:1px 8px;border-radius:999px;background:#2b241b;color:#d9c49e}
+#zarNotificationCenter .znStatus[data-tone=ERROR]{background:#3a1d17;color:#ffb3a3}
+#zarNotificationCenter .znStatus[data-tone=ACTION_REQUIRED]{background:#3a2c12;color:#f6d47f}
+#zarNotificationCenter .znStatus[data-tone=READY]{background:#352a12;color:#f6d47f}
+#zarNotificationCenter .znStatus[data-tone=SUCCESS]{background:#16291c;color:#a9e6b6}
+#zarNotificationCenter .znThumb{flex:none;width:64px;height:36px;border-radius:7px;object-fit:cover;margin-top:16px;border:1px solid var(--zn-line)}
+#zarNotificationCenter .znDot{position:absolute;right:10px;top:13px;width:8px;height:8px;border-radius:50%;background:var(--zn-gold);box-shadow:0 0 0 3px #e2bd7322}
+
+#zarNotificationCenter .znActions{display:flex;flex-wrap:wrap;gap:6px;padding:0 10px 10px 55px}
+#zarNotificationCenter .znActions:empty{display:none}
+#zarNotificationCenter form{display:grid;gap:8px;margin:0 10px 10px 55px;padding:10px;border:1px solid var(--zn-line);border-radius:12px;background:#17140f}
+#zarNotificationCenter form label{font-size:12px;color:var(--zn-muted)}
+#zarNotificationCenter form img{width:100%;border-radius:8px}
+#zarNotificationCenter form p{margin:0;font-size:12px;color:#bfae93}
+#zarNotificationCenter input,#zarNotificationCenter textarea{display:block;width:100%;padding:9px 10px;margin-top:5px;background:#100e0b;border:1px solid #4d3f2e;border-radius:9px;color:var(--zn-text);font:inherit}
+#zarNotificationCenter textarea{min-height:80px;resize:vertical}
+#zarNotificationCenter .znMore{padding:0 10px 12px 55px;display:grid;gap:8px;justify-items:start}
+#zarNotificationCenter .znMore details{font-size:12px;color:var(--zn-muted);width:100%}
+#zarNotificationCenter .znMore pre{max-height:140px;overflow:auto;font-size:11px;background:#100e0b;border-radius:8px;padding:8px;margin:6px 0 0}
+#zarNotificationCenter .znArticleMeta{margin:0;font-size:11.5px;color:var(--zn-muted)}
+#zarNotificationCenter .znChanges{display:grid;gap:4px;margin:0;font-size:12px}
+#zarNotificationCenter .znChanges div{display:flex;gap:6px}#zarNotificationCenter .znChanges dt{color:var(--zn-muted);min-width:80px}#zarNotificationCenter .znChanges dd{margin:0}
+#zarNotificationCenter .znUtility{display:flex;gap:6px}
+#zarNotificationCenter .znUtility button{background:transparent!important;color:var(--zn-muted)!important;border-color:#3d3329!important}
+#zarNotificationCenter .znConfirm{margin:8px 14px;padding:12px 14px;border:1px solid #7a6147;border-radius:14px;background:#221c14;flex:none}
+#zarNotificationCenter .znConfirm h3{margin:0 0 6px;font-size:14px}#zarNotificationCenter .znConfirm p{margin:0 0 6px;font-size:12px;color:#cdbb9b}
+#zarNotificationCenter .znConfirm button{margin-right:6px}
+#zarNotificationCenter .znMoreBtn{width:calc(100% - 20px);margin:10px;min-height:38px;border-radius:10px;border:1px dashed #4d3f2e;background:transparent;color:var(--zn-muted);font-weight:600}
+#zarNotificationCenter .znMoreBtn:hover{color:var(--zn-text);border-color:#7a6147}
+#zarNotificationCenter .znEmpty{padding:48px 12px;text-align:center;color:var(--zn-muted);display:grid;justify-items:center;gap:6px}
+#zarNotificationCenter .znEmpty svg{width:34px;height:34px;opacity:.5}
+#zarNotificationCenter .znEmpty p{margin:0}
+@media(max-width:600px){#zarNotificationCenter{inset:0;margin:0;width:100vw;max-width:100vw;height:100dvh;max-height:100dvh;border-radius:0;border:0;padding-bottom:env(safe-area-inset-bottom)}#zarNotificationCenter .znIconBtn{width:44px;height:44px}#zarNotificationCenter .znActions a,#zarNotificationCenter .znActions button{min-height:40px}#zarNotificationCenter .znActions,#zarNotificationCenter form,#zarNotificationCenter .znMore{padding-left:10px;margin-left:10px}#zarNotificationCenter .znActions{margin-left:0}.znCard{scroll-margin:15px}}
 
 /* Compact bell hit target: the surrounding slot has no handler. */
 .znBellSlot{display:inline-flex;padding:4px;align-items:center;justify-content:center;flex:none;cursor:default}.znBellSlot:has(>#zarNotificationBell){min-width:52px;min-height:52px}#zarNotificationBell{width:44px;height:44px;flex:none;min-width:44px;min-height:44px;padding:10px!important;border:0!important;background:transparent!important;box-shadow:none!important;cursor:pointer}#zarNotificationBell [data-unread]{position:absolute;right:-3px;top:-2px;padding:1px 4px;pointer-events:none}body.zarEmbedded>.znBellSlot{position:fixed;top:8px;right:14px;z-index:100001}#zarNotificationBell:focus-visible,#zarNotificationCenter :is(button,a,select):focus-visible{outline:2px solid #e2c286;outline-offset:3px}#zarNotificationCenter{width:520px}#zarNotificationCenter .znHeader h2{display:flex;flex-direction:column;gap:3px}#zarNotificationCenter .znHeader h2 small{font-size:11px;font-weight:400;color:#c5b497}#zarNotificationCenter .znTabs{display:flex;flex-wrap:wrap;gap:5px;padding:10px 14px;flex:none}#zarNotificationCenter .znTabs button{font-size:10px;padding:6px 8px;gap:5px}#zarNotificationCenter .znTabs button[aria-pressed=true]{background:#534127;border-color:#c5a16c;color:#fff0d3}#zarNotificationCenter .znSubTabs{padding-top:0}#zarNotificationCenter .znToolbar{display:flex;flex-wrap:wrap;gap:6px;align-items:center}#zarNotificationCenter .znToolbar label{display:flex;align-items:center;gap:6px;margin:0;font-size:11px}#zarNotificationCenter select{background:#27221b;border:1px solid #66543a;color:#e8d9bb;border-radius:7px;max-width:145px;padding:8px;font:inherit}#zarNotificationCenter .znCard[data-unread=true]{border-left:3px solid #d1b47b}#zarNotificationCenter .znCard[data-unread=false]{border-left:3px solid transparent}#zarNotificationCenter .znCategory,#zarNotificationCenter .znArticleMeta{font-size:10px;color:#bba98b;overflow-wrap:anywhere}#zarNotificationCenter .znCover{aspect-ratio:16/9;max-height:190px;overflow:hidden;border-radius:8px;margin-bottom:12px;background:#27251e}#zarNotificationCenter .znCover img{width:100%;height:100%;max-height:none;object-fit:cover;margin:0}#zarNotificationCenter .znSkeleton{display:flex;align-items:center;justify-content:center;height:100%;padding:16px;color:#bead90;background:linear-gradient(110deg,#26221b,#383023,#26221b)}#zarNotificationCenter .znChanges{font-size:11px;margin:10px 0}#zarNotificationCenter .znChanges div{display:flex;gap:8px}#zarNotificationCenter .znChanges dt{min-width:70px;color:#cfb681}#zarNotificationCenter .znChanges dd{margin:0;overflow-wrap:anywhere}#zarNotificationCenter .znConfirm{background:#342a1c;border:1px solid #ba975e;border-radius:9px;padding:13px;margin:10px 14px;flex:none;max-height:45dvh;overflow:auto}#zarNotificationCenter .znConfirm h3{margin:0 0 8px;font-size:15px}#zarNotificationCenter .znConfirm p{font-size:12px;margin:7px 0;overflow-wrap:anywhere}#zarNotificationCenter .znConfirm button{margin:5px 5px 0 0}#zarNotificationCenter .znMessage{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}@media(max-width:600px){#zarNotificationCenter{width:100vw}.znBellSlot{display:inline-flex}#zarNotificationBell{display:inline-flex}#zarNotificationCenter .znTabs button{min-height:36px}#zarNotificationCenter .znToolbar button{font-size:11px}}
+/* Notification settings */
+#zarNotificationCenter .znSettings{padding:6px 14px 16px}
+#zarNotificationCenter .znSettings section{padding:12px 4px 14px;border-bottom:1px solid var(--zn-line)}
+#zarNotificationCenter .znSettings h4{margin:0 0 6px;font-size:13.5px;display:flex;gap:8px;align-items:center}
+#zarNotificationCenter .znHint{margin:0 0 8px;color:var(--zn-muted);font-size:12px}
+#zarNotificationCenter .znField{display:grid;gap:4px;font-size:12px;color:var(--zn-muted);margin-bottom:8px}
+#zarNotificationCenter .znInline{padding:4px 0 0}
+#zarNotificationCenter .znSwitch{display:flex;align-items:center;gap:10px;font-size:13px;cursor:pointer;margin:4px 0}
+#zarNotificationCenter .znSwitch input{position:absolute;opacity:0;width:1px;height:1px}
+#zarNotificationCenter .znSwitch span{width:36px;height:20px;border-radius:999px;background:#3a3127;position:relative;flex:none;transition:background .15s}
+#zarNotificationCenter .znSwitch span::after{content:'';position:absolute;top:3px;left:3px;width:14px;height:14px;border-radius:50%;background:#cbb998;transition:transform .15s}
+#zarNotificationCenter .znSwitch input:checked+span{background:var(--zn-gold)}
+#zarNotificationCenter .znSwitch input:checked+span::after{transform:translateX(16px);background:#1b140b}
+#zarNotificationCenter .znSwitch input:focus-visible+span{outline:2px solid var(--zn-gold);outline-offset:2px}
+#zarNotificationCenter .znChecks{display:flex;gap:14px;flex-wrap:wrap;font-size:12.5px;margin-top:6px}
+#zarNotificationCenter .znChecks input{width:auto;display:inline;margin:0 4px 0 0}
+#zarNotificationCenter .znOk,#zarNotificationCenter .znWarn{font-size:10.5px;font-weight:700;padding:1px 8px;border-radius:999px}
+#zarNotificationCenter .znOk{background:#16291c;color:#a9e6b6}#zarNotificationCenter .znWarn{background:#3a2c12;color:#f6d47f}
+#zarNotificationCenter .znSub{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px;margin:0 0 6px;border:1px solid var(--zn-line);border-radius:12px;background:#18150f}
+#zarNotificationCenter .znSub b{display:block;font-size:13px}#zarNotificationCenter .znSub small{color:var(--zn-muted);font-size:11.5px}
+#zarNotificationCenter form.znAdd{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:8px 0;padding:10px}
+#zarNotificationCenter form.znAdd select:first-child{grid-column:1/-1}
+#zarNotificationCenter form.znAdd select{background:#100e0b;border:1px solid #4d3f2e;border-radius:9px;color:var(--zn-text);padding:7px 8px;font:inherit;font-size:12.5px;min-height:34px}
+#zarNotificationCenter form.znAdd button{grid-column:1/-1}
+#zarNotificationCenter .znOutbox{list-style:none;margin:0;padding:0;display:grid;gap:6px;font-size:12.5px}
+#zarNotificationCenter .znOutbox small{color:var(--zn-muted)}
+#zarNotificationCenter .znOut{display:inline-block;font-size:10.5px;font-weight:700;padding:1px 7px;border-radius:999px;margin-right:6px;background:#2b241b;color:#d9c49e}
+#zarNotificationCenter .znOut[data-s=SENT]{background:#16291c;color:#a9e6b6}#zarNotificationCenter .znOut[data-s=FAILED]{background:#3a1d17;color:#ffb3a3}

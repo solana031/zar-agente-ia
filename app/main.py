@@ -120,6 +120,19 @@ def _reposnews_public_host():
     from .reposnews import public_dispatch
     return public_dispatch()
 
+@app.after_request
+def _reposnews_count_visit(response):
+    # Anonymous page-view counter for the public site (no cookies, no IPs stored).
+    try:
+        if request.method == 'GET' and response.status_code == 200 and response.mimetype == 'text/html':
+            from .reposnews import HOSTS
+            if request.host.split(':')[0].lower() in HOSTS:
+                from .site_stats import record
+                record(request.path, request.headers.get('User-Agent', ''))
+    except Exception:
+        pass
+    return response
+
 @app.before_request
 def _set_scope():
     uid = _user_scope_id()
@@ -5231,6 +5244,15 @@ def chat():
         return jsonify({"error":"Mensaje vacío"}), 400
     job_id = uuid.uuid4().hex
     user_id = get_current_user()
+    # "Notifícame de X cada …" and similar requests are handled directly.
+    try:
+        from .zar_notify import chat_command
+        notify_reply = chat_command(_user_scope_id(), msg)
+    except Exception:
+        notify_reply = None
+    if notify_reply:
+        _write_job(job_id, "done", reply=notify_reply, user_id=user_id)
+        return jsonify({"job_id": job_id, "status": "running"}), 202
     # Snapshot only serialisable session state needed by background chat execution.
     # The worker restores it inside its own isolated Flask request context.
     try:

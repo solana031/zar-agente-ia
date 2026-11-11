@@ -27,7 +27,7 @@ def test_health_bypasses_storage_network_session_and_blocked_later_hooks():
         client=app.test_client();started=time.perf_counter()
         for _ in range(3):
             response=client.get('/health');assert response.status_code==200
-            assert set(response.json)<= {'status','version','commit'} and response.json['status']=='ok'
+            assert set(response.json)<= {'ok','status','version','commit'} and response.json['status']=='ok'
         assert time.perf_counter()-started<.5
 
 

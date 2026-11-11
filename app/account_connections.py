@@ -120,7 +120,7 @@ class AccountConnectionRegistry:
             Provider('shopify','Shopify','COMERCIO','S',('Reselling',),shopify,'BACKEND_PROVIDER')]
         state=holdings.read(scope).get('identity_center',{})
         if os.environ.get('STRIPE_SECRET_KEY'):self.providers.append(Provider('stripe','Stripe','FINANZAS / NEGOCIO','◈',('Web Agency',),stripe,'BACKEND_PROVIDER'))
-        if 'ADSENSE' in state.get('capabilities',{}):self.providers.append(Provider('adsense','AdSense','FINANZAS / NEGOCIO','A',('Sites',),adsense))
+        self.providers.append(Provider('adsense','AdSense','FINANZAS / NEGOCIO','A',('Sites',),adsense))
 
     def provider(self,key):
         return next((p for p in self.providers if p.id==key),None)
@@ -149,6 +149,10 @@ class AccountConnectionRegistry:
                 from . import reposnews as rn,instagram_conversation_history as conversation_history
                 editorial=rn.read()
                 if editorial.get('owner')==self.scope:item['reel_history']=conversation_history.summary(editorial)
+            try:
+                from . import account_profiles
+                item['profiles']=account_profiles.view(self.scope,provider.id) if provider.id in account_profiles.PROFILE_PROVIDERS+account_profiles.GOOGLE_BACKED else []
+            except (OSError,ValueError):item['profiles']=[]
             rows.append(item)
         return {'providers':rows,'summary':{'connected':sum(x['status'] in GOOD for x in rows),'attention':sum(x['status'] in ATTENTION for x in rows)}}
 
@@ -171,6 +175,11 @@ class AccountConnectionRegistry:
         safe.update(last_verified=holdings._now(),account_identity=result.get('account') or previous.get('account_identity'),connect_url='/accounts#'+key,reconnect_url='/accounts#'+key)
         with holdings.transaction(self.scope):
             data=holdings.read(self.scope);data.setdefault('account_connections',{})[key]=safe;holdings.write(self.scope,data)
+        if safe.get('status') in GOOD and safe.get('account_identity'):
+            try:
+                from . import account_profiles
+                if key in account_profiles.PROFILE_PROVIDERS:account_profiles.capture(self.scope,key,safe.get('channel') if key=='youtube' and isinstance(safe.get('channel'),str) else safe['account_identity'])
+            except (OSError,ValueError):pass
         self.notification(key,safe)
         return safe
 
@@ -242,6 +251,26 @@ def register(app,scope_fn,csrf_owner):
         except ValueError:return jsonify(error='GOOGLE_ACCOUNT_NOT_LINKED'),400
         # Selection is not verification. The adapter returns the real current state.
         return jsonify(ok=True,result=AccountConnectionRegistry(scope).reverify('google'))
+
+    @app.post('/api/accounts/profiles/<provider>/<action>')
+    def accounts_profiles(provider,action):
+        from . import account_profiles
+        scope=csrf_owner()
+        registry=AccountConnectionRegistry(scope)
+        if provider not in account_profiles.PROFILE_PROVIDERS+account_profiles.GOOGLE_BACKED or not registry.provider(provider):abort(404)
+        key=str((request.get_json(silent=True) or {}).get('id') or '')
+        try:
+            if action=='select':
+                current=holdings.read(scope).get('account_connections',{}).get(provider,{})
+                account_profiles.select(scope,provider,key,current.get('account_identity') if current.get('status') in GOOD else None)
+            elif action=='remove':account_profiles.remove(scope,provider,key)
+            else:abort(404)
+        except ValueError as exc:
+            message={'PROFILE_ACTIVE':'No se puede quitar la cuenta activa. Elige antes otra.','PROFILE_NOT_FOUND':'Esa cuenta ya no está guardada en este ZAR.','GOOGLE_ACCOUNT_NOT_LINKED':'Esa cuenta de Google ya no está vinculada.'}.get(str(exc),'No se pudo cambiar la cuenta.')
+            return jsonify(ok=False,error=str(exc),message=message),400
+        result=registry.reverify('google' if provider=='adsense' else provider) if action=='select' else None
+        if provider=='adsense' and action=='select':result=registry.reverify('adsense')
+        return jsonify(ok=True,result=result,profiles=account_profiles.view(scope,provider))
 
     @app.post('/api/accounts/session-link')
     def accounts_session_link():
