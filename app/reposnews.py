@@ -119,6 +119,14 @@ def state(scope):
     result={k:v for k,v in data.items() if k!='owner'}|{'instagram_integration':reposnews_inbox.integration(),'local_instagram_worker':instagram_local_queue.status(),'readiness':readiness(data),'legal_status':legal_status(data)}
     from .reposnews_autonomous import view as autonomous_view
     result['autonomous_editorial_status']=autonomous_view(data)
+    from .instagram_conversation_history import summary as conversation_summary
+    result['instagram_history_summary']=conversation_summary(data)
+    from .reposnews_assets import public_article
+    def display_cover(a):
+        shown=public_article(a.get('published_snapshot',a)) if a.get('published') else a
+        url=shown.get('cover_thumb') or shown.get('cover_url')
+        return url if isinstance(url,str) and url.startswith('/media/reposnews/') else None
+    result['articles']=[dict(a,display_cover=display_cover(a)) for a in data.get('articles',[])]
     return reposnews_automation.decorate(scope,result)
 
 
@@ -369,7 +377,8 @@ def operate(scope, op, payload):
                 from .reposnews_automation import revoke, reviewable
                 revoke(article)
                 for row in data.get('instagram_inbox',[]):
-                    if row.get('article_id')==article['id']:row.pop('auto_publish_grant',None)
+                    if row.get('article_id')==article['id']:
+                        row.pop('auto_publish_grant',None);row['auto_publish_owner_hold']=True
                 before=dict(article)
                 for key,limit in [('title_es',180),('title_en',180),('summary_es',500),('summary_en',500),('body_es',24000),('body_en',24000)]:
                     value=str(payload.get(key,article[key])).strip()
@@ -526,7 +535,8 @@ def media(asset):
         article=next((a.get('published_snapshot',a) for a in read().get('articles',[]) if a.get('published') and a['id']==editorial[1]),None)
         if not article:abort(404)
         from .reposnews_assets import editorial_cover
-        blob=editorial_cover(article.get('repo',''),article.get('category',''),article.get('title_en',''),article.get('summary_en',''))
+        source=next((a for a in read().get('articles',[]) if a['id']==editorial[1]),{})
+        blob=editorial_cover(dict(article,cover_spec=article.get('cover_spec') or source.get('cover_spec')))
         return Response(blob,mimetype='image/png',headers={'Cache-Control':'public, max-age=86400','X-Content-Type-Options':'nosniff'})
     if re.fullmatch(r'(?:source-[a-f0-9]{24}\.png|cover-[a-f0-9]{24}(?:\.png|-sm\.webp))',asset):
         data=read()

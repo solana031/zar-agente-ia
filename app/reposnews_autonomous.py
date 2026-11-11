@@ -15,6 +15,7 @@ from . import holdings, reposnews as rn
 MADRID = ZoneInfo('Europe/Madrid')
 TRENDING = 'https://github.com/trending?since=monthly'
 DAILY_TARGET = 6
+BACKFILL_SPACING = 1200  # One historical Reel article every 20 minutes at most.
 TERMINAL = {'COMPLETED', 'PARTIAL', 'SKIPPED_REELS', 'NO_VERIFIED_CANDIDATES'}
 _worker = None
 _worker_lock = threading.Lock()
@@ -71,8 +72,10 @@ def reel_grant(data, row):
     if (backlog.get('enabled') and backlog.get('owner') == data['owner']
             and row.get('id') in backlog.get('item_ids', [])):
         return backlog.get('grant')
+    # Historical Reels from the authorized conversation are covered by the same owner
+    # policy: ZAR reviews and publishes them too, unless the owner held the article.
     if (not daily_policy(data) or not policy.get('enabled')
-            or policy.get('owner') != data['owner'] or row.get('backfill')):
+            or policy.get('owner') != data['owner'] or row.get('auto_publish_owner_hold')):
         return None
     try:
         permalink = reel_url(row.get('source_url', ''))
@@ -106,12 +109,19 @@ def publish_ready_reels():
                 or holdings.read(scope).get('global_stop') or rn.legal_status(data)['status'] != 'LEGAL_READY'):
             return
         articles = {a['id']: i for i, a in enumerate(data.get('articles', []))}
+        last_backfill = data.get('autonomous_reel_pacing', {}).get('last_backfill_publish', 0)
         for row in sorted(data.get('instagram_inbox', []), key=lambda r: r.get('received_at', '')):
             index = articles.get(row.get('article_id'))
             if index is None or row.get('status') != 'READY_PRIVATE':
                 continue
             grant = reel_grant(data, row)
+            if grant and not row.get('auto_publish_grant') and not row.get('auto_publish_owner_hold'):
+                # Drafts prepared before the policy covered historical Reels.
+                row['auto_publish_grant'] = grant
             if not grant or row.get('auto_publish_grant') != grant:
+                continue
+            if row.get('backfill') and time.time() - last_backfill < BACKFILL_SPACING:
+                # Historical backlog is published gradually, new Reels immediately.
                 continue
             article = deepcopy(data['articles'][index])
             if (article.get('published') or article.get('inbox_item_id') != row['id']
@@ -128,6 +138,9 @@ def publish_ready_reels():
                 continue
             row.pop('error', None)
             data['articles'][index] = article
+            if row.get('backfill'):
+                last_backfill = time.time()
+                data.setdefault('autonomous_reel_pacing', {})['last_backfill_publish'] = last_backfill
             rn.write(data)
 
 

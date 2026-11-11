@@ -83,7 +83,46 @@ def enqueue_pending(data):
         eligible = row.get('status') in {'RECEIVED', 'PERMALINK_ONLY', 'NEEDS_DISAMBIGUATION', 'FAILED', 'FAILED_SOURCE', 'FAILED_RETRYABLE'}
         expired = row.get('local_job') and row.get('local_lease', 0) < time.time() and row.get('status') in STAGES
         if eligible or expired:
-            row.update(status='WAITING_LOCAL_WORKER', processing_state='WAITING_LOCAL_WORKER', local_job=True)
+            row.update(status='WAITING_LOCAL_WORKER', processing_state='WAITING_LOCAL_WORKER', local_job=True, local_fallback=False)
+
+
+LOCAL_GRACE = 900  # Seconds a Reel waits for the local worker before the server analyses it.
+
+
+def fallback_stalled(now=None):
+    """Do not let Reels wait forever for an offline local worker.
+
+    After LOCAL_GRACE seconds without an active local claim while the worker is offline,
+    the Reel continues on the server pipeline (official media, public metadata and the
+    dedicated server browser). The local worker can still improve it later.
+    """
+    now = now or time.time()
+    with holdings.transaction('reposnews-editorial'):
+        data = rn.read()
+        if not data.get('owner'):
+            return 0
+        online = now - data.get('instagram_local_worker', {}).get('seen', 0) < 300
+        moved = 0
+        changed = False
+        for row in data.get('instagram_inbox', []):
+            if row.get('status') != 'WAITING_LOCAL_WORKER':
+                if row.pop('local_waiting_since', None) is not None:
+                    changed = True
+                continue
+            if 'local_waiting_since' not in row:
+                row['local_waiting_since'] = now
+                changed = True
+            since = row['local_waiting_since']
+            if online or row.get('local_lease', 0) > now or now - since < LOCAL_GRACE:
+                continue
+            row.update(status='RECEIVED', processing_state='RECEIVED', local_job=False, local_fallback=True,
+                       retry_after=0, error='LOCAL_WORKER_OFFLINE_SERVER_ANALYSIS')
+            row.pop('local_waiting_since', None)
+            row['attempt_limit'] = max(row.get('attempt_limit', 8), row.get('attempts', 0) + 3)
+            moved += 1
+        if moved or changed:
+            rn.write(data)
+        return moved
 
 
 def register(app):

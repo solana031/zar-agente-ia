@@ -23,17 +23,21 @@ def public_article(article):
     restricted=article.get('image_kind') in FRAME_TYPES and not (frame_cleared(cover) or frame_cleared(article.get('cover_provenance') or {}))
     missing=(article.get('id') not in CURATED_ARTICLES and
              (not article.get('image_asset') or article.get('image_asset')=='home.png'))
-    if restricted or missing:
+    # Legacy generic canvas covers ("</>" art) are replaced by the per-article
+    # "how it works" illustration rendered from the article's cover spec.
+    generic=(article.get('id') not in CURATED_ARTICLES and
+             (article.get('cover_provenance') or {}).get('generator') in ('ReposNews/internal-editorial-canvas-v1','ReposNews/internal-editorial-canvas-v2'))
+    if restricted or missing or generic:
         result.update(image_asset='editorial-'+article['id']+'.png',
             cover_url='/media/reposnews/editorial-'+article['id']+'.png',cover_thumb=None,
             image_kind='GENERATED',image_attribution='ReposNews · ilustración editorial propia / original editorial illustration',
-            cover_provenance={'source_type':'GENERATED','generator':'ReposNews/internal-editorial-canvas-v1'})
+            cover_provenance={'source_type':'GENERATED','generator':'ReposNews/internal-editorial-canvas-v2'})
     return result
 
-@lru_cache(maxsize=64)
-def editorial_cover(repo,category,title,summary):
-    from .reposnews_cover_providers import editorial
-    return editorial({'repo':repo,'category':category,'title_en':title,'summary_en':summary})[0]
+def editorial_cover(article):
+    """Request-path render of the article's unique cover; never calls a provider."""
+    from .reposnews_cover_art import render_public
+    return render_public(article)
 
 
 def inspect_image(content):

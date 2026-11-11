@@ -725,7 +725,7 @@ def process(item_id):
         from .instagram_local_queue import reel_url
         try: local_permalink=reel_url(row.get('source_url'))
         except ValueError: local_permalink=None
-        if local_permalink and not row.get('local_worker_done') and not (rn._path().parent/'inbound'/item_id).exists():
+        if local_permalink and not row.get('local_worker_done') and not row.get('local_fallback') and not (rn._path().parent/'inbound'/item_id).exists():
             row.update(status='WAITING_LOCAL_WORKER',processing_state='WAITING_LOCAL_WORKER',local_job=True)
             rn.write(data);return
         row.update(status='ANALYZING',processing_state='ANALYZING',attempts=row.get('attempts',0)+1,run_attempts=row.get('run_attempts',0)+1,lease=time.time()+300,media_analysis='OPTIONAL');rn.write(data)
@@ -936,6 +936,10 @@ def start_worker():
                 tick();notify_pending()
                 from .reposnews_covers import tick as cover_tick
                 cover_tick()
+                from .reposnews_cover_art import tick as cover_spec_tick
+                cover_spec_tick()
+                from .instagram_local_queue import fallback_stalled
+                fallback_stalled()
                 from .reposnews_autonomous import publish_ready_reels
                 publish_ready_reels()
                 for item in sorted(rn.read().get('instagram_inbox',[]),key=lambda row:row.get('received_at','')):

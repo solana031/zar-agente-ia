@@ -13,6 +13,7 @@ from .instagram_local_queue import reel_url,same_reel
 
 BASE='https://graph.instagram.com/v26.0/'
 DAY=86400
+SYNC_INTERVAL=1200  # Incremental head check; stops at the newest already-seen message.
 
 
 class HistoryReadError(ValueError):
@@ -257,7 +258,7 @@ def sync(scope,force=False):
             state.update(status='AUTH_REQUIRED',error='META_HISTORY_AUTH_REQUIRED',requested=False);rn.write(data)
             return summary(data)
         if not force and not state.get('requested') and state.get('status')!='SYNCING' and state.get('next_sync',0)>now:return summary(data)
-        state.update(status='SYNCING',started_at=holdings._now(),lease_until=now+1800,requested=False,next_sync=now+DAY,error=None)
+        state.update(status='SYNCING',started_at=holdings._now(),lease_until=now+1800,requested=False,next_sync=now+SYNC_INTERVAL,error=None)
         rn.write(data)
     try:
         auth=credentials();token=auth.get('access_token')
@@ -395,9 +396,10 @@ def tick():
         emit(scope,'INSTAGRAM_HISTORY_SYNC','instagram-history:rate-limit','Historial pausado por límite de Meta',
              'Meta ha limitado las solicitudes de mensajes. El cursor se conserva y ZAR reintentará automáticamente después de la espera.',
              '/accounts#instagram',entity_type='INSTAGRAM_HISTORY',details=result,status='DONE',priority='P2')
-    if result['status']=='COMPLETED' and not result['pending']:
+    if result['status']=='COMPLETED' and not result['pending'] and result['reels_found']:
         from .notification_center import emit
-        emit(scope,'INSTAGRAM_HISTORY_SYNC','instagram-history:'+data['instagram_conversation_sync']['started_at'],
+        # One notice per distinct total, not one per 20-minute incremental check.
+        emit(scope,'INSTAGRAM_HISTORY_SYNC','instagram-history:reels:'+str(result['reels_found']),
              'Revisión histórica de Instagram completada','Reels encontrados: '+str(result['reels_found'])+'. Procesados: '+str(result['processed'])+'.',
              '/accounts#instagram',entity_type='INSTAGRAM_HISTORY',details=result,status='DONE',priority='P2')
 

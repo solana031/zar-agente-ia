@@ -105,8 +105,35 @@ def test_ready_reels_publish_only_with_current_ingress_grant(state, monkeypatch)
         data['articles'].append(article)
     rn.write(data)
     scheduled.publish_ready_reels(); scheduled.publish_ready_reels()
-    assert [a['id'] for a in state()['articles'] if a['published']] == ['owner-tool0']
+    # Historical Reels from the authorized conversation are covered by the owner policy.
+    assert [a['id'] for a in state()['articles'] if a['published']] == ['owner-tool0', 'owner-tool1']
     assert state()['instagram_inbox'][0]['status'] == 'PUBLISHED'
+
+
+def test_historical_reels_are_paced_and_respect_owner_hold(state, monkeypatch):
+    monkeypatch.setattr('app.reposnews_inbox.sender_ids', lambda: {'fixture-sender'})
+    data = state()
+    data['autonomous_editorial']['purpose'] = 'DAILY_GUIDES_AND_INBOUND_REELS'
+    for i in range(3):
+        row = {'id': str(i), 'external_id': str(i), 'received_at': f'2026-10-28T0{i}:00:00Z', 'backfill': True,
+               'source_url': f'https://www.instagram.com/reel/fixture{i}/', 'sender': 'fixture-sender',
+               'status': 'READY_PRIVATE'}
+        if i == 2: row['auto_publish_owner_hold'] = True
+        article = draft(candidate(i))
+        article['inbox_item_id'] = row['id']
+        row['article_id'] = article['id']
+        data.setdefault('instagram_inbox', []).append(row)
+        data['articles'].append(article)
+    rn.write(data)
+    scheduled.publish_ready_reels(); scheduled.publish_ready_reels()
+    # Drafts without a grant receive the current one; only one historical article per spacing window.
+    assert [a['id'] for a in state()['articles'] if a['published']] == ['owner-tool0']
+    data = state(); data['autonomous_reel_pacing']['last_backfill_publish'] -= scheduled.BACKFILL_SPACING + 1; rn.write(data)
+    scheduled.publish_ready_reels()
+    assert [a['id'] for a in state()['articles'] if a['published']] == ['owner-tool0', 'owner-tool1']
+    data = state(); data['autonomous_reel_pacing']['last_backfill_publish'] -= scheduled.BACKFILL_SPACING + 1; rn.write(data)
+    scheduled.publish_ready_reels()
+    assert not state()['articles'][2]['published'] and 'auto_publish_grant' not in state()['instagram_inbox'][2]
 
 
 def test_authorized_backlog_publishes_only_the_current_finite_set(state, monkeypatch):

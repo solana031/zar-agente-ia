@@ -165,7 +165,7 @@ def decide(scope,payload):
             article.update(state='MODIFYING' if decision=='MODIFICAR' else 'CANCELLED',status='MODIFYING' if decision=='MODIFICAR' else 'CANCELLED')
             for row in data.get('instagram_inbox',[]):
                 if row.get('article_id')==article['id']:
-                    row.pop('auto_publish_grant',None)
+                    row.pop('auto_publish_grant',None);row['auto_publish_owner_hold']=True
                     if decision=='CANCELAR':row.update(status='CANCELLED',processing_state='CANCELLED')
             for note in data.get('editorial_notifications',[]):
                 if note.get('article_id')==article['id']:note['status']=article['state']

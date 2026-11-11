@@ -12,7 +12,7 @@ from . import holdings, reposnews as rn
 
 CURATED={'uv':'uv-official.svg','playwright':'playwright-official.svg','fastapi':'fastapi-official.png',
          'dramaclaw':'dramaclaw-official.png','jev':'jev-editorial.svg','automaton':'automaton-editorial.svg'}
-VISUAL_FIELDS=('image_asset','cover_url','cover_thumb','cover_provenance','cover_status','cover_job','image_kind','image_source','image_attribution','assets')
+VISUAL_FIELDS=('cover_spec','image_asset','cover_url','cover_thumb','cover_provenance','cover_status','cover_job','image_kind','image_source','image_attribution','assets')
 
 
 def safe_text(value, limit=2000):
@@ -118,7 +118,7 @@ def ensure(article,row=None,package=None):
         if adopt(article):return article
     if job.get('lease',0)>time.time() or job.get('retry_after',0)>time.time() or job.get('attempts',0)>=2:
         from .reposnews_cover_providers import editorial
-        blob,provider=editorial(article)
+        blob,provider=editorial(article,row.get('analysis'))
         return persist(article,blob,'GENERATED',generator=provider)
     from .reposnews_discovery import official_image
     candidates=list(package.get('images',[]))[:6]
@@ -169,11 +169,11 @@ def ensure(article,row=None,package=None):
         if valid(probe):article.update(cached['visual']);return article
     if cached.get('lease',0)>time.time():
         from .reposnews_cover_providers import editorial
-        blob,provider=editorial(article)
+        blob,provider=editorial(article,row.get('analysis'))
         return persist(article,blob,'GENERATED',generator=provider)
     if cached.get('attempts',0)>=2:
         from .reposnews_cover_providers import editorial
-        blob,provider=editorial(article)
+        blob,provider=editorial(article,row.get('analysis'))
         return persist(article,blob,'GENERATED',generator=provider)
     job.update(attempts=max(job.get('attempts',0),cached.get('attempts',0))+1,real_sources_checked=attempts,requested_at=holdings._now())
     cached.update(attempts=job['attempts'],lease=time.time()+600)
@@ -191,7 +191,7 @@ def ensure(article,row=None,package=None):
         job.update(error=code,retry_after=time.time()+600)
         cached['lease']=0;cache_path.write_text(json.dumps(cached),encoding='utf-8')
         from .reposnews_cover_providers import editorial
-        blob,provider=editorial(article)
+        blob,provider=editorial(article,row.get('analysis'))
         persist(article,blob,'GENERATED',generator=provider)
     return article
 
