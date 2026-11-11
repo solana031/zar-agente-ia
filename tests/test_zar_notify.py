@@ -113,3 +113,18 @@ def test_period_rules():
     sub = notify._subscription('youtube', {'unit': 'month', 'every': 1, 'day': 1, 'hour': 9}, 'email', 'ui')
     assert datetime.fromtimestamp(sub['next_at'], notify.MADRID).day == 1
     assert notify.describe_period({'unit': 'day', 'every': 1, 'hour': 21}) == 'cada día a las 21:00'
+
+
+def test_whatsapp_webhook_is_reachable_without_session_but_signed(owner, monkeypatch):
+    monkeypatch.setenv('ZAR_ACCESS_PASSWORD', 'x')
+    monkeypatch.setenv('WHATSAPP_VERIFY_TOKEN', 'verify-me')
+    monkeypatch.setenv('WHATSAPP_APP_SECRET', 'secret')
+    from app.main import app
+    client = app.test_client()
+    assert client.get('/api/whatsapp/webhook?hub.mode=subscribe&hub.verify_token=verify-me&hub.challenge=42').data == b'42'
+    assert client.get('/api/whatsapp/webhook?hub.mode=subscribe&hub.verify_token=no&hub.challenge=42').status_code == 403
+    assert client.post('/api/whatsapp/webhook', data=b'{}', headers={'X-Hub-Signature-256': 'sha256=00'}).status_code == 403
+    raw = b'{"entry":[]}'
+    sig = 'sha256=' + hmac.new(b'secret', raw, hashlib.sha256).hexdigest()
+    assert client.post('/api/whatsapp/webhook', data=raw, headers={'X-Hub-Signature-256': sig, 'Content-Type': 'application/json'}).status_code == 200
+    assert client.get('/api/notify/settings').status_code == 401
