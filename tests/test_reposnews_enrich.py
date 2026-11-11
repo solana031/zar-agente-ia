@@ -38,3 +38,21 @@ def test_failed_expansion_is_retried_later_not_published(store, monkeypatch):
     assert enrich.tick() is None
     article = store()['articles'][0]
     assert article['enrich_job']['error'] == 'OFFICIAL_REPOSITORY_REQUIRED' and not store()['article_revisions']
+
+
+def test_autopilot_publishes_expansions(store, monkeypatch):
+    from app import reposnews_inbox as inbox, reposnews_automation as automation
+    data = store(); data['autonomous_editorial'] = {'enabled': True, 'owner': 's_owner'}; rn.write(data)
+    monkeypatch.setattr(inbox, 'research', lambda repo: {'repo': repo})
+    monkeypatch.setattr(inbox, 'build', lambda package, discovery: {'title_es': 'T2', 'title_en': 'T2', 'summary_es': 's', 'summary_en': 's',
+                        'body_es': 'palabra ' * 900, 'body_en': 'word ' * 900, 'sources': ['a', 'b']})
+    published = []
+    def fake_publish(data, article, scope):
+        assert article['approval']['via'] == 'OWNER_AUTOPILOT_ENRICHMENT' and scope == 's_owner'
+        published.append(article['id']); article.update(published=True, state='PUBLISHED')
+    monkeypatch.setattr(automation, 'publish_article', fake_publish)
+    enrich._last = 0
+    enrich.tick()
+    data = store()
+    assert published == ['tool'] and data['article_revisions'][0]['state'] == 'APPLIED'
+    assert data['articles'][0]['body_es'].count('palabra') == 900

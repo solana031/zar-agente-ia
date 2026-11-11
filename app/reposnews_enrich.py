@@ -11,7 +11,7 @@ import time
 from . import holdings, reposnews as rn, reposnews_automation as auto
 
 TARGET_WORDS = 700
-SPACING = 600
+SPACING = 240
 RETRY = 86400
 _last = 0
 
@@ -67,7 +67,44 @@ def tick():
         return None
     if min(words(candidate, 'es'), words(candidate, 'en')) <= min(words(target, 'es'), words(target, 'en')):
         return None
-    return propose(target['id'], candidate)
+    ident = propose(target['id'], candidate)
+    if ident and auto_policy(rn.read()):
+        apply_authorized(ident)
+    return ident
+
+
+def auto_policy(data):
+    """The owner's autopilot (automatic publication) also covers expanding short guides."""
+    policy = data.get('autonomous_editorial') or {}
+    return bool(data.get('owner') and policy.get('enabled') and policy.get('owner') == data['owner'])
+
+
+def apply_authorized(ident):
+    """Publish one expansion under the owner's standing autopilot authorization."""
+    with holdings.transaction('reposnews-editorial'):
+        data = rn.read()
+        scope = data.get('owner')
+        r = next((x for x in data.get('article_revisions', []) if x['article_revision_id'] == ident), None)
+        if not r or r.get('state') != 'ARTICLE_UPDATE_DRAFT' or r.get('kind') != 'ENRICHMENT' or not auto_policy(data):
+            return False
+        old = next((a for a in data['articles'] if a['id'] == r['article_id']), None)
+        if not old or auto.revision(old) != r['base_revision']:
+            return False
+        draft = dict(r['draft'])
+        auto.revoke(draft)
+        draft.update(approval_status='APPROVED_BY_USER', approval={'owner': scope, 'revision': auto.revision(draft), 'at': holdings._now(), 'via': 'OWNER_AUTOPILOT_ENRICHMENT'},
+                     article_revision_id=ident, updated_at=holdings._now(), verified_at=r.get('verified_at'), change_summary=r.get('change_summary'))
+        try:
+            auto.publish_article(data, draft, scope)
+        except ValueError as exc:
+            r['auto_apply_error'] = str(exc)[:80]
+            rn.write(data)
+            return False
+        draft['history'] = (old.get('history', []) + [{'at': holdings._now(), 'reason': 'Guía ampliada · piloto automático del titular', 'article_revision_id': ident}])[-60:]
+        data['articles'][data['articles'].index(old)] = draft
+        r.update(state='APPLIED', approval_status='APPROVED_BY_USER')
+        rn.write(data)
+    return True
 
 
 def propose(article_id, candidate):
